@@ -101,3 +101,15 @@ For a Release WebAssembly publish, run `.\eng\clean-wasm-publish.ps1 -Configurat
 TreadmillRunner is available under the [MIT License](LICENSE).
 
 The sibling `../qdomyos-zwift` checkout is research evidence only and is not part of this repository.
+
+## Maintainer releases
+
+GitHub Actions does not build ordinary commits or pull requests. A release is built and validated automatically on GitHub only when the local release command pushes an annotated `vMAJOR.MINOR.PATCH` tag; validation can also be started manually. Signing and asset publication remain local because the private key is non-exportable:
+
+```powershell
+.\eng\create-github-release.ps1 `
+  -Version 1.5.10 `
+  -ReleaseNotes 'Describe the user-visible changes in this version.'
+```
+
+Do not create or move tags manually. See [release operations](docs/project/release-operations.md) for prerequisites, assets, interruption recovery, and update activation.

@@ -55,6 +55,13 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("offline-update.zip", release, StringComparison.Ordinal);
     Assert.Contains("--draft", release, StringComparison.Ordinal);
     Assert.Contains("--verify-tag", release, StringComparison.Ordinal);
+    Assert.Contains("git tag -a $tag", release, StringComparison.Ordinal);
+    Assert.Contains("git fetch origin \"refs/tags/$tag:refs/tags/$tag\"", release, StringComparison.Ordinal);
+    Assert.Contains("git rev-list -n 1", release, StringComparison.Ordinal);
+    Assert.Contains("Tags are never moved", release, StringComparison.Ordinal);
+    Assert.Contains("gh release upload $tag @assets", release, StringComparison.Ordinal);
+    Assert.Contains("--clobber", release, StringComparison.Ordinal);
+    Assert.Contains("existing draft", release, StringComparison.OrdinalIgnoreCase);
     Assert.DoesNotContain("GitHubToken", release, StringComparison.OrdinalIgnoreCase);
     Assert.DoesNotContain("ConvertTo-SecureString", release, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("offline-update.zip", package, StringComparison.Ordinal);
@@ -65,6 +72,22 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("TreadmillRunner setup", installer, StringComparison.Ordinal);
     Assert.Contains("INSTALL.txt", installerBundle, StringComparison.Ordinal);
     Assert.Contains("docs/installation.md", installerBundle, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void GitHub_Actions_runs_only_for_semantic_release_tags_or_manual_dispatch()
+  {
+    string workflow = File.ReadAllText(Path.Combine(ProjectRoot, ".github", "workflows", "ci.yml"));
+
+    Assert.Contains("name: TreadmillRunner release validation", workflow, StringComparison.Ordinal);
+    Assert.Contains("push:", workflow, StringComparison.Ordinal);
+    Assert.Contains("tags:", workflow, StringComparison.Ordinal);
+    Assert.Contains("'v[0-9]+.[0-9]+.[0-9]+'", workflow, StringComparison.Ordinal);
+    Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
+    Assert.DoesNotContain("branches:", workflow, StringComparison.Ordinal);
+    Assert.DoesNotContain("pull_request:", workflow, StringComparison.Ordinal);
+    Assert.Equal(1, workflow.Split("runs-on: windows-latest", StringSplitOptions.None).Length - 1);
+    Assert.Contains("--locked-mode", workflow, StringComparison.Ordinal);
   }
 
   [Fact]

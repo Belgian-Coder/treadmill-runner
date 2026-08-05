@@ -34,9 +34,11 @@ TreadmillRunner is a .NET 10 Windows-local gateway and browser UI for one Horizo
 - TR-013 provides a separately labelled, disabled-by-default, per-profile unsupported Garmin completed-FIT uploader and a public-API Connect IQ companion source/store package. Upload uncertainty is terminal and never blindly retried; watch recording requires explicit Select and never controls the treadmill. SDK/simulator/physical-watch/signing/IQ Store, trusted-HTTPS, and live-account acceptance remain external release steps.
 - TR-014 provides the populated phone/tablet/desktop screenshot baseline plus bounded live-chart and simulator-backed mobile control reliability acceptance.
 - TR-015 adds GitHub Releases as the signed primary update transport, keeps the protected local folder as fallback, accepts only bounded pinned-key offline bundles in Operations, and provides public MIT repository/install/release hygiene.
+- TR-016 makes `vMAJOR.MINOR.PATCH` tags the only automatic GitHub Actions trigger, retains deliberate manual validation, and keeps build signing/publication on the local non-exportable signer through `eng/create-github-release.ps1`. Ordinary pushes and pull requests consume no Actions run.
 - EF Core migrations are committed under `src/TreadmillRunner.Infrastructure/Persistence/Migrations`; production startup neither calls `EnsureCreated` nor silently applies migrations.
 - Use [`eng/database.ps1`](eng/database.ps1) for migration status, reviewed migration creation, SQL-script generation, and applying migrations to an explicit SQLite file. The simulator passes the absolute equivalent of `.\data\treadmillrunner.db` to the gateway through `Persistence__DatabasePath`; startup does not migrate it. SQLite runs with foreign keys and WAL; the online-backup proof restores into a separate database, not over a live one.
 - Release WebAssembly publish work may require [`eng/clean-wasm-publish.ps1`](eng/clean-wasm-publish.ps1) before publishing: `dotnet clean` can leave stale generated WebCIL output.
+- Never create or move release tags manually. The canonical tagged GitHub release and recovery procedure is [`docs/project/release-operations.md`](docs/project/release-operations.md).
 
 ## Live session and history
 

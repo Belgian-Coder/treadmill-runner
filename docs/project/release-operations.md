@@ -82,6 +82,17 @@ Use the actually installed version for `-Version`; repair mode leaves that immut
 
 Use a version higher than the currently installed version. Release output is immutable and commands refuse to overwrite an existing version.
 
+### GitHub Actions cost and trigger policy
+
+Ordinary commits and pull requests do **not** start GitHub Actions. The single repository workflow runs only in either of these cases:
+
+- an annotated tag matching `vMAJOR.MINOR.PATCH` is pushed; or
+- a maintainer deliberately selects **Actions → TreadmillRunner release validation → Run workflow**.
+
+The tag run performs one Windows job containing locked restore, deterministic Release validation, and browser acceptance. Keeping those checks in one job avoids duplicating checkout/runtime setup. GitHub validates tagged source but never receives the signing private key. The local release command below remains authoritative for signing and publishing.
+
+Do not create or push release tags manually. A tag is the immutable identity of one published version and must identify the exact `main` commit whose assets were built. The release script creates the annotated tag only after local validation, publishing, signing, and checksum generation have succeeded.
+
 ```powershell
 ./eng/validate.ps1 -Configuration Release
 ./eng/playwright.ps1 -Configuration Release
@@ -104,11 +115,27 @@ The local signer is deliberately non-exportable and must not be placed in GitHub
 
 ```powershell
 .\eng\create-github-release.ps1 `
-  -Version 1.5.9 `
-  -ReleaseNotes 'Corrected touch presets and added signed GitHub/local/offline update transport.'
+  -Version 1.5.10 `
+  -ReleaseNotes 'Describe the user-visible changes in this version.'
 ```
 
-The script requires `main` to exactly match `origin/main`, runs Release and browser validation, publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated version tag, creates a draft, uploads and verifies every expected asset, then publishes it as latest. It never accepts a token, PFX, private-key path, or signing password. A failed upload remains a draft for inspection.
+The script requires `main` to exactly match `origin/main`, runs Release and browser validation, publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated `v<version>` tag, creates a draft, uploads and verifies every expected asset, then publishes it as latest. Pushing the tag is the only automatic Actions trigger. The script never accepts a token, PFX, private-key path, or signing password.
+
+#### Interrupted release recovery
+
+- Rerun the same command with the **same version and exactly the same release notes**. Existing immutable build/package output is reused.
+- A local tag is reused only when it resolves to the current `main` commit. A conflicting local or remote tag is rejected and never overwritten.
+- An existing GitHub Release is resumed only while it is still a draft. Expected assets are replaced from the locally verified set, checked again by name, and only then published.
+- If the release is already published, its tag and assets are immutable. Fixes require a higher version; never delete or move a published tag to reuse its version.
+- If the tag-triggered GitHub validation fails, investigate that exact tagged commit. Do not force-move the tag. Correct the source and publish a higher patch version.
+
+To run validation deliberately without creating a release, use the GitHub Actions UI or:
+
+```powershell
+gh workflow run ci.yml --repo belgian-coder/treadmill-runner --ref main
+```
+
+This manual run does not create a tag, package, signature, or GitHub Release.
 
 Release assets are `stable.manifest.json`, `treadmillrunner-<version>-win-x64.zip`, `treadmillrunner-<version>-offline-update.zip`, `TreadmillRunner-<version>-Windows-x64.zip`, the public `.cer`, and `SHA256SUMS.txt`.
 
