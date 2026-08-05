@@ -1,0 +1,128 @@
+@page "/history"
+@inject HttpClient Http
+@inject ActiveProfileState ActiveProfile
+
+<PageTitle>History · TreadmillRunner</PageTitle>
+
+<section class="page-stack" aria-labelledby="history-title">
+    <header class="page-heading">
+        <div><p class="eyebrow">Progress</p><h1 id="history-title">History</h1></div>
+        <p>Completed, stopped, interrupted, and faulted sessions remain available locally.</p>
+    </header>
+
+    @if (sessions.Count == 0)
+    {
+        <p class="empty-state">No completed sessions for the selected runner yet.</p>
+    }
+    else
+    {
+        @if (weekly is not null)
+        {
+            <section class="weekly-summary-panel" aria-label="This week's completed running">
+                <div class="weekly-summary-heading"><strong>This week · all completed activity</strong><span>These totals are not changed by the history filters below.</span></div>
+                <div class="weekly-summary">
+                <article><span>Completed this week</span><strong>@weekly.CompletedSessionCount</strong></article>
+                <article><span>Running time</span><strong>@weekly.Duration.ToString(@"hh\:mm\:ss")</strong></article>
+                <article><span>Distance</span><strong>@weekly.DistanceKilometers.ToString("0.00") km</strong></article>
+                </div>
+            </section>
+        }
+        <section class="history-toolbar" aria-label="Filter running history">
+            <label class="field field--search">Search history
+                <input type="search" @bind="searchText" @bind:event="oninput" placeholder="Workout title" />
+            </label>
+            <label class="field">Status
+                <select @bind="statusFilter">
+                    <option value="all">All outcomes</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Stopped">Stopped</option>
+                    <option value="Interrupted">Interrupted</option>
+                    <option value="Faulted">Faulted</option>
+                </select>
+            </label>
+            <label class="field">Period
+                <select @bind="periodFilter">
+                    <option value="30">Last 30 days</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="all">All time</option>
+                </select>
+            </label>
+            <span class="history-result-count" role="status">@FilteredSessions.Count run@(FilteredSessions.Count == 1 ? string.Empty : "s")</span>
+        </section>
+        <div class="history-list">
+            @foreach (SessionSummary item in FilteredSessions)
+            {
+                <article class="history-card">
+                    <div><span class="status-chip">@item.Status</span><h2><a href="/history/@item.SessionId">@item.WorkoutTitle</a></h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p></div>
+                    <dl>
+                        <div><dt>Time</dt><dd>@item.Duration.ToString(@"hh\:mm\:ss")</dd></div>
+                        <div><dt>Distance</dt><dd>@item.DistanceKilometers.ToString("0.00") km</dd></div>
+                        <div><dt>Avg speed</dt><dd>@item.AverageSpeedKph.ToString("0.0") km/h</dd></div>
+                        <div><dt>Heart rate</dt><dd>@HeartRateLabel(item)</dd></div>
+                        <div><dt>Avg incline</dt><dd>@item.AverageInclinePercent.ToString("0.0")%</dd></div>
+                    </dl>
+                </article>
+            }
+        </div>
+        @if (FilteredSessions.Count == 0)
+        {
+            <div class="empty-state"><p>No runs match these filters.</p><button class="secondary-action" type="button" @onclick="ClearFilters">Clear filters</button></div>
+        }
+    }
+</section>
+
+@code {
+    private IReadOnlyList<SessionSummary> sessions = Array.Empty<SessionSummary>();
+    private WeeklySessionTotals? weekly;
+    private string searchText = string.Empty;
+    private string statusFilter = "all";
+    private string periodFilter = "30";
+
+    private IReadOnlyList<SessionSummary> FilteredSessions
+    {
+        get
+        {
+            IEnumerable<SessionSummary> filtered = sessions;
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                filtered = filtered.Where(session => session.WorkoutTitle.Contains(searchText, StringComparison.CurrentCultureIgnoreCase));
+            }
+            if (statusFilter != "all")
+            {
+                filtered = filtered.Where(session => string.Equals(session.Status.ToString(), statusFilter, StringComparison.Ordinal));
+            }
+            if (int.TryParse(periodFilter, out int days))
+            {
+                DateTimeOffset cutoff = DateTimeOffset.Now.AddDays(-days);
+                filtered = filtered.Where(session => session.StartedAt.ToLocalTime() >= cutoff);
+            }
+            return filtered.OrderByDescending(static session => session.StartedAt).ToArray();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (await ActiveProfile.GetAsync() is { } profileId)
+        {
+            sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={profileId}&take=5000")
+                ?? Array.Empty<SessionSummary>();
+            weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={profileId}");
+        }
+    }
+
+    private static string HeartRateLabel(SessionSummary session)
+    {
+        if (session.AverageHeartRateBpm is null) return "—";
+        return session.MaximumHeartRateBpm is { } maximum
+            ? $"{session.AverageHeartRateBpm:0} / {maximum} bpm"
+            : $"{session.AverageHeartRateBpm:0} bpm";
+    }
+
+    private void ClearFilters()
+    {
+        searchText = string.Empty;
+        statusFilter = "all";
+        periodFilter = "30";
+    }
+}

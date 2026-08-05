@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "install_command_owner": "doctor --install-python-deps",
+  "install_target": ".agents/.deps/document-artifacts",
+  "normal_commands_install": false,
+  "python_packages": [
+    {
+      "import_name": "pypdf",
+      "install_spec": "pypdf==6.10.2",
+      "purpose": "Page counts, text extraction, form fields, and PDF writes."
+    },
+    {
+      "import_name": "pdfplumber",
+      "install_spec": "pdfplumber==0.11.9",
+      "purpose": "Richer text/table extraction when available."
+    },
+    {
+      "import_name": "reportlab",
+      "install_spec": "reportlab==4.4.10",
+      "purpose": "PDF fixture or new PDF generation when explicitly used."
+    }
+  ],
+  "external_tools": [
+    {
+      "name": "pdftoppm",
+      "purpose": "Optional PDF page rendering."
+    },
+    {
+      "name": "mutool",
+      "purpose": "Optional PDF page rendering fallback."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+<settings>
+  <setting propertyKey="@Properties.runnerName" title="@Strings.RunnerNameTitle" prompt="@Strings.RunnerNamePrompt">
+    <settingConfig type="alphaNumeric" required="true" maxLength="32" />
+  </setting>
+  <setting propertyKey="@Properties.gatewayUrl" title="@Strings.GatewayUrlTitle" prompt="@Strings.GatewayUrlPrompt">
+    <settingConfig type="url" required="false" maxLength="200" />
+  </setting>
+  <setting propertyKey="@Properties.watchToken" title="@Strings.WatchTokenTitle" prompt="@Strings.WatchTokenPrompt">
+    <settingConfig type="password" required="false" maxLength="128" />
+  </setting>
+</settings>

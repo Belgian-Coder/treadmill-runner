@@ -1,0 +1,419 @@
+@page "/workouts/new"
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Workout editor · TreadmillRunner</PageTitle>
+
+<div class="planning-page planning-page--editor">
+    <header class="planning-hero">
+        <div><p class="eyebrow">Touch editor</p><h1>@(WorkoutId is null ? "New workout" : "New immutable revision")</h1><p>Time or distance goals, fixed or heart-rate-guided speed, incline ramps, cues, notes, and repeat blocks are saved as an immutable definition. Heart-rate guidance can be used for one step or the whole workout.</p></div>
+        <a class="secondary-action" href="/workouts">Back to library</a>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="notice" role="status">@message</p>
+    }
+
+    <div class="workout-editor-shell">
+    <details class="planning-panel existing-workout-browser">
+        <summary><span><strong>Start from an existing workout</strong><small>@FilteredExistingWorkouts.Count available</small></span></summary>
+        <div class="existing-workout-browser__body" aria-labelledby="existing-workouts-title">
+            <h2 id="existing-workouts-title" class="visually-hidden">Existing workouts</h2>
+            <label class="field">Search existing workouts
+                <input type="search" @bind="existingWorkoutSearch" @bind:event="oninput" placeholder="Title or description" />
+            </label>
+            <a class="existing-workout-link @(WorkoutId is null ? "existing-workout-link--active" : null)" href="/workouts/new">
+                <strong>Blank workout</strong><span>Start a new plan</span>
+            </a>
+            <div class="existing-workout-list">
+                @foreach (WorkoutSummaryView workout in FilteredExistingWorkouts)
+                {
+                    <a class="existing-workout-link @(WorkoutId == workout.Id ? "existing-workout-link--active" : null)" href="@($"/workouts/new?workoutId={workout.Id:D}")">
+                        <strong>@workout.Name</strong>
+                        <span>@(string.IsNullOrWhiteSpace(workout.Description) ? "No description" : workout.Description)</span>
+                        <small>@workout.ExpandedStepCount steps · @(workout.DurationMinutes is null ? "Distance-based" : $"{workout.DurationMinutes:0} min")</small>
+                    </a>
+                }
+            </div>
+        </div>
+    </details>
+
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout">
+        <section class="planning-panel">
+            <div class="form-grid">
+                <label class="field field--wide">Workout name<input @bind="form.Name" maxlength="160" required /></label>
+                <label class="field field--wide">Description<textarea @bind="form.Description" rows="2" maxlength="500"></textarea></label>
+            </div>
+        </section>
+
+        <section class="planning-panel" aria-labelledby="blocks-title">
+            <div class="panel-heading"><div><h2 id="blocks-title">Workout blocks</h2><span class="field-help">Open only the block you want to edit.</span></div></div>
+            <div class="workout-quick-add" aria-label="Quick add workout block">
+                <button type="button" aria-label="Warm-up" @onclick="AddWarmUp"><strong>Warm-up</strong><small>5 min · 4.5→6 km/h</small></button>
+                <button type="button" aria-label="Steady" @onclick="AddSteady"><strong>Steady</strong><small>10 min · 7 km/h</small></button>
+                <button type="button" aria-label="Intervals" @onclick="AddIntervals"><strong>Intervals</strong><small>4× fast/recovery</small></button>
+                <button type="button" aria-label="Cool-down" @onclick="AddCooldown"><strong>Cool-down</strong><small>5 min · 6→4.5 km/h</small></button>
+            </div>
+            <div class="step-list">
+                @for (int index = 0; index < form.Blocks.Count; index++)
+                {
+                    BlockForm block = form.Blocks[index];
+                    @BlockEditor(block, index, 0, form.Blocks)
+                }
+            </div>
+            <div class="workout-block-actions">
+                <button class="secondary-action" type="button" @onclick="AddStep">Add custom step</button>
+                <button class="secondary-action" type="button" @onclick="AddRepeat">Add repeat block</button>
+            </div>
+        </section>
+
+        <div class="sticky-actions">
+            <span>@ExpandedStepCount steps · @PlannedDurationLabel</span>
+            <button class="primary-action" type="submit" disabled="@(!CanSubmit)">@(saving ? "Saving…" : WorkoutId is null ? "Create workout" : "Save new revision")</button>
+        </div>
+    </EditForm>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public Guid? WorkoutId { get; set; }
+
+    private readonly WorkoutForm form = new();
+    private bool saving;
+    private bool loading;
+    private bool CanSubmit => !saving && !loading && (WorkoutId is null || form.LoadedWorkoutId == WorkoutId);
+    private string? message;
+    private Guid pendingOperationId = Guid.NewGuid();
+    private IReadOnlyList<WorkoutSummaryView> existingWorkouts = Array.Empty<WorkoutSummaryView>();
+    private string existingWorkoutSearch = string.Empty;
+
+    private IReadOnlyList<WorkoutSummaryView> FilteredExistingWorkouts => existingWorkouts
+        .Where(workout => string.IsNullOrWhiteSpace(existingWorkoutSearch) ||
+            workout.Name.Contains(existingWorkoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
+            (workout.Description?.Contains(existingWorkoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
+        .OrderBy(static workout => workout.Name, StringComparer.CurrentCultureIgnoreCase)
+        .ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        existingWorkouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts")
+            ?? Array.Empty<WorkoutSummaryView>();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (WorkoutId is null)
+        {
+            if (form.LoadedWorkoutId is not null) ResetBlankWorkout();
+            return;
+        }
+        if (loading || form.LoadedWorkoutId == WorkoutId)
+        {
+            return;
+        }
+
+        loading = true;
+        form.LoadedWorkoutId = null;
+        form.Name = string.Empty;
+        form.Description = null;
+        form.Blocks.Clear();
+        message = "Loading the selected workout…";
+        try
+        {
+            List<WorkoutRevisionView> revisions = await Http.GetFromJsonAsync<List<WorkoutRevisionView>>($"api/planning/workouts/{WorkoutId}/revisions") ?? [];
+            WorkoutRevisionView? latest = revisions.OrderByDescending(static revision => revision.RevisionNumber).FirstOrDefault();
+            if (latest is not null)
+            {
+                form.LoadedWorkoutId = WorkoutId;
+                form.Name = latest.Name;
+                form.Description = latest.Description;
+                form.Blocks.Clear();
+                form.Blocks.AddRange(latest.Blocks.Select(ToForm));
+                message = null;
+            }
+            else message = "The selected workout has no revision to edit.";
+        }
+        catch (HttpRequestException)
+        {
+            message = "The latest immutable revision could not be loaded.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void ResetBlankWorkout()
+    {
+        form.LoadedWorkoutId = null;
+        form.Name = string.Empty;
+        form.Description = null;
+        form.Blocks.Clear();
+        form.Blocks.Add(new BlockForm());
+        pendingOperationId = Guid.NewGuid();
+        message = null;
+    }
+
+    private RenderFragment BlockEditor(BlockForm block, int index, int depth, List<BlockForm> owner) => @<details class="step-card" open="@(depth == 0 && index == 0)">
+            <summary><strong>@BlockLabel(block, index + 1, depth)</strong><span>@BlockSummary(block)</span></summary>
+            <fieldset class="step-card__fields">
+            <legend class="visually-hidden">@BlockLabel(block, index + 1, depth)</legend>
+            @if (block.Kind == "repeat")
+            {
+                <label class="field">Repetitions<input @bind="block.Repetitions" type="number" min="1" max="100" required /></label>
+                <div class="step-list">
+                    @for (int childIndex = 0; childIndex < block.Children.Count; childIndex++)
+                    {
+                        BlockForm child = block.Children[childIndex];
+                        <div class="repeat-child">
+                            @BlockEditor(child, childIndex, depth + 1, block.Children)
+                        </div>
+                    }
+                </div>
+                <div class="card-actions">
+                    <button class="secondary-action" type="button" @onclick="() => block.Children.Add(new BlockForm())">Add repeated step</button>
+                    <button class="secondary-action" type="button" @onclick="() => block.Children.Add(NewRepeatBlock())">Add nested repeat</button>
+                </div>
+            }
+            else
+            {
+                @StepEditor(block.Step)
+            }
+            <div class="block-edit-actions" role="group" aria-label="Actions for @BlockLabel(block, index + 1, depth)">
+                <button class="secondary-action compact-action" type="button" @onclick="() => MoveBlock(owner, index, -1)" disabled="@(index == 0)">Move up</button>
+                <button class="secondary-action compact-action" type="button" @onclick="() => MoveBlock(owner, index, 1)" disabled="@(index == owner.Count - 1)">Move down</button>
+                <button class="secondary-action compact-action" type="button" @onclick="() => DuplicateBlock(owner, index)">Duplicate</button>
+                <button class="text-action danger-action" type="button" @onclick="() => RemoveBlock(owner, index)" disabled="@(owner.Count == 1)">Remove</button>
+            </div>
+            </fieldset>
+        </details>;
+
+    private static string BlockLabel(BlockForm block, int sequence, int depth) => block.Kind == "repeat"
+        ? depth == 0 ? $"Repeat block {sequence}" : $"Nested repeat block {sequence}"
+        : depth == 0 ? $"Step {sequence}" : $"Repeated step {sequence}";
+
+    private static string BlockSummary(BlockForm block) => block.Kind == "repeat"
+        ? $"{block.Repetitions}× repeated sequence · {block.Children.Count} blocks"
+        : $"{block.Step.GoalValue:0.##} {(block.Step.GoalKind == "time" ? "min" : "km")} · {SpeedSummary(block.Step)} · {block.Step.InclineStartPercent:0.#}%";
+
+    private static string SpeedSummary(StepForm step) => step.SpeedKind switch
+    {
+        "fixed" => $"{step.SpeedStartKph:0.#} km/h",
+        "ramp" => $"{step.SpeedStartKph:0.#}→{step.SpeedEndKph:0.#} km/h",
+        "heartRate" => $"HR {step.HeartRateMinimumBpm}–{step.HeartRateMaximumBpm}",
+        "heartRateZone" => $"HR zone {step.HeartRateZoneNumber}",
+        _ => "Manual speed",
+    };
+
+    private RenderFragment StepEditor(StepForm step) => @<div class="form-grid form-grid--steps">
+            <label class="field">Goal<select @bind="step.GoalKind"><option value="time">Time</option><option value="distance">Distance</option></select></label>
+            <label class="field">@(step.GoalKind == "time" ? "Minutes" : "Kilometers")<input @bind="step.GoalValue" type="number" min="0.01" max="720" step="0.01" required /></label>
+            <label class="field">Speed target<select @bind="step.SpeedKind"><option value="open">Open/manual</option><option value="fixed">Fixed</option><option value="ramp">Ramp</option><option value="heartRate">HR range</option><option value="heartRateZone">HR zone</option></select></label>
+            @if (step.SpeedKind is "fixed" or "ramp")
+            {
+                <label class="field">@(step.SpeedKind == "ramp" ? "Start speed (km/h)" : "Speed (km/h)")<input @bind="step.SpeedStartKph" type="number" min="0" max="40" step="0.1" required /></label>
+            }
+            @if (step.SpeedKind == "ramp")
+            {
+                <label class="field">End speed (km/h)<input @bind="step.SpeedEndKph" type="number" min="0" max="40" step="0.1" required /></label>
+            }
+            @if (step.SpeedKind == "heartRate")
+            {
+                <label class="field">Minimum bpm<input @bind="step.HeartRateMinimumBpm" type="number" min="1" max="250" required /></label>
+                <label class="field">Maximum bpm<input @bind="step.HeartRateMaximumBpm" type="number" min="1" max="250" required /></label>
+            }
+            @if (step.SpeedKind == "heartRateZone")
+            {
+                <label class="field">HR zone<input @bind="step.HeartRateZoneNumber" type="number" min="1" max="10" required /></label>
+            }
+            @if (step.SpeedKind is "heartRate" or "heartRateZone")
+            {
+                <p class="field-help field--wide" role="note">This step follows your live heart rate. A fresh chest-strap, watch, or HR-sensor reading is required before the workout can start; Polar H10 is preferred when enrolled.</p>
+                <label class="field">Initial speed<input @bind="step.HeartRateInitialSpeedKph" type="number" min="0" max="40" step="0.1" /></label>
+                <label class="field">Minimum speed<input @bind="step.HeartRateMinimumSpeedKph" type="number" min="0" max="40" step="0.1" /></label>
+                <label class="field">Maximum speed<input @bind="step.HeartRateMaximumSpeedKph" type="number" min="0" max="40" step="0.1" /></label>
+            }
+            <label class="field">Incline<select @bind="step.InclineKind"><option value="fixed">Fixed</option><option value="ramp">Ramp</option></select></label>
+            <label class="field">@(step.InclineKind == "ramp" ? "Start incline (%)" : "Incline (%)")<input @bind="step.InclineStartPercent" type="number" min="-5" max="40" step="0.1" required /></label>
+            @if (step.InclineKind == "ramp")
+            {
+                <label class="field">End incline (%)<input @bind="step.InclineEndPercent" type="number" min="-5" max="40" step="0.1" required /></label>
+            }
+            <label class="field">Cue<input @bind="step.Cue" maxlength="120" /></label>
+            <label class="field field--wide">Notes<input @bind="step.Notes" maxlength="300" /></label>
+        </div>;
+
+    private void AddStep() => form.Blocks.Add(new BlockForm());
+    private void AddRepeat() => form.Blocks.Add(NewRepeatBlock());
+
+    private void AddWarmUp() => form.Blocks.Add(NewStepBlock(5, "ramp", 4.5, 6, .5, "Ease into your run"));
+    private void AddSteady() => form.Blocks.Add(NewStepBlock(10, "fixed", 7, 7, 1, "Settle into a steady rhythm"));
+    private void AddCooldown() => form.Blocks.Add(NewStepBlock(5, "ramp", 6, 4.5, .5, "Let your heart rate come down"));
+
+    private void AddIntervals()
+    {
+        form.Blocks.Add(new BlockForm
+        {
+            Kind = "repeat",
+            Repetitions = 4,
+            Children =
+            [
+                NewStepBlock(2, "fixed", 8, 8, 1, "Fast interval"),
+                NewStepBlock(2, "fixed", 5.5, 5.5, .5, "Recovery"),
+            ],
+        });
+    }
+
+    private static BlockForm NewStepBlock(double minutes, string speedKind, double startSpeed, double endSpeed, double incline, string cue) => new()
+    {
+        Step = new StepForm
+        {
+            GoalKind = "time",
+            GoalValue = minutes,
+            SpeedKind = speedKind,
+            SpeedStartKph = startSpeed,
+            SpeedEndKph = endSpeed,
+            InclineKind = "fixed",
+            InclineStartPercent = incline,
+            InclineEndPercent = incline,
+            Cue = cue,
+        },
+    };
+
+    private static void MoveBlock(List<BlockForm> blocks, int index, int direction)
+    {
+        int target = index + direction;
+        if (index < 0 || index >= blocks.Count || target < 0 || target >= blocks.Count) return;
+        BlockForm block = blocks[index];
+        blocks.RemoveAt(index);
+        blocks.Insert(target, block);
+    }
+
+    private static void DuplicateBlock(List<BlockForm> blocks, int index)
+    {
+        if (index < 0 || index >= blocks.Count) return;
+        blocks.Insert(index + 1, CloneBlock(blocks[index]));
+    }
+
+    private static void RemoveBlock(List<BlockForm> blocks, int index)
+    {
+        if (blocks.Count <= 1 || index < 0 || index >= blocks.Count) return;
+        blocks.RemoveAt(index);
+    }
+
+    private static BlockForm CloneBlock(BlockForm block) => ToForm(ToInput(block));
+
+    private int ExpandedStepCount => form.Blocks.Sum(ExpandedSteps);
+    private string PlannedDurationLabel
+    {
+        get
+        {
+            (double minutes, bool complete) = form.Blocks.Aggregate((Minutes: 0d, Complete: true), static (current, block) =>
+            {
+                (double blockMinutes, bool blockComplete) = PlannedMinutes(block);
+                return (current.Minutes + blockMinutes, current.Complete && blockComplete);
+            });
+            return complete ? $"{minutes:0.#} min" : "mixed time/distance";
+        }
+    }
+
+    private static int ExpandedSteps(BlockForm block) => block.Kind == "repeat"
+        ? block.Repetitions * block.Children.Sum(ExpandedSteps)
+        : 1;
+
+    private static (double Minutes, bool Complete) PlannedMinutes(BlockForm block)
+    {
+        if (block.Kind != "repeat") return block.Step.GoalKind == "time" ? (block.Step.GoalValue, true) : (0, false);
+        (double minutes, bool complete) = block.Children.Aggregate((Minutes: 0d, Complete: true), static (current, child) =>
+        {
+            (double childMinutes, bool childComplete) = PlannedMinutes(child);
+            return (current.Minutes + childMinutes, current.Complete && childComplete);
+        });
+        return (minutes * block.Repetitions, complete);
+    }
+
+    private static BlockForm NewRepeatBlock() => new() { Kind = "repeat", Children = [new()] };
+
+    private async Task SaveAsync(EditContext _)
+    {
+        saving = true;
+        var request = new WorkoutSaveRequest(pendingOperationId, form.Name, form.Description, form.Blocks.Select(ToInput).ToArray());
+        HttpResponseMessage response = WorkoutId is null
+            ? await Http.PostAsJsonAsync("api/planning/workouts", request)
+            : await Http.PostAsJsonAsync($"api/planning/workouts/{WorkoutId}/revisions", request);
+        if (response.IsSuccessStatusCode)
+        {
+            pendingOperationId = Guid.NewGuid();
+            WorkoutSaveResponse? saved = await response.Content.ReadFromJsonAsync<WorkoutSaveResponse>();
+            message = $"Saved immutable revision {saved?.RevisionNumber ?? 1}.";
+            Navigation.NavigateTo("/workouts");
+        }
+        else
+        {
+            message = "The workout could not be saved. Check every block and retry; the same operation ID will be reused safely.";
+        }
+
+        saving = false;
+    }
+
+    private static WorkoutBlockInput ToInput(BlockForm block) => block.Kind == "repeat"
+        ? EmptyInput with { Kind = "repeat", Repetitions = block.Repetitions, Blocks = block.Children.Select(ToInput).ToArray() }
+        : new WorkoutBlockInput("step", 1, [], block.Step.GoalKind, block.Step.GoalValue, block.Step.SpeedKind,
+            block.Step.SpeedStartKph, block.Step.SpeedEndKph, block.Step.HeartRateMinimumBpm, block.Step.HeartRateMaximumBpm,
+            block.Step.HeartRateZoneNumber, block.Step.HeartRateInitialSpeedKph, block.Step.HeartRateMinimumSpeedKph,
+            block.Step.HeartRateMaximumSpeedKph, block.Step.InclineKind, block.Step.InclineStartPercent,
+            block.Step.InclineEndPercent, block.Step.Cue, block.Step.Notes);
+
+    private static BlockForm ToForm(WorkoutBlockInput input) => input.Kind == "repeat"
+        ? new BlockForm { Kind = "repeat", Repetitions = input.Repetitions, Children = input.Blocks.Select(ToForm).ToList() }
+        : new BlockForm { Step = new StepForm
+        {
+            GoalKind = input.GoalKind, GoalValue = input.GoalValue, SpeedKind = input.SpeedKind,
+            SpeedStartKph = input.SpeedStartKph, SpeedEndKph = input.SpeedEndKph,
+            HeartRateMinimumBpm = input.HeartRateMinimumBpm, HeartRateMaximumBpm = input.HeartRateMaximumBpm,
+            HeartRateZoneNumber = input.HeartRateZoneNumber, HeartRateInitialSpeedKph = input.HeartRateInitialSpeedKph,
+            HeartRateMinimumSpeedKph = input.HeartRateMinimumSpeedKph, HeartRateMaximumSpeedKph = input.HeartRateMaximumSpeedKph,
+            InclineKind = input.InclineKind, InclineStartPercent = input.InclineStartPercent,
+            InclineEndPercent = input.InclineEndPercent, Cue = input.Cue, Notes = input.Notes,
+        } };
+
+    private static readonly WorkoutBlockInput EmptyInput = new("step", 1, [], "time", 5, "fixed", 7, 7, 120, 150, 1, 7, 4, 10, "fixed", 0, 0, null, null);
+
+    private sealed class WorkoutForm
+    {
+        public Guid? LoadedWorkoutId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public List<BlockForm> Blocks { get; } = [new()];
+    }
+
+    private sealed class BlockForm
+    {
+        public string Kind { get; set; } = "step";
+        public int Repetitions { get; set; } = 2;
+        public StepForm Step { get; set; } = new();
+        public List<BlockForm> Children { get; set; } = [];
+    }
+
+    private sealed class StepForm
+    {
+        public string GoalKind { get; set; } = "time";
+        public double GoalValue { get; set; } = 5;
+        public string SpeedKind { get; set; } = "fixed";
+        public double SpeedStartKph { get; set; } = 7;
+        public double SpeedEndKph { get; set; } = 9;
+        public ushort HeartRateMinimumBpm { get; set; } = 120;
+        public ushort HeartRateMaximumBpm { get; set; } = 150;
+        public int HeartRateZoneNumber { get; set; } = 2;
+        public double HeartRateInitialSpeedKph { get; set; } = 7;
+        public double HeartRateMinimumSpeedKph { get; set; } = 4;
+        public double HeartRateMaximumSpeedKph { get; set; } = 10;
+        public string InclineKind { get; set; } = "fixed";
+        public double InclineStartPercent { get; set; }
+        public double InclineEndPercent { get; set; }
+        public string? Cue { get; set; }
+        public string? Notes { get; set; }
+    }
+}

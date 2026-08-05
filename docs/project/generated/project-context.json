@@ -1,0 +1,1590 @@
+{
+  "diagrams": [
+    {
+      "image": "docs/project/generated/diagrams/project-context-structure.svg",
+      "source": "docs/project/generated/diagrams/project-context-structure.mmd"
+    },
+    {
+      "image": "docs/project/generated/diagrams/project-context-architecture.svg",
+      "source": "docs/project/generated/diagrams/project-context-architecture.mmd"
+    }
+  ],
+  "dotnet_context": {
+    "advisories": [
+      {
+        "id": "global-json-sdk",
+        "message": "global.json pins .NET SDK 10.0.110."
+      }
+    ],
+    "build_policy": {
+      "analysis_level": "latest",
+      "central_package_management": true,
+      "files": [
+        {
+          "kind": "Directory.Build.props",
+          "path": "Directory.Build.props",
+          "properties": {
+            "AnalysisLevel": "latest",
+            "ContinuousIntegrationBuild": "true",
+            "EnforceCodeStyleInBuild": "true",
+            "ImplicitUsings": "enable",
+            "LangVersion": "latest",
+            "Nullable": "enable",
+            "RestorePackagesWithLockFile": "true",
+            "TreatWarningsAsErrors": "true"
+          }
+        },
+        {
+          "kind": "Directory.Packages.props",
+          "path": "Directory.Packages.props",
+          "properties": {
+            "ManagePackageVersionsCentrally": "true"
+          }
+        }
+      ],
+      "nullable": "enable",
+      "policy_file_count": 2,
+      "properties": {
+        "AnalysisLevel": "latest",
+        "ContinuousIntegrationBuild": "true",
+        "EnforceCodeStyleInBuild": "true",
+        "ImplicitUsings": "enable",
+        "LangVersion": "latest",
+        "ManagePackageVersionsCentrally": "true",
+        "Nullable": "enable",
+        "RestorePackagesWithLockFile": "true",
+        "TreatWarningsAsErrors": "true"
+      },
+      "restore_lock_policy": {
+        "restore_locked_mode": false,
+        "restore_packages_with_lock_file": true
+      },
+      "warnings_as_errors": "true"
+    },
+    "ci": {
+      "dotnet_commands": [],
+      "policy": "CI files were scanned as text for dotnet command candidates; no CI command was executed.",
+      "skipped_after_limit": 0,
+      "task_signals": [],
+      "workflow_file_count": 1,
+      "workflow_paths": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    "configuration": {
+      "appsettings_files": [
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-debug/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-debug/wwwroot/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release-debugger/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release-debugger/wwwroot/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release-noopt/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release-noopt/wwwroot/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/client-release/wwwroot/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/e2e-host/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore",
+            "Gateway",
+            "Gateway:Urls",
+            "AllowedHosts"
+          ],
+          "path": "artifacts/e2e-host/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/e2e-host/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "artifacts/e2e-host/wwwroot/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "src/TreadmillRunner.Gateway/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore",
+            "Gateway",
+            "Gateway:Urls",
+            "AllowedHosts"
+          ],
+          "path": "src/TreadmillRunner.Gateway/appsettings.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "src/TreadmillRunner.Web/wwwroot/appsettings.Development.json"
+        },
+        {
+          "connection_string_names": [],
+          "key_paths": [
+            "Logging",
+            "Logging:LogLevel",
+            "Logging:LogLevel:Default",
+            "Logging:LogLevel:Microsoft.AspNetCore"
+          ],
+          "path": "src/TreadmillRunner.Web/wwwroot/appsettings.json"
+        }
+      ],
+      "launch_settings": [
+        {
+          "path": "src/TreadmillRunner.Gateway/Properties/launchSettings.json",
+          "profiles": [
+            "http"
+          ]
+        }
+      ],
+      "policy": "Only JSON key paths, launch profile names, connection string names, and UserSecretsId identifiers were reported; values are not emitted.",
+      "user_secrets_ids": [],
+      "values_emitted": false
+    },
+    "context_facts": [
+      {
+        "evidence_paths": [
+          "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+          "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj"
+        ],
+        "id": "stack-runtime",
+        "status": "present",
+        "value": {
+          "project_count": 10,
+          "sdk_version": "10.0.110",
+          "target_frameworks": [
+            "net10.0",
+            "net10.0-windows10.0.22621.0"
+          ]
+        }
+      },
+      {
+        "evidence_paths": [
+          "dotnet restore TreadmillRunner.slnx",
+          "dotnet build TreadmillRunner.slnx --no-restore",
+          "dotnet test TreadmillRunner.slnx --no-restore"
+        ],
+        "id": "validation-commands",
+        "status": "present",
+        "value": {
+          "candidate_count": 3,
+          "restore_required": true
+        }
+      },
+      {
+        "evidence_paths": [
+          ".gitignore"
+        ],
+        "id": "generated-boundaries",
+        "status": "present",
+        "value": {
+          "generated_dirs": [
+            "bin/",
+            "obj/",
+            "TestResults/"
+          ]
+        }
+      },
+      {
+        "evidence_paths": [
+          "artifacts/client-debug/wwwroot/appsettings.Development.json",
+          "artifacts/client-debug/wwwroot/appsettings.json",
+          "artifacts/client-release-debugger/wwwroot/appsettings.Development.json",
+          "artifacts/client-release-debugger/wwwroot/appsettings.json",
+          "artifacts/client-release-noopt/wwwroot/appsettings.Development.json",
+          "artifacts/client-release-noopt/wwwroot/appsettings.json",
+          "artifacts/client-release/wwwroot/appsettings.Development.json",
+          "artifacts/client-release/wwwroot/appsettings.json",
+          "artifacts/e2e-host/appsettings.Development.json",
+          "artifacts/e2e-host/appsettings.json",
+          "artifacts/e2e-host/wwwroot/appsettings.Development.json",
+          "artifacts/e2e-host/wwwroot/appsettings.json",
+          "src/TreadmillRunner.Gateway/appsettings.Development.json",
+          "src/TreadmillRunner.Gateway/appsettings.json",
+          "src/TreadmillRunner.Web/wwwroot/appsettings.Development.json",
+          "src/TreadmillRunner.Web/wwwroot/appsettings.json"
+        ],
+        "id": "external-systems",
+        "status": "review-needed",
+        "value": {
+          "configuration_files": 16,
+          "nuget_private_feeds": false
+        }
+      },
+      {
+        "evidence_paths": [
+          "artifacts/client-debug/wwwroot/appsettings.Development.json",
+          "artifacts/client-debug/wwwroot/appsettings.json",
+          "artifacts/client-release-debugger/wwwroot/appsettings.Development.json",
+          "artifacts/client-release-debugger/wwwroot/appsettings.json",
+          "artifacts/client-release-noopt/wwwroot/appsettings.Development.json",
+          "artifacts/client-release-noopt/wwwroot/appsettings.json",
+          "artifacts/client-release/wwwroot/appsettings.Development.json",
+          "artifacts/client-release/wwwroot/appsettings.json",
+          "artifacts/e2e-host/appsettings.Development.json",
+          "artifacts/e2e-host/appsettings.json",
+          "artifacts/e2e-host/wwwroot/appsettings.Development.json",
+          "artifacts/e2e-host/wwwroot/appsettings.json",
+          "src/TreadmillRunner.Gateway/appsettings.Development.json",
+          "src/TreadmillRunner.Gateway/appsettings.json",
+          "src/TreadmillRunner.Web/wwwroot/appsettings.Development.json",
+          "src/TreadmillRunner.Web/wwwroot/appsettings.json"
+        ],
+        "id": "secrets-config",
+        "status": "review-needed",
+        "value": {
+          "appsettings_files": [
+            "artifacts/client-debug/wwwroot/appsettings.Development.json",
+            "artifacts/client-debug/wwwroot/appsettings.json",
+            "artifacts/client-release-debugger/wwwroot/appsettings.Development.json",
+            "artifacts/client-release-debugger/wwwroot/appsettings.json",
+            "artifacts/client-release-noopt/wwwroot/appsettings.Development.json",
+            "artifacts/client-release-noopt/wwwroot/appsettings.json",
+            "artifacts/client-release/wwwroot/appsettings.Development.json",
+            "artifacts/client-release/wwwroot/appsettings.json",
+            "artifacts/e2e-host/appsettings.Development.json",
+            "artifacts/e2e-host/appsettings.json",
+            "artifacts/e2e-host/wwwroot/appsettings.Development.json",
+            "artifacts/e2e-host/wwwroot/appsettings.json",
+            "src/TreadmillRunner.Gateway/appsettings.Development.json",
+            "src/TreadmillRunner.Gateway/appsettings.json",
+            "src/TreadmillRunner.Web/wwwroot/appsettings.Development.json",
+            "src/TreadmillRunner.Web/wwwroot/appsettings.json"
+          ],
+          "credential_sections_present": [],
+          "user_global_config_skipped": true,
+          "user_secrets_ids": []
+        }
+      },
+      {
+        "evidence_paths": [
+          "src/TreadmillRunner.Infrastructure/Persistence/Migrations/20260801234729_InitialPersistence.Designer.cs",
+          "src/TreadmillRunner.Infrastructure/Persistence/Migrations/20260801234729_InitialPersistence.cs",
+          "src/TreadmillRunner.Infrastructure/Persistence/Migrations/TreadmillRunnerDbContextModelSnapshot.cs"
+        ],
+        "id": "persistence",
+        "status": "present",
+        "value": {
+          "db_context_count": 0,
+          "migration_path_count": 3,
+          "provider_packages": [
+            "Microsoft.EntityFrameworkCore.Design",
+            "Microsoft.EntityFrameworkCore.Sqlite"
+          ]
+        }
+      },
+      {
+        "evidence_paths": [
+          ".github/workflows/ci.yml"
+        ],
+        "id": "ci",
+        "status": "present",
+        "value": {
+          "dotnet_command_count": 0,
+          "workflow_file_count": 1
+        }
+      }
+    ],
+    "dotnet_cli": {
+      "available": false,
+      "info": "",
+      "path": "",
+      "probes_failed": [],
+      "probes_run": [],
+      "version": ""
+    },
+    "dotnet_tools": [
+      {
+        "path": ".config/dotnet-tools.json",
+        "tools": [
+          "dotnet-ef"
+        ]
+      }
+    ],
+    "features": {
+      "signal_ids": [
+        "aspnet-core",
+        "blazor",
+        "ef-core",
+        "signalr",
+        "test-projects"
+      ],
+      "signals": [
+        {
+          "evidence_paths": [
+            "Directory.Packages.props",
+            "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+            "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+            "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj"
+          ],
+          "id": "aspnet-core"
+        },
+        {
+          "evidence_paths": [
+            "Directory.Packages.props",
+            "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+            "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj"
+          ],
+          "id": "blazor"
+        },
+        {
+          "evidence_paths": [
+            "Directory.Packages.props",
+            "Microsoft.EntityFrameworkCore.Design",
+            "Microsoft.EntityFrameworkCore.Sqlite",
+            "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+            "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+            "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj"
+          ],
+          "id": "ef-core"
+        },
+        {
+          "evidence_paths": [
+            "Directory.Packages.props",
+            "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj"
+          ],
+          "id": "signalr"
+        },
+        {
+          "evidence_paths": [
+            "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+            "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+            "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+            "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj"
+          ],
+          "id": "test-projects"
+        }
+      ]
+    },
+    "filters": {
+      "active": false,
+      "matched_projects": [
+        "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+        "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+        "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+        "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+        "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+        "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+        "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+        "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+        "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+        "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj"
+      ],
+      "matched_solutions": [
+        "TreadmillRunner.slnx"
+      ],
+      "requested_projects": [],
+      "requested_solutions": [],
+      "unmatched_projects": [],
+      "unmatched_solutions": []
+    },
+    "generated_at": "2026-08-02T10:23:57+00:00",
+    "global_json": {
+      "path": "global.json",
+      "paths": [],
+      "roll_forward": "latestPatch",
+      "sdk_version": "10.0.110"
+    },
+    "nuget": {
+      "central_package_management": true,
+      "config_paths": [],
+      "credential_sections_present": [],
+      "directory_packages": [
+        {
+          "central_package_management": true,
+          "package_versions": [
+            {
+              "include": "coverlet.collector",
+              "version": "6.0.4"
+            },
+            {
+              "include": "Garmin.FIT.Sdk",
+              "version": "21.205.0"
+            },
+            {
+              "include": "Microsoft.AspNetCore.Components.WebAssembly",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.AspNetCore.Components.WebAssembly.Server",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.AspNetCore.Mvc.Testing",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.AspNetCore.SignalR.Client",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.Extensions.Hosting.WindowsServices",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.Data.Sqlite",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.EntityFrameworkCore.Design",
+              "version": "10.0.10"
+            },
+            {
+              "include": "Microsoft.EntityFrameworkCore.Sqlite",
+              "version": "10.0.10"
+            },
+            {
+              "include": "SQLitePCLRaw.bundle_e_sqlite3",
+              "version": "2.1.12"
+            },
+            {
+              "include": "Microsoft.NET.Test.Sdk",
+              "version": "17.14.1"
+            },
+            {
+              "include": "Microsoft.Playwright.Xunit",
+              "version": "1.61.0"
+            },
+            {
+              "include": "xunit",
+              "version": "2.9.3"
+            },
+            {
+              "include": "xunit.runner.visualstudio",
+              "version": "3.1.4"
+            }
+          ],
+          "path": "Directory.Packages.props"
+        }
+      ],
+      "global_config_skipped": true,
+      "package_source_mapping": [],
+      "package_source_mapping_present": false,
+      "policy": "Repo-local NuGet.config and Directory.Packages.props were inspected. User/global NuGet config was intentionally skipped, and credential values are not emitted.",
+      "private_feeds_detected": false,
+      "private_sources": [],
+      "sources": [],
+      "user_config_skipped": true
+    },
+    "ok": true,
+    "persistence": {
+      "db_contexts": [],
+      "dbset_paths": [
+        "src/TreadmillRunner.Infrastructure/Persistence/TreadmillRunnerDbContext.cs"
+      ],
+      "migration_paths": [
+        "src/TreadmillRunner.Infrastructure/Persistence/Migrations/20260801234729_InitialPersistence.Designer.cs",
+        "src/TreadmillRunner.Infrastructure/Persistence/Migrations/20260801234729_InitialPersistence.cs",
+        "src/TreadmillRunner.Infrastructure/Persistence/Migrations/TreadmillRunnerDbContextModelSnapshot.cs"
+      ],
+      "project_count": 10,
+      "provider_packages": [
+        "Microsoft.EntityFrameworkCore.Design",
+        "Microsoft.EntityFrameworkCore.Sqlite"
+      ]
+    },
+    "project_graph": {
+      "edges": [
+        {
+          "from": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "type": "project-reference"
+        }
+      ],
+      "nodes": [
+        {
+          "classification": "library",
+          "path": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "web",
+          "path": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "target_frameworks": [
+            "net10.0-windows10.0.22621.0"
+          ]
+        },
+        {
+          "classification": "library",
+          "path": "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "library",
+          "path": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "target_frameworks": [
+            "net10.0-windows10.0.22621.0"
+          ]
+        },
+        {
+          "classification": "library",
+          "path": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "web",
+          "path": "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "test",
+          "path": "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "test",
+          "path": "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        },
+        {
+          "classification": "test",
+          "path": "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+          "target_frameworks": [
+            "net10.0-windows10.0.22621.0"
+          ]
+        },
+        {
+          "classification": "test",
+          "path": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+          "target_frameworks": [
+            "net10.0"
+          ]
+        }
+      ],
+      "solution_members": [
+        {
+          "projects": [
+            "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+            "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+            "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+            "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+            "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+            "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+            "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+            "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+            "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj"
+          ],
+          "solution": "TreadmillRunner.slnx"
+        }
+      ],
+      "test_project_edges": [
+        {
+          "from": "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "type": "project-reference"
+        },
+        {
+          "from": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+          "resolved": true,
+          "to": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "type": "project-reference"
+        }
+      ]
+    },
+    "projects": [
+      {
+        "classification": "library",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [],
+        "package_references": [],
+        "path": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+        "project_references": [],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "web",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "Microsoft.AspNetCore.Components.WebAssembly.Server"
+          },
+          {
+            "Include": "Microsoft.Extensions.Hosting.WindowsServices"
+          }
+        ],
+        "package_references": [
+          "Microsoft.AspNetCore.Components.WebAssembly.Server",
+          "Microsoft.Extensions.Hosting.WindowsServices"
+        ],
+        "path": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+        "project_references": [
+          "..\\TreadmillRunner.Web\\TreadmillRunner.Web.csproj",
+          "..\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj",
+          "..\\TreadmillRunner.Protocols\\TreadmillRunner.Protocols.csproj",
+          "..\\TreadmillRunner.Infrastructure\\TreadmillRunner.Infrastructure.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk.Web",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0-windows10.0.22621.0"
+        },
+        "target_frameworks": [
+          "net10.0-windows10.0.22621.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "library",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "Microsoft.Data.Sqlite"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Design"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Sqlite"
+          },
+          {
+            "Include": "SQLitePCLRaw.bundle_e_sqlite3"
+          }
+        ],
+        "package_references": [
+          "Microsoft.Data.Sqlite",
+          "Microsoft.EntityFrameworkCore.Design",
+          "Microsoft.EntityFrameworkCore.Sqlite",
+          "SQLitePCLRaw.bundle_e_sqlite3"
+        ],
+        "path": "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+        "project_references": [
+          "..\\..\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "library",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "Microsoft.Data.Sqlite"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Design"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Sqlite"
+          },
+          {
+            "Include": "SQLitePCLRaw.bundle_e_sqlite3"
+          }
+        ],
+        "package_references": [
+          "Microsoft.Data.Sqlite",
+          "Microsoft.EntityFrameworkCore.Design",
+          "Microsoft.EntityFrameworkCore.Sqlite",
+          "SQLitePCLRaw.bundle_e_sqlite3"
+        ],
+        "path": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+        "project_references": [
+          "..\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj",
+          "..\\TreadmillRunner.Protocols\\TreadmillRunner.Protocols.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0-windows10.0.22621.0"
+        },
+        "target_frameworks": [
+          "net10.0-windows10.0.22621.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "library",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "Garmin.FIT.Sdk"
+          }
+        ],
+        "package_references": [
+          "Garmin.FIT.Sdk"
+        ],
+        "path": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+        "project_references": [
+          "..\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "web",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "Microsoft.AspNetCore.Components.WebAssembly"
+          },
+          {
+            "Include": "Microsoft.AspNetCore.SignalR.Client"
+          }
+        ],
+        "package_references": [
+          "Microsoft.AspNetCore.Components.WebAssembly",
+          "Microsoft.AspNetCore.SignalR.Client"
+        ],
+        "path": "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+        "project_references": [
+          "..\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk.BlazorWebAssembly",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "test",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "coverlet.collector"
+          },
+          {
+            "Include": "Microsoft.NET.Test.Sdk"
+          },
+          {
+            "Include": "xunit"
+          },
+          {
+            "Include": "xunit.runner.visualstudio"
+          }
+        ],
+        "package_references": [
+          "Microsoft.NET.Test.Sdk",
+          "coverlet.collector",
+          "xunit",
+          "xunit.runner.visualstudio"
+        ],
+        "path": "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+        "project_references": [
+          "..\\..\\src\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "test",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "coverlet.collector"
+          },
+          {
+            "Include": "Microsoft.NET.Test.Sdk"
+          },
+          {
+            "Include": "Microsoft.Playwright.Xunit"
+          },
+          {
+            "Include": "xunit"
+          },
+          {
+            "Include": "xunit.runner.visualstudio"
+          }
+        ],
+        "package_references": [
+          "Microsoft.NET.Test.Sdk",
+          "Microsoft.Playwright.Xunit",
+          "coverlet.collector",
+          "xunit",
+          "xunit.runner.visualstudio"
+        ],
+        "path": "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+        "project_references": [],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "test",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "coverlet.collector"
+          },
+          {
+            "Include": "Microsoft.NET.Test.Sdk"
+          },
+          {
+            "Include": "Microsoft.AspNetCore.Mvc.Testing"
+          },
+          {
+            "Include": "Microsoft.Data.Sqlite"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Sqlite"
+          },
+          {
+            "Include": "Microsoft.EntityFrameworkCore.Design"
+          },
+          {
+            "Include": "xunit"
+          },
+          {
+            "Include": "xunit.runner.visualstudio"
+          }
+        ],
+        "package_references": [
+          "Microsoft.AspNetCore.Mvc.Testing",
+          "Microsoft.Data.Sqlite",
+          "Microsoft.EntityFrameworkCore.Design",
+          "Microsoft.EntityFrameworkCore.Sqlite",
+          "Microsoft.NET.Test.Sdk",
+          "coverlet.collector",
+          "xunit",
+          "xunit.runner.visualstudio"
+        ],
+        "path": "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+        "project_references": [
+          "..\\..\\src\\TreadmillRunner.Gateway\\TreadmillRunner.Gateway.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0-windows10.0.22621.0"
+        },
+        "target_frameworks": [
+          "net10.0-windows10.0.22621.0"
+        ],
+        "warnings_as_errors": ""
+      },
+      {
+        "classification": "test",
+        "evaluated": {},
+        "evaluated_package_references": [],
+        "evaluated_project_references": [],
+        "implicit_usings": "enable",
+        "language": "csproj",
+        "nullable": "enable",
+        "output_type": "",
+        "package_reference_rows": [
+          {
+            "Include": "coverlet.collector"
+          },
+          {
+            "Include": "Garmin.FIT.Sdk"
+          },
+          {
+            "Include": "Microsoft.NET.Test.Sdk"
+          },
+          {
+            "Include": "xunit"
+          },
+          {
+            "Include": "xunit.runner.visualstudio"
+          }
+        ],
+        "package_references": [
+          "Garmin.FIT.Sdk",
+          "Microsoft.NET.Test.Sdk",
+          "coverlet.collector",
+          "xunit",
+          "xunit.runner.visualstudio"
+        ],
+        "path": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+        "project_references": [
+          "..\\..\\src\\TreadmillRunner.Core\\TreadmillRunner.Core.csproj",
+          "..\\..\\src\\TreadmillRunner.Protocols\\TreadmillRunner.Protocols.csproj"
+        ],
+        "sdk": "Microsoft.NET.Sdk",
+        "static_properties": {
+          "ImplicitUsings": "enable",
+          "Nullable": "enable",
+          "TargetFramework": "net10.0"
+        },
+        "target_frameworks": [
+          "net10.0"
+        ],
+        "warnings_as_errors": ""
+      }
+    ],
+    "restore_prerequisites": {
+      "central_package_management": true,
+      "global_config_skipped": true,
+      "lock_files": [
+        "src/TreadmillRunner.Core/packages.lock.json",
+        "src/TreadmillRunner.Gateway/packages.lock.json",
+        "src/TreadmillRunner.Infrastructure/Design/packages.lock.json",
+        "src/TreadmillRunner.Infrastructure/packages.lock.json",
+        "src/TreadmillRunner.Protocols/packages.lock.json",
+        "src/TreadmillRunner.Web/packages.lock.json",
+        "tests/TreadmillRunner.Core.Tests/packages.lock.json",
+        "tests/TreadmillRunner.E2ETests/packages.lock.json",
+        "tests/TreadmillRunner.IntegrationTests/packages.lock.json",
+        "tests/TreadmillRunner.Protocols.Tests/packages.lock.json"
+      ],
+      "package_source_mapping_present": false,
+      "private_feeds_detected": false,
+      "questions": [
+        "Who owns Directory.Packages.props changes and version review?"
+      ],
+      "user_config_skipped": true
+    },
+    "schema_version": 1,
+    "skipped": [
+      {
+        "id": "nuget-user-global-config",
+        "reason": "user-level and machine-level NuGet config files were intentionally not inspected"
+      },
+      {
+        "id": "dotnet-restore-build-test",
+        "reason": "restore, build, test, package search, package install, and tool install commands are never run by this report"
+      },
+      {
+        "id": "dotnet-cli-probes",
+        "reason": "CLI probes disabled by caller; static project facts only"
+      }
+    ],
+    "solutions": [
+      {
+        "format": "slnx",
+        "path": "TreadmillRunner.slnx",
+        "projects": [
+          "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+          "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+          "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+          "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+          "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+          "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+          "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+          "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+          "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj"
+        ]
+      }
+    ],
+    "status": "partial",
+    "summary": {
+      "ci_workflow_count": 1,
+      "feature_count": 5,
+      "private_feeds_detected": false,
+      "project_count": 10,
+      "solution_count": 1,
+      "validation_candidate_count": 3
+    },
+    "target": "D:\\Projects\\TreadmilRunner\\TreadmillRunner",
+    "tool": "dotnet-project-context",
+    "validation_candidates": [
+      {
+        "command": "dotnet restore TreadmillRunner.slnx",
+        "id": "dotnet-restore",
+        "kind": "restore",
+        "may_contact_feeds": true,
+        "private_feed_prerequisites": false,
+        "required": true,
+        "requires_explicit_approval": true,
+        "runs_by_default": false
+      },
+      {
+        "command": "dotnet build TreadmillRunner.slnx --no-restore",
+        "id": "dotnet-build-no-restore",
+        "kind": "build",
+        "may_contact_feeds": false,
+        "prerequisite": "successful restore with project-approved feed credentials",
+        "required": true,
+        "requires_explicit_approval": true,
+        "runs_by_default": false
+      },
+      {
+        "command": "dotnet test TreadmillRunner.slnx --no-restore",
+        "id": "dotnet-test-no-restore",
+        "kind": "test",
+        "may_contact_feeds": false,
+        "prerequisite": "successful restore/build with project-approved feed credentials",
+        "required": true,
+        "requires_explicit_approval": true,
+        "runs_by_default": false
+      }
+    ]
+  },
+  "dotnet_projects": [
+    {
+      "packages": [],
+      "path": "src/TreadmillRunner.Core/TreadmillRunner.Core.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "Microsoft.AspNetCore.Components.WebAssembly.Server",
+        "Microsoft.Extensions.Hosting.WindowsServices"
+      ],
+      "path": "src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj",
+      "target_frameworks": [
+        "net10.0-windows10.0.22621.0"
+      ]
+    },
+    {
+      "packages": [
+        "Microsoft.Data.Sqlite",
+        "Microsoft.EntityFrameworkCore.Design",
+        "Microsoft.EntityFrameworkCore.Sqlite",
+        "SQLitePCLRaw.bundle_e_sqlite3"
+      ],
+      "path": "src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj",
+      "target_frameworks": [
+        "net10.0-windows10.0.22621.0"
+      ]
+    },
+    {
+      "packages": [
+        "Microsoft.Data.Sqlite",
+        "Microsoft.EntityFrameworkCore.Design",
+        "Microsoft.EntityFrameworkCore.Sqlite",
+        "SQLitePCLRaw.bundle_e_sqlite3"
+      ],
+      "path": "src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "Garmin.FIT.Sdk"
+      ],
+      "path": "src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "Microsoft.AspNetCore.Components.WebAssembly",
+        "Microsoft.AspNetCore.SignalR.Client"
+      ],
+      "path": "src/TreadmillRunner.Web/TreadmillRunner.Web.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "xunit",
+        "xunit.runner.visualstudio"
+      ],
+      "path": "tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "Microsoft.Playwright.Xunit",
+        "xunit",
+        "xunit.runner.visualstudio"
+      ],
+      "path": "tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    },
+    {
+      "packages": [
+        "coverlet.collector",
+        "Microsoft.NET.Test.Sdk",
+        "Microsoft.AspNetCore.Mvc.Testing",
+        "Microsoft.Data.Sqlite",
+        "Microsoft.EntityFrameworkCore.Sqlite",
+        "Microsoft.EntityFrameworkCore.Design",
+        "xunit",
+        "xunit.runner.visualstudio"
+      ],
+      "path": "tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj",
+      "target_frameworks": [
+        "net10.0-windows10.0.22621.0"
+      ]
+    },
+    {
+      "packages": [
+        "coverlet.collector",
+        "Garmin.FIT.Sdk",
+        "Microsoft.NET.Test.Sdk",
+        "xunit",
+        "xunit.runner.visualstudio"
+      ],
+      "path": "tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj",
+      "target_frameworks": [
+        "net10.0"
+      ]
+    }
+  ],
+  "folders": [
+    {
+      "path": ".agents",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": ".claude",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": ".config",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": ".continue",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": ".github",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": "artifacts",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": "automations",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": "docs",
+      "responsibility": "project documentation"
+    },
+    {
+      "path": "eng",
+      "responsibility": "project-owned folder; inspect before editing"
+    },
+    {
+      "path": "src",
+      "responsibility": "application and library source"
+    },
+    {
+      "path": "tests",
+      "responsibility": "automated tests"
+    },
+    {
+      "path": "validation",
+      "responsibility": "project-owned folder; inspect before editing"
+    }
+  ],
+  "generated_at": "2026-08-02T10:23:57+00:00",
+  "package": {},
+  "project_name": "TreadmillRunner",
+  "schema_version": 1,
+  "security_notes": [
+    "Secret values are not emitted; only file names and configuration key names are reported.",
+    ".NET appsettings files are present; inspect provider binding and secret storage before config changes.",
+    "CI workflow files are present; compare local validation with CI before handoff."
+  ],
+  "target": "D:\\Projects\\TreadmilRunner\\TreadmillRunner",
+  "technologies": [
+    ".NET",
+    "GitHub Actions",
+    "Python"
+  ],
+  "tool": "project-context-generator",
+  "validation_commands": [
+    {
+      "command": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "check-additions"
+      ],
+      "command_text": "python -B .agents/manage.py check-additions",
+      "id": "harness-check-additions",
+      "kind": "validation",
+      "label": "Harness addition ownership",
+      "required": true
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync",
+        "--check"
+      ],
+      "command_text": "python -B .agents/manage.py sync --check",
+      "id": "harness-sync-check",
+      "kind": "validation",
+      "label": "Harness generated sync",
+      "required": true
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "validate-agent-compatibility"
+      ],
+      "command_text": "python -B .agents/manage.py validate-agent-compatibility",
+      "id": "harness-agent-compatibility",
+      "kind": "validation",
+      "label": "Agent compatibility",
+      "required": true
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "check"
+      ],
+      "command_text": "python -B .agents/manage.py check",
+      "id": "harness-check",
+      "kind": "test",
+      "label": "Harness repository check",
+      "required": true
+    },
+    {
+      "command": [
+        "dotnet",
+        "build"
+      ],
+      "command_text": "dotnet build",
+      "id": "dotnet-build",
+      "kind": "build",
+      "label": ".NET build",
+      "required": true
+    },
+    {
+      "command": [
+        "dotnet",
+        "test"
+      ],
+      "command_text": "dotnet test",
+      "id": "dotnet-test",
+      "kind": "test",
+      "label": ".NET tests",
+      "required": true
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "command_text": "python -B -m unittest discover -s tests",
+      "id": "python-unittest",
+      "kind": "test",
+      "label": "Python unittest tests",
+      "required": true
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+graph TD;
+  request["Change request"] --> route["Route owner"];
+  route --> plan["Bounded packages"];
+  plan --> execute["Execute next unblocked package"];
+  execute --> status["Update run task status and handoff"];
+  status --> validate["Run owner and repo gates"];
+  validate --> review["Independent review axes"];
+  review --> variance["Plan variance"];
+  variance --> closeout["Closeout evidence"];

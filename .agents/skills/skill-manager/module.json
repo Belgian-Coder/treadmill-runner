@@ -1,0 +1,500 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/analyze_location.py"
+      ],
+      "effects": [],
+      "id": "command-0df9528b6741",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/attest_skill.py"
+      ],
+      "effects": [],
+      "id": "command-2849716a9318",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/audit_skill_determinism.py"
+      ],
+      "effects": [],
+      "id": "command-01bb5f1c6985",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/candidate_source_audit.py"
+      ],
+      "effects": [],
+      "id": "command-4c0bad379425",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/compare_skill_versions.py"
+      ],
+      "effects": [],
+      "id": "command-19accd05e61d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/eval_skill.py"
+      ],
+      "effects": [],
+      "id": "command-629a4fa02a2c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/inspect_skill.py"
+      ],
+      "effects": [],
+      "id": "command-c3e467c73712",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/measure_skill_budget.py"
+      ],
+      "effects": [],
+      "id": "command-2aa52553e49c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_manager.py"
+      ],
+      "effects": [],
+      "id": "command-f9c0bda3fd57",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_cost_policy.py"
+      ],
+      "effects": [],
+      "id": "command-c98e68a265a8",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_feedback.py"
+      ],
+      "effects": [],
+      "id": "command-f274286b73a6",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_generated.py"
+      ],
+      "effects": [],
+      "id": "command-b70765e1171a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_health_links.py"
+      ],
+      "effects": [],
+      "id": "command-40367f88b269",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_optimizations.py"
+      ],
+      "effects": [],
+      "id": "command-c06f1bd28fd7",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_portable_tools.py"
+      ],
+      "effects": [],
+      "id": "command-2a1d14c95c53",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_prevention.py"
+      ],
+      "effects": [],
+      "id": "command-7ec4aa673786",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_qol_finish.py"
+      ],
+      "effects": [],
+      "id": "command-a879c83d47c4",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_support/repo_routing.py"
+      ],
+      "effects": [],
+      "id": "command-f8191cedd8a4",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/review_skill_command.py"
+      ],
+      "effects": [],
+      "id": "command-ce94f5ff7eab",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/skill_inventory.py"
+      ],
+      "effects": [],
+      "id": "command-a16e28fed3bd",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/skill_manager_common.py"
+      ],
+      "effects": [],
+      "id": "command-5abd523932f7",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/sync_skill_routing.py"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-a165f460ce49",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/triage_candidates.py"
+      ],
+      "effects": [],
+      "id": "command-8f3b4a5a6228",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/upgrade_skill.py"
+      ],
+      "effects": [],
+      "id": "command-8378ab223128",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_agent_compatibility.py"
+      ],
+      "effects": [],
+      "id": "command-5db2340a762d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_skill.py"
+      ],
+      "effects": [],
+      "id": "command-dcf9250a95fa",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/skill-manager"
+      ],
+      "effects": [],
+      "id": "command-d1ea763ab636",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/skill-manager",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-82f33cd0102c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "skill-manager",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-ca4083b74a2e",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "determinism-check",
+        "--changed",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "determinism-check-changed",
+      "timeout_seconds": 3600,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs analyzers, audits, import review, validators, evals, compatibility linting, routing sync, comparison, upgrade planning, attestation, inventory, triage, budget, repo orchestration, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "local-ai-helper",
+      "purpose": "Optional validated local AI integration for skill routing, failure triage, and skill review workflows.",
+      "version": "1.0.0"
+    }
+  ],
+  "determinism": {
+    "allowed_temporary_effects": [],
+    "environment_requirements": {
+      "executables": [
+        "git"
+      ],
+      "minimum_python": "3.12",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ]
+    },
+    "replay_commands": [
+      "command-d1ea763ab636",
+      "command-82f33cd0102c",
+      "command-ca4083b74a2e",
+      "command-6066588d4453"
+    ],
+    "volatile_json_pointers": []
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "skill-manager",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "scripts/module_contract_v3.py"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "handoff-draft",
+      "duplicate-overlap-detection",
+      "skill-routing"
+    ]
+  },
+  "name": "skill-manager",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/manage.py attest-skill --skill .agents/skills/skill-manager --format json"
+    ],
+    "introduced": "2026-04-26",
+    "license": "repository",
+    "reviewed_at": "2026-07-11",
+    "source": "repo-owned",
+    "updated": "2026-07-17"
+  },
+  "quality": {
+    "eval_suites": [
+      {
+        "path": "suites/skill-manager-evals.json",
+        "purpose": "Deterministic assertions for manifest, files, validation, risk, and budget."
+      }
+    ]
+  },
+  "related_modules": [
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": true,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-d1ea763ab636",
+    "command-82f33cd0102c",
+    "command-ca4083b74a2e",
+    "command-6066588d4453"
+  ],
+  "summary": "Maintains repo-owned agent skills through local analysis, import review, audits, deterministic route selection, Claude adapter budget checks, portable-tool manifest checks, cost/context-budget checks, evals, compatibility linting, command-reference validation, version comparison, upgrade planning, provenance, inventory, generated routing/adapters, addition gates, and workflow extension rules.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/skill-manager"
+  ],
+  "version": "1.0.0"
+}

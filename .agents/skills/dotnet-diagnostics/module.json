@@ -1,0 +1,216 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-diagnostics",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-2fb625b5a78f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-diagnostics",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-2708a56c187a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-diagnostics",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-56b998e3e634",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-diagnostics/scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-da9b8a0de0ee",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": ".NET diagnostic tools",
+      "optional": true,
+      "purpose": "Optional project-approved dotnet-dump, dotnet-trace, counters, gcdump, monitor, or createdump tools.",
+      "version": "project-defined"
+    },
+    {
+      "name": "WinDbg or Debugging Tools for Windows",
+      "optional": true,
+      "purpose": "Optional Windows dump/live debugging.",
+      "version": "project-defined"
+    },
+    {
+      "name": "LLDB with SOS",
+      "optional": true,
+      "purpose": "Optional Linux/macOS dump/live debugging.",
+      "version": "project-defined"
+    },
+    {
+      "name": "Python 3.12+ stdlib",
+      "optional": false,
+      "purpose": "Runs the skill self-test script.",
+      "version": "3.12+"
+    },
+    {
+      "name": "local-ai-helper",
+      "optional": true,
+      "purpose": "Optional repo-local inventory, failure, and handoff summaries."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "Debugger, dump, trace, counter, log, symbol-server, endpoint, production process, and sensitive production artifact access require approval.",
+    "data_copied_locally": [],
+    "source_systems": [
+      "optional symbol servers",
+      "optional diagnostic endpoints",
+      "optional local or production process artifacts"
+    ]
+  },
+  "id": "dotnet-diagnostics",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/runtime-triage.md",
+    "docs/dump-and-trace.md",
+    "docs/reporting.md"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary",
+      "failure-cluster",
+      "handoff-draft"
+    ]
+  },
+  "name": "dotnet-diagnostics",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-diagnostics",
+      "python -B .agents/skills/dotnet-diagnostics/scripts/run_self_tests.py"
+    ],
+    "introduced": "2026-05-25",
+    "license": "repository plus reviewed MIT source concepts",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned rewrite from temp/dotnet-artisan-main dotnet-debugging references",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-diagnostics-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Validates the skill contract, routing metadata, and referenced docs using local file reads only; strict read-only safe because it disables bytecode writes and creates no temp files, subprocesses, network calls, or outputs."
+      }
+    ]
+  },
+  "related_modules": [
+    "dotnet-engineering",
+    "dotnet-legacy",
+    "dotnet-quality-gates",
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": true,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": true,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-2fb625b5a78f",
+    "command-2708a56c187a",
+    "command-56b998e3e634",
+    "command-6066588d4453"
+  ],
+  "summary": "Guides sensitive .NET diagnostics for crashes, hangs, high CPU, GC or memory pressure, thread pool starvation, flame graphs, dumps, traces, counters, WinDbg, dotnet-dump, dotnet-trace, LLDB/SOS, createdump, dotnet-monitor, and containers with explicit approval boundaries.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-diagnostics"
+  ],
+  "version": "1.0.0"
+}

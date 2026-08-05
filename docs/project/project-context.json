@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "tool": "project-context-generator",
+  "project_name": "TreadmillRunner",
+  "target": "D:\\Projects\\TreadmilRunner\\TreadmillRunner",
+  "reviewed_at": "2026-08-02",
+  "status": "reviewed-implementation-context",
+  "technologies": [
+    ".NET 10.0.110",
+    "C#",
+    "ASP.NET Core and Kestrel",
+    "Blazor WebAssembly",
+    "SignalR",
+    "Windows Service hosting",
+    "xUnit",
+    "Microsoft Playwright for .NET"
+  ],
+  "planned_technologies": [
+    "Windows.Devices.Bluetooth",
+    "EF Core and SQLite WAL",
+    "uPlot",
+    "Garmin FIT SDK"
+  ],
+  "dotnet_projects": [
+    "src/TreadmillRunner.Core",
+    "src/TreadmillRunner.Protocols",
+    "src/TreadmillRunner.Infrastructure",
+    "src/TreadmillRunner.Gateway",
+    "src/TreadmillRunner.Web",
+    "tests/TreadmillRunner.Core.Tests",
+    "tests/TreadmillRunner.Protocols.Tests",
+    "tests/TreadmillRunner.IntegrationTests",
+    "tests/TreadmillRunner.E2ETests"
+  ],
+  "validation_commands": [
+    "eng/bootstrap.ps1",
+    "eng/validate.ps1 -Configuration Release",
+    "eng/playwright.ps1 -Configuration Release"
+  ],
+  "security_notes": [
+    "Remote belt Start is disabled until the exact adapter and firmware pass the dedicated TR-006B hardware gate.",
+    "No real BLE write path is enabled in TR-001.",
+    "The physical safety key and console remain authoritative.",
+    "The service is intended only for a trusted private LAN.",
+    "Do not commit BLE identities, personal captures, backups, credentials, or private signing keys."
+  ],
+  "assumptions": [
+    "The first gateway target is the existing Windows 11 VM with the passed-through RZ616 controller.",
+    "The browser never owns Bluetooth or the workout clock.",
+    "The exact Omega Z hardware and service-session BLE behavior remain hard acceptance gates.",
+    "TR-001 runs only against deterministic simulator and protocol fixtures."
+  ],
+  "diagrams": [
+    {
+      "image": "docs/project/diagrams/project-context-structure.svg",
+      "source": "docs/project/diagrams/project-context-structure.mmd"
+    },
+    {
+      "image": "docs/project/diagrams/project-context-architecture.svg",
+      "source": "docs/project/diagrams/project-context-architecture.mmd"
+    }
+  ],
+  "screenshots": [
+    "validation/playwright/accepted/iphone-portrait.png",
+    "validation/playwright/accepted/ipad-landscape.png",
+    "validation/playwright/accepted/desktop-full-hd.png"
+  ]
+}

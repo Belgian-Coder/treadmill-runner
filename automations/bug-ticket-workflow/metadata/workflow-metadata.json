@@ -1,0 +1,65 @@
+{
+  "branch_policy": {
+    "pattern": "^(feature|fix|docs|chore|release)/[a-z0-9][a-z0-9._-]*$"
+  },
+  "gates": [
+    {
+      "evidence": "Clarification Decisions",
+      "id": "clarification",
+      "required": true,
+      "summary": "Resolve bug ambiguity.",
+      "type": "clarification"
+    },
+    {
+      "evidence": "Requirements Quality Checklist",
+      "id": "requirements-quality",
+      "required": true,
+      "summary": "Bug expectation is measurable.",
+      "type": "quality"
+    },
+    {
+      "evidence": "Assess Fix Test Boundaries",
+      "id": "fix-boundary",
+      "required": true,
+      "summary": "Keep write boundaries explicit.",
+      "type": "policy"
+    },
+    {
+      "evidence": "Approval Gate",
+      "id": "approval",
+      "required": true,
+      "summary": "Wait for approval.",
+      "type": "approval"
+    }
+  ],
+  "input_schema": {
+    "properties": {
+      "approval_required": {
+        "type": "boolean"
+      },
+      "bug_id": {
+        "type": "string"
+      },
+      "project_root": {
+        "type": "path"
+      },
+      "reproduction_required": {
+        "type": "boolean"
+      },
+      "run_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "bug_id",
+      "project_root",
+      "approval_required"
+    ]
+  },
+  "integrations": [
+    "azure-devops-ticket-intake",
+    "sonarqube-diagnostics",
+    "pr-system"
+  ],
+  "updated": "2026-08-02"
+}

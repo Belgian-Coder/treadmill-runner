@@ -1,0 +1,209 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-delivery",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-adf7203b8f20",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-delivery",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-6ded4ecd089d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-delivery",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-36f76c98994c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-delivery/scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-abf001103ad4",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": ".NET SDK",
+      "optional": true,
+      "purpose": "Project-defined restore, build, test, pack, publish, and format commands when approved; these can write bin/obj, packages, caches, or source formatting changes.",
+      "version": "project-defined"
+    },
+    {
+      "name": "dotnet-quality-gates",
+      "optional": true,
+      "purpose": "Optional normalized validation evidence for delivery checks and workflow handoff."
+    },
+    {
+      "name": "Python 3.12+ stdlib",
+      "optional": false,
+      "purpose": "Runs the skill self-test script without creating bytecode cache folders.",
+      "version": "3.12+"
+    },
+    {
+      "name": "local-ai-helper",
+      "optional": true,
+      "purpose": "Optional repo-local summaries for inventory, changed files, validation failures, and handoff evidence."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none for read-only review; service connection and secret names may be inspected from local files but values and live settings must not be exposed or queried without approval",
+    "data_copied_locally": [
+      "pipeline/test/package evidence only when output paths are explicitly approved or temp-scoped"
+    ],
+    "source_systems": [
+      "CI providers, package feeds, container registries, and cloud deployment APIs only when explicit upload/deploy validation is approved"
+    ]
+  },
+  "id": "dotnet-delivery",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/ci-packaging-release.md"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "handoff-draft"
+    ]
+  },
+  "name": "dotnet-delivery",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-delivery",
+      "python -B .agents/skills/dotnet-delivery/scripts/run_self_tests.py"
+    ],
+    "introduced": "2026-05-25",
+    "license": "repository plus reviewed MIT source concepts",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned rewrite from temp/dotnet-artisan-main dotnet-devops references",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-delivery-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Validates the skill contract, routing metadata, and referenced docs stay loadable using local file reads only; strict read-only safe because it disables bytecode writes and creates no temp files, subprocesses, network calls, or outputs."
+      }
+    ]
+  },
+  "related_modules": [
+    "dotnet-engineering",
+    "dotnet-quality-gates",
+    "dotnet-security-review",
+    "dotnet-diagnostics",
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "networked",
+    "uploads": true
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-adf7203b8f20",
+    "command-6ded4ecd089d",
+    "command-36f76c98994c",
+    "command-6066588d4453"
+  ],
+  "summary": "Guides .NET CI/CD, GitHub Actions, Azure DevOps pipelines, NuGet packaging, containers, MSIX, release management, environment approvals, service connections, OpenTelemetry, health checks, and structured logging while using dotnet-quality-gates for normalized validation evidence.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-delivery"
+  ],
+  "version": "1.0.0"
+}

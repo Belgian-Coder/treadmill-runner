@@ -1,0 +1,12 @@
+graph TD;
+  intake["Bug intake"] --> context["Project context check"];
+  context --> reproduce["Reproduction plan"];
+  reproduce --> plan["Bounded work packages and diagrams"];
+  plan --> approval{"User approval recorded?"};
+  approval -->|No| stop["Stop before implementation"];
+  approval -->|Yes| implementation["Execute next unblocked package"];
+  implementation --> status["Update run task status and handoff"];
+  status --> validation["Regression validation"];
+  validation --> review["Independent review axes"];
+  review --> variance["Plan variance"];
+  variance --> finish["Handoff and finish"];

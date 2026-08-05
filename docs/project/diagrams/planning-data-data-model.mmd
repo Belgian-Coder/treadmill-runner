@@ -1,0 +1,68 @@
+erDiagram
+  UserProfile ||--o{ HeartRateZone : defines
+  UserProfile ||--o{ CalendarSeries : owns
+  UserProfile ||--o| GarminAccountLink : authorizes
+  UserProfile ||--o{ GarminOAuthState : starts
+  UserProfile ||--o| GarminWatchBinding : pairs
+  UserProfile ||--o| GarminActivityUploadAccount : opts_into
+  GarminAccountLink ||--o{ GarminSyncItem : queues
+  GarminActivityUploadAccount ||--o{ GarminActivityUploadJob : queues
+  GarminAccountLink {
+    guid Id PK
+    guid UserProfileId FK
+    string ProviderSubject UK
+    string ProtectedAccessToken
+    datetime LastSyncSuccessAtUtc
+  }
+  GarminOAuthState {
+    string StateHash PK
+    guid UserProfileId FK
+    string ProtectedCodeVerifier
+    datetime ExpiresAtUtc
+  }
+  GarminSyncItem {
+    guid Id PK
+    guid GarminAccountLinkId FK
+    string IdempotencyKey UK
+    string Kind
+    string Status
+    int AttemptCount
+  }
+  GarminWatchBinding {
+    guid Id PK
+    guid UserProfileId FK
+    string TokenSha256 UK
+    datetime LastSeenAtUtc
+  }
+  GarminActivityUploadAccount {
+    guid Id PK
+    guid UserProfileId FK
+    string ProtectedTokenStore
+    bool Enabled
+    datetime UploadFromUtc
+  }
+  GarminActivityUploadJob {
+    guid Id PK
+    guid WorkoutSessionId FK
+    string IdempotencyKey UK
+    string Status
+    string FailureKind
+    int AttemptCount
+  }
+  CalendarSeries {
+    guid Id PK
+    guid ScheduleGroupId
+    date StartDate
+    date EndDate
+    int WeekdayMask
+    int Version
+  }
+  UserProfile ||--o{ TrainingDaySelection : chooses
+  Workout ||--|{ WorkoutRevision : versions
+  WorkoutRevision ||--o{ ImportAudit : records
+  CalendarSeries ||--|{ CalendarSeriesOption : offers
+  WorkoutRevision ||--o{ CalendarSeriesOption : referenced_by
+  CalendarSeries ||--o{ CalendarException : adjusts
+  CalendarException ||--o{ CalendarExceptionOption : offers
+  WorkoutRevision ||--o{ CalendarExceptionOption : referenced_by
+  WorkoutRevision ||--o{ TrainingDaySelection : selected_as

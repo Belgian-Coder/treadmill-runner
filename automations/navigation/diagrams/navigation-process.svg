@@ -1,0 +1,28 @@
+<svg id="navigation-process" xmlns="http://www.w3.org/2000/svg" width="720" height="228" viewBox="0 -24 720 228" style="max-width: 720px; background-color: transparent;" preserveAspectRatio="xMidYMid meet" data-mermaid-vertical-padding="24" role="img" aria-labelledby="navigation-process-title navigation-process-desc">
+<title id="navigation-process-title">Navigation workflow process</title>
+<desc id="navigation-process-desc">Process from project guidance through scan, context, map writing, freshness check, and handoff.</desc>
+<defs><marker id="navigation-process-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+<g fill="#111827" stroke="#64748b" stroke-width="1.5">
+<rect x="18" y="20" width="132" height="44" rx="6"/>
+<rect x="176" y="20" width="132" height="44" rx="6"/>
+<rect x="334" y="20" width="132" height="44" rx="6"/>
+<rect x="492" y="20" width="132" height="44" rx="6"/>
+<rect x="176" y="126" width="132" height="44" rx="6"/>
+<rect x="334" y="126" width="132" height="44" rx="6"/>
+</g>
+<g stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#navigation-process-arrow)">
+<path d="M150,42 L176,42"/>
+<path d="M308,42 L334,42"/>
+<path d="M466,42 L492,42"/>
+<path d="M558,64 L558,98 L242,98 L242,126"/>
+<path d="M308,148 L334,148"/>
+</g>
+<g font-family="Arial, sans-serif" font-size="13" fill="#e5e7eb" text-anchor="middle">
+<text x="84" y="39">Read project</text><text x="84" y="55">guidance</text>
+<text x="242" y="39">Scan files</text><text x="242" y="55">and manifests</text>
+<text x="400" y="39">Check project</text><text x="400" y="55">context</text>
+<text x="558" y="39">Write navigation</text><text x="558" y="55">maps</text>
+<text x="242" y="145">Compare freshness</text><text x="242" y="161">evidence</text>
+<text x="400" y="145">Report map</text><text x="400" y="161">status</text>
+</g>
+</svg>

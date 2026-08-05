@@ -1,0 +1,13 @@
+graph LR;
+  Browser["Browser clients"] -->|"Requests and single-use intents"| Gateway["ASP.NET Core Windows Service"];
+  Gateway -->|"UI and SignalR snapshots"| Browser;
+  Gateway --> Engine["Authoritative workout and HR engine"];
+  Gateway --> Store["SQLite local data"];
+  Gateway --> ReadBle["Read and subscribe BLE transport"];
+  Gateway --> CommandCoordinator["Serialized treadmill command coordinator"];
+  CommandCoordinator --> CommandBle["Command-only BLE transport"];
+  CommandBle -->|"One FTMS operation after guards"| Treadmill["Horizon Omega Z"];
+  Treadmill -->|"FFF0 or FTMS telemetry"| ReadBle;
+  Polar["Polar H10"] -->|"Heart-rate telemetry"| ReadBle;
+  Garmin["Compatible Garmin broadcast"] -.-> ReadBle;
+  Gateway --> Updates["Signed local or UNC update feed"];

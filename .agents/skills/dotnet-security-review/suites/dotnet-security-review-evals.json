@@ -1,0 +1,160 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-a1413efc9b1b",
+            "command-1e6cc2808fec",
+            "command-3ea2e8e60c4b",
+            "command-6066588d4453",
+            "command-46afc9befc3d",
+            "command-c34c504e0a4f"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "credentialed"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/dotnet_security_review.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/scanner/scan_security_patterns.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/review-scope.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/aspnet-security.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/severity-and-reporting.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET",
+          "type": "description_contains"
+        },
+        {
+          "text": "replacing project-owned threat modeling",
+          "type": "skill_contains"
+        },
+        {
+          "text": ".NET/ASP.NET review",
+          "type": "skill_contains"
+        },
+        {
+          "text": "scanning",
+          "type": "description_contains"
+        },
+        {
+          "text": "scanner results as evidence",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Redact secret values",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "without `--output-*`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "inspect eval suites without executing them",
+          "type": "skill_contains"
+        },
+        {
+          "text": "tracked changed files",
+          "type": "skill_contains"
+        },
+        {
+          "text": "`--input-sarif` as local read-only input",
+          "type": "skill_contains"
+        },
+        {
+          "text": "credentialed risk profile means local secret-like config may be inspected",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict no-write validation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Treat `--fail-on` nonzero exits as findings status",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Skip self-tests/eval suites when they create temp fixtures",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-capable",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not strict dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "caller-owned workflow or project evidence",
+          "type": "skill_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 800
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "dotnet-security-review"
+}

@@ -1,0 +1,149 @@
+{
+  "cases": [
+    {
+      "assertions": [
+        {
+          "path": "SKILL.md",
+          "text": "docs/project/project-context.md",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "Playwright",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "validation",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "read-only/offline dogfood",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "Strict read-only/offline excludes",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "narrow app/project root",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "Run `eval-skill` only when temporary fixture writes are allowed",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "inspect-skill --skill .agents/skills/project-context-generator",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "strict dogfood is only the exact read-only subset",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "still reads local target project files",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "rejects output directories that resolve outside the target root",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "whole generated package under a sidecar directory",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/generate_project_context.py",
+          "text": "write generated docs/project context files",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/generate_project_context.py",
+          "text": "must resolve under target project",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/generate_project_context.py",
+          "text": "sidecar_output_dir",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_project_validation.py",
+          "text": "write/runtime",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_project_validation.py",
+          "text": "Required executable not found",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_project_validation.py",
+          "text": "command = executable_command([\"npx\", \"playwright\", \"screenshot\"",
+          "type": "file_contains"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-01c08735642f",
+            "command-e0c2e7380987",
+            "command-78af5a1f47c6",
+            "command-2fd9e309a1ad",
+            "command-b7d6c59e3ce2",
+            "command-95c1a6d49bf0",
+            "command-6066588d4453"
+          ]
+        },
+        {
+          "path": "module.json",
+          "text": "validation_modes",
+          "type": "file_contains"
+        },
+        {
+          "path": "SKILL.md",
+          "text": "dotnet-project-context",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "write/temp",
+          "type": "file_contains"
+        },
+        {
+          "output_contains": "project-context-generator self-tests passed",
+          "path": "scripts/run_self_tests.py",
+          "type": "python_script_succeeds"
+        },
+        {
+          "type": "validation_ok"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        }
+      ],
+      "id": "generate-context",
+      "name": "Generate workflow-ready project context"
+    }
+  ],
+  "schema_version": 1,
+  "skill": "project-context-generator"
+}

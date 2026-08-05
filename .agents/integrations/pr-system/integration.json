@@ -1,0 +1,21 @@
+{
+  "integration": {
+    "description": "Records pull request handoff, review feedback, and follow-up evidence without committing provider-specific credentials.",
+    "id": "pr-system",
+    "license": "repository",
+    "name": "Pull Request System",
+    "owner": "engineering",
+    "version": "1.0.0"
+  },
+  "provides": {
+    "commands": [
+      "python -B .agents/manage.py workflow finish --name <workflow-name> --run-id <run-id>"
+    ],
+    "managed_files": [
+      "automations/*/runs/<run-id>/pr-description.md",
+      "automations/*/runs/<run-id>/REPORT.md"
+    ],
+    "tools": []
+  },
+  "schema_version": 1
+}

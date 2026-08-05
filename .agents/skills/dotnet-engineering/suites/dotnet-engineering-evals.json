@@ -1,0 +1,266 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-daeed7be9152",
+            "command-9e17b242d506",
+            "command-a9e90d0fbffe",
+            "command-6066588d4453",
+            "command-de995b53ad03",
+            "command-0f79aafa22d1"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "local-write"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "validation.ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.components.docs",
+          "type": "repo_command_json_field_equals",
+          "value": 14
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.components.scripts",
+          "type": "repo_command_json_field_equals",
+          "value": 2
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.risk.profile",
+          "type": "repo_command_json_field_equals",
+          "value": "local-write"
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "skill.name",
+          "type": "repo_command_json_field_equals",
+          "value": "dotnet-engineering"
+        }
+      ],
+      "id": "inspection-schema"
+    },
+    {
+      "assertions": [
+        {
+          "path": "docs/csharp-runtime.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/aspnet-backend.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/testing.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/test-strategy.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/ui.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/ui-frameworks.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/openxml-and-pdf.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/delivery.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/documentation.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/architecture.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/api-contracts.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET",
+          "type": "description_contains"
+        },
+        {
+          "text": "Clean Architecture",
+          "type": "skill_contains"
+        },
+        {
+          "text": "test pyramid",
+          "type": "skill_contains"
+        },
+        {
+          "text": "BenchmarkDotNet",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Blazor",
+          "type": "skill_contains"
+        },
+        {
+          "text": "MAUI",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Open XML SDK",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-legacy",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-quality-gates",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet_repo_inspector.py",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict-safe only without `--output-json` or `--output-md`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "without `--output-json` or `--output-md`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "inspect-skill --fast",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Skip `run_self_tests.py` when no temp fixtures are allowed",
+          "type": "skill_contains"
+        },
+        {
+          "text": "writes temporary fixture projects",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-capable",
+          "type": "skill_contains"
+        },
+        {
+          "text": "current official docs lookup",
+          "type": "skill_contains"
+        },
+        {
+          "text": "AI integration",
+          "type": "skill_contains"
+        },
+        {
+          "text": "local-ai-helper",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-security-review",
+          "type": "skill_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1000
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "dotnet-engineering"
+}

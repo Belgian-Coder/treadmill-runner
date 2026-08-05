@@ -1,0 +1,6 @@
+graph TD;
+  request["Work item"] --> context["Project context"];
+  context --> plan["Workflow plan"];
+  plan --> change["Implementation"];
+  change --> validation["Validation runner"];
+  validation --> evidence["Evidence package"];

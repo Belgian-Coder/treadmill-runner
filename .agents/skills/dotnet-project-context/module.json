@@ -1,0 +1,247 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/dotnet_project_context.py"
+      ],
+      "effects": [],
+      "id": "command-55ecdc109f77",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/dotnet_context_support/implementation.py"
+      ],
+      "effects": [],
+      "id": "command-48b24ea7cba8",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-project-context",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5d288bd0f832",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-project-context",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-6df92c2566c3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-project-context",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-6508ac45a039",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "dotnet-context",
+        "--target",
+        "<project-root>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5a5601ef10eb",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "dotnet-context",
+        "--target",
+        "<project-root>",
+        "--solution",
+        "<solution.sln>",
+        "--project",
+        "<project.csproj>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-072c2e6bdc30",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-project-context/scripts/dotnet_project_context.py",
+        "--target",
+        "<project-root>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-9c507320e7fd",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python 3.12+ stdlib",
+      "optional": false,
+      "purpose": "Runs deterministic static inspection and safe CLI probe orchestration.",
+      "version": "3.12+"
+    },
+    {
+      "name": ".NET SDK",
+      "optional": true,
+      "purpose": "Optional installed CLI probes through dotnet on PATH or --dotnet-executable for dotnet --info, dotnet sln list, and dotnet msbuild -getProperty/-getItem only.",
+      "version": "project-defined"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none; repo-local NuGet credential section names may be reported, credential/configuration values are not emitted or persisted, and user/global NuGet config is not read",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "dotnet-project-context",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "scripts/dotnet_context_support/",
+    "target project solution/project files",
+    "repo-local NuGet.config",
+    "Directory.Packages.props",
+    "Directory.Build.props",
+    "CI workflow files",
+    "appsettings JSON key names",
+    "global.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "inventory-summary",
+      "validation-triage"
+    ]
+  },
+  "name": "dotnet-project-context",
+  "outputs": [
+    "docs/project/dotnet-context/dotnet-context.json when --write-evidence is explicit",
+    "docs/project/dotnet-context/dotnet-context.md when --write-evidence is explicit"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-07-04",
+    "license": "repository",
+    "source": "Designed for this repository.",
+    "updated": "2026-07-05"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-project-context-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Validates .NET fixture discovery, solution/project filters, private feed redaction, missing dotnet behavior, explicit dotnet executable handling, richer static context facts, evidence writes, drift diff, and safe command boundaries."
+      }
+    ]
+  },
+  "related_modules": [
+    "project-context-generator",
+    "skill-manager",
+    "dotnet-engineering",
+    "dotnet-delivery",
+    "dotnet-quality-gates"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "read-only",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-5d288bd0f832",
+    "command-6df92c2566c3",
+    "command-6508ac45a039",
+    "command-5a5601ef10eb",
+    "command-072c2e6bdc30",
+    "command-9c507320e7fd"
+  ],
+  "summary": "Discovers .NET project shape, SDK/runtime signals, solution/project inventory, build policy, CI candidates, config/persistence signals, NuGet/feed policy, validation candidates, and project-context facts without restore/build/test/package/tool execution.",
+  "validation": [
+    "python -B .agents/skills/dotnet-project-context/scripts/run_self_tests.py",
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-project-context"
+  ],
+  "version": "1.0.0"
+}

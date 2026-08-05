@@ -1,0 +1,434 @@
+{
+  "enabled": true,
+  "mode": "auto",
+  "tasks": [
+    "skill-routing",
+    "workflow-routing",
+    "validation-triage",
+    "changelog-draft",
+    "inventory-summary",
+    "code-review",
+    "implementation-planning",
+    "patch-draft",
+    "changed-files-summary",
+    "failure-cluster",
+    "test-gap-summary",
+    "handoff-draft",
+    "duplicate-overlap-detection",
+    "vision-describe",
+    "vision-pdf",
+    "routing-summary-triage",
+    "simple-python-script",
+    "dotnet10-di-console",
+    "dotnet10-xunit-authoring",
+    "dotnet10-xunit-repair",
+    "vision-pdf-image"
+  ],
+  "backend_order": [
+    "auto",
+    "cpu"
+  ],
+  "active_profile": "nemotron3-nano4b",
+  "primary_profiles": [
+    "nemotron3-nano4b"
+  ],
+  "optional_profiles": [
+    "qwen3-embedding-0.6b-q8",
+    "qwen3-embedding-4b-q5km",
+    "qwen3-embedding-8b-q4km"
+  ],
+  "embedding_profiles": [
+    "qwen3-embedding-4b",
+    "qwen3-embedding-0.6b-q8",
+    "qwen3-embedding-4b-q5km",
+    "qwen3-embedding-8b-q4km"
+  ],
+  "vision_profiles": [
+    "qwen3vl-2b-q4"
+  ],
+  "image_description_profile": "qwen3vl-2b-q4",
+  "model_profiles": {
+    "nemotron3-nano4b": {
+      "roles": [
+        "routing",
+        "summary",
+        "triage",
+        "inventory",
+        "json",
+        "review",
+        "planning",
+        "draft"
+      ],
+      "quant": "Q4_K_M",
+      "context_tokens": 4096,
+      "output_tokens": 192,
+      "batch_size": 1024,
+      "ubatch_size": 256,
+      "cache_type_k": "q4_0",
+      "cache_type_v": "q4_0",
+      "reasoning": "off",
+      "fallback_profiles": []
+    }
+  },
+  "task_model_profiles": {
+    "skill-routing": [
+      "nemotron3-nano4b"
+    ],
+    "workflow-routing": [
+      "nemotron3-nano4b"
+    ],
+    "validation-triage": [
+      "nemotron3-nano4b"
+    ],
+    "changelog-draft": [
+      "nemotron3-nano4b"
+    ],
+    "inventory-summary": [
+      "nemotron3-nano4b"
+    ],
+    "changed-files-summary": [
+      "nemotron3-nano4b"
+    ],
+    "failure-cluster": [
+      "nemotron3-nano4b"
+    ],
+    "test-gap-summary": [
+      "nemotron3-nano4b"
+    ],
+    "handoff-draft": [
+      "nemotron3-nano4b"
+    ],
+    "duplicate-overlap-detection": [
+      "nemotron3-nano4b"
+    ],
+    "code-review": [
+      "nemotron3-nano4b"
+    ],
+    "implementation-planning": [
+      "nemotron3-nano4b"
+    ],
+    "patch-draft": [
+      "nemotron3-nano4b"
+    ],
+    "vision-describe": [
+      "qwen3vl-2b-q4"
+    ],
+    "vision-pdf": [
+      "qwen3vl-2b-q4"
+    ]
+  },
+  "task_attempt_policy": {
+    "max_attempts_per_profile": 2,
+    "retry_on_low_confidence": true,
+    "retry_on_plain_text": true,
+    "retry_failure_classes": [
+      "schema",
+      "path",
+      "missing-required-file",
+      "extra-file",
+      "plain-text",
+      "low-confidence"
+    ],
+    "handoff_failure_classes": [
+      "compile",
+      "test",
+      "mutation",
+      "wrong-framework",
+      "wrong-package",
+      "timeout",
+      "memory-limit",
+      "unsupported-task"
+    ],
+    "fallback": "orchestrator-handoff"
+  },
+  "benchmark_policy": {
+    "baseline_epoch": "fresh-2026-06-11",
+    "candidate_memory_limit_gb": 20.0,
+    "ignore_prior_results": true,
+    "require_peak_memory_evidence": true,
+    "promotion_gates": {
+      "same_suite": true,
+      "same_tasks": true,
+      "same_validators": true,
+      "same_repetitions": true,
+      "license_required": true,
+      "must_pass_suite": true,
+      "must_fit_memory": true,
+      "must_beat_current_default": true
+    }
+  },
+  "model_catalog": {
+    "nemotron3-nano4b": {
+      "profile": "nemotron3-nano4b",
+      "kind": "text",
+      "tier": "primary",
+      "default_install": true,
+      "model": "NVIDIA Nemotron 3 Nano 4B Q4_K_M GGUF",
+      "base_model": "nvidia/NVIDIA-Nemotron-3-Nano-4B",
+      "source": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
+      "source_url": "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+      "license_url": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/",
+      "download_kind": "direct",
+      "license": "NVIDIA Open Model License",
+      "quant": "Q4_K_M",
+      "expected_size_gb": 2.64,
+      "roles": [
+        "routing",
+        "summary",
+        "triage",
+        "inventory",
+        "json",
+        "review",
+        "planning",
+        "draft"
+      ]
+    },
+    "qwen3-embedding-4b": {
+      "profile": "qwen3-embedding-4b",
+      "kind": "embedding",
+      "tier": "optional-embedding",
+      "default_install": false,
+      "model": "Qwen3 Embedding 4B Q4_K_M GGUF",
+      "base_model": "Qwen/Qwen3-Embedding-4B",
+      "source": "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/main/Qwen3-Embedding-4B-Q4_K_M.gguf",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "download_kind": "direct",
+      "license": "Apache-2.0",
+      "quant": "Q4_K_M",
+      "expected_size_gb": 2.33,
+      "roles": [
+        "embedding",
+        "benchmark"
+      ]
+    },
+    "qwen3-embedding-0.6b-q8": {
+      "profile": "qwen3-embedding-0.6b-q8",
+      "kind": "embedding",
+      "tier": "optional-embedding",
+      "default_install": false,
+      "model": "Qwen3 Embedding 0.6B Q8_0 GGUF",
+      "base_model": "Qwen/Qwen3-Embedding-0.6B",
+      "source": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "download_kind": "direct",
+      "license": "Apache-2.0",
+      "quant": "Q8_0",
+      "expected_size_gb": 0.63,
+      "roles": [
+        "embedding",
+        "benchmark"
+      ]
+    },
+    "qwen3-embedding-4b-q5km": {
+      "profile": "qwen3-embedding-4b-q5km",
+      "kind": "embedding",
+      "tier": "optional-embedding",
+      "default_install": false,
+      "model": "Qwen3 Embedding 4B Q5_K_M GGUF",
+      "base_model": "Qwen/Qwen3-Embedding-4B",
+      "source": "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/main/Qwen3-Embedding-4B-Q5_K_M.gguf",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "download_kind": "direct",
+      "license": "Apache-2.0",
+      "quant": "Q5_K_M",
+      "expected_size_gb": 2.69,
+      "roles": [
+        "embedding",
+        "benchmark"
+      ]
+    },
+    "qwen3-embedding-8b-q4km": {
+      "profile": "qwen3-embedding-8b-q4km",
+      "kind": "embedding",
+      "tier": "optional-embedding",
+      "default_install": false,
+      "model": "Qwen3 Embedding 8B Q4_K_M GGUF",
+      "base_model": "Qwen/Qwen3-Embedding-8B",
+      "source": "https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF/resolve/main/Qwen3-Embedding-8B-Q4_K_M.gguf",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "download_kind": "direct",
+      "license": "Apache-2.0",
+      "quant": "Q4_K_M",
+      "expected_size_gb": 4.36,
+      "roles": [
+        "embedding",
+        "benchmark"
+      ]
+    },
+    "qwen3vl-2b-q4": {
+      "profile": "qwen3vl-2b-q4",
+      "kind": "vision",
+      "tier": "vision",
+      "default_install": true,
+      "model": "Qwen3-VL 2B Instruct Q4_K_M GGUF",
+      "base_model": "Qwen/Qwen3-VL-2B-Instruct",
+      "source": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+      "mmproj_url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "download_kind": "direct",
+      "license": "Apache-2.0",
+      "quant": "Q4_K_M",
+      "expected_size_gb": 1.45,
+      "roles": [
+        "vision",
+        "image-description",
+        "jpeg",
+        "png"
+      ]
+    }
+  },
+  "bootstrap": {
+    "auto_config": true,
+    "auto_download": "on-local-ai-use",
+    "direct_script_fallback": true,
+    "default_profiles": [
+      "nemotron3-nano4b",
+      "qwen3vl-2b-q4"
+    ],
+    "max_download_gb": 20
+  },
+  "limits": {
+    "threads": 8,
+    "threads_batch": 8,
+    "context_tokens": 4096,
+    "output_tokens": 256,
+    "batch_size": 512,
+    "ubatch_size": 256,
+    "timeout_seconds": 300,
+    "confidence_threshold": 0.7,
+    "max_text_chars": 180
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "cache_prompt": true,
+    "parallel_slots": 1,
+    "mlock": false
+  },
+  "tools": {
+    "mode": "brokered-read-only",
+    "allow": [
+      "repo.search",
+      "repo.read",
+      "repo.tree",
+      "repo.generated-status"
+    ],
+    "max_read_bytes": 20000,
+    "max_search_results": 50,
+    "max_tree_entries": 200,
+    "timeout_seconds": 5
+  },
+  "bundle_manifest": ".agents/local-ai/bundle/manifest.json",
+  "cache_dir": ".agents/local-ai/cache",
+  "task_envelopes": {
+    "routing-summary-triage": {
+      "route": "installed-smoke-default",
+      "task_classes": [
+        "routing",
+        "summary",
+        "triage",
+        "classification",
+        "inventory",
+        "handoff"
+      ],
+      "profiles": [
+        "nemotron3-nano4b"
+      ],
+      "max_attempts": 2,
+      "validation_gate": "structured-json-confidence",
+      "fallback": "deterministic-orchestrator"
+    },
+    "simple-python-script": {
+      "route": "benchmark-only",
+      "task_classes": [
+        "simple-python-script"
+      ],
+      "profiles": [],
+      "max_attempts": 0,
+      "validation_gate": "python-execution",
+      "fallback": "orchestrator-until-fresh-benchmark"
+    },
+    "dotnet10-di-console": {
+      "route": "benchmark-only",
+      "task_classes": [
+        "dotnet-di-console-draft"
+      ],
+      "profiles": [],
+      "max_attempts": 0,
+      "validation_gate": "dotnet-build-and-run",
+      "fallback": "orchestrator-until-fresh-benchmark"
+    },
+    "dotnet10-xunit-authoring": {
+      "route": "benchmark-only",
+      "task_classes": [
+        "dotnet-xunit-authoring-final"
+      ],
+      "profiles": [],
+      "max_attempts": 0,
+      "validation_gate": "dotnet-test-and-mutation-test",
+      "fallback": "orchestrator-until-fresh-benchmark"
+    },
+    "dotnet10-xunit-repair": {
+      "route": "benchmark-only",
+      "task_classes": [
+        "dotnet-xunit-repair-draft"
+      ],
+      "profiles": [],
+      "max_attempts": 0,
+      "validation_gate": "dotnet-test-and-mutation-test",
+      "fallback": "orchestrator-until-fresh-benchmark"
+    },
+    "vision-pdf-image": {
+      "route": "installed-smoke-default",
+      "task_classes": [
+        "vision",
+        "image-description",
+        "pdf-page-pixels"
+      ],
+      "profiles": [
+        "qwen3vl-2b-q4"
+      ],
+      "max_attempts": 1,
+      "validation_gate": "pixel-evidence",
+      "fallback": "deterministic-extraction"
+    }
+  },
+  "model_task_envelopes": {
+    "nemotron3-nano4b": {
+      "max_task_class": "installed-smoke-default",
+      "allowed_task_classes": [
+        "routing",
+        "summary",
+        "triage",
+        "classification",
+        "inventory",
+        "handoff"
+      ],
+      "blocked_task_classes": [],
+      "reason": "Operational smoke default only; old code-generation restrictions were retired pending a fresh benchmark baseline."
+    },
+    "qwen3-embedding-4b": {
+      "max_task_class": "benchmark-only",
+      "allowed_task_classes": [
+        "embedding-benchmark"
+      ],
+      "blocked_task_classes": [],
+      "reason": "Embedding profiles remain catalogued for explicit benchmarks; repository retrieval is direct and model-free."
+    },
+    "qwen3vl-2b-q4": {
+      "max_task_class": "installed-smoke-default",
+      "allowed_task_classes": [
+        "vision",
+        "image-description",
+        "pdf-page-pixels"
+      ],
+      "blocked_task_classes": [],
+      "reason": "Operational vision smoke default only; multimodal promotion requires a fresh benchmark baseline."
+    }
+  }
+}

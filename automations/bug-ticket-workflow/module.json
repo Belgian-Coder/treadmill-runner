@@ -1,0 +1,829 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py"
+      ],
+      "effects": [],
+      "id": "command-83dd4022f381",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py"
+      ],
+      "effects": [],
+      "id": "command-b306e9aea364",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+      ],
+      "effects": [],
+      "id": "command-e486bb8b26e9",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py"
+      ],
+      "effects": [],
+      "id": "command-60eb15e2c95a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py"
+      ],
+      "effects": [],
+      "id": "command-e00690b1cdf3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+        "--target",
+        "<project-root>",
+        "--write"
+      ],
+      "effects": [
+        "external_write"
+      ],
+      "id": "command-5e27b02e1d4a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "project-context",
+        "--target",
+        "<project-root>",
+        "--check",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-fa2195e87c72",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "<project-root>/docs/project/validation/run_project_validation.py",
+        "--target",
+        "<project-root>",
+        "--evidence-dir",
+        "<project-root>/docs/project/validation/evidence"
+      ],
+      "effects": [],
+      "id": "command-29d064f05316",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py"
+      ],
+      "effects": [],
+      "id": "command-3a19a83dbfdc",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py"
+      ],
+      "effects": [],
+      "id": "command-ec61c9020307",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/bug-ticket-workflow/scripts/bug_regression_quality_profile.py"
+      ],
+      "effects": [],
+      "id": "command-4c3b4ba53232",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "plan-check",
+        "--name",
+        "bug-ticket-workflow",
+        "--run-id",
+        "<run-id>"
+      ],
+      "effects": [],
+      "id": "command-2456a7fe278a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context",
+        "--name",
+        "bug-ticket-workflow",
+        "--run-id",
+        "<run-id>",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-0e9ed6c1e7a3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context-evidence",
+        "--name",
+        "bug-ticket-workflow",
+        "--run-id",
+        "<run-id>",
+        "--event",
+        "start",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-294d0d6deb66",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context-evidence",
+        "--name",
+        "bug-ticket-workflow",
+        "--run-id",
+        "<run-id>",
+        "--event",
+        "start",
+        "--check",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-eb2c8bf91314",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+        "validate-automations",
+        "--root",
+        ".",
+        "--name",
+        "bug-ticket-workflow",
+        "--strict-phase-quality",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-8c36dbcfb0f9",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "lint",
+        "--name",
+        "bug-ticket-workflow",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-e7c37ec40e69",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "resolve",
+        "--name",
+        "bug-ticket-workflow",
+        "--template",
+        "plan.md",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b500d0a107c0",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "metadata",
+        "inspect",
+        "--name",
+        "bug-ticket-workflow",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-881f4fafdd9b",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "branch-policy",
+        "--branch",
+        "feature/dogfood-readonly",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-800b10e348dc",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "hooks",
+        "--name",
+        "bug-ticket-workflow",
+        "--check",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-7a2e23ffdae7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "scorecard",
+        "--name",
+        "bug-ticket-workflow",
+        "--no-lifecycle",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-bb6d8ea1ed67",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "smoke",
+        "--name",
+        "bug-ticket-workflow",
+        "--dry-run",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-619cfaf029be",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "context": {
+    "budgets": {
+      "core": 32000,
+      "evidence": 64000,
+      "project-context": 32000,
+      "run-critical": 64000
+    },
+    "sources": [
+      {
+        "artifact_role": "workflow-entry",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-entry",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/WORKFLOW.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "module-contract",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "module-contract",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/module.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "instructions",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "instructions",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/instructions.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "workflow-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-templates",
+        "load_policy": "handle_only",
+        "pattern": "automations/bug-ticket-workflow/templates/*.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "implementation-plan-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "plan-template",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/templates/plan.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "execution-log-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "execution-template",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/templates/execution-log.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "pr-handoff-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "pr-template",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/templates/pr-description.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "run-state",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-state",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/run.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "run-report",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-report",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/REPORT.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "execution-log",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "execution-log",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/execution-log.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "bug-ticket",
+        "budget_ref": "run-critical",
+        "critical_category": "scope-required",
+        "id": "ticket-info",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "bug-ticket",
+        "budget_ref": "core",
+        "critical_category": "scope-required",
+        "id": "ticket-template",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/templates/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "implementation-plan",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "actual-plan",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/plan.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "pr-handoff",
+        "budget_ref": "run-critical",
+        "critical_category": "handoff",
+        "id": "pr-description",
+        "load_policy": "handle_only",
+        "path": "automations/bug-ticket-workflow/runs/<run-id>/pr-description.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "validation-evidence",
+        "budget_ref": "evidence",
+        "critical_category": "evidence",
+        "id": "validation-evidence",
+        "load_policy": "handle_only",
+        "pattern": "automations/bug-ticket-workflow/runs/<run-id>/validation/**/*",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "project-context",
+        "budget_ref": "project-context",
+        "critical_category": "project-context",
+        "id": "project-context",
+        "load_policy": "handle_only",
+        "pattern": "docs/**/project-context.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "project-context",
+        "budget_ref": "project-context",
+        "critical_category": "project-context",
+        "id": "root-project-context",
+        "load_policy": "handle_only",
+        "path": "PROJECT_CONTEXT.md",
+        "preserve_coordinates": true
+      }
+    ]
+  },
+  "context_evidence": {
+    "finish_queries": [
+      {
+        "fallback_paths": [
+          "automations/bug-ticket-workflow/WORKFLOW.md",
+          "automations/bug-ticket-workflow/module.json",
+          "automations/bug-ticket-workflow/instructions.md",
+          "automations/bug-ticket-workflow/runs/<run-id>/run.json",
+          "automations/bug-ticket-workflow/runs/<run-id>/REPORT.md",
+          "docs/workflow/quality-evidence-packets.md"
+        ],
+        "id": "finish-evidence",
+        "question": "What finish evidence, blockers, unsupported claims, and handoff remain?",
+        "required": true,
+        "scope": "repo"
+      }
+    ],
+    "required": true,
+    "resume_queries": [
+      {
+        "fallback_paths": [
+          "automations/bug-ticket-workflow/runs/<run-id>/run.json",
+          "automations/bug-ticket-workflow/runs/<run-id>/REPORT.md",
+          "automations/bug-ticket-workflow/runs/<run-id>/execution-log.md",
+          "automations/bug-ticket-workflow/runs/<run-id>/artifacts/context/context-packet.json"
+        ],
+        "id": "run-state",
+        "question": "What run state, report, blockers, validation, context packet, and next action remain?",
+        "required": true,
+        "scope": "workflow-runs"
+      }
+    ],
+    "start_queries": [
+      {
+        "fallback_paths": [
+          "automations/routing.md",
+          "automations/bug-ticket-workflow/WORKFLOW.md",
+          "automations/bug-ticket-workflow/module.json",
+          "automations/bug-ticket-workflow/instructions.md",
+          "docs/workflow/workflow-quickstart.md"
+        ],
+        "id": "workflow-contract",
+        "question": "What instructions, phases, gates, evidence, and approval rules apply?",
+        "required": true,
+        "scope": "repo"
+      },
+      {
+        "fallback_paths": [
+          "docs/project/project-context.md",
+          "docs/agent-start.md",
+          "AGENTS.md"
+        ],
+        "id": "project-context",
+        "question": "What project context, commands, boundaries, validation, and external facts apply?",
+        "required": true,
+        "scope": "repo"
+      }
+    ]
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": true,
+    "credential_expectations": "optional ADO, SonarQube, repo credentials; never commit secrets",
+    "data_copied_locally": [
+      "bug facts",
+      "comments/attachments",
+      "reports"
+    ],
+    "source_systems": [
+      "Azure DevOps",
+      "SonarQube",
+      "PR"
+    ]
+  },
+  "id": "bug-ticket-workflow",
+  "inputs": [
+    "WORKFLOW.md",
+    "instructions.md",
+    "module.json",
+    "suites/workflow-evals.json",
+    "templates/*.md",
+    "target docs/project/project-context.md"
+  ],
+  "kind": "workflow",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary",
+      "handoff-draft"
+    ]
+  },
+  "metadata_path": "metadata/workflow-metadata.json",
+  "outputs": [
+    "runs/<run-id>/run.json",
+    "runs/<run-id>/REPORT.md",
+    "runs/<run-id>/ticket-info.md",
+    "runs/<run-id>/plan.md",
+    "runs/<run-id>/execution-log.md",
+    "runs/<run-id>/validation/",
+    "runs/<run-id>/artifacts/project-context-check.json",
+    "runs/<run-id>/artifacts/context/context-packet.json",
+    "runs/<run-id>/artifacts/documentation/documentation-delta.json",
+    "runs/<run-id>/artifacts/documentation/documentation-delta.md",
+    "runs/<run-id>/artifacts/",
+    "target docs/project/",
+    "target fix, tests, and docs"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "parallel_safety": {
+    "default_mode": "serial",
+    "phase_policies": {
+      "intake-and-triage": {
+        "max_workers": 2,
+        "mode": "parallel-read-only",
+        "provider": "none",
+        "runtime": {
+          "environment": "inherited-read-only",
+          "ports": "none",
+          "services": "none",
+          "state_stores": "none"
+        },
+        "write_scopes": []
+      },
+      "regression-and-validation": {
+        "max_workers": 2,
+        "mode": "parallel-read-only",
+        "provider": "none",
+        "runtime": {
+          "environment": "inherited-read-only",
+          "ports": "none",
+          "services": "none",
+          "state_stores": "none"
+        },
+        "write_scopes": []
+      }
+    },
+    "schema_version": 1
+  },
+  "phases": [
+    {
+      "id": "intake-and-triage",
+      "summary": "Record bug facts, comments, attachments."
+    },
+    {
+      "id": "reproduction-planning",
+      "summary": "Plan reproduction and regression strategy."
+    },
+    {
+      "id": "approval-checkpoint",
+      "summary": "Stop after planning; record approval."
+    },
+    {
+      "id": "fix-implementation",
+      "summary": "Reproduce and apply the fix."
+    },
+    {
+      "id": "regression-and-validation",
+      "summary": "Run regression, quality, diagnostics, security."
+    },
+    {
+      "id": "follow-up-handling",
+      "summary": "Classify comments and scope."
+    },
+    {
+      "id": "pr-handoff",
+      "summary": "Prepare root cause, validation, handoff."
+    }
+  ],
+  "related_modules": [
+    "azure-devops-ticket-intake",
+    "dotnet-quality-gates",
+    "mermaid-diagrams-azure-devops",
+    "playwright-integration",
+    "project-context-generator",
+    "repo-navigation",
+    "dotnet-security-review",
+    "sonarqube-diagnostics",
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": true,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "routing": {
+    "activation_terms": [
+      "bug",
+      "defect",
+      "crash",
+      "reproduce",
+      "reproduction",
+      "root-cause"
+    ],
+    "terms": [
+      "bug",
+      "defect",
+      "regression",
+      "crash",
+      "failure",
+      "reproduce",
+      "reproduction",
+      "fix",
+      "repair",
+      "root-cause",
+      "observed",
+      "expected",
+      "ticket"
+    ],
+    "threshold": 2,
+    "winner_margin": 1
+  },
+  "schema_version": 3,
+  "strict_read_only_commands": [
+    "command-8c36dbcfb0f9",
+    "command-e7c37ec40e69",
+    "command-b500d0a107c0",
+    "command-881f4fafdd9b",
+    "command-800b10e348dc",
+    "command-7a2e23ffdae7",
+    "command-bb6d8ea1ed67",
+    "command-619cfaf029be"
+  ],
+  "summary": "Bug intake, reproduction, approved fix, validation, and PR handoff.",
+  "template_layers": {
+    "conflict_policy": "error",
+    "default_template": "plan.md",
+    "override_roots": [
+      "docs/project/workflow-overrides/bug-ticket-workflow"
+    ],
+    "preset_roots": [
+      "automations/bug-ticket-workflow/presets"
+    ],
+    "priorities": {
+      "project-override": 0,
+      "workflow-default": 100,
+      "workflow-lean": 90,
+      "workflow-preset": 50
+    },
+    "profiles": {
+      "default": {
+        "template_roots": [
+          "templates"
+        ]
+      },
+      "lean": {
+        "template": "lean-plan.md",
+        "template_roots": [
+          "templates"
+        ]
+      }
+    }
+  },
+  "validation": [
+    "python -B .agents/manage.py validate-automations --name bug-ticket-workflow"
+  ],
+  "version": "1.0.0",
+  "worker_profiles": {
+    "delegation": {
+      "economics_gate_ref": "delegation-balanced-v1",
+      "eligible_task_classes": [
+        "independent-read-heavy"
+      ],
+      "fallback": "sequential",
+      "max_depth": 1,
+      "require_complete_thread_tree": true,
+      "require_model_attestation": true,
+      "schema_version": 1,
+      "trigger": "explicit-request-or-owner-instruction"
+    },
+    "extends": "portable-default",
+    "max_parallel_workers": 2,
+    "mode": "auto-when-supported",
+    "phase_assignments": {
+      "approval-checkpoint": "planning-high",
+      "fix-implementation": "implementation-medium",
+      "follow-up-handling": "handoff-mini",
+      "intake-and-triage": "evidence-mini",
+      "pr-handoff": "handoff-mini",
+      "regression-and-validation": "validation-local",
+      "reproduction-planning": "planning-high"
+    },
+    "schema_version": 1,
+    "task_assignments": {}
+  }
+}

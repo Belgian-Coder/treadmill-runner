@@ -1,0 +1,9 @@
+<strings>
+  <string id="AppName">TreadmillRunner</string>
+  <string id="RunnerNameTitle">Runner name</string>
+  <string id="RunnerNamePrompt">The profile shown before recording</string>
+  <string id="GatewayUrlTitle">Gateway HTTPS URL</string>
+  <string id="GatewayUrlPrompt">Optional HTTPS address from TreadmillRunner watch setup</string>
+  <string id="WatchTokenTitle">Watch pairing token</string>
+  <string id="WatchTokenPrompt">Token shown once by TreadmillRunner</string>
+</strings>

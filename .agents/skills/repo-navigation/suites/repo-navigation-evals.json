@@ -1,0 +1,180 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/repo_navigation.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/briefing/brief_repo.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/navigation/update_navigation.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/navigation/install_navigation_workflow.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/navigation/project_context.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/navigation/source_focus.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "repository",
+          "type": "description_contains"
+        },
+        {
+          "text": "brief",
+          "type": "skill_contains"
+        },
+        {
+          "text": "staleness",
+          "type": "skill_contains"
+        },
+        {
+          "text": "project-context",
+          "type": "skill_contains"
+        },
+        {
+          "text": "token",
+          "type": "skill_contains"
+        },
+        {
+          "text": "read-only/offline dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Run `eval-skill` or self-tests only when temporary fixture writes are allowed",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict dogfood is only the no-output/no-write subset",
+          "type": "skill_contains"
+        },
+        {
+          "text": "may invoke read-only git status/history",
+          "type": "skill_contains"
+        },
+        {
+          "text": "build generated payloads in memory",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-mode-only",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Source-review modes before widening",
+          "type": "skill_contains"
+        },
+        {
+          "text": "unreviewed management commands",
+          "type": "skill_contains"
+        },
+        {
+          "path": "module.json",
+          "text": "strict_read_only_commands",
+          "type": "file_contains"
+        },
+        {
+          "text": "brief --output",
+          "type": "skill_contains"
+        },
+        {
+          "text": "workflow smoke commands that create temporary lifecycle evidence",
+          "type": "skill_contains"
+        },
+        {
+          "path": "scripts/repo_navigation.py",
+          "text": "stdout-only",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/briefing/brief_repo.py",
+          "text": "stdout-only read-only reporting",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "write/temp",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/navigation/navigation_core.py",
+          "text": "workflow smoke --name {name} --dry-run",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/navigation/install_navigation_workflow.py",
+          "text": "Lifecycle smoke commands are validation commands only",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/navigation/project_context.py",
+          "text": "next_command_mode",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/navigation/update_navigation.py",
+          "text": "installation_status",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/navigation/run_self_tests.py",
+          "text": "workflow smoke --name navigation --dry-run",
+          "type": "file_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 800
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "repo-navigation"
+}

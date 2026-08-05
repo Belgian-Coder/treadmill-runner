@@ -1,0 +1,245 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/generate_project_context.py"
+      ],
+      "effects": [],
+      "id": "command-bba6d90456ee",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_project_validation.py"
+      ],
+      "effects": [],
+      "id": "command-06fe72d3490a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/project-context-generator",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-01c08735642f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/project-context-generator",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-e0c2e7380987",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "project-context-generator",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-78af5a1f47c6",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-2fd9e309a1ad",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/project-context-generator/scripts/run_project_validation.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-b7d6c59e3ce2",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/project-context-generator/scripts/run_self_tests.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-95c1a6d49bf0",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs deterministic inspection, context generation, and validation proof scripts using the standard library.",
+      "version": "3.12+"
+    },
+    {
+      "name": "dotnet-project-context",
+      "optional": true,
+      "purpose": "Optional static .NET project, SDK/runtime, NuGet/feed, and validation-candidate enrichment for generated project context."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none; generated reports name environment variables or config keys without values",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "project-context-generator",
+  "inputs": [
+    "target project files",
+    "package manifests",
+    "solution and project files",
+    "test and Playwright configuration files"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "inventory-summary",
+      "validation-triage",
+      "handoff-draft"
+    ]
+  },
+  "name": "project-context-generator",
+  "outputs": [
+    "docs/project/project-context.md",
+    "docs/project/project-context.json",
+    "docs/project/diagrams/*.mmd",
+    "docs/project/diagrams/*.svg",
+    "docs/project/validation/run_project_validation.py",
+    "docs/project/validation/validation-manifest.json",
+    "docs/project/validation/evidence/<run-id>/",
+    "docs/project/generated/"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-06-09",
+    "license": "repository",
+    "source": "Designed for this repository.",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/project-context-generator-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Validates context generation, command discovery, and Playwright proof support."
+      }
+    ]
+  },
+  "related_modules": [
+    "repo-navigation",
+    "workflow-manager",
+    "playwright-integration",
+    "dotnet-project-context",
+    "dotnet-quality-gates"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-01c08735642f",
+    "command-e0c2e7380987",
+    "command-78af5a1f47c6",
+    "command-2fd9e309a1ad",
+    "command-b7d6c59e3ce2",
+    "command-95c1a6d49bf0",
+    "command-6066588d4453"
+  ],
+  "summary": "Generates workflow-ready project context files and validation proof scripts from an existing target project, with optional .NET context enrichment through dotnet-project-context.",
+  "validation": [
+    "python -B .agents/skills/project-context-generator/scripts/run_self_tests.py",
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/project-context-generator"
+  ],
+  "version": "1.0.0"
+}

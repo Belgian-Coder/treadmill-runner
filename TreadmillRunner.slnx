@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TreadmillRunner.Core/TreadmillRunner.Core.csproj" />
+    <Project Path="src/TreadmillRunner.Gateway/TreadmillRunner.Gateway.csproj" />
+    <Project Path="src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj" />
+    <Project Path="src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj" />
+    <Project Path="src/TreadmillRunner.Web/TreadmillRunner.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TreadmillRunner.Core.Tests/TreadmillRunner.Core.Tests.csproj" />
+    <Project Path="tests/TreadmillRunner.E2ETests/TreadmillRunner.E2ETests.csproj" />
+    <Project Path="tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj" />
+    <Project Path="tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj" />
+  </Folder>
+</Solution>

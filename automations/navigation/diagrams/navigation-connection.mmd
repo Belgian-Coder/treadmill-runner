@@ -1,0 +1,6 @@
+graph LR;
+  project["Project files"] --> scanner["Navigation scanner"];
+  scanner["Navigation scanner"] --> maps["artifacts/maps"];
+  scanner["Navigation scanner"] --> context["docs/project/project-context.md"];
+  maps["artifacts/maps"] --> workflows["Story and bug workflows"];
+  context["docs/project/project-context.md"] --> workflows["Story and bug workflows"];

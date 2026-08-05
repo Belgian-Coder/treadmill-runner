@@ -1,0 +1,17 @@
+graph TD;
+  Root["TreadmillRunner"] --> Src["src"];
+  Root --> Tests["tests"];
+  Root --> Eng["eng"];
+  Root --> Docs["docs/project"];
+  Root --> Harness["AI harness and workflows"];
+  Src --> Core["TreadmillRunner.Core"];
+  Src --> Protocols["TreadmillRunner.Protocols"];
+  Src --> Infrastructure["TreadmillRunner.Infrastructure"];
+  Src --> Gateway["TreadmillRunner.Gateway"];
+  Src --> Web["TreadmillRunner.Web"];
+  Tests --> Unit["Core and protocol tests"];
+  Tests --> Integration["Gateway integration tests"];
+  Tests --> Browser["Playwright browser tests"];
+  Docs --> Decisions["Decisions and architecture"];
+  Docs --> Evidence["Protocol and hardware evidence"];
+  Docs --> Operations["Windows operations and updates"];

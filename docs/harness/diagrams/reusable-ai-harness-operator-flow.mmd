@@ -1,0 +1,11 @@
+graph TD;
+  request["User request"] --> route["Read AGENTS and routing"];
+  route --> contract["Open owning contract"];
+  contract --> plan["Record scope and commands"];
+  plan --> work["Apply scoped changes"];
+  work --> validate["Run local validation"];
+  validate --> decision{"Validation passed?"};
+  decision -->|Yes| sync["Sync generated surfaces"];
+  sync --> finish["Report evidence and next action"];
+  decision -->|No| debug["Fix first failing fact"];
+  debug --> validate;

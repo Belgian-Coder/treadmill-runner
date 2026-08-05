@@ -1,0 +1,803 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "review",
+        "--skill"
+      ],
+      "effects": [],
+      "id": "command-166c885736ec",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "review",
+        "<workflow-name>"
+      ],
+      "effects": [],
+      "id": "command-d667241788a3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "check"
+      ],
+      "effects": [],
+      "id": "command-4b98106ee56f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "validate-automations"
+      ],
+      "effects": [],
+      "id": "command-0b3d96214782",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "check-changed"
+      ],
+      "effects": [],
+      "id": "command-41b1b8606de4",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "local-ai"
+      ],
+      "effects": [],
+      "id": "command-c9d75b96fcaa",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+      ],
+      "effects": [],
+      "id": "command-e486bb8b26e9",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "resolve",
+        "--name",
+        "disciplined-change-workflow",
+        "--template",
+        "plan.md"
+      ],
+      "effects": [],
+      "id": "command-45c80cd9e803",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "resolve",
+        "--name",
+        "disciplined-change-workflow",
+        "--template",
+        "plan.md",
+        "--profile",
+        "lean"
+      ],
+      "effects": [],
+      "id": "command-fb8f754e4fc0",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "lint",
+        "--name",
+        "disciplined-change-workflow"
+      ],
+      "effects": [],
+      "id": "command-b7c7fb0b5048",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "metadata",
+        "inspect",
+        "--name",
+        "disciplined-change-workflow",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5d2b61d01517",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "branch-policy"
+      ],
+      "effects": [],
+      "id": "command-82a77663e640",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context",
+        "--name",
+        "disciplined-change-workflow",
+        "--run-id",
+        "<run-id>",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-ec23e7e198ff",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "checkpoint",
+        "--name",
+        "disciplined-change-workflow",
+        "--run-id",
+        "<run-id>",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-967d89631a32",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context-evidence",
+        "--name",
+        "disciplined-change-workflow",
+        "--run-id",
+        "<run-id>",
+        "--event",
+        "start",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-d30382ed4947",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context-evidence",
+        "--name",
+        "disciplined-change-workflow",
+        "--run-id",
+        "<run-id>",
+        "--event",
+        "start",
+        "--check",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-1d92f97fa1cf",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+        "validate-automations",
+        "--root",
+        ".",
+        "--name",
+        "disciplined-change-workflow",
+        "--strict-phase-quality",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b33ab3439f2f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "lint",
+        "--name",
+        "disciplined-change-workflow",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-4e1bf4099c34",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "template",
+        "resolve",
+        "--name",
+        "disciplined-change-workflow",
+        "--template",
+        "plan.md",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-d3245df061f3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "branch-policy",
+        "--branch",
+        "feature/dogfood-readonly",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-800b10e348dc",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "scorecard",
+        "--name",
+        "disciplined-change-workflow",
+        "--no-lifecycle",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-0030f7fc74bf",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "smoke",
+        "--name",
+        "disciplined-change-workflow",
+        "--dry-run",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5375a89dae1d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "context": {
+    "budgets": {
+      "core": 32000,
+      "evidence": 64000,
+      "project-context": 32000,
+      "run-critical": 64000
+    },
+    "sources": [
+      {
+        "artifact_role": "workflow-entry",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-entry",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/WORKFLOW.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "module-contract",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "module-contract",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/module.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "instructions",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "instructions",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/instructions.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "workflow-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-templates",
+        "load_policy": "handle_only",
+        "pattern": "automations/disciplined-change-workflow/templates/*.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "implementation-plan-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "plan-template",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/templates/plan.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "execution-log-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "execution-template",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/templates/execution-log.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "pr-handoff-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "pr-template",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/templates/pr-description.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "run-state",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-state",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/run.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "run-report",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-report",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/REPORT.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "execution-log",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "execution-log",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/execution-log.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "ticket-info",
+        "budget_ref": "run-critical",
+        "critical_category": "work-item",
+        "id": "ticket-info",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "ticket-info",
+        "budget_ref": "core",
+        "critical_category": "work-item",
+        "id": "ticket-template",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/templates/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "implementation-plan",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "actual-plan",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/plan.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "pr-handoff",
+        "budget_ref": "run-critical",
+        "critical_category": "handoff",
+        "id": "pr-description",
+        "load_policy": "handle_only",
+        "path": "automations/disciplined-change-workflow/runs/<run-id>/pr-description.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "validation-evidence",
+        "budget_ref": "evidence",
+        "critical_category": "evidence",
+        "id": "validation-evidence",
+        "load_policy": "handle_only",
+        "pattern": "automations/disciplined-change-workflow/runs/<run-id>/validation/**/*",
+        "preserve_coordinates": false
+      }
+    ]
+  },
+  "context_evidence": {
+    "finish_queries": [
+      {
+        "fallback_paths": [
+          "automations/disciplined-change-workflow/WORKFLOW.md",
+          "automations/disciplined-change-workflow/module.json",
+          "automations/disciplined-change-workflow/instructions.md",
+          "automations/disciplined-change-workflow/runs/<run-id>/run.json",
+          "automations/disciplined-change-workflow/runs/<run-id>/REPORT.md",
+          "docs/workflow/quality-evidence-packets.md"
+        ],
+        "id": "finish-evidence",
+        "question": "What finish evidence, skipped checks, blockers, unsupported claims, and handoff remain?",
+        "required": true,
+        "scope": "repo"
+      }
+    ],
+    "required": true,
+    "resume_queries": [
+      {
+        "fallback_paths": [
+          "automations/disciplined-change-workflow/runs/<run-id>/run.json",
+          "automations/disciplined-change-workflow/runs/<run-id>/REPORT.md",
+          "automations/disciplined-change-workflow/runs/<run-id>/execution-log.md",
+          "automations/disciplined-change-workflow/runs/<run-id>/artifacts/context/context-packet.json"
+        ],
+        "id": "run-state",
+        "question": "What run state, report, blockers, validation, context packet, and next action remain?",
+        "required": true,
+        "scope": "workflow-runs"
+      }
+    ],
+    "start_queries": [
+      {
+        "fallback_paths": [
+          "automations/routing.md",
+          "automations/disciplined-change-workflow/WORKFLOW.md",
+          "automations/disciplined-change-workflow/module.json",
+          "automations/disciplined-change-workflow/instructions.md",
+          "docs/workflow/workflow-quickstart.md"
+        ],
+        "id": "workflow-contract",
+        "question": "What instructions, phases, gates, evidence, and approval rules apply?",
+        "required": true,
+        "scope": "repo"
+      },
+      {
+        "fallback_paths": [
+          "docs/project/project-context.md",
+          "docs/agent-start.md",
+          "AGENTS.md"
+        ],
+        "id": "project-context",
+        "question": "What project context, commands, boundaries, validation, and external facts apply?",
+        "required": true,
+        "scope": "repo"
+      }
+    ]
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none",
+    "data_copied_locally": [
+      "run packets",
+      "implementation packets",
+      "validation"
+    ],
+    "source_systems": [
+      "none by default"
+    ]
+  },
+  "id": "disciplined-change-workflow",
+  "inputs": [
+    "WORKFLOW.md",
+    "instructions.md",
+    "module.json",
+    "suites/workflow-evals.json"
+  ],
+  "kind": "workflow",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary",
+      "handoff-draft"
+    ]
+  },
+  "metadata_path": "metadata/workflow-metadata.json",
+  "outputs": [
+    "runs/<run-id>/run.json",
+    "runs/<run-id>/REPORT.md",
+    "runs/<run-id>/execution-log.md",
+    "runs/<run-id>/plan.md",
+    "runs/<run-id>/validation/",
+    "runs/<run-id>/artifacts/",
+    "runs/<run-id>/artifacts/context/context-packet.json",
+    "runs/<run-id>/artifacts/documentation/documentation-delta.json",
+    "runs/<run-id>/artifacts/documentation/documentation-delta.md"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "parallel_safety": {
+    "default_mode": "serial",
+    "phase_policies": {
+      "orientation": {
+        "max_workers": 2,
+        "mode": "parallel-read-only",
+        "provider": "none",
+        "runtime": {
+          "environment": "inherited-read-only",
+          "ports": "none",
+          "services": "none",
+          "state_stores": "none"
+        },
+        "write_scopes": []
+      },
+      "two-stage-review": {
+        "max_workers": 2,
+        "mode": "parallel-read-only",
+        "provider": "none",
+        "runtime": {
+          "environment": "inherited-read-only",
+          "ports": "none",
+          "services": "none",
+          "state_stores": "none"
+        },
+        "write_scopes": []
+      }
+    },
+    "schema_version": 1
+  },
+  "phases": [
+    {
+      "id": "orientation",
+      "summary": "Load routing and select owner."
+    },
+    {
+      "id": "scope-control",
+      "summary": "Choose smallest vehicle."
+    },
+    {
+      "id": "implementation-planning",
+      "summary": "Name files, checks, artifacts, evidence."
+    },
+    {
+      "id": "execute-with-evidence",
+      "summary": "Apply focused changes with reasons."
+    },
+    {
+      "id": "failed-validation-debugging",
+      "summary": "Reproduce, isolate, patch, rerun."
+    },
+    {
+      "id": "two-stage-review",
+      "summary": "Review spec then implementation."
+    },
+    {
+      "id": "finish-with-fresh-evidence",
+      "summary": "Finish with fresh validation or blockers."
+    }
+  ],
+  "related_modules": [
+    "agent-benchmarking",
+    "dotnet-quality-gates",
+    "local-ai-helper",
+    "mermaid-diagrams-azure-devops",
+    "repo-navigation",
+    "dotnet-security-review",
+    "skill-manager",
+    "workflow-manager"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "routing": {
+    "activation_terms": [
+      "disciplined",
+      "lifecycle",
+      "dogfood",
+      "smoke",
+      "smoke-test"
+    ],
+    "terms": [
+      "disciplined",
+      "lifecycle",
+      "dogfood",
+      "smoke",
+      "smoke-test",
+      "larger",
+      "checkpoint",
+      "handoff",
+      "finish",
+      "evidence",
+      "validation",
+      "strict",
+      "next_command",
+      "ambiguity",
+      "fresh",
+      "maintainer"
+    ],
+    "threshold": 7,
+    "winner_margin": 1
+  },
+  "schema_version": 3,
+  "strict_read_only_commands": [
+    "command-b33ab3439f2f",
+    "command-5d2b61d01517",
+    "command-4e1bf4099c34",
+    "command-d3245df061f3",
+    "command-800b10e348dc",
+    "command-0030f7fc74bf",
+    "command-5375a89dae1d"
+  ],
+  "summary": "Guides larger repo changes through owner selection, scoped planning, execution, review, and fresh validation.",
+  "template_layers": {
+    "conflict_policy": "error",
+    "default_template": "plan.md",
+    "override_roots": [
+      "docs/project/workflow-overrides/disciplined-change-workflow"
+    ],
+    "preset_roots": [
+      "automations/disciplined-change-workflow/presets"
+    ],
+    "priorities": {
+      "project-override": 0,
+      "workflow-default": 100,
+      "workflow-lean": 90,
+      "workflow-preset": 50
+    },
+    "profiles": {
+      "default": {
+        "template_roots": [
+          "templates"
+        ]
+      },
+      "lean": {
+        "template": "lean-plan.md",
+        "template_roots": [
+          "templates"
+        ]
+      }
+    }
+  },
+  "validation": [
+    "python -B .agents/manage.py validate-automations --name disciplined-change-workflow",
+    "python -B .agents/manage.py eval-workflow --name disciplined-change-workflow --suite automations/disciplined-change-workflow/suites/workflow-evals.json"
+  ],
+  "version": "1.0.0",
+  "worker_profiles": {
+    "delegation": {
+      "economics_gate_ref": "delegation-balanced-v1",
+      "eligible_task_classes": [
+        "independent-read-heavy"
+      ],
+      "fallback": "sequential",
+      "max_depth": 1,
+      "require_complete_thread_tree": true,
+      "require_model_attestation": true,
+      "schema_version": 1,
+      "trigger": "explicit-request-or-owner-instruction"
+    },
+    "extends": "portable-default",
+    "max_parallel_workers": 2,
+    "mode": "auto-when-supported",
+    "phase_assignments": {
+      "execute-with-evidence": "implementation-medium",
+      "failed-validation-debugging": "validation-local",
+      "finish-with-fresh-evidence": "handoff-mini",
+      "implementation-planning": "planning-high",
+      "orientation": "evidence-mini",
+      "scope-control": "planning-high",
+      "two-stage-review": "validation-local"
+    },
+    "schema_version": 1,
+    "task_assignments": {}
+  }
+}

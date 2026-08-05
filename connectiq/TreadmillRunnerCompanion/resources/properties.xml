@@ -1,0 +1,5 @@
+<properties>
+  <property id="runnerName" type="string">Runner</property>
+  <property id="gatewayUrl" type="string"></property>
+  <property id="watchToken" type="string"></property>
+</properties>

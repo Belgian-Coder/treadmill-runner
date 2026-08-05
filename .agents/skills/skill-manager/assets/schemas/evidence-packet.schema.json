@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skills-harness/evidence-packet.schema.json",
+  "title": "Skills Harness Evidence Packet",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "ok",
+    "status",
+    "summary",
+    "checks",
+    "skipped",
+    "commands",
+    "evidence_paths"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {},
+    "checks": {
+      "type": "array"
+    },
+    "skipped": {
+      "type": "array"
+    },
+    "commands": {
+      "type": "array"
+    },
+    "evidence_paths": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

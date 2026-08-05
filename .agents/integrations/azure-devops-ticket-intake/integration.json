@@ -1,0 +1,24 @@
+{
+  "integration": {
+    "description": "Imports Azure DevOps or TFS work item facts, relations, comments, and attachments into workflow run evidence.",
+    "id": "azure-devops-ticket-intake",
+    "license": "repository",
+    "name": "Azure DevOps Ticket Intake",
+    "owner": "engineering",
+    "version": "1.0.0"
+  },
+  "provides": {
+    "commands": [
+      "python -B .agents/manage.py credential-doctor --summary --compact --format json",
+      "python -B .agents/manage.py credential-doctor --configure --service azure-devops --name <profile>",
+      "python -B .agents/manage.py credential-doctor --configure --service tfs --name <profile>",
+      "python -B .agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py --help"
+    ],
+    "managed_files": [
+      "automations/*/runs/<run-id>/ticket-info.md",
+      "automations/*/runs/<run-id>/artifacts/azure-devops/"
+    ],
+    "tools": []
+  },
+  "schema_version": 1
+}

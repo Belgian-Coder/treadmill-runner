@@ -1,0 +1,229 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-legacy",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-e5cdb7b72ac7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-legacy",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-2bc14166004c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-legacy",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-578c59987d28",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-legacy/scripts/run_self_tests.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-d19303d9c7ca",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-legacy/scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-aaf637d73ee6",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Visual Studio Build Tools or MSBuild",
+      "optional": true,
+      "purpose": "Often required for legacy .NET Framework builds and tests when approved; may restore packages and write bin/obj, caches, test results, or config outputs.",
+      "version": "project-defined"
+    },
+    {
+      "name": ".NET Framework reference assemblies",
+      "optional": true,
+      "purpose": "May be required for local builds of older target frameworks when approved.",
+      "version": "project-defined"
+    },
+    {
+      "name": "dotnet-quality-gates",
+      "optional": true,
+      "purpose": "Optional normalized evidence when legacy project artifacts are compatible."
+    },
+    {
+      "name": "Python 3.12+ stdlib",
+      "optional": false,
+      "purpose": "Runs the skill self-test script without creating bytecode cache folders.",
+      "version": "3.12+"
+    },
+    {
+      "name": "local-ai-helper",
+      "optional": true,
+      "purpose": "Optional repo-local summaries for inventory, changed files, validation failures, and handoff evidence."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none for read-only use; project build, restore, service, registry, IIS, or deployment credentials only when explicitly approved",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "dotnet-legacy",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/build-and-runtime.md",
+    "docs/maintenance.md",
+    "docs/testing-and-validation.md",
+    "docs/ui-and-hosting.md",
+    "docs/framework-patterns.md",
+    "docs/framework-assessment.md",
+    "docs/migration-playbook.md",
+    "docs/legacy-ui.md"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary"
+    ]
+  },
+  "name": "dotnet-legacy",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/dotnet-legacy/scripts/run_self_tests.py"
+    ],
+    "introduced": "2026-05-25",
+    "license": "repository plus reviewed MIT source concepts",
+    "reviewed_at": "2026-07-01",
+    "source": "Consolidated from dotnet-legacy and dotnet-legacy.",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-legacy-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Validates the skill contract, routing metadata, and referenced docs stay loadable using local file reads only; strict read-only safe after source/help inspection."
+      }
+    ]
+  },
+  "related_modules": [
+    "dotnet-engineering",
+    "dotnet-diagnostics",
+    "dotnet-quality-gates",
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-e5cdb7b72ac7",
+    "command-2bc14166004c",
+    "command-578c59987d28",
+    "command-6066588d4453",
+    "command-d19303d9c7ca"
+  ],
+  "summary": "Guides maintain-in-place engineering and approved modernization for .NET Framework systems, old project files, packages.config, binding redirects, classic ASP.NET, WCF, WPF, WinForms, COM/GAC, IIS, and Windows-only deployment constraints.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-legacy"
+  ],
+  "version": "1.0.0"
+}

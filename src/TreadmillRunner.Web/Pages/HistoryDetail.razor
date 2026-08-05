@@ -1,0 +1,254 @@
+@page "/history/{SessionId:guid}"
+@using TreadmillRunner.Web.Live
+@using System.Globalization
+@using System.Text
+@inject HttpClient Http
+
+<PageTitle>Session detail · TreadmillRunner</PageTitle>
+
+@if (session is null)
+{
+    <p class="empty-state">Loading session detail…</p>
+}
+else
+{
+    <section class="page-stack" aria-labelledby="session-title">
+        <header class="page-heading">
+            <div><p class="eyebrow">@session.State · @session.Definition.UserProfileName</p><h1 id="session-title">@session.Definition.WorkoutTitle</h1></div>
+        </header>
+
+        <section class="history-summary-grid">
+            <article><span>Duration</span><strong>@session.Duration.ToString(@"hh\:mm\:ss")</strong></article>
+            <article><span>Distance</span><strong>@session.DistanceKilometers.ToString("0.00") km</strong></article>
+            <article><span>Estimated kcal</span><strong>@session.EstimatedKilocalories.ToString("0")</strong></article>
+            <article><span>Average HR</span><strong>@(session.AverageHeartRateBpm?.ToString("0") ?? "—") bpm</strong></article>
+        </section>
+        <section class="controls-card" aria-label="Session exports">
+            <a class="secondary-action" href="@($"/api/history/{SessionId}/export.csv")" download>Download CSV</a>
+            <a class="secondary-action" href="@($"/api/history/{SessionId}/export.fit")" download>Download FIT Activity</a>
+        </section>
+
+        <section class="route-card">
+            <h2>Planned versus actual</h2>
+            <div class="chart-plot-grid">
+                <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@SpeedAxisMaximum, 1fr)">
+                    <strong class="chart-axis-unit">km/h</strong>
+                    @foreach (int tick in SpeedAxisTicks)
+                    {
+                        <span>@tick</span>
+                    }
+                </div>
+                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical speed in kilometers per hour over elapsed time">
+                    @foreach (int tick in SpeedAxisTicks)
+                    {
+                        double y = ChartY(tick);
+                        <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                    }
+                    <path class="chart-plan" d="@BuildSpeedPath(static sample => sample.PlannedSpeedKph)" />
+                    <path class="chart-requested" d="@BuildSpeedPath(static sample => sample.RequestedSpeedKph)" />
+                    <path class="chart-current" d="@BuildSpeedPath(static sample => sample.MeasuredSpeedKph)" />
+                    @if (session.Samples.LastOrDefault() is { } latest)
+                    {
+                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph)" r="5" />
+                    }
+                </svg>
+                <div></div>
+                <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(ChartDuration.Ticks / 2))">
+                    @foreach (ChartTimeTick tick in ChartTimeTicks)
+                    {
+                        <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatAxisTime(tick.Elapsed)</span>
+                    }
+                </div>
+            </div>
+            <div class="legend" aria-label="Chart legend"><span><i class="legend-line legend-line--plan"></i>Planned</span><span><i class="legend-line legend-line--requested"></i>Requested</span><span><i class="legend-line legend-line--measured"></i>Measured</span></div>
+            <p>@session.Samples.Count persisted one-second sample(s). The chart is generated from the stored planned, requested, and measured speed values.</p>
+        </section>
+
+        <details class="panel-card advanced-settings">
+            <summary>Time in heart-rate zones</summary>
+            @if (session.Analytics.HeartRateZones.Count == 0)
+            {
+                <p>No heart-rate zone snapshot is available for this session.</p>
+            }
+            else
+            {
+                <dl class="zone-list">
+                    @foreach (HeartRateZoneDuration zone in session.Analytics.HeartRateZones)
+                    {
+                        <div><dt>Zone @zone.ZoneNumber · @zone.Name</dt><dd>@zone.Duration.ToString(@"hh\:mm\:ss")</dd></div>
+                    }
+                </dl>
+            }
+            <p><strong>Plan adherence:</strong> @session.Analytics.AdherencePercentage.ToString("0.0")%</p>
+        </details>
+
+        <details class="panel-card advanced-settings">
+            <summary>Session events</summary>
+            <p class="event-counts">@session.Analytics.EventCounts.ManualSpeedOverrides speed override(s) · @session.Analytics.EventCounts.ManualInclineOverrides incline override(s) · @session.Analytics.EventCounts.Pauses pause(s) · @session.Analytics.EventCounts.Disconnects disconnect(s) · @session.Analytics.EventCounts.Warnings warning(s)</p>
+            @if (session.Events.Count == 0)
+            {
+                <p>No overrides, pauses, disconnects, or warnings were recorded.</p>
+            }
+            else
+            {
+                <ol class="event-list">
+                    @foreach (System.Text.Json.JsonElement sessionEvent in session.Events)
+                    {
+                        <li>@EventLabel(sessionEvent)</li>
+                    }
+                </ol>
+            }
+        </details>
+
+        <details class="panel-card advanced-settings">
+            <summary>Runner debrief</summary>
+            <p><strong>RPE:</strong> @(session.Debrief?.PerceivedExertion?.ToString() ?? "Not recorded")</p>
+            <p>@(session.Debrief?.Note ?? "No note was added.")</p>
+        </details>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid SessionId { get; set; }
+    private StoredWorkoutSessionView? session;
+    private int speedAxisMaximum = 10;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        session = await Http.GetFromJsonAsync<StoredWorkoutSessionView>($"api/history/{SessionId}");
+        double observedMaximum = session?.Samples.Count is > 0
+            ? session.Samples.SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }).Max()
+            : 0;
+        speedAxisMaximum = (int)Math.Ceiling(Math.Max(10, observedMaximum));
+    }
+
+    private string BuildSpeedPath(Func<SessionSample, double?> selector)
+    {
+        if (session?.Samples.Count is null or 0) return string.Empty;
+
+        IReadOnlyList<SessionSample> points = RenderSamples(session.Samples);
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (SessionSample point in points)
+        {
+            if (selector(point) is not { } speed)
+            {
+                started = false;
+                continue;
+            }
+            double x = ChartX(point.Elapsed);
+            double y = ChartY(speed);
+            path.Append(started ? " L" : "M");
+            path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            started = true;
+        }
+
+        return path.ToString();
+    }
+
+    private static IReadOnlyList<SessionSample> RenderSamples(IReadOnlyList<SessionSample> samples)
+    {
+        const int maximumRenderedPoints = 720;
+        if (samples.Count <= maximumRenderedPoints) return samples;
+        const int bucketCount = maximumRenderedPoints / 12;
+        int bucketSize = (int)Math.Ceiling(samples.Count / (double)bucketCount);
+        var selected = new List<SessionSample>(maximumRenderedPoints);
+        for (int start = 0; start < samples.Count; start += bucketSize)
+        {
+            SessionSample[] bucket = samples.Skip(start).Take(Math.Min(bucketSize, samples.Count - start)).ToArray();
+            var extrema = new List<SessionSample>
+            {
+                bucket[0], bucket[^1],
+                bucket.MinBy(static sample => sample.MeasuredSpeedKph)!, bucket.MaxBy(static sample => sample.MeasuredSpeedKph)!,
+                bucket.MinBy(static sample => sample.RequestedSpeedKph)!, bucket.MaxBy(static sample => sample.RequestedSpeedKph)!,
+            };
+            SessionSample[] planned = bucket.Where(static sample => sample.PlannedSpeedKph is not null).ToArray();
+            if (planned.Length > 0)
+            {
+                extrema.Add(planned.MinBy(static sample => sample.PlannedSpeedKph)!);
+                extrema.Add(planned.MaxBy(static sample => sample.PlannedSpeedKph)!);
+            }
+            int[] transitions = Enumerable.Range(1, bucket.Length - 1)
+                .Where(index => bucket[index - 1].PlannedSpeedKph.HasValue != bucket[index].PlannedSpeedKph.HasValue)
+                .ToArray();
+            foreach (int transition in transitions.Length <= 2 ? transitions : new[] { transitions[0], transitions[^1] })
+            {
+                extrema.Add(bucket[transition - 1]);
+                extrema.Add(bucket[transition]);
+            }
+            selected.AddRange(extrema.Distinct().OrderBy(static sample => sample.Elapsed));
+        }
+        return selected;
+    }
+
+    private int SpeedAxisMaximum => speedAxisMaximum;
+
+    private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
+    private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, ChartDuration.TotalSeconds), 0, 1) * 700);
+    private double ChartY(double speed) => 210 - (Math.Clamp(speed / SpeedAxisMaximum, 0, 1) * 200);
+
+    private TimeSpan ChartDuration => session is null
+        ? TimeSpan.Zero
+        : session.Samples.Count > 0 && session.Samples[^1].Elapsed > session.Duration
+            ? session.Samples[^1].Elapsed
+            : session.Duration;
+
+    private IReadOnlyList<ChartTimeTick> ChartTimeTicks
+    {
+        get
+        {
+            TimeSpan duration = ChartDuration;
+            double minutes = duration.TotalMinutes;
+            int intervalMinutes = AxisIntervalMinutes(minutes);
+            var ticks = new List<ChartTimeTick> { new(TimeSpan.Zero, 0) };
+            for (double minute = intervalMinutes; minute < minutes; minute += intervalMinutes)
+            {
+                TimeSpan elapsed = TimeSpan.FromMinutes(minute);
+                ticks.Add(new ChartTimeTick(elapsed, elapsed.TotalSeconds / Math.Max(1, duration.TotalSeconds) * 100));
+            }
+            if (ticks.Count > 1 && (duration - ticks[^1].Elapsed).TotalMinutes < intervalMinutes * .75) ticks.RemoveAt(ticks.Count - 1);
+            if (duration > TimeSpan.Zero) ticks.Add(new ChartTimeTick(duration, 100));
+            return ticks;
+        }
+    }
+
+    private static string FormatAxisTime(TimeSpan elapsed) => elapsed.TotalHours >= 1
+        ? elapsed.ToString(@"h\:mm", CultureInfo.InvariantCulture)
+        : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+
+    private static int AxisIntervalMinutes(double durationMinutes)
+    {
+        double desired = durationMinutes / 5;
+        return desired <= 1 ? 1 : desired <= 2 ? 2 : desired <= 5 ? 5 : desired <= 10 ? 10 : desired <= 15 ? 15 : 30;
+    }
+
+    private sealed record ChartTimeTick(TimeSpan Elapsed, double PositionPercent);
+
+    private static string EventLabel(System.Text.Json.JsonElement sessionEvent)
+    {
+        string eventType = sessionEvent.TryGetProperty("eventType", out var type) ? type.GetString() ?? "event" : "event";
+        if (eventType == "manual-speed-override" &&
+            sessionEvent.TryGetProperty("previousSpeedKph", out var previous) &&
+            sessionEvent.TryGetProperty("requestedSpeedKph", out var requested))
+        {
+            return $"Manual speed override: {previous.GetDouble():0.0} → {requested.GetDouble():0.0} km/h";
+        }
+
+        if (eventType == "manual-incline-override" &&
+            sessionEvent.TryGetProperty("previousInclinePercent", out var previousIncline) &&
+            sessionEvent.TryGetProperty("requestedInclinePercent", out var requestedIncline))
+        {
+            return $"Manual incline override: {previousIncline.GetDouble():0.0} → {requestedIncline.GetDouble():0.0}%";
+        }
+
+        return eventType switch
+        {
+            "physical-movement-detected" or "session-warning" when sessionEvent.TryGetProperty("message", out var message) => message.GetString() ?? "Session warning",
+            "workout-step-transition" => "Workout step changed",
+            "session-completed" => "Session completed",
+            _ => eventType.Replace('-', ' '),
+        };
+    }
+}

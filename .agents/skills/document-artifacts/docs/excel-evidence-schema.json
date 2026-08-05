@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "document-artifacts evidence packet",
+  "required_fields": [
+    "schema_version",
+    "tool",
+    "ok",
+    "status",
+    "command",
+    "input_path",
+    "input_sha256",
+    "input_size_bytes",
+    "format",
+    "summary",
+    "capabilities",
+    "evidence",
+    "findings",
+    "warnings",
+    "skipped",
+    "issues",
+    "artifacts"
+  ],
+  "field_types": {
+    "artifacts": "array",
+    "capabilities": "object",
+    "evidence": "array",
+    "findings": "array",
+    "issues": "array",
+    "skipped": "array",
+    "warnings": "array"
+  }
+}

@@ -1,0 +1,602 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Playwright;
+
+namespace TreadmillRunner.E2ETests;
+
+public sealed record GalleryScenario(
+  Guid MarcProfileId,
+  Guid SecondProfileId,
+  Guid FeaturedWorkoutId,
+  Guid FeaturedWorkoutRevisionId,
+  Guid HistorySessionId)
+{
+  public const string FeaturedWorkoutName = "5K builder · Easy intervals";
+  public const string FeaturedSeriesName = "5K Builder";
+  public const string SecondProfileName = "Runner 2";
+  private const string ControllerHolderId = "gallery-controller";
+  private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+  public static async Task<GalleryScenario> CreateAsync(Uri baseAddress)
+  {
+    using HttpClient client = new() { BaseAddress = baseAddress };
+    JsonElement marc = await CreateProfileAsync(client, "Marc", 114, 206, 12);
+    JsonElement second = await CreateProfileAsync(client, SecondProfileName, 68, 188, 11);
+    Guid marcId = marc.GetProperty("id").GetGuid();
+    Guid secondId = second.GetProperty("id").GetGuid();
+
+    JsonElement featured = await CreateWorkoutAsync(client, FeaturedWorkoutName,
+      "A progressive five-step run with warm-up, aerobic intervals, recoveries, and cool-down.",
+      [
+        Step(6, 4.5, 0.5, "Warm up"),
+        Step(5, 7.0, 1.0, "Steady"),
+        Step(3, 5.5, 0.5, "Recover"),
+        Step(5, 7.5, 1.5, "Build"),
+        Step(6, 4.5, 0.5, "Cool down"),
+      ]);
+    JsonElement steady = await CreateWorkoutAsync(client, "5K builder · Steady progression",
+      "A controlled aerobic progression for the next step in the 5K plan.",
+      [Step(8, 5.0, 0.5, "Easy"), Step(12, 6.5, 1.0, "Aerobic"), Step(8, 7.0, 1.0, "Finish")]);
+    JsonElement longRun = await CreateWorkoutAsync(client, "10K builder · Long easy run",
+      "Comfortable endurance running with a gentle incline change in the middle.",
+      [Step(10, 5.0, 0.5, "Settle"), Step(30, 6.0, 1.0, "Endurance"), Step(10, 5.0, 0.5, "Cool down")]);
+    JsonElement recovery = await CreateWorkoutAsync(client, "Recovery walk",
+      "A short, low-intensity recovery session.",
+      [Step(20, 4.5, 0.5, "Relax")]);
+
+    Guid featuredRevision = featured.GetProperty("revisionId").GetGuid();
+    Guid steadyRevision = steady.GetProperty("revisionId").GetGuid();
+    Guid longRunRevision = longRun.GetProperty("revisionId").GetGuid();
+    Guid recoveryRevision = recovery.GetProperty("revisionId").GetGuid();
+    DateOnly monthStart = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    await CreateSeriesAsync(client, marcId, FeaturedSeriesName, monthStart, 1 | 4 | 32,
+      [featuredRevision, steadyRevision]);
+    await CreateSeriesAsync(client, marcId, "10K Builder", monthStart, 2 | 16,
+      [longRunRevision, recoveryRevision]);
+    JsonElement first5K = await CreateProgramAsync(
+      client,
+      "First 5K",
+      "A progressive three-run plan that builds confidence toward a comfortable 5K.",
+      "5K",
+      [featuredRevision, steadyRevision, recoveryRevision]);
+    await CreateProgramAsync(
+      client,
+      "Stronger 10K",
+      "A reusable endurance plan combining steady work, a long run, and recovery.",
+      "10K",
+      [steadyRevision, longRunRevision, recoveryRevision]);
+    await StartProgramAsync(client, first5K.GetProperty("id").GetGuid(), first5K.GetProperty("revisionId").GetGuid(), marcId);
+
+    return new GalleryScenario(
+      marcId,
+      secondId,
+      featured.GetProperty("workoutId").GetGuid(),
+      featuredRevision,
+      Guid.Parse("d07a6dd5-cae7-4ca4-b099-06be38ed2694"));
+  }
+
+  public async Task ResetSimulatorAsync(Uri baseAddress)
+  {
+    using HttpClient client = new() { BaseAddress = baseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    if (response.StatusCode != HttpStatusCode.NoContent)
+      throw new InvalidOperationException($"Gallery simulator reset failed with {(int)response.StatusCode}.");
+  }
+
+  public async Task SetPhysicalMotionAsync(Uri baseAddress, double speedKph, double inclinePercent)
+  {
+    using HttpClient client = new() { BaseAddress = baseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/live/simulator/physical-motion", new
+    {
+      isMoving = true,
+      measuredSpeedKph = speedKph,
+      measuredInclinePercent = inclinePercent,
+    });
+    if (response.StatusCode != HttpStatusCode.NoContent)
+      throw new InvalidOperationException($"Gallery simulator motion failed with {(int)response.StatusCode}.");
+  }
+
+  public Task ConfigureBrowserAsync(IPage page)
+  {
+    string initialization = $$"""
+      window.localStorage.setItem('treadmillrunner.active-profile', '{{MarcProfileId:D}}');
+      window.localStorage.setItem('treadmillrunner.controller-holder', '{{ControllerHolderId}}');
+      """;
+    return page.AddInitScriptAsync(initialization);
+  }
+
+  public async Task InstallVisualDataRoutesAsync(IPage page)
+  {
+    await page.RouteAsync("**/api/devices/enrollments", route => FulfillJsonAsync(route, DeviceEnrollments()));
+    await page.RouteAsync("**/api/devices/status*", route => FulfillJsonAsync(route, DeviceStatus()));
+    await page.RouteAsync("**/api/updates/status", route => FulfillJsonAsync(route, UpdateStatus()));
+    await page.RouteAsync("**/api/integrations/garmin/profiles/*/status", route =>
+      FulfillJsonAsync(route, GarminStatus(new Uri(route.Request.Url).AbsolutePath)));
+    await page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/status", route =>
+      FulfillJsonAsync(route, new
+      {
+        profileId = MarcProfileId,
+        connected = true,
+        enabled = false,
+        accountLabel = "Marc's private Garmin session",
+        state = "Connected",
+        pending = 0,
+        confirmed = 4,
+        failed = 0,
+        unknown = 1,
+        lastSuccessAtUtc = DateTimeOffset.Parse("2026-08-04T07:02:00Z"),
+        lastError = "One upload outcome needs review before dismissal.",
+        version = 3,
+      }));
+    await page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/jobs", route =>
+      FulfillJsonAsync(route, new[]
+      {
+        new
+        {
+          id = Guid.Parse("90f72113-58ec-4e15-b39c-f7cf21bd02cd"),
+          workoutSessionId = HistorySessionId,
+          status = "Unknown",
+          attemptCount = 1,
+          remoteId = (string?)null,
+          failureKind = "transport",
+          canRetry = false,
+          workoutTitle = "Progressive 5K intervals",
+          startedAtUtc = DateTimeOffset.Parse("2026-08-04T06:28:00Z"),
+          durationSeconds = 2052.0,
+          lastError = "Confirmation was lost; Garmin Connect must be checked before dismissal.",
+          updatedAtUtc = DateTimeOffset.Parse("2026-08-04T07:03:00Z"),
+        },
+      }));
+    await page.RouteAsync("**/api/integrations/garmin/watch/profiles/*", route =>
+      FulfillJsonAsync(route, new
+      {
+        id = Guid.Parse("4209617b-9b2e-4c7f-b728-0adfb6ec3e7a"),
+        userProfileId = MarcProfileId,
+        runnerName = "Marc",
+        deviceLabel = "Marc's Fenix 8",
+        createdAtUtc = DateTimeOffset.Parse("2026-08-03T19:15:00Z"),
+        lastSeenAtUtc = DateTimeOffset.Parse("2026-08-04T07:04:00Z"),
+        version = 2,
+      }));
+    await page.RouteAsync("**/api/history**", async route =>
+    {
+      string path = new Uri(route.Request.Url).AbsolutePath;
+      if (path.Equals("/api/history/weekly", StringComparison.OrdinalIgnoreCase))
+      {
+        await FulfillJsonAsync(route, WeeklyHistory());
+      }
+      else if (path.Equals($"/api/history/{HistorySessionId:D}", StringComparison.OrdinalIgnoreCase))
+      {
+        await FulfillJsonAsync(route, HistoryDetail());
+      }
+      else if (path.Equals("/api/history", StringComparison.OrdinalIgnoreCase))
+      {
+        await FulfillJsonAsync(route, HistorySummaries());
+      }
+      else
+      {
+        await route.ContinueAsync();
+      }
+    });
+  }
+
+  private object GarminStatus(string path)
+  {
+    bool marc = path.Contains(MarcProfileId.ToString("D"), StringComparison.OrdinalIgnoreCase);
+    return new
+    {
+      profileId = marc ? MarcProfileId : SecondProfileId,
+      providerConfigured = true,
+      setupMessage = "Garmin Connect Developer Program configuration is ready.",
+      connected = marc,
+      accountLabel = marc ? "Marc's Garmin account" : null,
+      connectedAtUtc = marc ? DateTimeOffset.Parse("2026-08-03T19:10:00Z") : (DateTimeOffset?)null,
+      lastSyncAttemptAtUtc = marc ? DateTimeOffset.Parse("2026-08-04T06:45:00Z") : (DateTimeOffset?)null,
+      lastSyncSuccessAtUtc = marc ? DateTimeOffset.Parse("2026-08-04T06:45:03Z") : (DateTimeOffset?)null,
+      lastError = (string?)null,
+      pendingItems = marc ? 2 : 0,
+      failedItems = 0,
+      syncedItems = marc ? 7 : 0,
+    };
+  }
+
+  public static FilePayload ImportFile() => new()
+  {
+    Name = "5k-gallery-workout.json",
+    MimeType = "application/json",
+    Buffer = Encoding.UTF8.GetBytes(
+      """
+      {"schemaVersion":1,"title":"Imported 5K tempo preview","description":"A deterministic gallery import preview.","blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":3600000000},"speed":{"kind":"fixed","kilometersPerHour":5.0},"incline":{"kind":"fixed","percent":0.5},"cue":"Warm up","notes":null},{"kind":"step","goal":{"kind":"time","durationTicks":6000000000},"speed":{"kind":"fixed","kilometersPerHour":7.5},"incline":{"kind":"fixed","percent":1.0},"cue":"Tempo","notes":null},{"kind":"step","goal":{"kind":"time","durationTicks":3000000000},"speed":{"kind":"fixed","kilometersPerHour":4.5},"incline":{"kind":"fixed","percent":0.5},"cue":"Cool down","notes":null}]}
+      """),
+  };
+
+  private static async Task<JsonElement> CreateProfileAsync(
+    HttpClient client,
+    string name,
+    double weight,
+    ushort maximumHeartRate,
+    double maximumSpeed)
+  {
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/profiles", new
+    {
+      operationId = Guid.NewGuid(),
+      displayName = name,
+      unitSystem = "Metric",
+      weightKilograms = weight,
+      maximumHeartRateBpm = maximumHeartRate,
+      maximumSpeedKph = maximumSpeed,
+      heartRateZones = SuggestedZones(maximumHeartRate),
+      expectedVersion = (int?)null,
+      heartRateIncreaseStepKph = 0.2,
+      heartRateIncreaseCooldownSeconds = 30,
+      heartRateDecreaseStepKph = 0.5,
+      heartRateDecreaseCooldownSeconds = 15,
+    });
+    return await ReadCreatedAsync(response, $"profile {name}");
+  }
+
+  private static async Task<JsonElement> CreateWorkoutAsync(
+    HttpClient client,
+    string name,
+    string description,
+    object[] blocks)
+  {
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/workouts", new
+    {
+      operationId = Guid.NewGuid(),
+      name,
+      description,
+      blocks,
+    });
+    return await ReadCreatedAsync(response, $"workout {name}");
+  }
+
+  private static async Task CreateSeriesAsync(
+    HttpClient client,
+    Guid profileId,
+    string name,
+    DateOnly startDate,
+    int weekdayMask,
+    Guid[] revisionIds)
+  {
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+    {
+      operationId = Guid.NewGuid(),
+      profileId,
+      name,
+      timeZoneId = "Europe/Brussels",
+      startDate,
+      endDate = (DateOnly?)null,
+      intervalWeeks = 1,
+      weekdayMask,
+      alternatives = revisionIds.Select((revisionId, index) => new { workoutRevisionId = revisionId, displayOrder = index }).ToArray(),
+      exceptions = Array.Empty<object>(),
+      expectedVersion = (int?)null,
+    });
+    if (response.StatusCode != HttpStatusCode.Created)
+      throw new InvalidOperationException($"Could not create gallery series {name}: {await response.Content.ReadAsStringAsync()}");
+  }
+
+  private static async Task<JsonElement> CreateProgramAsync(
+    HttpClient client,
+    string name,
+    string description,
+    string category,
+    Guid[] revisionIds)
+  {
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/programs", new
+    {
+      operationId = Guid.NewGuid(),
+      name,
+      description,
+      category,
+      items = revisionIds.Select(revisionId => new { workoutRevisionId = revisionId }).ToArray(),
+    });
+    return await ReadCreatedAsync(response, $"training plan {name}");
+  }
+
+  private static async Task StartProgramAsync(HttpClient client, Guid programId, Guid revisionId, Guid profileId)
+  {
+    using HttpResponseMessage response = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId:D}/start",
+      new { operationId = Guid.NewGuid(), profileId, expectedProgramRevisionId = revisionId, expectedActiveRunId = (Guid?)null, expectedActiveRunVersion = (int?)null });
+    if (response.StatusCode != HttpStatusCode.OK)
+      throw new InvalidOperationException($"Could not start gallery training plan: {await response.Content.ReadAsStringAsync()}");
+  }
+
+  private static object Step(double minutes, double speed, double incline, string cue) => new
+  {
+    kind = "step",
+    repetitions = 1,
+    blocks = Array.Empty<object>(),
+    goalKind = "time",
+    goalValue = minutes,
+    speedKind = "fixed",
+    speedStartKph = speed,
+    speedEndKph = 0.0,
+    heartRateMinimumBpm = 0,
+    heartRateMaximumBpm = 0,
+    heartRateZoneNumber = 0,
+    heartRateInitialSpeedKph = 0.0,
+    heartRateMinimumSpeedKph = 0.0,
+    heartRateMaximumSpeedKph = 0.0,
+    inclineKind = "fixed",
+    inclineStartPercent = incline,
+    inclineEndPercent = 0.0,
+    cue,
+    notes = "Deterministic screenshot fixture",
+  };
+
+  private static object[] SuggestedZones(ushort maximum) =>
+  [
+    Zone(1, "Warm up", maximum, 0.50, 0.60, false),
+    Zone(2, "Easy", maximum, 0.60, 0.70, false),
+    Zone(3, "Aerobic", maximum, 0.70, 0.80, false),
+    Zone(4, "Threshold", maximum, 0.80, 0.90, false),
+    Zone(5, "Maximum", maximum, 0.90, 1.00, true),
+  ];
+
+  private static object Zone(int number, string name, ushort maximum, double minimum, double upper, bool last) => new
+  {
+    number,
+    name,
+    minimumBpm = (ushort)Math.Ceiling(maximum * minimum),
+    maximumBpm = last ? maximum : (ushort)(Math.Ceiling(maximum * upper) - 1),
+  };
+
+  private static async Task<JsonElement> ReadCreatedAsync(HttpResponseMessage response, string label)
+  {
+    if (response.StatusCode != HttpStatusCode.Created)
+      throw new InvalidOperationException($"Could not create gallery {label}: {await response.Content.ReadAsStringAsync()}");
+    return await response.Content.ReadFromJsonAsync<JsonElement>();
+  }
+
+  private object DeviceEnrollments()
+  {
+    Guid treadmillId = Guid.Parse("9d8764d1-0113-4728-8e5a-b18a8064f836");
+    Guid polarId = Guid.Parse("a0db1f20-1d27-435a-901b-4610f60481f4");
+    Guid garminId = Guid.Parse("b71e5747-0767-4833-a85c-6af49a117fe1");
+    return new object[]
+    {
+      new
+      {
+        id = treadmillId, role = "Treadmill", deviceId = "gallery-omega-z-7D3A", protocolId = "horizon-omega-z-ftms",
+        identityFingerprint = new string('A', 64), displayName = "Horizon Omega Z", modelNumber = "Omega Z",
+        firmwareRevision = "S3.02", telemetryMode = "Ftms", capabilities = (object?)null, evidence = "HardwareVerified",
+        lastVerifiedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2), version = 1,
+        heartRateDeviceKind = (string?)null, heartRateDeviceFamily = (string?)null, assignments = Array.Empty<object>(),
+      },
+      new
+      {
+        id = polarId, role = "HeartRate", deviceId = "gallery-polar-5A36", protocolId = "bluetooth-heart-rate",
+        identityFingerprint = new string('B', 64), displayName = "Polar H10 A1B2C3D4", modelNumber = "H10",
+        firmwareRevision = "Current", telemetryMode = (string?)null, capabilities = (object?)null, evidence = "PassivelyObserved",
+        lastVerifiedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-5), version = 1,
+        heartRateDeviceKind = "ChestStrap", heartRateDeviceFamily = "Polar",
+        assignments = new[] { Assignment(Guid.Parse("11a3f623-dd90-4680-a191-9e50dc106e34"), MarcProfileId, true, 0) },
+      },
+      new
+      {
+        id = garminId, role = "HeartRate", deviceId = "gallery-garmin-FE08", protocolId = "bluetooth-heart-rate",
+        identityFingerprint = new string('C', 64), displayName = "Garmin Fenix 8 HR Broadcast", modelNumber = "Fenix 8",
+        firmwareRevision = "Current", telemetryMode = (string?)null, capabilities = (object?)null, evidence = "PassivelyObserved",
+        lastVerifiedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-8), version = 1,
+        heartRateDeviceKind = "Watch", heartRateDeviceFamily = "Garmin",
+        assignments = new[] { Assignment(Guid.Parse("f7146ec7-243a-4a4d-9299-0e29e8c31930"), MarcProfileId, false, 10) },
+      },
+    };
+  }
+
+  private static object Assignment(Guid id, Guid profileId, bool preferred, int priority) => new
+  {
+    id,
+    userProfileId = profileId,
+    priority,
+    autoConnect = true,
+    isPreferred = preferred,
+    version = 1,
+  };
+
+  private object DeviceStatus()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    Guid polarId = Guid.Parse("a0db1f20-1d27-435a-901b-4610f60481f4");
+    Guid garminId = Guid.Parse("b71e5747-0767-4833-a85c-6af49a117fe1");
+    object treadmill = new
+    {
+      role = 0,
+      state = 6,
+      connectionGeneration = 4,
+      displayName = "Horizon Omega Z",
+      protocolId = "horizon-omega-z-ftms",
+      telemetryMode = "Ftms",
+      lastObservedAt = now.AddMilliseconds(-180),
+      fault = (string?)null,
+    };
+    object heartRate = new
+    {
+      role = 1,
+      state = 6,
+      connectionGeneration = 7,
+      displayName = "Polar H10 A1B2C3D4",
+      protocolId = "bluetooth-heart-rate",
+      telemetryMode = "ChestStrap",
+      lastObservedAt = now.AddMilliseconds(-120),
+      fault = (string?)null,
+    };
+    return new
+    {
+      capturedAt = now,
+      treadmill,
+      heartRate,
+      treadmillTelemetry = new { observedAt = now.AddMilliseconds(-180), speedKph = 0.0, inclinePercent = 0.0 },
+      heartRateBpm = 143,
+      heartRateObservedAt = now.AddMilliseconds(-120),
+      reportedCapabilities = (object?)null,
+      heartRateSources = new object[]
+      {
+        new { enrollmentId = polarId, displayName = "Polar H10 A1B2C3D4", kind = 0, family = 0, state = 6, connectionGeneration = 7, beatsPerMinute = 143, observedAt = now.AddMilliseconds(-120), fault = (string?)null },
+        new { enrollmentId = garminId, displayName = "Garmin Fenix 8 HR Broadcast", kind = 1, family = 1, state = 6, connectionGeneration = 5, beatsPerMinute = 141, observedAt = now.AddMilliseconds(-350), fault = (string?)null },
+      },
+      selectedHeartRateEnrollmentId = polarId,
+      selectedHeartRateDeviceKind = 0,
+      selectedHeartRateDeviceFamily = 0,
+      heartRateSelectionGeneration = 3,
+      heartRateSelectionReason = "Polar H10 is the preferred fresh sensor for Marc.",
+    };
+  }
+
+  private static object UpdateStatus() => new
+  {
+    state = "Available",
+    currentVersion = "1.5.4",
+    availableVersion = "1.5.5",
+    stagedVersion = (string?)null,
+    releaseNotes = "Touch dashboard polish, populated visual fixtures, and update reliability improvements.",
+    lastCheckedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+    message = "A newer signed release is available and ready to verify.",
+  };
+
+  private object[] HistorySummaries()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    return
+    [
+      HistorySummary(HistorySessionId, FeaturedWorkoutRevisionId, FeaturedWorkoutName, 4, now.AddDays(-1), "00:34:12", 5.02, 148, 171, 8.8, 1.0),
+      HistorySummary(Guid.Parse("98cdba4a-39d3-4c35-a05f-e2d7f8e8a48f"), FeaturedWorkoutRevisionId, "5K builder · Steady progression", 4, now.AddDays(-3), "00:31:46", 4.62, 142, 164, 8.7, 0.8),
+      HistorySummary(Guid.Parse("fd15908e-80ba-43bc-967e-974136582fd4"), FeaturedWorkoutRevisionId, "Recovery walk", 5, now.AddDays(-5), "00:18:05", 1.47, 116, 129, 4.9, 0.5),
+      HistorySummary(Guid.Parse("f6aa0559-5882-4ab6-bce9-c65cda8e793e"), FeaturedWorkoutRevisionId, "Winter base interruption", 6, now.AddDays(-40), "00:12:10", 0.91, 121, 137, 4.5, 0.4),
+    ];
+  }
+
+  private object HistorySummary(
+    Guid sessionId,
+    Guid revisionId,
+    string title,
+    int status,
+    DateTimeOffset startedAt,
+    string duration,
+    double distance,
+    double averageHeartRate,
+    ushort maximumHeartRate,
+    double averageSpeed,
+    double averageIncline) => new
+    {
+      sessionId,
+      userProfileId = MarcProfileId,
+      userProfileName = "Marc",
+      workoutRevisionId = revisionId,
+      workoutTitle = title,
+      status,
+      startedAt,
+      endedAt = startedAt.Add(TimeSpan.Parse(duration)),
+      duration,
+      distanceKilometers = distance,
+      estimatedKilocalories = distance * 72,
+      averageHeartRateBpm = averageHeartRate,
+      maximumHeartRateBpm = maximumHeartRate,
+      averageSpeedKph = averageSpeed,
+      averageInclinePercent = averageIncline,
+    };
+
+  private static object WeeklyHistory()
+  {
+    DateTimeOffset from = DateTimeOffset.UtcNow.Date.AddDays(-((int)DateTimeOffset.UtcNow.DayOfWeek + 6) % 7);
+    return new
+    {
+      from,
+      throughExclusive = from.AddDays(7),
+      completedSessionCount = 2,
+      duration = "01:05:58",
+      distanceKilometers = 9.64,
+    };
+  }
+
+  private object HistoryDetail()
+  {
+    DateTimeOffset started = DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(-35);
+    double[] speeds = [4.5, 5.0, 6.2, 7.0, 7.1, 6.0, 7.5, 7.4, 5.5, 4.5];
+    ushort[] heartRates = [112, 120, 132, 146, 151, 143, 158, 162, 139, 124];
+    object[] samples = speeds.Select((speed, index) => new
+    {
+      sessionId = HistorySessionId,
+      sequence = index + 1,
+      capturedAt = started.AddSeconds(index * 210),
+      elapsed = TimeSpan.FromSeconds(index * 210),
+      plannedSpeedKph = speed,
+      requestedSpeedKph = speed,
+      measuredSpeedKph = speed + (index % 3 - 1) * 0.1,
+      plannedInclinePercent = index is 3 or 4 or 6 or 7 ? 1.0 : 0.5,
+      requestedInclinePercent = index is 3 or 4 or 6 or 7 ? 1.0 : 0.5,
+      measuredInclinePercent = index is 3 or 4 or 6 or 7 ? 1.0 : 0.5,
+      heartRateBpm = heartRates[index],
+      distanceKilometers = 5.02 * index / (speeds.Length - 1),
+      estimatedKilocalories = 362.0 * index / (speeds.Length - 1),
+      telemetryAge = "00:00:00.2",
+      metricAlgorithmVersion = "estimated-calories/v1",
+    }).ToArray();
+    return new
+    {
+      definition = new
+      {
+        sessionId = HistorySessionId,
+        userProfileId = MarcProfileId,
+        userProfileName = "Marc",
+        workoutRevisionId = FeaturedWorkoutRevisionId,
+        workoutTitle = FeaturedWorkoutName,
+        armedAt = started.AddMinutes(-1),
+        controllerConfigurationJson = "{}",
+        metricAlgorithmVersion = "estimated-calories/v1",
+      },
+      state = 4,
+      startedAt = started,
+      endedAt = started.AddMinutes(34).AddSeconds(12),
+      duration = "00:34:12",
+      distanceKilometers = 5.02,
+      estimatedKilocalories = 362.0,
+      averageHeartRateBpm = 148.0,
+      maximumHeartRateBpm = 171,
+      averageSpeedKph = 8.8,
+      averageInclinePercent = 1.0,
+      debrief = new
+      {
+        sessionId = HistorySessionId,
+        perceivedExertion = 7,
+        note = "Comfortable progression; held form through the final interval.",
+        updatedAt = started.AddMinutes(35),
+      },
+      samples,
+      events = new object[]
+      {
+        new { eventType = "physical-movement-detected", occurredAt = started, message = "Physical treadmill movement confirmed." },
+        new { eventType = "manual-speed-override", occurredAt = started.AddMinutes(18), previousSpeedKph = 7.0, requestedSpeedKph = 7.5 },
+        new { eventType = "workout-step-transition", occurredAt = started.AddMinutes(22) },
+        new { eventType = "session-completed", occurredAt = started.AddMinutes(34).AddSeconds(12) },
+      },
+      analytics = new
+      {
+        sessionId = HistorySessionId,
+        heartRateZones = new object[]
+        {
+          new { zoneNumber = 1, name = "Warm up", duration = "00:05:10" },
+          new { zoneNumber = 2, name = "Easy", duration = "00:08:20" },
+          new { zoneNumber = 3, name = "Aerobic", duration = "00:13:42" },
+          new { zoneNumber = 4, name = "Threshold", duration = "00:07:00" },
+          new { zoneNumber = 5, name = "Maximum", duration = "00:00:00" },
+        },
+        adherencePercentage = 94.6,
+        adherenceAlgorithmVersion = "adherence/v1",
+        eventCounts = new { manualSpeedOverrides = 1, manualInclineOverrides = 0, pauses = 0, disconnects = 0, warnings = 0 },
+      },
+    };
+  }
+
+  private static Task FulfillJsonAsync(IRoute route, object payload) => route.FulfillAsync(new RouteFulfillOptions
+  {
+    Status = 200,
+    ContentType = "application/json",
+    Body = JsonSerializer.Serialize(payload, JsonOptions),
+  });
+}

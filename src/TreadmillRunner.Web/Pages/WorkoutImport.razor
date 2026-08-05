@@ -1,0 +1,143 @@
+@page "/workouts/import"
+@inject HttpClient Http
+@inject ActiveProfileState ActiveProfile
+@inject NavigationManager Navigation
+
+<PageTitle>Import workout · TreadmillRunner</PageTitle>
+
+<div class="planning-page planning-page--narrow">
+    <header class="planning-hero">
+        <div><p class="eyebrow">Review first</p><h1>Import workout</h1><p>The gateway previews bounded source bytes. Confirmation reparses those stored bytes before saving.</p></div>
+        <a class="secondary-action" href="/workouts">Back to library</a>
+    </header>
+
+    <section class="planning-panel import-dropzone" aria-labelledby="import-title">
+        <h2 id="import-title">Choose source</h2>
+        <div class="form-grid">
+            <label class="field">Format<select @bind="format"><option value="NativeJson">TreadmillRunner JSON</option><option value="QDomyosXml">QDomyos XML</option><option value="GarminFit">Garmin FIT Workout</option></select></label>
+            <label class="file-field">Workout file<InputFile OnChange="PreviewAsync" accept=".json,.xml,.fit" /></label>
+        </div>
+        <p class="field-help">Maximum 10 MB. Files stay in memory for 15 minutes and are not persisted as uploads.</p>
+    </section>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="notice" role="status">@message</p>
+    }
+
+    @if (preview is not null)
+    {
+        <section class="planning-panel preview-card" aria-labelledby="preview-title">
+            <div class="panel-heading"><div><p class="eyebrow">Preview</p><h2 id="preview-title">@preview.Title</h2></div><span>@preview.Format</span></div>
+            <dl class="compact-stats">
+                <div><dt>Expanded steps</dt><dd>@preview.ExpandedStepCount</dd></div>
+                <div><dt>Duration</dt><dd>@(preview.DurationMinutes is null ? "Mixed goals" : $"{preview.DurationMinutes:0.#} min")</dd></div>
+                <div><dt>Expires</dt><dd>@preview.ExpiresAtUtc.ToLocalTime().ToString("HH:mm")</dd></div>
+            </dl>
+            @if (preview.Warnings.Count > 0)
+            {
+                <div class="warning-list" aria-label="Import warnings">
+                    @foreach (ImportWarningView warning in preview.Warnings)
+                    {
+                        <p><strong>@warning.Code</strong> @warning.Message</p>
+                    }
+                </div>
+            }
+            @if (preview.Format == "QDomyosXml")
+            {
+                <label class="field">Source speed and distance units
+                    <select @bind="qDomyosUnits" required>
+                        <option value="">Choose units before confirmation</option>
+                        <option value="KilometersPerHour">Kilometers / km/h</option>
+                        <option value="MilesPerHour">Miles / mph</option>
+                    </select>
+                </label>
+            }
+            <button class="primary-action" type="button" @onclick="(MouseEventArgs _) => ConfirmAsync()" disabled="@(confirming || (preview.Format == "QDomyosXml" && string.IsNullOrEmpty(qDomyosUnits)))">@(confirming ? "Confirming…" : "Confirm and save workout")</button>
+        </section>
+    }
+</div>
+
+@code {
+    private const long MaximumFileBytes = 10 * 1024 * 1024;
+    private string format = "NativeJson";
+    private string? message;
+    private ImportPreviewView? preview;
+    private Guid? activeProfileId;
+    private bool confirming;
+    private bool initialized;
+    private string? qDomyosUnits;
+    private Guid pendingConfirmOperationId = Guid.NewGuid();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || initialized)
+        {
+            return;
+        }
+
+        initialized = true;
+        activeProfileId = await ActiveProfile.GetAsync();
+    }
+
+    private async Task PreviewAsync(InputFileChangeEventArgs args)
+    {
+        message = "Reading and validating preview…";
+        preview = null;
+        try
+        {
+            IBrowserFile file = args.File;
+            using var content = new MultipartFormDataContent();
+            using var streamContent = new StreamContent(file.OpenReadStream(MaximumFileBytes));
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType ?? "application/octet-stream");
+            content.Add(streamContent, "file", file.Name);
+            content.Add(new StringContent(format), "format");
+            using HttpResponseMessage response = await Http.PostAsync("api/planning/workouts/import/preview", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The file could not be previewed. Check its format and limits.";
+                return;
+            }
+
+            preview = await response.Content.ReadFromJsonAsync<ImportPreviewView>();
+            qDomyosUnits = null;
+            pendingConfirmOperationId = Guid.NewGuid();
+            message = preview is null ? "No preview was returned." : "Preview ready. Review warnings before confirming.";
+        }
+        catch (IOException)
+        {
+            message = "The file exceeds the 10 MB upload limit.";
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (preview is null)
+        {
+            return;
+        }
+
+        confirming = true;
+        using HttpResponseMessage response = await Http.PostAsJsonAsync(
+            "api/planning/workouts/import/confirm",
+            new ImportConfirmRequest(
+                pendingConfirmOperationId,
+                preview.PreviewId,
+                preview.SourceSha256,
+                activeProfileId,
+                qDomyosUnits));
+        if (response.IsSuccessStatusCode)
+        {
+            pendingConfirmOperationId = Guid.NewGuid();
+            message = "Import confirmed from the original preview bytes.";
+            await Task.Delay(350);
+            Navigation.NavigateTo("/workouts");
+        }
+        else
+        {
+            message = "The preview expired or could not be confirmed. Preview the source again.";
+        }
+
+        confirming = false;
+    }
+}

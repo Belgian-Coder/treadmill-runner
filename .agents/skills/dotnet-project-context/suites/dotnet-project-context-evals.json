@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "skill": "dotnet-project-context",
+  "cases": [
+    {
+      "id": "dotnet-context-read-only",
+      "name": "Inspect .NET context without running restore/build/test",
+      "assertions": [
+        {
+          "type": "file_contains",
+          "path": "SKILL.md",
+          "text": "does not run restore"
+        },
+        {
+          "type": "file_contains",
+          "path": "SKILL.md",
+          "text": "Repo-local `NuGet.config`"
+        },
+        {
+          "type": "file_contains",
+          "path": "SKILL.md",
+          "text": "Do not inspect user-level or machine-level NuGet config"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/cli_probes.py",
+          "text": "FORBIDDEN_DOTNET_TOKENS"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/nuget.py",
+          "text": "credential_sections_present"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/context_sections.py",
+          "text": "configuration_report"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/implementation.py",
+          "text": "write_evidence"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/context_sections.py",
+          "text": "diff_reports"
+        },
+        {
+          "type": "file_contains",
+          "path": "scripts/dotnet_context_support/implementation.py",
+          "text": "--dotnet-executable"
+        },
+        {
+          "type": "python_script_succeeds",
+          "path": "scripts/run_self_tests.py",
+          "output_contains": "dotnet-project-context self-tests passed"
+        },
+        {
+          "type": "validation_ok"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        }
+      ]
+    }
+  ]
+}

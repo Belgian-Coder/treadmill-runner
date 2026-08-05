@@ -1,0 +1,963 @@
+{
+  "scan_mode": "fast",
+  "skills": [
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 757
+      },
+      "category": "Skill Maintenance",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs benchmark prep, capability matrices, result recording, comparisons, lesson promotion, routing evals, and self-tests.",
+        "Node.js and npx current supported release: Runs the pinned standalone Codex CLI for explicitly authorized live receipt-backed measurements.",
+        "tiktoken 0.13.0+: Provides exact tokenizer-backed counts for benchmark token accounting when installed; scripts fall back to explicit chars/4 estimates when unavailable.",
+        "ast-grep CLI 0.43.0: Runs syntax-aware structural-search filtering for the structural search benchmark through a local binary or explicit pinned npx fallback."
+      ],
+      "description": "Use when preparing, recording, estimating, or comparing agent benchmark runs and model/tool/workflow token, cached-input, cost, quality, latency, skipped-check, or recurring-mistake evidence.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/agent-benchmarking",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary",
+          "vision-pdf"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "agent-benchmarking",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "networked",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Prepares local agent benchmark runs, optionally executes user-approved receipt-backed Codex CLI stages, records normalized results with exact cached and uncached token plus external wall-time evidence, validates repeated isolated three-arm full-run packets, captures telemetry-observed model and child-context evidence, compares quality, rework, provider usage, skipped checks, failures, workflow versions, trace-derived inefficiency signals, and scope growth, validates offline compact web-evidence packets against an all-blocks control, separates new-contract validation from objective improvement claims, and promotes recurring mistakes into deterministic eval candidates.",
+      "version": "1.3.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 848
+      },
+      "category": "Ticket And Intake",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "destructive",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs the stdlib-only intake importer, deterministic summary validator, and self-tests."
+      ],
+      "description": "Use when importing Azure DevOps REST API or TFS story, bug, task, feature, or epic tickets into local workflow run folders with PAT authentication, full field and relation capture, downloaded attachments, local description image links, and resumable Markdown state.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/azure-devops-ticket-intake",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary",
+          "vision-pdf"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "azure-devops-ticket-intake",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Imports Azure DevOps REST API or TFS work items into workflow-owned Markdown folders, then deterministically validates and summarizes imported evidence with stable JSON and Markdown output.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 889
+      },
+      "category": "Documents And Office",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "destructive",
+        "installs",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs artifact inspection, conversion, validation, and self-tests.",
+        "LibreOffice soffice: Optional rendering or recalculation for Office artifacts.",
+        "openpyxl 3.1.5: Optional XLSX cell writes.",
+        "python-docx 1.2.0: Optional richer DOCX operations.",
+        "pypdf, pdfplumber, reportlab, pdftoppm: Optional richer PDF inspection, fixture creation, and page rendering."
+      ],
+      "description": "Use when inspecting, extracting, validating, rendering, or safely editing Excel, Word, PowerPoint, or PDF files, or scanning converted Markdown, with deterministic evidence and guarded write behavior.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/document-artifacts",
+      "has_assets": true,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 3,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary",
+          "vision-pdf"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "document-artifacts",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "networked",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Provides portable format discovery, deterministic inspection, extraction, rendering, validation, Markdown security scanning, evidence bundling, and guarded write workflows for XLSX, DOCX, PPTX, and PDF artifacts.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 536
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "network",
+        "uploads"
+      ],
+      "dependencies": [
+        ".NET SDK project-defined: Project-defined restore, build, test, pack, publish, and format commands when approved; these can write bin/obj, packages, caches, or source formatting changes.",
+        "dotnet-quality-gates: Optional normalized validation evidence for delivery checks and workflow handoff.",
+        "Python 3.12+ stdlib 3.12+: Runs the skill self-test script without creating bytecode cache folders.",
+        "local-ai-helper: Optional repo-local summaries for inventory, changed files, validation failures, and handoff evidence."
+      ],
+      "description": "Use when designing, reviewing, or preparing .NET CI/CD, GitHub Actions, Azure DevOps pipelines, build/test/publish stages, NuGet packaging, container images, MSIX packaging, release management, environment approvals, service connections, OpenTelemetry, health checks, or structured logging. Use dotnet-quality-gates for normalized validation evidence.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-delivery",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "handoff-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-delivery",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "networked",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Guides .NET CI/CD, GitHub Actions, Azure DevOps pipelines, NuGet packaging, containers, MSIX, release management, environment approvals, service connections, OpenTelemetry, health checks, and structured logging while using dotnet-quality-gates for normalized validation evidence.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 524
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "destructive",
+        "installs",
+        "network"
+      ],
+      "dependencies": [
+        ".NET diagnostic tools project-defined: Optional project-approved dotnet-dump, dotnet-trace, counters, gcdump, monitor, or createdump tools.",
+        "WinDbg or Debugging Tools for Windows project-defined: Optional Windows dump/live debugging.",
+        "LLDB with SOS project-defined: Optional Linux/macOS dump/live debugging.",
+        "Python 3.12+ stdlib 3.12+: Runs the skill self-test script.",
+        "local-ai-helper: Optional repo-local inventory, failure, and handoff summaries."
+      ],
+      "description": "Use when investigating .NET crashes, hangs, deadlocks, high CPU, GC pressure, memory pressure, thread pool starvation, flame graph evidence, dumps, traces, counters, dotnet-dump, dotnet-trace, dotnet-counters, WinDbg, LLDB/SOS, createdump, dotnet-monitor, or container runtime diagnostics. Use dotnet-engineering for normal implementation and optimization work.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-diagnostics",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 4,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary",
+          "failure-cluster",
+          "handoff-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-diagnostics",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Guides sensitive .NET diagnostics for crashes, hangs, high CPU, GC or memory pressure, thread pool starvation, flame graphs, dumps, traces, counters, WinDbg, dotnet-dump, dotnet-trace, LLDB/SOS, createdump, dotnet-monitor, and containers with explicit approval boundaries.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 808
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        ".NET SDK project-defined: Project-defined build, test, format, restore, and analyzer commands when approved; may write bin/obj, caches, test results, or formatted source.",
+        "dotnet-quality-gates: Optional normalized validation evidence.",
+        "local-ai-helper: Optional repo-local model, runtime, cache, embedding benchmark, and vision setup.",
+        "dotnet-security-review: Optional AI/security review for prompts, data, authorization, and model-callable actions.",
+        "mermaid-diagrams-azure-devops: Optional Azure DevOps Mermaid validation.",
+        "Python 3.12+ stdlib 3.12+: Runs self-tests and the deterministic .NET repository inspector."
+      ],
+      "description": "Use when building, reviewing, refactoring, or architecting modern .NET/C# applications, libraries, ASP.NET Core services, EF Core data access, Blazor, MAUI, WinUI, modern WPF/WinForms, AI integration code, document-generation code, background work, tests, performance-sensitive code, or delivery pipelines. Use dotnet-project-context for kickoff/setup/project-context inventory, dotnet-diagnostics for runtime evidence work, dotnet-legacy for .NET Framework work, dotnet-security-review for security risk, and dotnet-quality-gates for validation evidence.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-engineering",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-engineering",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Guides modern .NET/C# architecture, implementation, review, UI selection, AI integration, tests, document generation, delivery, and upgrade inventory while routing kickoff/setup/project-context inventory to dotnet-project-context, diagnostics to dotnet-diagnostics, .NET Framework to dotnet-legacy, security to dotnet-security-review, local models to local-ai-helper, and validation to dotnet-quality-gates.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 672
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        "Visual Studio Build Tools or MSBuild project-defined: Often required for legacy .NET Framework builds and tests when approved; may restore packages and write bin/obj, caches, test results, or config outputs.",
+        ".NET Framework reference assemblies project-defined: May be required for local builds of older target frameworks when approved.",
+        "dotnet-quality-gates: Optional normalized evidence when legacy project artifacts are compatible.",
+        "Python 3.12+ stdlib 3.12+: Runs the skill self-test script without creating bytecode cache folders.",
+        "local-ai-helper: Optional repo-local summaries for inventory, changed files, validation failures, and handoff evidence."
+      ],
+      "description": "Use when maintaining, reviewing, safely refactoring, planning, or executing approved modernization for .NET Framework systems, classic ASP.NET, WCF, WPF/WinForms, old csproj, packages.config, binding redirects, COM/GAC, IIS, or Windows-only constraints.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-legacy",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-legacy",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Guides maintain-in-place engineering and approved modernization for .NET Framework systems, old project files, packages.config, binding redirects, classic ASP.NET, WCF, WPF, WinForms, COM/GAC, IIS, and Windows-only deployment constraints.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 723
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        "Python 3.12+ stdlib 3.12+: Runs deterministic static inspection and safe CLI probe orchestration.",
+        ".NET SDK project-defined: Optional installed CLI probes through dotnet on PATH or --dotnet-executable for dotnet --info, dotnet sln list, and dotnet msbuild -getProperty/-getItem only."
+      ],
+      "description": "Use when discovering .NET project shape for kickoff, setup, or project-context review, including SDK/runtime signals, solution and project inventory, NuGet/feed policy, validation candidates, and context facts without restore/build/test execution.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-project-context",
+      "has_assets": false,
+      "has_docs": false,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 2,
+        "use_cases": [
+          "inventory-summary",
+          "validation-triage"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-project-context",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "read-only",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Discovers .NET project shape, SDK/runtime signals, solution/project inventory, build policy, CI candidates, config/persistence signals, NuGet/feed policy, validation candidates, and project-context facts without restore/build/test/package/tool execution.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 915
+      },
+      "category": "Architecture And Engineering",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "destructive"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs validation scripts and self-tests using the standard library.",
+        ".NET SDK project-defined: Optional for approved wrapper commands that run restore, build, test, or format; not used for read-only artifact parsing or plan-only checks.",
+        "playwright-integration: Use the separate accepted skill for browser-test readiness instead of embedding Playwright setup in .NET gates."
+      ],
+      "description": "Use when running or preparing .NET quality gates for workflow work, including line ending checks, static analysis wrappers, coverage summaries, test-result and BenchmarkDotNet parsing, snapshot artifact checks, anti-slop scanning, and local validation orchestration.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-quality-gates",
+      "has_assets": false,
+      "has_docs": false,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 3,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-quality-gates",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-destructive",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Provides stdlib Python helpers for .NET local quality gates: line endings, coverage, TRX/JUnit flaky candidates, mutation, BenchmarkDotNet baselines, snapshots, static analysis wrappers, broad anti-slop scans, and normalized local-quality evidence orchestration.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 700
+      },
+      "category": "Security",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs the stdlib-only scanner, help surface, validation, and self-tests.",
+        "Git optional: Lists tracked changed files when --changed-only is used; this is local read-only discovery and does not include untracked files."
+      ],
+      "description": "Use when reviewing .NET, ASP.NET Core, Blazor, API, worker, or configuration changes for application security risks, or when scanning changed files for .NET-adjacent risky security patterns with deterministic evidence.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/dotnet-security-review",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 2,
+        "use_cases": [
+          "validation-triage",
+          "code-review"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "dotnet-security-review",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Guides bounded .NET and ASP.NET security reviews and provides deterministic scanner evidence for .NET-adjacent changed-file security patterns.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 741
+      },
+      "category": "General",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "destructive",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs the stdlib-only reference synchronizer, read-only report/dry-run modes, and self-tests.",
+        "Git 2.30+: Inspects local mirrors in report mode and clones/fetches/pins external repositories only in approved write mode."
+      ],
+      "description": "Use when cloning, fetching, pinning, refreshing, or summarizing external Git references for workflows, including Azure DevOps repositories and compact reference cards.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/external-reference-manager",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 4,
+        "use_cases": [
+          "inventory-summary",
+          "changed-files-summary",
+          "duplicate-overlap-detection",
+          "handoff-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "external-reference-manager",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Clones, fetches, pins, and summarizes external Git references into compact cards and reproducible manifests for workflow use.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 851
+      },
+      "category": "Documentation And Diagrams",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "destructive",
+        "generated_settings",
+        "installs",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs setup, routing, daily task, validation, cache, brokered-tool, vision, benchmark, and self-test scripts.",
+        "llama.cpp Pinned by .agents/local-ai/bundle/manifest.json: Optional CPU or local GPU runtime for repo-local inference.",
+        "Local GGUF model catalog Pinned by .agents/local-ai.json and .agents/local-ai/bundle/manifest.json: Optional direct-download commercial-use payloads for text, explicit embedding benchmarks, and vision.",
+        "pypdfium2 Optional when available: Renders PDF pages into .agents/local-ai/cache/** for local vision PDF runs."
+      ],
+      "description": "Use when installing, configuring, validating, benchmarking, routing with, or troubleshooting repo-local AI models, llama.cpp runtimes, model bundles, cache, brokered file tools, embedding benchmarks, and vision analysis.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/local-ai-helper",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 10,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft",
+          "duplicate-overlap-detection",
+          "vision-pdf"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "local-ai-helper",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Owns optional repo-local AI setup, policy, local-only settings, deterministic fallbacks, CPU/GPU llama.cpp runtime selection, model manifests, advisory routing, exact-input daily task cache behavior, read-only brokered direct repository search, daily text tasks, benchmark-only embeddings, document/vision helpers, and benchmark procedures. Mermaid generation and validation stay with mermaid-diagrams-azure-devops.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 899
+      },
+      "category": "Documentation And Diagrams",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "installs",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs local Mermaid extraction, validation, and self-tests.",
+        "Mermaid CLI: Optional local render validation through mmdc; validator setup is explicit and prerequisite-gated.",
+        "Node.js and npm: Required only for Mermaid CLI setup during render validation.",
+        "VS Code CLI: Used only for best-effort preview extension detection/setup.",
+        "Markdown Preview Mermaid Support: Recommended VS Code preview renderer for Azure Mermaid colon blocks."
+      ],
+      "description": "Use when creating, editing, normalizing, or validating Azure DevOps-compatible Mermaid diagrams in Markdown or wiki documentation, including Azure wrapper checks and local render checks with Mermaid CLI when available.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/mermaid-diagrams-azure-devops",
+      "has_assets": true,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 4,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "vision-pdf"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "mermaid-diagrams-azure-devops",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "networked",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Create, select, normalize, and validate Azure DevOps-compatible Mermaid diagrams.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 947
+      },
+      "category": "Web And Browser Automation",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "destructive",
+        "installs",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs readiness checks and self-tests using the standard library.",
+        "Node.js and npm: Required for Node.js Playwright setup, runtime probes, or screenshot capture through a project-local Playwright npm package.",
+        "Python Playwright package: Required only when running Python Playwright setup or screenshot capture for Python-backed validation.",
+        ".NET SDK: Required only when the target project's .NET Playwright setup or documented Playwright commands run dotnet build or dotnet test.",
+        "Playwright: Detected from package.json dependencies, scripts, config files, or .NET project PackageReference entries."
+      ],
+      "description": "Use when checking, preparing, or reporting Playwright browser-test readiness for a local project without making browser setup part of another quality-gate skill.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/playwright-integration",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 4,
+        "use_cases": [
+          "validation-triage",
+          "vision-describe",
+          "code-review",
+          "patch-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "playwright-integration",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "networked",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Provides deterministic Node.js, Python, and .NET Playwright readiness checks, explicitly approved setup commands, desktop/mobile screenshot validation evidence, and optional accepted screenshot outputs.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 812
+      },
+      "category": "Documentation And Diagrams",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        "Python 3.12+: Runs deterministic inspection, context generation, and validation proof scripts using the standard library.",
+        "dotnet-project-context: Optional static .NET project, SDK/runtime, NuGet/feed, and validation-candidate enrichment for generated project context."
+      ],
+      "description": "Use when generating or refreshing workflow-ready project context files from an existing project, including structure, responsibilities, technologies, .NET project context, security notes, validation commands, and proof scripts with optional Playwright screenshot evidence.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/project-context-generator",
+      "has_assets": false,
+      "has_docs": false,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 3,
+        "use_cases": [
+          "inventory-summary",
+          "validation-triage",
+          "handoff-draft"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "project-context-generator",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Generates workflow-ready project context files and validation proof scripts from an existing target project, with optional .NET context enrichment through dotnet-project-context.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 675
+      },
+      "category": "Documentation And Diagrams",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        "Python 3.12+: Runs repository briefing, source-focus and dependency-impact summaries, map installation, refresh, staleness checks, and self-tests using the standard library only."
+      ],
+      "description": "Use when orienting in a repository with compact briefs, dependency impact queries, navigation maps, responsibility summaries, staleness checks, and token-budgeted read order.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/repo-navigation",
+      "has_assets": false,
+      "has_docs": false,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 2,
+        "use_cases": [
+          "validation-triage",
+          "inventory-summary"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "repo-navigation",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Builds compact repository orientation briefs, query-focused source and dependency-impact summaries, project-context checks, and project-local navigation maps with responsibility summaries, technical context, deterministic conventions, and staleness checks.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 1001
+      },
+      "category": "Skill Maintenance",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "destructive",
+        "network"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs analyzers, audits, import review, validators, evals, compatibility linting, routing sync, comparison, upgrade planning, attestation, inventory, triage, budget, repo orchestration, and self-tests.",
+        "local-ai-helper 1.0.0: Optional validated local AI integration for skill routing, failure triage, and skill review workflows."
+      ],
+      "description": "Use when managing repository skills or the reusable harness for creation, import, review, upgrade, versioning, installation/update, validation, inventory, budgets, routing, or adapter sync.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/skill-manager",
+      "has_assets": true,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 9,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "handoff-draft",
+          "duplicate-overlap-detection",
+          "skill-routing"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "skill-manager",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Maintains repo-owned agent skills through local analysis, import review, audits, deterministic route selection, Claude adapter budget checks, portable-tool manifest checks, cost/context-budget checks, evals, compatibility linting, command-reference validation, version comparison, upgrade planning, provenance, inventory, generated routing/adapters, addition gates, and workflow extension rules.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 677
+      },
+      "category": "Data And Research",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [
+        "credentials",
+        "network",
+        "uploads"
+      ],
+      "dependencies": [
+        "Python 3.12+: Runs stdlib-only SonarQube export, comparison, scanner wrapper, and self-test scripts.",
+        ".NET SonarScanner project-defined: Optional for explicit scanner publishing."
+      ],
+      "description": "Use when exporting SonarQube diagnostics, comparing local and remote coverage, exporting quality profiles, or explicitly publishing scanner analysis with clear credential and upload boundaries.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/sonarqube-diagnostics",
+      "has_assets": false,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 4,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "sonarqube-diagnostics",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "credentialed",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Exports normalized SonarQube diagnostics, compares local and remote coverage, exports quality profile metadata, and wraps explicit .NET scanner publishing with credential-aware boundaries.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 945
+      },
+      "category": "Security",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [],
+      "description": "Use when producing independently authored TreadmillRunner BLE protocol evidence from owner-provided captures, local observations, golden fixtures, CRC checks, or explicitly approved non-motion hardware validation; do not use to copy or translate third-party implementation code or to control treadmill motion.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/treadmillrunner-protocol-evidence",
+      "has_assets": false,
+      "has_docs": false,
+      "has_scripts": false,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 0,
+        "use_cases": []
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "treadmillrunner-protocol-evidence",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Produces sanitized, independently authored BLE protocol provenance, golden fixture and CRC evidence, and staged non-motion hardware observations.",
+      "version": "1.0.0"
+    },
+    {
+      "budget": {
+        "skill_md_status": "ok",
+        "skill_md_words": 962
+      },
+      "category": "Documentation And Diagrams",
+      "compatibility": {
+        "claude_code": "required",
+        "codex": "required",
+        "github_copilot": "required"
+      },
+      "declared_risk_flags": [],
+      "dependencies": [
+        "Python 3.12+: Runs workflow dispatch, scaffolding, validation, evals, scorecards, run indexing, smoke checks, routing sync, and tests.",
+        "local-ai-helper 1.0.0: Optional validated local AI integration for workflow routing, triage, and rendered-document review."
+      ],
+      "description": "Use when creating, reviewing, validating, routing, or resuming automations/ workflow modules with module.json contracts, WORKFLOW.md entry files, deterministic commands, generated catalogs, and workflow-owned evidence packets.",
+      "detected_risk_signals": [],
+      "folder": ".agents/skills/workflow-manager",
+      "has_assets": true,
+      "has_docs": true,
+      "has_scripts": true,
+      "kind": "skill",
+      "local_ai": {
+        "use_case_count": 10,
+        "use_cases": [
+          "validation-triage",
+          "code-review",
+          "patch-draft",
+          "inventory-summary",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft",
+          "duplicate-overlap-detection",
+          "workflow-routing"
+        ]
+      },
+      "manifest_path": "module.json",
+      "manifest_schema_version": 3,
+      "name": "workflow-manager",
+      "quality": {
+        "eval_suites": 1
+      },
+      "risk_profile": "local-write",
+      "scan_mode": "fast",
+      "status": "accepted",
+      "summary": "Creates, improves, validates, evaluates, scorecards, indexes, smokes, recovers, and resumes low-context workflow modules under automations/ with module.json contracts, WORKFLOW.md entries, deterministic context evidence, Mermaid diagrams, lifecycle hooks, declarative risk guidance, execution-ownership modes, template layers, integration checks, branch policy, retained-evidence cleanup, generated routing, and script-first validation.",
+      "version": "1.0.0"
+    }
+  ],
+  "source_root": ".agents/skills",
+  "version": 4
+}

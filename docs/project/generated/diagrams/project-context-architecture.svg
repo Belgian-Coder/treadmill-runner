@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="188" viewBox="0 -24 920 188" style="max-width: 920px; background-color: transparent;" preserveAspectRatio="xMidYMid meet" data-mermaid-vertical-padding="24" role="img">
+<title>Project workflow architecture</title>
+<rect x="24" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="96.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Work item</text>
+<line x1="169" y1="80" x2="183" y2="80" stroke="#d1d5db"/>
+<polygon points="183,80 176,75 176,85" fill="#d1d5db"/>
+<rect x="189" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="261.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Context</text>
+<line x1="334" y1="80" x2="348" y2="80" stroke="#d1d5db"/>
+<polygon points="348,80 341,75 341,85" fill="#d1d5db"/>
+<rect x="354" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="426.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Plan</text>
+<line x1="499" y1="80" x2="513" y2="80" stroke="#d1d5db"/>
+<polygon points="513,80 506,75 506,85" fill="#d1d5db"/>
+<rect x="519" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="591.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Change</text>
+<line x1="664" y1="80" x2="678" y2="80" stroke="#d1d5db"/>
+<polygon points="678,80 671,75 671,85" fill="#d1d5db"/>
+<rect x="684" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="756.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Validation</text>
+<line x1="829" y1="80" x2="843" y2="80" stroke="#d1d5db"/>
+<polygon points="843,80 836,75 836,85" fill="#d1d5db"/>
+<rect x="849" y="58" width="145" height="44" rx="6" fill="#1f2937" stroke="#d1d5db"/>
+<text x="921.5" y="85" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#f9fafb">Evidence</text>
+</svg>

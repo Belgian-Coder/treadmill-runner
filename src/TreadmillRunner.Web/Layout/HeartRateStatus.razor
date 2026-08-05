@@ -1,0 +1,180 @@
+@implements IAsyncDisposable
+
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<a class="global-hr-status @StatusClass"
+   href="/devices"
+   role="status"
+   aria-live="polite"
+   aria-label="@AccessibleLabel">
+    <span class="global-hr-status__icons" aria-hidden="true">
+        <svg class="heart-sensor-icon" viewBox="0 0 24 24"><path d="M12 21s-8-5.1-8-11a4.5 4.5 0 0 1 8-3.3A4.5 4.5 0 0 1 20 10c0 5.9-8 11-8 11Z" /></svg>
+        @if (!IsConnected)
+        {
+            <span class="heart-sensor-slash"></span>
+        }
+        else if (SensorKind == HeartRateDeviceKind.Watch)
+        {
+            <svg class="heart-device-icon" viewBox="0 0 24 24"><path d="M8 3h8l1 4v10l-1 4H8l-1-4V7l1-4Zm1 5v8h6V8H9Z" /></svg>
+        }
+        else
+        {
+            <svg class="heart-device-icon" viewBox="0 0 24 24"><path d="M3 8h4v8H3V8Zm14 0h4v8h-4V8ZM7 10h10v4H7v-4Zm3-3h4v10h-4V7Z" /></svg>
+        }
+    </span>
+    <span class="global-hr-status__copy">
+        <strong>@PrimaryText</strong>
+        <small>@SecondaryText</small>
+    </span>
+</a>
+
+@code {
+    [Parameter] public bool Compact { get; set; }
+
+    private static readonly TimeSpan FreshnessLimit = TimeSpan.FromSeconds(5);
+    private HubConnection? hubConnection;
+    private string? sensorName;
+    private DeviceConnectionState sensorState = DeviceConnectionState.Disconnected;
+    private ushort? heartRateBpm;
+    private TimeSpan? heartRateAge;
+    private HeartRateDeviceKind? sensorKind;
+    private bool gatewayAvailable = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            DeviceTelemetrySnapshot? snapshot = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+            if (snapshot is not null)
+            {
+                sensorName = snapshot.HeartRate.DisplayName;
+                sensorState = snapshot.HeartRate.State;
+                heartRateBpm = snapshot.HeartRateBpm;
+                heartRateAge = snapshot.HeartRateAge;
+                sensorKind = snapshot.SelectedHeartRateDeviceKind;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            gatewayAvailable = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
+            .WithAutomaticReconnect()
+            .Build();
+        hubConnection.On<LiveSnapshot>("snapshot", incoming =>
+        {
+            gatewayAvailable = true;
+            sensorName = incoming.HeartRateDeviceName;
+            sensorState = incoming.HeartRateConnectionState;
+            heartRateBpm = incoming.HeartRateBpm;
+            heartRateAge = incoming.HeartRateTelemetryAge;
+            sensorKind = incoming.HeartRateDeviceKind;
+            return InvokeAsync(StateHasChanged);
+        });
+        hubConnection.Reconnecting += _ => SetGatewayAvailabilityAsync(false);
+        hubConnection.Reconnected += _ => SetGatewayAvailabilityAsync(true);
+        hubConnection.Closed += _ => SetGatewayAvailabilityAsync(false);
+
+        try
+        {
+            await hubConnection.StartAsync();
+            gatewayAvailable = true;
+        }
+        catch (HttpRequestException)
+        {
+            gatewayAvailable = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool HasSensor => !string.IsNullOrWhiteSpace(sensorName);
+    private bool HasFreshReading => gatewayAvailable && HasSensor &&
+        heartRateBpm is not null &&
+        heartRateAge <= FreshnessLimit;
+    private bool IsConnected => gatewayAvailable && HasSensor &&
+        (HasFreshReading || sensorState is DeviceConnectionState.Ready or
+            DeviceConnectionState.Subscribing or DeviceConnectionState.DiscoveringServices);
+
+    private HeartRateDeviceKind SensorKind => sensorKind ?? HeartRateDeviceClassifier.Classify(sensorName);
+
+    private string PrimaryText => !gatewayAvailable
+        ? "HR unavailable"
+        : !IsConnected
+            ? "No HR sensor"
+            : HasFreshReading
+                ? $"{heartRateBpm} bpm"
+                : StateText;
+
+    private string SecondaryText => !IsConnected
+        ? HasSensor ? $"{sensorName} is offline" : "Connect a band or watch"
+        : Compact ? $"{CompactKindLabel} · {CompactSensorName}" : $"{KindLabel} · {sensorName}";
+
+    private string CompactSensorName => sensorName switch
+    {
+        string name when name.Contains("Polar H10", StringComparison.OrdinalIgnoreCase) => "Polar H10",
+        string name when name.Contains("Fenix 8", StringComparison.OrdinalIgnoreCase) => "Fenix 8",
+        string name when name.Contains("Vivoactive", StringComparison.OrdinalIgnoreCase) => "Vivoactive",
+        string name when name.Contains("Simulated", StringComparison.OrdinalIgnoreCase) => "Simulated",
+        { Length: <= 14 } name => name,
+        string name => name[..14],
+        _ => "Sensor",
+    };
+
+    private string StateText => sensorState switch
+    {
+        DeviceConnectionState.Connecting => "Connecting…",
+        DeviceConnectionState.Reconnecting => "Reconnecting…",
+        DeviceConnectionState.Faulted => "Sensor fault",
+        DeviceConnectionState.Ready when heartRateAge > FreshnessLimit => "Signal stale",
+        DeviceConnectionState.Ready => "Waiting for pulse",
+        _ => "Sensor offline",
+    };
+
+    private string KindLabel => SensorKind switch
+    {
+        HeartRateDeviceKind.ChestStrap => "Chest strap",
+        HeartRateDeviceKind.Watch => "Watch",
+        _ => "HR sensor",
+    };
+
+    private string CompactKindLabel => SensorKind switch
+    {
+        HeartRateDeviceKind.ChestStrap => "Strap",
+        HeartRateDeviceKind.Watch => "Watch",
+        _ => "Sensor",
+    };
+
+    private string StatusClass => (Compact ? "global-hr-status--compact " : string.Empty) + (HasFreshReading
+        ? "global-hr-status--ready"
+        : IsConnected
+            ? "global-hr-status--waiting"
+            : "global-hr-status--absent");
+
+    private string AccessibleLabel => !IsConnected
+        ? $"Pulse sensor status: {PrimaryText}. {SecondaryText}."
+        : $"Pulse sensor status: {PrimaryText}. {KindLabel}: {sensorName}.";
+
+    private Task SetGatewayAvailabilityAsync(bool available)
+    {
+        gatewayAvailable = available;
+        if (!available)
+        {
+            heartRateBpm = null;
+            heartRateAge = null;
+        }
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null) await hubConnection.DisposeAsync();
+    }
+}

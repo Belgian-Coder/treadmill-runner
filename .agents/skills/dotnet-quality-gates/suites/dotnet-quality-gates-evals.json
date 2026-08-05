@@ -1,0 +1,262 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-7c8575e31751",
+            "command-4cbada40caf7",
+            "command-566ce03cf3e4",
+            "command-6066588d4453",
+            "command-d66254b9d88b",
+            "command-40521ff6ce61",
+            "command-da57d28ccffc"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "local-destructive"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "validation.ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.components.scripts",
+          "type": "repo_command_json_field_equals",
+          "value": 11
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.risk.profile",
+          "type": "repo_command_json_field_equals",
+          "value": "local-destructive"
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "inventory.quality.eval_suites",
+          "type": "repo_command_json_field_equals",
+          "value": 1
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "skill.name",
+          "type": "repo_command_json_field_equals",
+          "value": "dotnet-quality-gates"
+        }
+      ],
+      "id": "inspection-schema"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/validate_line_endings.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_coverage.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_local_quality.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET",
+          "type": "description_contains"
+        },
+        {
+          "text": "local-quality.json",
+          "type": "skill_contains"
+        },
+        {
+          "text": "mutation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "BenchmarkDotNet",
+          "type": "skill_contains"
+        },
+        {
+          "text": "snapshot",
+          "type": "skill_contains"
+        },
+        {
+          "text": "slop",
+          "type": "skill_contains"
+        },
+        {
+          "text": "CancellationToken",
+          "type": "skill_contains"
+        },
+        {
+          "text": "resilience",
+          "type": "skill_contains"
+        },
+        {
+          "text": "without local AI",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "report both checked and skipped files",
+          "type": "skill_contains"
+        },
+        {
+          "text": "requires `--output-json` or `--packet-root`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Skip self-tests/eval-skill when no temp writes are allowed",
+          "type": "skill_contains"
+        },
+        {
+          "text": "planned `dotnet` commands are documentation only",
+          "type": "skill_contains"
+        },
+        {
+          "text": "`--output-json`, `--output-md`, or `--output-generic-xml`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Write-approved examples, not strict dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-capable",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not part of strict no-temp dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "reports are caller-owned workflow or project evidence",
+          "type": "skill_contains"
+        },
+        {
+          "text": "project-native restore/build/test commands may still contact package feeds or services",
+          "type": "skill_contains"
+        },
+        {
+          "key": "destructive",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "quality-gate-contract"
+    },
+    {
+      "assertions": [
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 950
+        }
+      ],
+      "id": "budget-and-trigger"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "text": "dotnet-quality-gates",
+          "type": "public_command_behavior"
+        }
+      ],
+      "id": "public-command"
+    }
+  ],
+  "skill_name": "dotnet-quality-gates"
+}

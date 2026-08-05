@@ -1,0 +1,450 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/update_navigation.py",
+        "--target",
+        ".",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-aa3324c5a3eb",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/update_navigation.py",
+        "--target",
+        ".",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-c6287d4f433a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/project_context.py",
+        "--target",
+        ".",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-3754d280bbb7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/project_context.py",
+        "--target",
+        ".",
+        "--write"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-3a7b7696d641",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "which-workflow",
+        "<request>",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-441f17474f75",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "validate-automations",
+        "--name",
+        "navigation",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-be0af2abee7c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "metadata",
+        "inspect",
+        "--name",
+        "navigation",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-2fb86840f8a7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/update_navigation.py",
+        "--target",
+        ".",
+        "--check",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-98d5860cb16a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "automations/navigation/scripts/project_context.py",
+        "--target",
+        ".",
+        "--check",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-9155c9557d7e",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "context": {
+    "budgets": {
+      "core": 32000,
+      "evidence": 64000,
+      "project-context": 32000,
+      "run-critical": 64000
+    },
+    "sources": [
+      {
+        "artifact_role": "workflow-entry",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-entry",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/WORKFLOW.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "module-contract",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "module-contract",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/module.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "instructions",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "instructions",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/instructions.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "workflow-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "workflow-templates",
+        "load_policy": "handle_only",
+        "pattern": "automations/navigation/templates/*.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "implementation-plan-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "plan-template",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/templates/plan.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "execution-log-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "execution-template",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/templates/execution-log.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "pr-handoff-template",
+        "budget_ref": "core",
+        "critical_category": "workflow-contract",
+        "id": "pr-template",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/templates/pr-description.md",
+        "preserve_coordinates": false
+      },
+      {
+        "artifact_role": "run-state",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-state",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/run.json",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "run-report",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "run-report",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/REPORT.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "execution-log",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "execution-log",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/execution-log.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "ticket-info",
+        "budget_ref": "run-critical",
+        "critical_category": "work-item",
+        "id": "ticket-info",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "ticket-info",
+        "budget_ref": "core",
+        "critical_category": "work-item",
+        "id": "ticket-template",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/templates/ticket-info.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "implementation-plan",
+        "budget_ref": "run-critical",
+        "critical_category": "resume-critical",
+        "id": "actual-plan",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/plan.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "pr-handoff",
+        "budget_ref": "run-critical",
+        "critical_category": "handoff",
+        "id": "pr-description",
+        "load_policy": "handle_only",
+        "path": "automations/navigation/runs/<run-id>/pr-description.md",
+        "preserve_coordinates": true
+      },
+      {
+        "artifact_role": "validation-evidence",
+        "budget_ref": "evidence",
+        "critical_category": "evidence",
+        "id": "validation-evidence",
+        "load_policy": "handle_only",
+        "pattern": "automations/navigation/runs/<run-id>/validation/**/*",
+        "preserve_coordinates": false
+      }
+    ]
+  },
+  "context_evidence": {
+    "finish_queries": [
+      {
+        "fallback_paths": [
+          "automations/navigation/artifacts/maps/HANDOFF.md",
+          "docs/project/project-context.md"
+        ],
+        "id": "navigation-finish",
+        "question": "What navigation outputs and project context files should be validated before handoff?",
+        "scope": "repo"
+      }
+    ],
+    "required": true,
+    "resume_queries": [
+      {
+        "fallback_paths": [
+          "automations/navigation/artifacts/maps/staleness.json",
+          "automations/navigation/artifacts/maps/NAVIGATION.md"
+        ],
+        "id": "navigation-resume",
+        "question": "What navigation map files changed or may be stale for this repository?",
+        "scope": "repo"
+      }
+    ],
+    "start_queries": [
+      {
+        "fallback_paths": [
+          "docs/project/project-context.md",
+          "automations/navigation/artifacts/maps/HANDOFF.md"
+        ],
+        "id": "navigation-start",
+        "question": "What project context and navigation maps are available for this repository?",
+        "scope": "repo"
+      }
+    ]
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none",
+    "data_copied_locally": [
+      "project file names",
+      "hashes",
+      "deterministic summaries"
+    ],
+    "source_systems": []
+  },
+  "id": "navigation",
+  "inputs": [
+    "WORKFLOW.md",
+    "module.json",
+    "instructions.md",
+    "project source files"
+  ],
+  "kind": "workflow",
+  "local_ai": {
+    "use_cases": []
+  },
+  "metadata_path": "metadata/workflow-metadata.json",
+  "outputs": [
+    "artifacts/maps/NAVIGATION.md",
+    "artifacts/maps/HANDOFF.md",
+    "artifacts/maps/handoff.json",
+    "artifacts/maps/TECHNICAL_CONTEXT.md",
+    "artifacts/maps/CONVENTIONS.md",
+    "artifacts/maps/PROJECT_CONTEXT_DRAFT.md",
+    "artifacts/maps/staleness.json",
+    "docs/project/project-context.md"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "phases": [
+    {
+      "id": "scan",
+      "summary": "Scan project files, manifests, commands, and symbols."
+    },
+    {
+      "id": "project-context",
+      "summary": "Prepare or check the human-owned project context profile."
+    },
+    {
+      "id": "write",
+      "summary": "Write navigation maps and staleness evidence."
+    },
+    {
+      "id": "check",
+      "summary": "Compare generated maps with committed outputs."
+    }
+  ],
+  "related_modules": [
+    "repo-navigation"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "routing": {
+    "activation_terms": [
+      "navigation",
+      "project-context",
+      "staleness"
+    ],
+    "terms": [
+      "navigation",
+      "map",
+      "maps",
+      "handoff",
+      "capsule",
+      "project-context",
+      "staleness",
+      "stale",
+      "refresh",
+      "read-order"
+    ],
+    "threshold": 2,
+    "winner_margin": 1
+  },
+  "schema_version": 3,
+  "strict_read_only_commands": [
+    "command-441f17474f75",
+    "command-be0af2abee7c",
+    "command-2fb86840f8a7",
+    "command-98d5860cb16a",
+    "command-9155c9557d7e"
+  ],
+  "summary": "Generate deterministic project navigation maps, technical context, conventions, and freshness evidence.",
+  "template_layers": {
+    "conflict_policy": "error",
+    "default_template": "plan.md",
+    "override_roots": [
+      "docs/project/workflow-overrides/navigation"
+    ],
+    "preset_roots": [
+      "automations/navigation/presets"
+    ],
+    "priorities": {
+      "project-override": 0,
+      "workflow-default": 100,
+      "workflow-lean": 90,
+      "workflow-preset": 50
+    },
+    "profiles": {}
+  },
+  "validation": [
+    "python -B automations/navigation/scripts/update_navigation.py --target . --check"
+  ],
+  "version": "1.0.0"
+}

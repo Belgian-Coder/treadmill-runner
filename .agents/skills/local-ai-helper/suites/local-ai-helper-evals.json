@@ -1,0 +1,153 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "credentialed"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-c3142ee1bb54",
+            "local-ai-evaluate-candidate",
+            "command-6cb06fdeed44",
+            "command-99633c9170e8",
+            "command-bff0308f9341",
+            "command-6066588d4453"
+          ]
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/setup_local_ai.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/local_ai_support/daily_impl.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/local_ai_support/vision_impl.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "repo-local AI",
+          "type": "description_contains"
+        },
+        {
+          "text": "local-ai readiness",
+          "type": "skill_contains"
+        },
+        {
+          "text": "vision describe",
+          "type": "skill_contains"
+        },
+        {
+          "text": "cache",
+          "type": "skill_contains"
+        },
+        {
+          "text": "unsupported command names",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict no-write/no-temp/no-profile/offline dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "normal read-only diagnostics",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "skip unreviewed write/cache/profile/model behavior",
+          "type": "skill_contains"
+        },
+        {
+          "key": "credentials",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "network",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "generated_settings",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "local-ai-contract"
+    },
+    {
+      "assertions": [
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1050
+        }
+      ],
+      "id": "budget-and-trigger"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "text": "local-ai-helper",
+          "type": "public_command_behavior"
+        }
+      ],
+      "id": "public-command"
+    }
+  ],
+  "skill_name": "local-ai-helper"
+}

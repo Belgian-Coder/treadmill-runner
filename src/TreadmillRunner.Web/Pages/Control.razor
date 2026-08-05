@@ -1,0 +1,979 @@
+@page "/control"
+
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@DashboardTitle · TreadmillRunner</PageTitle>
+
+<section id="control-dashboard" class="control-page" aria-labelledby="control-title">
+    <header class="dashboard-header control-page__header">
+        <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
+        <div class="control-header-actions">
+            <HeartRateStatus Compact="true" />
+            <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" title="Full screen"><span aria-hidden="true">⛶</span></button>
+        </div>
+    </header>
+
+    @if (HasUnknownOutcome)
+    {
+        <section class="safety-banner" role="alert" aria-label="Unknown command safety notice">
+            <span class="safety-icon" aria-hidden="true">!</span>
+            <p><strong>Use physical Stop now.</strong> A command outcome is uncertain; the dashboard will not retry it.</p>
+        </section>
+    }
+
+    @if (session is null)
+    {
+        <section class="panel-card control-empty">
+            <p class="eyebrow">No active session</p>
+            <h2>Prepare a run before using direct controls</h2>
+            <p>The dashboard controls the one authoritative session. Choose a runner and workout, enable controls, and prepare it from Run.</p>
+            <a class="primary-action" href="/">Open Run</a>
+        </section>
+    }
+    else
+    {
+        @if (session.Warnings.Any(IsVisibleControlWarning))
+        {
+            <section class="session-notices" aria-label="Control notices">
+                @foreach (string warning in session.Warnings.Where(IsVisibleControlWarning))
+                {
+                    <p>@warning</p>
+                }
+            </section>
+        }
+
+        @if (session.LastCommandResult is { Disposition: TreadmillCommandDisposition.Unknown } unknownResult)
+        {
+            <section class="command-result command-unknown" role="alert">
+                <strong>@unknownResult.Kind: outcome unknown</strong>
+                <span>@unknownResult.Reason</span>
+                @if (CommandValuesLabel(unknownResult) is { } unknownValues)
+                {
+                    <span>@unknownValues</span>
+                }
+            </section>
+        }
+
+        <section class="control-console-grid" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
+            <aside class="control-rail control-rail--speed" aria-labelledby="speed-control-title">
+                <span class="eyebrow">Target speed</span>
+                <h2 id="speed-control-title">@session.RequestedSpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></h2>
+                <div class="rail-stepper" role="group" aria-label="Fine speed controls">
+                    <button class="touch-action" type="button" aria-label="Speed -@SpeedIncrement.ToString("0.0", CultureInfo.InvariantCulture) km/h" @onclick="() => SetSpeedTargetAsync(session.RequestedSpeedKph - SpeedIncrement)" disabled="@(!CanAdjustSpeed)">−</button>
+                    <button class="touch-action" type="button" aria-label="Speed +@SpeedIncrement.ToString("0.0", CultureInfo.InvariantCulture) km/h" @onclick="() => SetSpeedTargetAsync(session.RequestedSpeedKph + SpeedIncrement)" disabled="@(!CanAdjustSpeed)">+</button>
+                </div>
+                <div class="rail-presets" role="group" aria-label="Speed presets">
+                    @foreach (double target in SpeedTargets)
+                    {
+                        <button class="touch-action quick-target" type="button" aria-label="Set speed to @target.ToString("0.0", CultureInfo.InvariantCulture) km/h" aria-pressed="@AriaPressed(Approximately(session.RequestedSpeedKph, target))" @onclick="() => SetSpeedTargetAsync(target)" disabled="@(!CanAdjustSpeed)">@target.ToString("0.0", CultureInfo.InvariantCulture)</button>
+                    }
+                </div>
+            </aside>
+
+            <section class="control-center" aria-label="Live control center">
+                <section class="control-primary-metrics" aria-label="Live workout metrics">
+                    <article aria-label="Measured speed"><span>Measured speed</span><strong>@session.Live.SpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></strong></article>
+                    <article aria-label="Measured incline"><span>Measured incline</span><strong>@session.Live.InclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></strong></article>
+                    <article aria-label="Heart rate"><span>Heart rate</span><strong>@(session.Live.HeartRateBpm?.ToString(CultureInfo.InvariantCulture) ?? "—")<small> bpm</small></strong></article>
+                    <article aria-label="Elapsed time"><span>Time</span><strong>@FormatElapsed(session.Live.Elapsed)</strong></article>
+                </section>
+
+                <section class="control-live-chart @(isChartFocused ? "control-live-chart--focused" : null)" aria-labelledby="control-chart-title">
+                    <div class="control-chart-heading">
+                        <div><span class="eyebrow">This run</span><h2 id="control-chart-title">Live progress</h2></div>
+                        <div class="control-chart-actions">
+                            <span title="@session.WorkoutTitle">@session.WorkoutTitle</span>
+                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(isChartFocused ? "Collapse live graph" : "Expand live graph")" title="@(isChartFocused ? "Collapse graph" : "Expand graph")"><span aria-hidden="true">@(isChartFocused ? "↙" : "↗")</span></button>
+                        </div>
+                    </div>
+                    <div class="chart-plot-grid chart-plot-grid--dual">
+                        <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@SpeedAxisMaximum, 1fr)">
+                            <strong class="chart-axis-unit">km/h</strong>
+                            @foreach (int tick in SpeedAxisTicks)
+                            {
+                                <span>@tick</span>
+                            }
+                        </div>
+                        <svg class="live-chart control-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Live speed in kilometers per hour and incline percentage over elapsed time">
+                            @foreach (int tick in SpeedAxisTicks)
+                            {
+                                double y = ChartY(tick, ChartBand.Speed);
+                                <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                            }
+                            <line class="chart-axis" x1="10" y1="210" x2="710" y2="210" />
+                            <path class="chart-plan" data-series="planned-speed" d="@BuildPlanPath(static point => point.SpeedKph, ChartBand.Speed)" />
+                            <path class="chart-requested" data-series="requested-speed" d="@BuildChartPath(static point => point.RequestedSpeedKph, ChartBand.Speed)" />
+                            <path class="chart-current" data-series="measured-speed" d="@BuildChartPath(static point => point.MeasuredSpeedKph, ChartBand.Speed)" />
+                            <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildPlanPath(static point => point.InclinePercent, ChartBand.Incline)" />
+                            <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildChartPath(static point => point.RequestedInclinePercent, ChartBand.Incline)" />
+                            <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildChartPath(static point => point.MeasuredInclinePercent, ChartBand.Incline)" />
+                            <line class="chart-cursor" x1="@CurrentChartX" x2="@CurrentChartX" y1="10" y2="210" data-elapsed-seconds="@CurrentChartElapsedSeconds" data-duration-seconds="@ChartDurationSeconds" />
+                            @if (LatestMeasuredPoint is { } latest)
+                            {
+                                <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph, ChartBand.Speed)" r="5" />
+                            }
+                        </svg>
+                        <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@InclineAxisMaximum, 1fr)">
+                            <strong class="chart-axis-unit">%</strong>
+                            @foreach (int tick in InclineAxisTicks)
+                            {
+                                <span>@tick</span>
+                            }
+                        </div>
+                        <div></div>
+                        <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(ChartDuration.Ticks / 2))">
+                            @foreach (ChartTimeTick tick in ChartTimeTicks)
+                            {
+                                <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatAxisTime(tick.Elapsed)</span>
+                            }
+                        </div>
+                        <div></div>
+                    </div>
+                    <div class="control-chart-legend" aria-label="Chart legend">
+                        <strong>Speed</strong><span><i class="legend-line legend-line--plan"></i>Plan</span><span><i class="legend-line legend-line--requested"></i>Target</span><span><i class="legend-line legend-line--measured"></i>Measured</span>
+                        <strong>Incline</strong><span><i class="legend-line legend-line--plan legend-line--incline-plan"></i>Plan</span><span><i class="legend-line legend-line--requested legend-line--incline-target"></i>Target</span><span><i class="legend-line legend-line--measured legend-line--incline-measured"></i>Measured</span>
+                    </div>
+                </section>
+
+                @if (lease is null)
+                {
+                    <button class="primary-action touch-action control-takeover" type="button" @onclick="TakeControlAsync" disabled="@isTakingControl">@(isTakingControl ? "Enabling…" : "Enable controls")</button>
+                }
+
+                <section class="control-action-dock" aria-label="Treadmill motion controls">
+                    <p class="control-command-status" role="status">@actionStatus</p>
+                    @if (session.Live.SessionState == SessionState.ArmedWaitingForPhysicalStart)
+                    {
+                        <button class="touch-action primary-action hold-start-action" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold">
+                            @(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : $"Hold to start · {session.MinimumStartSpeedKph:0.0} km/h")
+                        </button>
+                    }
+                    else if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
+                    {
+                        <button class="touch-action primary-action" type="button" @onclick="ResumeAsync" disabled="@(!CanResume)">Resume</button>
+                    }
+                    else
+                    {
+                        <button class="touch-action" type="button" @onclick="PauseAsync" disabled="@(!CanPause)">Pause</button>
+                    }
+                    <button class="touch-action danger-action stop-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop</button>
+                </section>
+                @if (session.HeartRateTarget is not null)
+                {
+                    <details class="automation-panel control-automation">
+                        <summary><span>Heart-rate speed control</span><strong>@AutomationLabel</strong></summary>
+                        <div class="automation-modes" role="group" aria-label="Heart-rate speed control">
+                            <button class="touch-action" type="button" aria-label="HR shadow" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Shadow)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Shadow)" disabled="@(!CanSetAutomation)">Monitor only</button>
+                            <button class="touch-action" type="button" aria-label="HR decreases" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.DecreaseOnly)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.DecreaseOnly)" disabled="@(!CanSetSpeedAutomation)">Slow down only</button>
+                            <button class="touch-action" type="button" aria-label="HR two-way" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Full)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Full)" disabled="@(!CanSetSpeedAutomation)">Full control</button>
+                            <button class="touch-action" type="button" aria-label="HR off" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Disabled)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Disabled)" disabled="@(!CanSetAutomation)">Off</button>
+                        </div>
+                        <p>HR automation: @session.HeartRateAutomationMode · @session.HeartRateAutomationReason</p>
+                    </details>
+                }
+                <p class="control-disabled-reason">@ControlAvailabilityMessage</p>
+            </section>
+
+            <aside class="control-rail control-rail--incline" aria-labelledby="incline-control-title">
+                <span class="eyebrow">Target incline</span>
+                <h2 id="incline-control-title">@session.RequestedInclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></h2>
+                <div class="rail-stepper" role="group" aria-label="Fine incline controls">
+                    <button class="touch-action" type="button" aria-label="Incline -@InclineIncrement.ToString("0.0", CultureInfo.InvariantCulture)%" @onclick="() => SetInclineTargetAsync(session.RequestedInclinePercent - InclineIncrement)" disabled="@(!CanAdjustIncline)">−</button>
+                    <button class="touch-action" type="button" aria-label="Incline +@InclineIncrement.ToString("0.0", CultureInfo.InvariantCulture)%" @onclick="() => SetInclineTargetAsync(session.RequestedInclinePercent + InclineIncrement)" disabled="@(!CanAdjustIncline)">+</button>
+                </div>
+                <div class="rail-presets" role="group" aria-label="Incline presets">
+                    @foreach (double target in InclineTargets)
+                    {
+                        <button class="touch-action quick-target" type="button" aria-label="Set incline to @target.ToString("0.0", CultureInfo.InvariantCulture)%" aria-pressed="@AriaPressed(Approximately(session.RequestedInclinePercent, target))" @onclick="() => SetInclineTargetAsync(target)" disabled="@(!CanAdjustIncline)">@target.ToString("0.0", CultureInfo.InvariantCulture)</button>
+                    }
+                </div>
+            </aside>
+        </section>
+
+        <details class="control-details" aria-label="Technical session details">
+            <summary>Connection and command details</summary>
+            <p class="control-safety-copy"><strong>Physical Stop and the safety key remain authoritative.</strong> Bluetooth disconnect is never a stop mechanism.</p>
+            <section class="control-status-strip" aria-label="Current treadmill status">
+                <div><span>Session</span><strong>@SessionStateLabel</strong></div>
+                <div><span>Treadmill</span><strong>@session.Live.TreadmillConnectionState</strong></div>
+                <div><span>Telemetry</span><strong>@session.Live.TelemetryAge.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) s old</strong></div>
+                <div><span>Controller</span><strong>@controlStatus</strong></div>
+            </section>
+            @if (session.LastCommandResult is { Disposition: not TreadmillCommandDisposition.Unknown } commandResult)
+            {
+                <section class="command-result command-@commandResult.Disposition.ToString().ToLowerInvariant()" role="status">
+                    <strong>@commandResult.Kind: @commandResult.Disposition</strong><span>@commandResult.Reason</span>
+                    @if (CommandValuesLabel(commandResult) is { } values) { <span>@values</span> }
+                    <span>Completed in @((commandResult.CompletedAt - commandResult.IssuedAt).TotalSeconds.ToString("0.00", CultureInfo.InvariantCulture)) s · generation @commandResult.ConnectionGeneration</span>
+                </section>
+            }
+        </details>
+    }
+</section>
+
+@code {
+    private const string HolderStorageKey = "treadmillrunner.controller-holder";
+    private static readonly double[] PopularSpeeds = [5.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0];
+    private static readonly double[] PopularInclines = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
+    private BoundedLiveSeries<ControlChartPoint> chartPoints = new(43_200);
+    private HubConnection? hubConnection;
+    private CancellationTokenSource? heartbeatCancellation;
+    private CancellationTokenSource? startHoldCancellation;
+    private Task? heartbeatTask;
+    private ActiveSessionSnapshot? session;
+    private ControlLease? lease;
+    private string holderId = string.Empty;
+    private string connectionStatus = "Connecting";
+    private string controlStatus = "Observer";
+    private string actionStatus = "Waiting for an active session.";
+    private bool isTakingControl;
+    private bool isManualCommandPending;
+    private bool isStopPending;
+    private bool isChartFocused;
+    private bool stopRequestedDuringCommand;
+    private bool hasRendered;
+    private int? startHoldSecondsRemaining;
+    private double speedChartMaximum = 10;
+    private double inclineChartMaximum = 10;
+    private long renderedChartVersion = -1;
+    private IReadOnlyList<ControlChartPoint> renderedChartPoints = [];
+
+    private bool HasUnknownOutcome => session?.LastCommandResult?.Disposition == TreadmillCommandDisposition.Unknown;
+    private bool HasController => lease is not null;
+    private bool CanStart => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    {
+        CanStartRemotely: true,
+        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
+    };
+    private bool CanResume => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    {
+        CanStartRemotely: true,
+        Live.SessionState: SessionState.PausedWaitingForPhysicalResume,
+    };
+    private bool CanPause => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    {
+        CanPauseRemotely: true,
+        Live.SessionState: SessionState.Running,
+    };
+    private bool CanStop => !isStopPending && HasController && session is not null &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanStopRemotely) && session.Live.SessionState is
+        SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
+    private bool CanAdjustSpeed => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
+    private bool CanAdjustIncline => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
+    private bool CanSetAutomation => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController &&
+        session?.Live.SessionState == SessionState.Running;
+    private bool CanSetSpeedAutomation => CanSetAutomation && session is not null &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
+    private string DashboardTitle => session?.Live.SessionState switch
+    {
+        SessionState.ArmedWaitingForPhysicalStart => "Ready at the treadmill",
+        SessionState.PausedWaitingForPhysicalResume => "Run paused",
+        SessionState.Running => "Live run",
+        _ => "Run",
+    };
+    private string AutomationLabel => session?.HeartRateAutomationMode switch
+    {
+        HeartRateAutomationMode.Disabled => "Off",
+        HeartRateAutomationMode.Shadow => "Monitor only",
+        HeartRateAutomationMode.DecreaseOnly => "Slow down only",
+        HeartRateAutomationMode.Full => "Full control",
+        HeartRateAutomationMode.SuspendedManualOverride => "Paused after manual change",
+        HeartRateAutomationMode.SuspendedSafety => "Paused for safety",
+        _ => "Unavailable",
+    };
+    private double SpeedIncrement => (double)(session?.SpeedRange?.Increment ?? 0.1m);
+    private double InclineIncrement => (double)(session?.InclineRange?.Increment ?? 0.5m);
+    private IEnumerable<double> SpeedTargets => PopularSpeeds.Where(target => IsWithinRange(target, session?.SpeedRange));
+    private IEnumerable<double> InclineTargets => PopularInclines.Where(target => IsWithinRange(target, session?.InclineRange));
+    private string SessionStateLabel => session?.Live.SessionState switch
+    {
+        SessionState.ArmedWaitingForPhysicalStart => "Ready",
+        SessionState.PausedWaitingForPhysicalResume => "Paused",
+        SessionState.Running => "Running",
+        SessionState.Stopped => "Stopped",
+        SessionState.Completed => "Complete",
+        _ => session?.Live.SessionState.ToString() ?? "None",
+    };
+    private string ControlAvailabilityMessage => HasUnknownOutcome
+        ? "Adjustments are locked after an unknown outcome. Use physical Stop; the dashboard will not retry."
+        : lease is null
+            ? "Take control to enable commands. Live measurements remain visible to observers."
+            : session?.Live.SessionState != SessionState.Running
+                ? "Speed and incline changes are available while the session is running."
+                : "Targets are bounded by the active profile and verified treadmill ranges.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        holderId = await JS.InvokeAsync<string?>("localStorage.getItem", HolderStorageKey) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(holderId))
+        {
+            holderId = Guid.NewGuid().ToString("N");
+            await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
+        }
+
+        await RefreshSessionAsync();
+        if (session is null || session.Live.SessionState is SessionState.Stopped or SessionState.Completed)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        await HydrateChartAsync(session.SessionId);
+
+        await TakeControlAsync(restoring: true);
+        connectionStatus = "Gateway ready";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        hasRendered = true;
+        await UpdateWakeLockAsync();
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
+            .WithAutomaticReconnect()
+            .Build();
+        hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async snapshot =>
+        {
+            session = snapshot;
+            AppendChartPoint(snapshot);
+            await UpdateWakeLockAsync();
+            if (snapshot.Live.SessionState is SessionState.Stopped or SessionState.Completed)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting");
+        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready");
+        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable");
+        try
+        {
+            await hubConnection.StartAsync();
+        }
+        catch (HttpRequestException)
+        {
+            connectionStatus = "Gateway unavailable";
+        }
+    }
+
+    private Task TakeControlAsync() => TakeControlAsync(restoring: false);
+
+    private async Task TakeControlAsync(bool restoring)
+    {
+        if (isTakingControl) return;
+        isTakingControl = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/acquire", new { holderId });
+            if (response.IsSuccessStatusCode)
+            {
+                lease = await response.Content.ReadFromJsonAsync<ControlLease>();
+                controlStatus = restoring ? "Controller restored" : "Controller";
+                actionStatus = restoring ? "Controller access restored." : "Direct controls are ready.";
+                StartHeartbeat();
+            }
+            else
+            {
+                lease = null;
+                controlStatus = "Observer";
+                actionStatus = "Another browser currently controls manual actions.";
+            }
+        }
+        finally
+        {
+            isTakingControl = false;
+        }
+    }
+
+    private async Task SetSpeedTargetAsync(double target)
+    {
+        if (!CanAdjustSpeed || session is null || lease is null) return;
+        target = NormalizeTarget(target, session.SpeedRange);
+        double adjustment = target - session.RequestedSpeedKph;
+        if (Math.Abs(adjustment) < 0.0001) return;
+        isManualCommandPending = true;
+        actionStatus = $"Setting speed to {target:0.0} km/h…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/speed-override", new
+            {
+                operationId = Guid.NewGuid(),
+                adjustmentKph = adjustment,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            await ApplyManualControlResponseAsync(response, "speed");
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private async Task SetInclineTargetAsync(double target)
+    {
+        if (!CanAdjustIncline || session is null || lease is null) return;
+        target = NormalizeTarget(target, session.InclineRange);
+        if (Approximately(target, session.RequestedInclinePercent)) return;
+        isManualCommandPending = true;
+        actionStatus = $"Setting incline to {target:0.0}%…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/incline-override", new
+            {
+                operationId = Guid.NewGuid(),
+                targetPercent = target,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            await ApplyManualControlResponseAsync(response, "incline");
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private async Task ApplyManualControlResponseAsync(HttpResponseMessage response, string control)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            actionStatus = $"The {control} request was rejected before confirmation. Refreshing live state.";
+            await RefreshSessionAsync();
+            return;
+        }
+
+        using JsonDocument payload = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        session = payload.RootElement.GetProperty("snapshot").Deserialize<ActiveSessionSnapshot>(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (session is not null) AppendChartPoint(session);
+        actionStatus = session?.LastCommandResult?.Reason ?? $"The {control} target was updated.";
+    }
+
+    private async Task SetAutomationAsync(HeartRateAutomationMode mode)
+    {
+        if (!CanSetAutomation || session is null || lease is null) return;
+        isManualCommandPending = true;
+        actionStatus = "Updating heart-rate control…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/heart-rate-automation", new
+            {
+                operationId = Guid.NewGuid(),
+                mode,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+                actionStatus = session?.HeartRateAutomationReason ?? $"Heart-rate automation set to {mode}.";
+            }
+            else
+            {
+                actionStatus = "Heart-rate automation could not be changed.";
+            }
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private Task BeginStartPointerHoldAsync(PointerEventArgs _) => BeginStartHoldAsync();
+
+    private Task StartKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.Ordinal))
+        {
+            CancelStartHold();
+            return Task.CompletedTask;
+        }
+
+        return args.Key is "Enter" or " " ? BeginStartHoldAsync() : Task.CompletedTask;
+    }
+
+    private async Task BeginStartHoldAsync()
+    {
+        if (!CanStart || startHoldCancellation is not null) return;
+        startHoldCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = startHoldCancellation.Token;
+        try
+        {
+            for (var remaining = 3; remaining > 0; remaining--)
+            {
+                startHoldSecondsRemaining = remaining;
+                actionStatus = $"Keep holding — Start in {remaining}.";
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+
+            startHoldSecondsRemaining = null;
+            if (!CanStart)
+            {
+                actionStatus = "Remote Start canceled because the session state changed.";
+                return;
+            }
+            await SendCommandAsync(TreadmillCommandKind.Start);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            actionStatus = "Remote Start canceled before sending.";
+        }
+        finally
+        {
+            startHoldSecondsRemaining = null;
+            startHoldCancellation?.Dispose();
+            startHoldCancellation = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CancelStartHold() => startHoldCancellation?.Cancel();
+    private Task StopAsync()
+    {
+        CancelStartHold();
+        if (isManualCommandPending)
+        {
+            stopRequestedDuringCommand = true;
+            actionStatus = "Stop requested — finishing the in-flight command, then sending one current-state Stop.";
+            return InvokeAsync(StateHasChanged);
+        }
+        return SendCommandAsync(TreadmillCommandKind.Stop);
+    }
+    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
+    private Task ResumeAsync() => SendCommandAsync(TreadmillCommandKind.Start);
+    private void ToggleChartFocus() => isChartFocused = !isChartFocused;
+
+    private async Task SendCommandAsync(TreadmillCommandKind kind)
+    {
+        bool isStop = kind == TreadmillCommandKind.Stop;
+        if (isStop ? isStopPending : isManualCommandPending || isStopPending) return;
+        ActiveSessionSnapshot? currentSession = session;
+        ControlLease? currentLease = lease;
+        if (currentSession is null || currentLease is null) return;
+        if (!isStop && HasUnknownOutcome) return;
+        if (isStop) isStopPending = true;
+        else isManualCommandPending = true;
+        string operation = kind switch
+        {
+            TreadmillCommandKind.Start => "start",
+            TreadmillCommandKind.Pause => "pause",
+            _ => "stop",
+        };
+        actionStatus = $"Sending single-use {operation} command…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{operation}", new
+            {
+                operationId = Guid.NewGuid(),
+                holderId,
+                leaseId = currentLease.Id,
+                expectedSessionVersion = currentSession.Version,
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                actionStatus = $"{kind} was rejected before confirmation. Live state was refreshed.";
+                await RefreshSessionAsync();
+                return;
+            }
+
+            TreadmillCommandResult? result = await response.Content.ReadFromJsonAsync<TreadmillCommandResult>();
+            actionStatus = result?.Disposition switch
+            {
+                TreadmillCommandDisposition.Confirmed => result.Reason,
+                TreadmillCommandDisposition.Unknown => $"Unknown outcome: {result.Reason} Use physical Stop now.",
+                _ => result?.Reason ?? $"{kind} was rejected.",
+            };
+            await RefreshSessionAsync();
+            if (session is null || session.Live.SessionState is SessionState.Stopped or SessionState.Completed)
+            {
+                Navigation.NavigateTo("/", replace: true);
+            }
+        }
+        finally
+        {
+            if (isStop) isStopPending = false;
+            else
+            {
+                await CompleteManualCommandAsync();
+            }
+        }
+    }
+
+    private async Task CompleteManualCommandAsync()
+    {
+        isManualCommandPending = false;
+        if (!stopRequestedDuringCommand) return;
+        stopRequestedDuringCommand = false;
+        await RefreshSessionAsync();
+        await SendCommandAsync(TreadmillCommandKind.Stop);
+    }
+
+    private async Task RefreshSessionAsync()
+    {
+        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
+        session = response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+        if (session is not null) AppendChartPoint(session);
+    }
+
+    private async Task ToggleFullscreenAsync()
+    {
+        try
+        {
+            string mode = await JS.InvokeAsync<string>("treadmillRunnerView.toggleFullscreen", "control-dashboard");
+            if (string.Equals(mode, "fallback", StringComparison.Ordinal))
+                actionStatus = "Immersive view enabled because native full screen is unavailable.";
+            else if (string.Equals(mode, "unavailable", StringComparison.Ordinal))
+                actionStatus = "Full screen is unavailable in this browser.";
+        }
+        catch (JSException)
+        {
+            actionStatus = "Full screen could not be opened; controls remain available here.";
+        }
+    }
+
+    private async Task UpdateWakeLockAsync()
+    {
+        if (!hasRendered) return;
+        bool wanted = session?.Live.SessionState is
+            SessionState.ArmedWaitingForPhysicalStart or
+            SessionState.Running or
+            SessionState.PausedWaitingForPhysicalResume;
+        await JS.InvokeVoidAsync("treadmillRunnerView.setRunWakeLock", wanted);
+    }
+
+    private void AppendChartPoint(ActiveSessionSnapshot snapshot)
+    {
+        var point = new ControlChartPoint(
+            snapshot.Live.Elapsed,
+            snapshot.PlannedSpeedKph,
+            snapshot.RequestedSpeedKph,
+            snapshot.Live.SpeedKph,
+            snapshot.PlannedInclinePercent,
+            snapshot.RequestedInclinePercent,
+            snapshot.Live.InclinePercent);
+        UpdateChartMaximums(snapshot, point);
+        chartPoints.AppendOrReplace(
+            point,
+            static (previous, current) => (long)previous.Elapsed.TotalSeconds == (long)current.Elapsed.TotalSeconds);
+    }
+
+    private async Task HydrateChartAsync(Guid sessionId)
+    {
+        chartPoints = new BoundedLiveSeries<ControlChartPoint>(43_200);
+        renderedChartVersion = -1;
+        renderedChartPoints = [];
+        speedChartMaximum = 10;
+        inclineChartMaximum = 10;
+        StoredWorkoutSessionView? stored = await Http.GetFromJsonAsync<StoredWorkoutSessionView>($"api/history/{sessionId}");
+        if (stored is not null)
+        {
+            foreach (SessionSample sample in stored.Samples)
+            {
+                var point = new ControlChartPoint(
+                    sample.Elapsed,
+                    sample.PlannedSpeedKph,
+                    sample.RequestedSpeedKph,
+                    sample.MeasuredSpeedKph,
+                    sample.PlannedInclinePercent,
+                    sample.RequestedInclinePercent,
+                    sample.MeasuredInclinePercent);
+                UpdateChartMaximums(session, point);
+                chartPoints.AppendOrReplace(
+                    point,
+                    static (previous, current) => (long)previous.Elapsed.TotalSeconds == (long)current.Elapsed.TotalSeconds);
+            }
+        }
+        if (session is not null) AppendChartPoint(session);
+    }
+
+    private string BuildChartPath(Func<ControlChartPoint, double?> selector, ChartBand band)
+    {
+        IReadOnlyList<ControlChartPoint> points = RenderChartPoints();
+        if (points.Count == 0) return string.Empty;
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (ControlChartPoint point in points)
+        {
+            if (selector(point) is not { } value)
+            {
+                started = false;
+                continue;
+            }
+            double y = ChartY(value, band);
+            path.Append(started ? " L" : "M");
+            path.Append(ChartX(point.Elapsed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            started = true;
+        }
+        return path.ToString();
+    }
+
+    private IReadOnlyList<ControlChartPoint> RenderChartPoints()
+    {
+        if (renderedChartVersion == chartPoints.Version) return renderedChartPoints;
+
+        IReadOnlyList<ControlChartPoint> points = chartPoints.Snapshot();
+        const int maximumRenderedPoints = 720;
+        if (points.Count <= maximumRenderedPoints)
+        {
+            renderedChartVersion = chartPoints.Version;
+            renderedChartPoints = points;
+            return renderedChartPoints;
+        }
+        const int bucketCount = maximumRenderedPoints / 14;
+        int bucketSize = (int)Math.Ceiling(points.Count / (double)bucketCount);
+        var selected = new List<ControlChartPoint>(maximumRenderedPoints);
+        for (int start = 0; start < points.Count; start += bucketSize)
+        {
+            ControlChartPoint[] bucket = points.Skip(start).Take(Math.Min(bucketSize, points.Count - start)).ToArray();
+            var extrema = new List<ControlChartPoint>
+            {
+                bucket[0], bucket[^1],
+                bucket.MinBy(static point => point.MeasuredSpeedKph)!, bucket.MaxBy(static point => point.MeasuredSpeedKph)!,
+                bucket.MinBy(static point => point.MeasuredInclinePercent)!, bucket.MaxBy(static point => point.MeasuredInclinePercent)!,
+                bucket.MinBy(static point => point.RequestedSpeedKph)!, bucket.MaxBy(static point => point.RequestedSpeedKph)!,
+                bucket.MinBy(static point => point.RequestedInclinePercent)!, bucket.MaxBy(static point => point.RequestedInclinePercent)!,
+            };
+            ControlChartPoint[] plannedSpeed = bucket.Where(static point => point.PlannedSpeedKph is not null).ToArray();
+            if (plannedSpeed.Length > 0)
+            {
+                extrema.Add(plannedSpeed.MinBy(static point => point.PlannedSpeedKph)!);
+                extrema.Add(plannedSpeed.MaxBy(static point => point.PlannedSpeedKph)!);
+            }
+            ControlChartPoint[] plannedIncline = bucket.Where(static point => point.PlannedInclinePercent is not null).ToArray();
+            if (plannedIncline.Length > 0)
+            {
+                extrema.Add(plannedIncline.MinBy(static point => point.PlannedInclinePercent)!);
+                extrema.Add(plannedIncline.MaxBy(static point => point.PlannedInclinePercent)!);
+            }
+            foreach (int transition in Enumerable.Range(1, bucket.Length - 1).Where(index =>
+                bucket[index - 1].PlannedSpeedKph.HasValue != bucket[index].PlannedSpeedKph.HasValue ||
+                bucket[index - 1].PlannedInclinePercent.HasValue != bucket[index].PlannedInclinePercent.HasValue))
+            {
+                extrema.Add(bucket[transition - 1]);
+                extrema.Add(bucket[transition]);
+            }
+            selected.AddRange(extrema.Distinct().OrderBy(static point => point.Elapsed));
+        }
+        renderedChartVersion = chartPoints.Version;
+        renderedChartPoints = selected;
+        return renderedChartPoints;
+    }
+
+    private string BuildPlanPath(Func<WorkoutPlanPoint, double?> selector, ChartBand band)
+    {
+        IReadOnlyList<WorkoutPlanPoint> points = session?.WorkoutPlan ?? [];
+        if (points.Count == 0) return string.Empty;
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (WorkoutPlanPoint point in points)
+        {
+            if (selector(point) is not { } value) { started = false; continue; }
+            double y = ChartY(value, band);
+            path.Append(started ? " L" : "M");
+            path.Append(ChartX(point.Elapsed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            started = true;
+        }
+        return path.ToString();
+    }
+
+    private void UpdateChartMaximums(ActiveSessionSnapshot? snapshot, ControlChartPoint point)
+    {
+        IReadOnlyList<WorkoutPlanPoint> plan = snapshot?.WorkoutPlan ?? [];
+        double planSpeed = plan.Count == 0 ? 0 : plan.Max(static item => item.SpeedKph ?? 0);
+        double planIncline = plan.Count == 0 ? 0 : plan.Max(static item => item.InclinePercent ?? 0);
+        speedChartMaximum = Math.Ceiling(Math.Max(speedChartMaximum, Math.Max(planSpeed, Math.Max(point.MeasuredSpeedKph, point.RequestedSpeedKph))));
+        inclineChartMaximum = Math.Ceiling(Math.Max(inclineChartMaximum, Math.Max(planIncline, Math.Max(point.MeasuredInclinePercent, point.RequestedInclinePercent))));
+    }
+
+    private double ChartMaximum(ChartBand band) => band == ChartBand.Speed ? speedChartMaximum : inclineChartMaximum;
+
+    private int SpeedAxisMaximum => (int)ChartMaximum(ChartBand.Speed);
+    private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
+    private int InclineAxisMaximum => (int)ChartMaximum(ChartBand.Incline);
+    private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
+
+    private double ChartY(double value, ChartBand band) =>
+        210 - (Math.Clamp(value / ChartMaximum(band), 0, 1) * 200);
+
+    private double ChartX(TimeSpan elapsed)
+        => LiveChartTimeline.PositionX(elapsed, ChartDuration);
+
+    private TimeSpan ChartDuration => LiveChartTimeline.ResolveDuration(
+        session,
+        chartPoints.Snapshot().LastOrDefault()?.Elapsed ?? TimeSpan.Zero);
+
+    private double CurrentChartX => ChartX(session?.Live.Elapsed ?? TimeSpan.Zero);
+    private string CurrentChartElapsedSeconds => (session?.Live.Elapsed.TotalSeconds ?? 0).ToString("0.###", CultureInfo.InvariantCulture);
+    private string ChartDurationSeconds => ChartDuration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+    private ControlChartPoint? LatestMeasuredPoint => chartPoints.Snapshot().LastOrDefault();
+
+    private IReadOnlyList<ChartTimeTick> ChartTimeTicks
+    {
+        get
+        {
+            TimeSpan duration = ChartDuration;
+            double minutes = duration.TotalMinutes;
+            int intervalMinutes = AxisIntervalMinutes(minutes);
+            var ticks = new List<ChartTimeTick> { new(TimeSpan.Zero, 0) };
+            for (double minute = intervalMinutes; minute < minutes; minute += intervalMinutes)
+            {
+                TimeSpan elapsed = TimeSpan.FromMinutes(minute);
+                ticks.Add(new ChartTimeTick(elapsed, elapsed.TotalSeconds / duration.TotalSeconds * 100));
+            }
+            if (ticks.Count > 1 && (duration - ticks[^1].Elapsed).TotalMinutes < intervalMinutes * .75) ticks.RemoveAt(ticks.Count - 1);
+            if (duration > TimeSpan.Zero)
+            {
+                ticks.Add(new ChartTimeTick(duration, 100));
+            }
+            return ticks;
+        }
+    }
+
+    private static string FormatAxisTime(TimeSpan elapsed) => elapsed.TotalHours >= 1
+        ? elapsed.ToString(@"h\:mm", CultureInfo.InvariantCulture)
+        : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+
+    private static int AxisIntervalMinutes(double durationMinutes)
+    {
+        double desired = durationMinutes / 5;
+        return desired <= 1 ? 1 : desired <= 2 ? 2 : desired <= 5 ? 5 : desired <= 10 ? 10 : desired <= 15 ? 15 : 30;
+    }
+
+    private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalHours >= 1
+        ? elapsed.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
+        : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+
+    private void StartHeartbeat()
+    {
+        heartbeatCancellation?.Cancel();
+        heartbeatCancellation?.Dispose();
+        heartbeatCancellation = new CancellationTokenSource();
+        heartbeatTask = RenewLeaseAsync(heartbeatCancellation.Token);
+    }
+
+    private async Task RenewLeaseAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                ControlLease? currentLease = lease;
+                if (currentLease is null) return;
+                using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/heartbeat", currentLease, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    lease = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    lease = null;
+                    controlStatus = "Observer";
+                    actionStatus = "Controller lease expired. Take control again to use manual actions.";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Page disposal or a replacement heartbeat loop owns the expected cancellation.
+        }
+    }
+
+    private async Task SetConnectionAsync(string status)
+    {
+        connectionStatus = status;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static bool IsWithinRange(double target, TreadmillOperatingRange? range) => range is null ||
+        ((decimal)target >= range.Minimum && (decimal)target <= range.Maximum);
+
+    private static double NormalizeTarget(double target, TreadmillOperatingRange? range)
+    {
+        if (range is null) return Math.Max(0, target);
+        decimal clamped = range.Clamp((decimal)target);
+        decimal steps = decimal.Floor((clamped - range.Minimum) / range.Increment);
+        return (double)(range.Minimum + (steps * range.Increment));
+    }
+
+    private static bool Approximately(double left, double right) => Math.Abs(left - right) < 0.001;
+    private static bool IsVisibleControlWarning(string warning) =>
+        !string.Equals(warning, "Physical movement detected", StringComparison.OrdinalIgnoreCase);
+    private static string AriaPressed(bool value) => value ? "true" : "false";
+
+    private static string? CommandValuesLabel(TreadmillCommandResult result)
+    {
+        string? unit = result.Kind switch
+        {
+            TreadmillCommandKind.Start or TreadmillCommandKind.SetSpeed => "km/h",
+            TreadmillCommandKind.SetIncline => "%",
+            _ => null,
+        };
+        if (unit is null) return null;
+        var values = new List<string>(3);
+        if (result.RequestedValue is { } requested) values.Add($"Requested {requested.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        if (result.AcceptedValue is { } accepted) values.Add($"accepted {accepted.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        if (result.MeasuredValue is { } measured) values.Add($"measured {measured.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        return values.Count == 0 ? null : string.Join(" · ", values);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hasRendered)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeRunWakeLock"); }
+            catch (JSDisconnectedException) { }
+        }
+        startHoldCancellation?.Cancel();
+        heartbeatCancellation?.Cancel();
+        if (heartbeatTask is not null) await heartbeatTask;
+        heartbeatCancellation?.Dispose();
+        startHoldCancellation?.Dispose();
+        if (hubConnection is not null) await hubConnection.DisposeAsync();
+        if (hasRendered)
+        {
+            try { await JS.InvokeAsync<string>("treadmillRunnerView.clearImmersiveView", "control-dashboard"); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    private enum ChartBand { Speed, Incline }
+    private sealed record ControlChartPoint(
+        TimeSpan Elapsed,
+        double? PlannedSpeedKph,
+        double RequestedSpeedKph,
+        double MeasuredSpeedKph,
+        double? PlannedInclinePercent,
+        double RequestedInclinePercent,
+        double MeasuredInclinePercent);
+
+    private sealed record ChartTimeTick(TimeSpan Elapsed, double PositionPercent);
+}

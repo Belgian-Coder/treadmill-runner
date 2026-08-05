@@ -1,0 +1,67 @@
+{
+  "branch_policy": {
+    "pattern": "^(feature|fix|docs|chore|release)/[a-z0-9][a-z0-9._-]*$"
+  },
+  "gates": [
+    {
+      "evidence": "Clarification Decisions",
+      "id": "clarification",
+      "required": true,
+      "summary": "Resolve scope ambiguity.",
+      "type": "clarification"
+    },
+    {
+      "evidence": "Principles And Complexity Gate",
+      "id": "complexity",
+      "required": true,
+      "summary": "Choose smallest vehicle.",
+      "type": "quality"
+    },
+    {
+      "evidence": "Workflow Inputs And Gates",
+      "id": "approval",
+      "required": true,
+      "summary": "Wait for approval.",
+      "type": "approval"
+    },
+    {
+      "evidence": "REPORT.md and run.json validation entries",
+      "id": "validation",
+      "required": true,
+      "summary": "Require fresh validation.",
+      "type": "validation"
+    }
+  ],
+  "input_schema": {
+    "properties": {
+      "approval_required": {
+        "type": "boolean"
+      },
+      "change_request": {
+        "type": "string"
+      },
+      "project_root": {
+        "type": "path"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "selected_vehicle": {
+        "type": "enum",
+        "values": [
+          "skill",
+          "workflow",
+          "docs",
+          "code",
+          "mixed"
+        ]
+      }
+    },
+    "required": [
+      "change_request",
+      "run_id",
+      "selected_vehicle"
+    ]
+  },
+  "updated": "2026-07-25"
+}

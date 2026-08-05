@@ -1,0 +1,22 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<a href="/" class="@(IsRunRoute ? "active" : null)" aria-current="@(IsRunRoute ? "page" : null)">Run</a>
+
+@code {
+    private bool IsRunRoute
+    {
+        get
+        {
+            string path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/');
+            return string.IsNullOrEmpty(path) || string.Equals(path, "control", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized() => Navigation.LocationChanged += HandleLocationChanged;
+
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args) =>
+        _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Navigation.LocationChanged -= HandleLocationChanged;
+}

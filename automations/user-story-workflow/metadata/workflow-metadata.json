@@ -1,0 +1,62 @@
+{
+  "branch_policy": {
+    "pattern": "^(feature|fix|docs|chore|release)/[a-z0-9][a-z0-9._-]*$"
+  },
+  "gates": [
+    {
+      "evidence": "Clarification Decisions",
+      "id": "clarification",
+      "required": true,
+      "summary": "Resolve ambiguities before planning.",
+      "type": "clarification"
+    },
+    {
+      "evidence": "Requirements Quality Checklist",
+      "id": "requirements-quality",
+      "required": true,
+      "summary": "Requirements are testable.",
+      "type": "quality"
+    },
+    {
+      "evidence": "Cross-Artifact Coverage Analysis",
+      "id": "coverage-analysis",
+      "required": true,
+      "summary": "Criteria map to validation.",
+      "type": "quality"
+    },
+    {
+      "evidence": "Approval Gate",
+      "id": "approval",
+      "required": true,
+      "summary": "Wait for approval.",
+      "type": "approval"
+    }
+  ],
+  "input_schema": {
+    "properties": {
+      "approval_required": {
+        "type": "boolean"
+      },
+      "project_root": {
+        "type": "path"
+      },
+      "run_id": {
+        "type": "string"
+      },
+      "story_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "story_id",
+      "project_root",
+      "approval_required"
+    ]
+  },
+  "integrations": [
+    "azure-devops-ticket-intake",
+    "sonarqube-diagnostics",
+    "pr-system"
+  ],
+  "updated": "2026-08-02"
+}

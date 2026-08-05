@@ -1,0 +1,588 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using TreadmillRunner.Core.Devices;
+using TreadmillRunner.Core.Bluetooth;
+using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Gateway.Live;
+using TreadmillRunner.Gateway.Planning;
+using TreadmillRunner.Infrastructure.Persistence;
+
+namespace TreadmillRunner.Gateway.Devices;
+
+public sealed record EnrollDeviceRequest(
+  Guid OperationId,
+  string Role,
+  string DeviceId,
+  string DisplayName,
+  string? AdvertisedName,
+  IReadOnlyList<Guid> ServiceUuids,
+  string? ModelNumber,
+  string? FirmwareRevision,
+  string? TelemetryMode,
+  IReadOnlyList<Guid>? OwnerProfileIds = null,
+  bool AutoConnect = true,
+  bool IsPreferred = false);
+
+public sealed record ForgetDeviceRequest(Guid OperationId, int ExpectedVersion);
+public sealed record ConfigureHeartRateAssignmentsRequest(
+  Guid OperationId,
+  IReadOnlyList<Guid> OwnerProfileIds,
+  bool AutoConnect,
+  bool IsPreferred,
+  int Priority = 0);
+public sealed record HeartRateAssignmentDto(
+  Guid Id,
+  Guid UserProfileId,
+  int Priority,
+  bool AutoConnect,
+  bool IsPreferred,
+  int Version);
+
+public sealed record DeviceEnrollmentDto(
+  Guid Id,
+  string Role,
+  string DeviceId,
+  string ProtocolId,
+  string IdentityFingerprint,
+  string DisplayName,
+  string? ModelNumber,
+  string? FirmwareRevision,
+  string? TelemetryMode,
+  TreadmillCapabilities? Capabilities,
+  string Evidence,
+  DateTimeOffset? LastVerifiedAtUtc,
+  int Version,
+  string? HeartRateDeviceKind,
+  string? HeartRateDeviceFamily,
+  IReadOnlyList<HeartRateAssignmentDto> Assignments);
+
+public static class DeviceEnrollmentEndpoints
+{
+  private static readonly Guid HeartRateService = HeartRateDeviceClassifier.HeartRateService;
+  private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+  public static IEndpointRouteBuilder MapDeviceEnrollments(this IEndpointRouteBuilder endpoints)
+  {
+    RouteGroupBuilder devices = endpoints.MapGroup("/api/devices");
+    devices.MapGet("/scan", ScanAsync);
+    devices.MapGet("/status", static (Guid? profileId, IReadOnlyDeviceCoordinator coordinator) =>
+      TypedResults.Ok(coordinator.CurrentForProfile(profileId)));
+    RouteGroupBuilder group = devices.MapGroup("/enrollments");
+    group.MapGet("/", ListAsync);
+    group.MapPost("/", EnrollAsync);
+    group.MapPut("/{id:guid}/assignments", ConfigureAssignmentsAsync);
+    group.MapDelete("/{id:guid}", ForgetByIdAsync);
+    group.MapDelete("/{role}", ForgetAsync);
+    return endpoints;
+  }
+
+  private static async Task<IResult> ScanAsync(
+    int durationSeconds,
+    IBleCentralTransport transport,
+    TreadmillProtocolRegistry protocols,
+    CancellationToken cancellationToken)
+  {
+    if (durationSeconds is < 1 or > 30)
+    {
+      return TypedResults.ValidationProblem(
+        new Dictionary<string, string[]> { ["durationSeconds"] = ["Duration must be between 1 and 30 seconds."] });
+    }
+
+    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    timeout.CancelAfter(TimeSpan.FromSeconds(durationSeconds));
+    var advertisements = new Dictionary<string, BleAdvertisement>(StringComparer.Ordinal);
+    try
+    {
+      await foreach (BleAdvertisement advertisement in transport.ScanAsync(timeout.Token))
+      {
+        if (!advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current) ||
+            advertisement.SignalStrength > current.SignalStrength)
+        {
+          advertisements[advertisement.DeviceId] = advertisement;
+        }
+      }
+    }
+    catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+    {
+      // The bounded scan completed normally.
+    }
+
+    object[] result = advertisements.Values
+      .Select(advertisement => new
+      {
+        advertisement.DeviceId,
+        advertisement.Name,
+        advertisement.SignalStrength,
+        advertisement.ServiceUuids,
+        SupportedRoles = SupportedRoles(advertisement, protocols),
+        HeartRateDeviceKind = HeartRateDeviceClassifier.Classify(
+          advertisement.Name,
+          advertisement.ServiceUuids).ToString(),
+        IsPreferredHeartRate = HeartRateDeviceClassifier.IsPreferredPolar(
+          advertisement.Name,
+          advertisement.ServiceUuids),
+        HeartRatePriority = HeartRateDeviceClassifier.Priority(
+          advertisement.Name,
+          advertisement.ServiceUuids),
+      })
+      .Where(static candidate => candidate.SupportedRoles.Length > 0)
+      .OrderBy(static candidate =>
+        candidate.SupportedRoles.Contains(DeviceRole.HeartRate.ToString(), StringComparer.Ordinal)
+          ? candidate.HeartRatePriority
+          : int.MaxValue)
+      .ThenBy(static candidate => candidate.DeviceId, StringComparer.Ordinal)
+      .Select(static candidate => new
+      {
+        candidate.DeviceId,
+        candidate.Name,
+        candidate.SignalStrength,
+        candidate.ServiceUuids,
+        candidate.SupportedRoles,
+        candidate.HeartRateDeviceKind,
+        candidate.IsPreferredHeartRate,
+      })
+      .Cast<object>()
+      .ToArray();
+    return TypedResults.Ok(result);
+  }
+
+  private static string[] SupportedRoles(
+    BleAdvertisement advertisement,
+    TreadmillProtocolRegistry protocols)
+  {
+    var roles = new List<string>(2);
+    if (protocols.Resolve(new TreadmillAdvertisementIdentity(
+      advertisement.Name,
+      advertisement.ServiceUuids)) is not null)
+    {
+      roles.Add(DeviceRole.Treadmill.ToString());
+    }
+
+    if (advertisement.ServiceUuids.Contains(HeartRateService))
+    {
+      roles.Add(DeviceRole.HeartRate.ToString());
+    }
+
+    return roles.ToArray();
+  }
+
+  private static async Task<IResult> ListAsync(
+    IDeviceEnrollmentStore store,
+    CancellationToken cancellationToken)
+  {
+    IReadOnlyList<HeartRateDeviceAssignment> assignments = await store.ListHeartRateAssignmentsAsync(cancellationToken);
+    return TypedResults.Ok((await store.ListActiveAsync(cancellationToken))
+      .Select(value => ToDto(value, assignments))
+      .ToArray());
+  }
+
+  private static async Task<IResult> EnrollAsync(
+    EnrollDeviceRequest request,
+    IDeviceEnrollmentStore store,
+    IOperationReceiptStore receiptStore,
+    TreadmillProtocolRegistry protocolRegistry,
+    ILiveSessionCoordinator sessionCoordinator,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string fingerprint = string.Empty;
+    try
+    {
+      EnsureIdle(sessionCoordinator);
+      DeviceRole role = ParseRole(request.Role);
+      ValidateOperationId(request.OperationId);
+      if (request.ServiceUuids is null)
+      {
+        throw new ArgumentException("ServiceUuids cannot be null.");
+      }
+
+      DeviceEnrollment enrollment = CreateEnrollment(request, role, protocolRegistry);
+      fingerprint = PlanningOperationFingerprint.Compute(new
+      {
+        enrollment.Role,
+        enrollment.DeviceId,
+        enrollment.ProtocolId,
+        enrollment.IdentityFingerprint,
+        enrollment.DisplayName,
+        request.AdvertisedName,
+        enrollment.ModelNumber,
+        enrollment.FirmwareRevision,
+        enrollment.TelemetryMode,
+      });
+      if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
+      {
+        return Replay(receipt, "device.enroll", fingerprint);
+      }
+
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      HeartRateAssignmentPreference[] assignments = role == DeviceRole.HeartRate
+        ? CreateAssignmentPreferences(request)
+        : [];
+      var expected = new VersionedDeviceEnrollment(enrollment, 1, false, null);
+      VersionedDeviceEnrollment saved = await store.EnrollWithAssignmentsAsync(
+        enrollment,
+        assignments,
+        now,
+        new PersistenceWriteOperation(
+          request.OperationId,
+          "device.enroll",
+          StatusCodes.Status201Created,
+          JsonSerializer.Serialize(ToDto(expected, []), JsonOptions),
+          now,
+          fingerprint),
+        cancellationToken);
+      IReadOnlyList<HeartRateDeviceAssignment> savedAssignments = await store.ListHeartRateAssignmentsAsync(cancellationToken);
+      return TypedResults.Created($"/api/devices/enrollments/{saved.Enrollment.Id}", ToDto(saved, savedAssignments));
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.ValidationProblem(
+        new Dictionary<string, string[]> { ["request"] = [exception.Message] });
+    }
+    catch (InvalidOperationException exception) when (
+      exception is not OperationReplayException and not OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+    catch (DbUpdateException)
+    {
+      return TypedResults.Conflict(new { message = "A device is already enrolled for that role." });
+    }
+    catch (OperationReplayException replay)
+    {
+      return Replay(replay.Receipt, "device.enroll", fingerprint);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return OperationConflict();
+    }
+  }
+
+  private static async Task<IResult> ConfigureAssignmentsAsync(
+    Guid id,
+    ConfigureHeartRateAssignmentsRequest request,
+    IDeviceEnrollmentStore store,
+    ILiveSessionCoordinator sessionCoordinator,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string fingerprint = string.Empty;
+    try
+    {
+      EnsureIdle(sessionCoordinator);
+      ValidateOperationId(request.OperationId);
+      VersionedDeviceEnrollment enrollment = (await store.ListActiveAsync(cancellationToken))
+        .SingleOrDefault(item => item.Enrollment.Id == id)
+        ?? throw new KeyNotFoundException($"Enrollment {id} was not found.");
+      bool polar = enrollment.Enrollment.HeartRateDeviceFamily == HeartRateDeviceFamily.Polar;
+      HeartRateAssignmentPreference[] assignments = CreateAssignmentPreferences(
+        request.OwnerProfileIds,
+        polar ? 0 : request.Priority,
+        polar || request.AutoConnect,
+        polar || request.IsPreferred);
+      fingerprint = PlanningOperationFingerprint.Compute(new { id, assignments });
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      IReadOnlyList<HeartRateDeviceAssignment> saved = await store.ConfigureHeartRateAssignmentsAsync(
+        id,
+        assignments,
+        now,
+        new PersistenceWriteOperation(
+          request.OperationId,
+          "device.assign-heart-rate",
+          StatusCodes.Status200OK,
+          JsonSerializer.Serialize(assignments, JsonOptions),
+          now,
+          fingerprint),
+        cancellationToken);
+      return TypedResults.Ok(saved.Select(ToAssignmentDto).ToArray());
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["request"] = [exception.Message] });
+    }
+    catch (KeyNotFoundException)
+    {
+      return TypedResults.NotFound();
+    }
+    catch (InvalidOperationException exception) when (exception is not OperationReplayException and not OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+    catch (DbUpdateException)
+    {
+      return TypedResults.Conflict(new { message = "A runner can have only one preferred heart-rate sensor." });
+    }
+    catch (OperationReplayException replay)
+    {
+      return Replay(replay.Receipt, "device.assign-heart-rate", fingerprint);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return OperationConflict();
+    }
+  }
+
+  private static async Task<IResult> ForgetByIdAsync(
+    Guid id,
+    [FromBody] ForgetDeviceRequest request,
+    IDeviceEnrollmentStore store,
+    ILiveSessionCoordinator sessionCoordinator,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string fingerprint = string.Empty;
+    try
+    {
+      EnsureIdle(sessionCoordinator);
+      ValidateOperationId(request.OperationId);
+      fingerprint = PlanningOperationFingerprint.Compute(new { id, request.ExpectedVersion });
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      bool forgotten = await store.ForgetByIdAsync(
+        id,
+        request.ExpectedVersion,
+        now,
+        new PersistenceWriteOperation(
+          request.OperationId,
+          "device.forget",
+          StatusCodes.Status204NoContent,
+          "{}",
+          now,
+          fingerprint),
+        cancellationToken);
+      return forgotten ? TypedResults.NoContent() : TypedResults.NotFound();
+    }
+    catch (InvalidOperationException exception) when (exception is not OperationReplayException and not OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+      return TypedResults.Conflict(new { message = "The enrollment changed in another client. Reload and try again." });
+    }
+    catch (OperationReplayException replay)
+    {
+      return Replay(replay.Receipt, "device.forget", fingerprint);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return OperationConflict();
+    }
+  }
+
+  private static async Task<IResult> ForgetAsync(
+    string role,
+    [FromBody] ForgetDeviceRequest request,
+    IDeviceEnrollmentStore store,
+    IOperationReceiptStore receiptStore,
+    ILiveSessionCoordinator sessionCoordinator,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string fingerprint = string.Empty;
+    try
+    {
+      EnsureIdle(sessionCoordinator);
+      DeviceRole parsedRole = ParseRole(role);
+      ValidateOperationId(request.OperationId);
+      if (request.ExpectedVersion < 1)
+      {
+        throw new ArgumentException("ExpectedVersion must be greater than zero.");
+      }
+
+      fingerprint = PlanningOperationFingerprint.Compute(new { Role = parsedRole, request.ExpectedVersion });
+      if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
+      {
+        return Replay(receipt, "device.forget", fingerprint);
+      }
+
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      bool forgotten = await store.ForgetAsync(
+        parsedRole,
+        request.ExpectedVersion,
+        now,
+        new PersistenceWriteOperation(
+          request.OperationId,
+          "device.forget",
+          StatusCodes.Status204NoContent,
+          "{}",
+          now,
+          fingerprint),
+        cancellationToken);
+      return forgotten ? TypedResults.NoContent() : TypedResults.NotFound();
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.ValidationProblem(
+        new Dictionary<string, string[]> { ["request"] = [exception.Message] });
+    }
+    catch (InvalidOperationException exception) when (
+      exception is not OperationReplayException and not OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+      return TypedResults.Conflict(new { message = "The enrollment changed in another client. Reload and try again." });
+    }
+    catch (OperationReplayException replay)
+    {
+      return Replay(replay.Receipt, "device.forget", fingerprint);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return OperationConflict();
+    }
+  }
+
+  private static DeviceEnrollment CreateEnrollment(
+    EnrollDeviceRequest request,
+    DeviceRole role,
+    TreadmillProtocolRegistry protocolRegistry)
+  {
+    string protocolId;
+    TreadmillTelemetryMode? mode = null;
+    TreadmillCapabilities? capabilities = null;
+    if (role == DeviceRole.Treadmill)
+    {
+      ITreadmillProtocol protocol = protocolRegistry.Resolve(
+        new TreadmillAdvertisementIdentity(request.AdvertisedName, request.ServiceUuids))
+        ?? throw new ArgumentException("The selected device is not supported as a treadmill.");
+      if (!Enum.TryParse(request.TelemetryMode, ignoreCase: true, out TreadmillTelemetryMode parsedMode) ||
+          !Enum.IsDefined(parsedMode))
+      {
+        throw new ArgumentException("TelemetryMode must be Ftms or Vendor for a treadmill.");
+      }
+
+      protocolId = protocol.ProtocolId;
+      mode = parsedMode;
+      capabilities = protocol.Capabilities;
+    }
+    else
+    {
+      if (!request.ServiceUuids.Contains(HeartRateService))
+      {
+        throw new ArgumentException("The selected heart-rate device does not advertise the Heart Rate service.");
+      }
+
+      if (!string.IsNullOrWhiteSpace(request.TelemetryMode))
+      {
+        throw new ArgumentException("TelemetryMode is only valid for a treadmill.");
+      }
+
+      protocolId = "bluetooth-heart-rate";
+    }
+
+    string identityFingerprint = PlanningOperationFingerprint.Compute(new
+    {
+      Role = role,
+      request.DeviceId,
+      ProtocolId = protocolId,
+      request.AdvertisedName,
+      request.DisplayName,
+      Services = request.ServiceUuids.Order().ToArray(),
+    });
+    return new DeviceEnrollment(
+      Guid.NewGuid(),
+      role,
+      request.DeviceId,
+      protocolId,
+      identityFingerprint,
+      request.DisplayName,
+      request.ModelNumber,
+      request.FirmwareRevision,
+      mode,
+      capabilities,
+      TreadmillCapabilityEvidence.Unknown,
+      lastVerifiedAtUtc: null,
+      role == DeviceRole.HeartRate ? HeartRateDeviceClassifier.Classify(request.DisplayName, request.ServiceUuids) : null,
+      role == DeviceRole.HeartRate ? HeartRateDeviceClassifier.Family(request.DisplayName, request.ServiceUuids) : null);
+  }
+
+  private static DeviceEnrollmentDto ToDto(
+    VersionedDeviceEnrollment value,
+    IReadOnlyList<HeartRateDeviceAssignment> assignments) => new(
+    value.Enrollment.Id,
+    value.Enrollment.Role.ToString(),
+    value.Enrollment.DeviceId,
+    value.Enrollment.ProtocolId,
+    value.Enrollment.IdentityFingerprint,
+    value.Enrollment.DisplayName,
+    value.Enrollment.ModelNumber,
+    value.Enrollment.FirmwareRevision,
+    value.Enrollment.TelemetryMode?.ToString(),
+    value.Enrollment.Capabilities,
+    value.Enrollment.Evidence.ToString(),
+    value.Enrollment.LastVerifiedAtUtc,
+    value.Version,
+    value.Enrollment.HeartRateDeviceKind?.ToString(),
+    value.Enrollment.HeartRateDeviceFamily?.ToString(),
+    assignments.Where(item => item.DeviceEnrollmentId == value.Enrollment.Id).Select(ToAssignmentDto).ToArray());
+
+  private static HeartRateAssignmentDto ToAssignmentDto(HeartRateDeviceAssignment value) => new(
+    value.Id,
+    value.UserProfileId,
+    value.Priority,
+    value.AutoConnect,
+    value.IsPreferred,
+    value.Version);
+
+  private static HeartRateAssignmentPreference[] CreateAssignmentPreferences(EnrollDeviceRequest request) =>
+    CreateAssignmentPreferences(
+      request.OwnerProfileIds ?? [],
+      HeartRateDeviceClassifier.Priority(request.DisplayName, request.ServiceUuids),
+      request.AutoConnect,
+      request.IsPreferred || HeartRateDeviceClassifier.IsPreferredPolar(request.DisplayName, request.ServiceUuids));
+
+  private static HeartRateAssignmentPreference[] CreateAssignmentPreferences(
+    IReadOnlyList<Guid> profileIds,
+    int priority,
+    bool autoConnect,
+    bool preferred) => profileIds
+      .Distinct()
+      .Select(profileId => new HeartRateAssignmentPreference(profileId, priority, autoConnect, preferred))
+      .ToArray();
+
+  private static DeviceRole ParseRole(string value)
+  {
+    if (int.TryParse(value, out _) ||
+        !Enum.TryParse(value, ignoreCase: true, out DeviceRole role) ||
+        !Enum.IsDefined(role))
+    {
+      throw new ArgumentException("Role must be Treadmill or HeartRate.");
+    }
+
+    return role;
+  }
+
+  private static void EnsureIdle(ILiveSessionCoordinator coordinator)
+  {
+    if (coordinator.CurrentSession?.Live.SessionState is
+        SessionState.ArmedWaitingForPhysicalStart or
+        SessionState.Running or
+        SessionState.PausedWaitingForPhysicalResume)
+    {
+      throw new InvalidOperationException("Device enrollment cannot change while a workout is active.");
+    }
+  }
+
+  private static void ValidateOperationId(Guid value)
+  {
+    if (value == Guid.Empty) throw new ArgumentException("OperationId cannot be empty.");
+  }
+
+  private static IResult Replay(OperationReceipt receipt, string type, string fingerprint)
+  {
+    if (receipt.OperationType != type || receipt.RequestFingerprint != fingerprint)
+    {
+      return OperationConflict();
+    }
+
+    return receipt.StatusCode == StatusCodes.Status204NoContent
+      ? TypedResults.NoContent()
+      : Results.Content(receipt.OutcomeJson, "application/json", statusCode: receipt.StatusCode);
+  }
+
+  private static IResult OperationConflict() =>
+    TypedResults.Conflict(new { message = "That operation ID was already used for another action or request." });
+}

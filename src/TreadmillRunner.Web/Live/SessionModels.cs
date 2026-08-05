@@ -1,0 +1,21 @@
+using System.Text.Json;
+using TreadmillRunner.Core.Sessions;
+
+namespace TreadmillRunner.Web.Live;
+
+public sealed record StoredWorkoutSessionView(
+  NewWorkoutSession Definition,
+  SessionState State,
+  DateTimeOffset? StartedAt,
+  DateTimeOffset? EndedAt,
+  TimeSpan Duration,
+  double DistanceKilometers,
+  double EstimatedKilocalories,
+  double? AverageHeartRateBpm,
+  ushort? MaximumHeartRateBpm,
+  double AverageSpeedKph,
+  double AverageInclinePercent,
+  SessionDebrief? Debrief,
+  IReadOnlyList<SessionSample> Samples,
+  IReadOnlyList<JsonElement> Events,
+  SessionAnalytics Analytics);

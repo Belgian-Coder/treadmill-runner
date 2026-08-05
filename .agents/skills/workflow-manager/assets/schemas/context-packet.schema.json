@@ -1,0 +1,1228 @@
+{
+  "$defs": {
+    "checkState": {
+      "additionalProperties": false,
+      "properties": {
+        "existing": {
+          "type": "boolean"
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "markdown_exists": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "existing",
+        "fresh",
+        "markdown_exists"
+      ],
+      "type": "object"
+    },
+    "contextBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actual": {
+                "type": "number"
+              },
+              "applies": {
+                "type": "boolean"
+              },
+              "budget_ref_valid": {
+                "type": "boolean"
+              },
+              "file_count": {
+                "type": "integer"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "minimum": {
+                "type": "number"
+              },
+              "minimum_raw_tokens": {
+                "type": "integer"
+              },
+              "must_open_tokens": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "packet_tokens": {
+                "type": "integer"
+              },
+              "remaining_margin_tokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "ok"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "effective_load_limit": {
+          "type": "integer"
+        },
+        "effective_load_ratio": {
+          "type": "number"
+        },
+        "effective_load_tokens_estimated": {
+          "type": "integer"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "minimum_savings_ratio": {
+          "type": "number"
+        },
+        "minimum_savings_raw_tokens": {
+          "type": "integer"
+        },
+        "packet_only_ratio": {
+          "type": "number"
+        },
+        "packet_token_limit": {
+          "type": "integer"
+        },
+        "savings_ratio": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "packet_token_limit",
+        "minimum_savings_raw_tokens",
+        "minimum_savings_ratio",
+        "packet_only_ratio",
+        "effective_load_ratio",
+        "savings_ratio",
+        "effective_load_tokens_estimated",
+        "effective_load_limit",
+        "issues",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "coordinateCloset": {
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hashes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ports": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_count": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "paths",
+        "hashes",
+        "ids",
+        "ports",
+        "env",
+        "source_count"
+      ],
+      "type": "object"
+    },
+    "documentationDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "changed_docs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "frontmatter_checked": {
+          "type": "boolean"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "map_checked": {
+          "type": "boolean"
+        },
+        "no_doc_impact_reason": {
+          "type": "string"
+        },
+        "paths": {
+          "additionalProperties": false,
+          "properties": {
+            "json": {
+              "type": "string"
+            },
+            "markdown": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "json",
+            "markdown"
+          ],
+          "type": "object"
+        },
+        "required_updates": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "tool",
+        "status",
+        "changed_docs",
+        "required_updates",
+        "no_doc_impact_reason",
+        "frontmatter_checked",
+        "map_checked",
+        "evidence_paths",
+        "issues",
+        "paths"
+      ],
+      "type": "object"
+    },
+    "executionProfile": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "type": "string"
+            },
+            "profile_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "budget_issue": {
+              "type": "string"
+            },
+            "budget_source": {
+              "type": "string"
+            },
+            "budget_tokens": {
+              "type": "integer"
+            },
+            "capability_status": {
+              "enum": [
+                "attested",
+                "partial",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            "context_budget": {
+              "type": "string"
+            },
+            "context_budget_ref": {
+              "type": "string"
+            },
+            "context_measurement": {
+              "type": "string"
+            },
+            "declared_deliberation_tier": {
+              "type": "string"
+            },
+            "declared_host_surface": {
+              "type": "string"
+            },
+            "declared_model": {
+              "type": "string"
+            },
+            "declared_model_provider": {
+              "type": "string"
+            },
+            "deliberation_tier": {
+              "type": "string"
+            },
+            "effective_context_tokens": {
+              "type": "integer"
+            },
+            "effective_execution_mode": {
+              "enum": [
+                "declared-endpoint",
+                "serial-active-model"
+              ],
+              "type": "string"
+            },
+            "endpoint_status": {
+              "enum": [
+                "attested-primary",
+                "attested-alternate",
+                "active-model-fallback",
+                "attested-host-only",
+                "attested-model-only",
+                "unattested-active"
+              ],
+              "type": "string"
+            },
+            "expected_output": {
+              "type": "string"
+            },
+            "fallback_reason": {
+              "type": "string"
+            },
+            "host_observation_source": {
+              "type": "string"
+            },
+            "instruction_header": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "model_observation_source": {
+              "type": "string"
+            },
+            "model_target": {
+              "type": "string"
+            },
+            "observation_evidence_path": {
+              "type": "string"
+            },
+            "observed_capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "observed_deliberation": {
+              "type": "string"
+            },
+            "observed_host_surface": {
+              "type": "string"
+            },
+            "observed_model": {
+              "type": "string"
+            },
+            "observed_model_provider": {
+              "type": "string"
+            },
+            "profile_id": {
+              "type": "string"
+            },
+            "profile_purpose": {
+              "type": "string"
+            },
+            "prompt_adapter": {
+              "type": "string"
+            },
+            "prompt_overlay": {
+              "additionalProperties": false,
+              "properties": {
+                "delivery_directive": {
+                  "type": "string"
+                },
+                "generation": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "promotion_state": {
+                  "type": "string"
+                },
+                "source_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "version"
+              ],
+              "type": "object"
+            },
+            "remaining_margin_tokens": {
+              "type": "integer"
+            },
+            "route_set": {
+              "type": "string"
+            },
+            "surface_adapter": {
+              "additionalProperties": false,
+              "properties": {
+                "available_orchestration_mode": {
+                  "type": "string"
+                },
+                "blocked_optimizations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "cache_mode": {
+                  "type": "string"
+                },
+                "continuation_mode": {
+                  "type": "string"
+                },
+                "delivery_directive": {
+                  "type": "string"
+                },
+                "effective_orchestration_mode": {
+                  "type": "string"
+                },
+                "enabled_optimizations": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "host_surface": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "instruction_surfaces": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "orchestration_mode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "host_surface",
+                "available_orchestration_mode",
+                "orchestration_mode",
+                "effective_orchestration_mode",
+                "continuation_mode",
+                "cache_mode"
+              ],
+              "type": "object"
+            },
+            "tool_policy": {
+              "type": "string"
+            },
+            "validation_gate": {
+              "type": "string"
+            },
+            "within_budget": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "profile_id",
+            "route_set",
+            "prompt_adapter",
+            "context_budget",
+            "context_budget_ref",
+            "budget_tokens",
+            "budget_source",
+            "effective_context_tokens",
+            "remaining_margin_tokens",
+            "within_budget",
+            "tool_policy",
+            "expected_output",
+            "validation_gate",
+            "instruction_header",
+            "endpoint_status",
+            "capability_status",
+            "effective_execution_mode",
+            "fallback_reason",
+            "prompt_overlay",
+            "surface_adapter"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "guidanceSavings": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_missing_count": {
+          "type": "integer"
+        },
+        "broad_baseline_tokens": {
+          "type": "integer"
+        },
+        "budget_issue": {
+          "type": "string"
+        },
+        "budget_source": {
+          "type": "string"
+        },
+        "budget_tokens": {
+          "type": "integer"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "default_guidance_tokens": {
+          "type": "integer"
+        },
+        "default_missing_count": {
+          "type": "integer"
+        },
+        "measurable": {
+          "type": "boolean"
+        },
+        "meets_minimum": {
+          "type": "boolean"
+        },
+        "min_saved_percent": {
+          "type": "number"
+        },
+        "policy_note": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        },
+        "saved_percent_estimated": {
+          "type": "number"
+        },
+        "saved_tokens_estimated": {
+          "type": "integer"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "token_counter": {
+          "type": "string"
+        },
+        "use_by_default": {
+          "type": "boolean"
+        },
+        "within_absolute_budget": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "use_by_default",
+        "status",
+        "measurable",
+        "complete",
+        "budget_tokens",
+        "budget_source",
+        "budget_issue",
+        "within_absolute_budget",
+        "meets_minimum",
+        "min_saved_percent",
+        "token_counter",
+        "provenance",
+        "scope",
+        "default_guidance_tokens",
+        "broad_baseline_tokens",
+        "saved_tokens_estimated",
+        "saved_percent_estimated",
+        "default_missing_count",
+        "baseline_missing_count"
+      ],
+      "type": "object"
+    },
+    "instructionContext": {
+      "additionalProperties": false,
+      "properties": {
+        "always_load": {
+          "type": "string"
+        },
+        "completion_contract": {
+          "type": "string"
+        },
+        "current_phase": {
+          "type": "string"
+        },
+        "current_phase_instructions": {
+          "type": "string"
+        },
+        "instructions_sha256": {
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "requires_full_instructions": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "stop_rules": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "path",
+        "instructions_sha256",
+        "always_load",
+        "stop_rules",
+        "completion_contract",
+        "current_phase",
+        "current_phase_instructions",
+        "requires_full_instructions",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "qualityGate": {
+      "additionalProperties": false,
+      "properties": {
+        "check_count": {
+          "type": "integer"
+        },
+        "checks": {
+          "type": "array"
+        },
+        "failed_checks": {
+          "type": "array"
+        },
+        "failed_count": {
+          "type": "integer"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "tool",
+        "ok",
+        "status",
+        "check_count",
+        "failed_count",
+        "failed_checks",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "in_scope": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "out_of_scope": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "run_status": {
+          "type": "string"
+        },
+        "ticket_scope_recorded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "in_scope",
+        "out_of_scope",
+        "assumptions",
+        "ticket_scope_recorded",
+        "run_status"
+      ],
+      "type": "object"
+    },
+    "tokenEstimates": {
+      "additionalProperties": false,
+      "properties": {
+        "compact_packet_tokens_estimated": {
+          "type": "integer"
+        },
+        "effective_load_tokens_estimated": {
+          "type": "integer"
+        },
+        "estimated_tokens_saved": {
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "must_open_file_count": {
+          "type": "integer"
+        },
+        "must_open_files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "integer"
+              },
+              "chars": {
+                "type": "integer"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "tokens_estimated": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "path",
+              "tokens_estimated"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "must_open_tokens_estimated": {
+          "type": "integer"
+        },
+        "packet_tokens_estimated": {
+          "type": "integer"
+        },
+        "raw_context_file_count": {
+          "type": "integer"
+        },
+        "raw_context_files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "integer"
+              },
+              "chars": {
+                "type": "integer"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "tokens_estimated": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "path",
+              "tokens_estimated"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "raw_context_tokens_estimated": {
+          "type": "integer"
+        },
+        "serialization_alignment": {
+          "type": "string"
+        },
+        "validation_tokens_estimated": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "method",
+        "serialization_alignment",
+        "raw_context_tokens_estimated",
+        "packet_tokens_estimated",
+        "compact_packet_tokens_estimated",
+        "estimated_tokens_saved",
+        "raw_context_file_count",
+        "validation_tokens_estimated",
+        "must_open_file_count",
+        "must_open_tokens_estimated",
+        "effective_load_tokens_estimated"
+      ],
+      "type": "object"
+    },
+    "validationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "blocked": {
+          "type": "array"
+        },
+        "commands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "elapsed_seconds": {},
+              "evidence_path": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "returncode": {},
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command",
+              "ok",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "external_validation_status": {
+          "type": "string"
+        },
+        "failed": {
+          "type": "array"
+        },
+        "skipped": {
+          "type": "array"
+        },
+        "validation_file_count": {
+          "type": "integer"
+        },
+        "validation_files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "integer"
+              },
+              "chars": {
+                "type": "integer"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "tokens_estimated": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "path",
+              "tokens_estimated"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "external_validation_status",
+        "commands",
+        "skipped",
+        "blocked",
+        "failed",
+        "validation_file_count",
+        "validation_files"
+      ],
+      "type": "object"
+    },
+    "workItemSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "acceptance_mapping": {
+          "type": "string"
+        },
+        "execution_evidence": {
+          "type": "string"
+        },
+        "expected_behavior": {
+          "type": "string"
+        },
+        "observed_behavior": {
+          "type": "string"
+        },
+        "regression_proof": {
+          "type": "string"
+        },
+        "reproduction": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "execution_evidence"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.skills-harness.invalid/context-packet-v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "advisories": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "check": {
+      "$ref": "#/$defs/checkState"
+    },
+    "context_budget": {
+      "$ref": "#/$defs/contextBudget"
+    },
+    "context_packet_paths": {
+      "additionalProperties": false,
+      "properties": {
+        "json": {
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "json",
+        "markdown"
+      ],
+      "type": "object"
+    },
+    "context_sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_role": {
+            "type": "string"
+          },
+          "budget_ref": {
+            "type": "string"
+          },
+          "critical_category": {
+            "type": "string"
+          },
+          "declared": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "bytes": {
+                  "type": "integer"
+                },
+                "chars": {
+                  "type": "integer"
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "tokens_estimated": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "path",
+                "tokens_estimated"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "load_policy": {
+            "enum": [
+              "must_open",
+              "handle_only"
+            ],
+            "type": "string"
+          },
+          "preserve_coordinates": {
+            "type": "boolean"
+          },
+          "tokens_estimated": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "artifact_role",
+          "load_policy",
+          "critical_category",
+          "budget_ref",
+          "preserve_coordinates",
+          "declared",
+          "files",
+          "tokens_estimated"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "coordinate_closet": {
+      "$ref": "#/$defs/coordinateCloset"
+    },
+    "current_phase": {
+      "type": "string"
+    },
+    "decisions": {
+      "type": "array"
+    },
+    "documentation_delta": {
+      "$ref": "#/$defs/documentationDelta"
+    },
+    "evidence_handles": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "execution_profile": {
+      "$ref": "#/$defs/executionProfile"
+    },
+    "existing_markdown_path": {
+      "type": "string"
+    },
+    "existing_packet_path": {
+      "type": "string"
+    },
+    "guidance_savings": {
+      "$ref": "#/$defs/guidanceSavings"
+    },
+    "instruction_context": {
+      "$ref": "#/$defs/instructionContext"
+    },
+    "issues": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "next_action": {
+      "type": "string"
+    },
+    "next_command": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "phase_status": {
+      "type": "string"
+    },
+    "quality_gate": {
+      "$ref": "#/$defs/qualityGate"
+    },
+    "required_next_context": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "run_path": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 3,
+      "type": "integer"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "status": {
+      "type": "string"
+    },
+    "token_estimates": {
+      "$ref": "#/$defs/tokenEstimates"
+    },
+    "tool": {
+      "const": "workflow-manager.context-packet",
+      "type": "string"
+    },
+    "unsupported_claims": {
+      "type": "array"
+    },
+    "validation_summary": {
+      "$ref": "#/$defs/validationSummary"
+    },
+    "work_item_summary": {
+      "$ref": "#/$defs/workItemSummary"
+    },
+    "workflow": {
+      "type": "string"
+    },
+    "written": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tool",
+    "ok",
+    "status",
+    "workflow",
+    "run_id",
+    "run_path",
+    "current_phase",
+    "phase_status",
+    "next_action",
+    "execution_profile",
+    "instruction_context",
+    "scope",
+    "work_item_summary",
+    "documentation_delta",
+    "validation_summary",
+    "guidance_savings",
+    "decisions",
+    "evidence_handles",
+    "required_next_context",
+    "context_packet_paths",
+    "unsupported_claims",
+    "issues",
+    "next_command",
+    "token_estimates",
+    "context_budget"
+  ],
+  "title": "Workflow Context Packet v3",
+  "type": "object"
+}

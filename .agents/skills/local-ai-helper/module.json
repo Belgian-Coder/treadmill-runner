@@ -1,0 +1,297 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/local_ai_routing.py"
+      ],
+      "effects": [],
+      "id": "command-afc4a06cf872",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/setup_local_ai.py"
+      ],
+      "effects": [
+        "temporary_write",
+        "network",
+        "credentials",
+        "install"
+      ],
+      "id": "command-b19931bb3d6a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "local-ai",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c3142ee1bb54",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "local-ai",
+        "models",
+        "evaluate-candidate",
+        "--candidate",
+        "<candidate.json>",
+        "--summary",
+        "--compact",
+        "--json"
+      ],
+      "effects": [],
+      "id": "local-ai-evaluate-candidate",
+      "timeout_seconds": 60,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/local-ai-helper",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-6cb06fdeed44",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/local-ai-helper",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-99633c9170e8",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "local-ai-helper",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-bff0308f9341",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs setup, routing, daily task, validation, cache, brokered-tool, vision, benchmark, and self-test scripts.",
+      "version": "3.12+"
+    },
+    {
+      "name": "llama.cpp",
+      "purpose": "Optional CPU or local GPU runtime for repo-local inference.",
+      "version": "Pinned by .agents/local-ai/bundle/manifest.json"
+    },
+    {
+      "name": "Local GGUF model catalog",
+      "purpose": "Optional direct-download commercial-use payloads for text, explicit embedding benchmarks, and vision.",
+      "version": "Pinned by .agents/local-ai.json and .agents/local-ai/bundle/manifest.json"
+    },
+    {
+      "name": "pypdfium2",
+      "purpose": "Renders PDF pages into .agents/local-ai/cache/** for local vision PDF runs.",
+      "version": "Optional when available"
+    }
+  ],
+  "determinism": {
+    "allowed_temporary_effects": [
+      {
+        "operations": [
+          "create",
+          "modify",
+          "delete"
+        ],
+        "path": ".agents/local-ai/cache/model-lease.lock",
+        "recursive": true
+      },
+      {
+        "operations": [
+          "create",
+          "modify",
+          "delete"
+        ],
+        "path": ".agents/local-ai/cache/server.json",
+        "recursive": false
+      }
+    ],
+    "environment_requirements": {
+      "executables": [],
+      "minimum_python": "3.12",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ]
+    },
+    "replay_commands": [],
+    "volatile_json_pointers": [
+      "/pid",
+      "/acquired_at_unix",
+      "/heartbeat_at_unix",
+      "/started_at_unix",
+      "/lease_wait_ms",
+      "/load_ms",
+      "/inference_ms",
+      "/unload_ms",
+      "/lease/pid",
+      "/lease/acquired_at_unix",
+      "/lease/heartbeat_at_unix",
+      "/lease/lease_wait_ms",
+      "/lease/load_ms",
+      "/lease/inference_ms",
+      "/lease/unload_ms"
+    ]
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "Local secret/profile settings are gitignored; strict no-profile dogfood must not inspect secrets, profiles, or local settings.",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "local-ai-helper",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary",
+      "handoff-draft",
+      "duplicate-overlap-detection",
+      "vision-pdf"
+    ]
+  },
+  "name": "local-ai-helper",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/manage.py attest-skill --skill .agents/skills/local-ai-helper --format json"
+    ],
+    "introduced": "2026-05-15",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned",
+    "updated": "2026-07-12"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/local-ai-helper-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Deterministic tests for config defaults, integrations, daily tasks, command construction, catalog policy, and read-only brokered access."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": true,
+    "destructive": true,
+    "generated_settings": true,
+    "installs": true,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-c3142ee1bb54",
+    "local-ai-evaluate-candidate",
+    "command-6cb06fdeed44",
+    "command-99633c9170e8",
+    "command-bff0308f9341",
+    "command-6066588d4453"
+  ],
+  "summary": "Owns optional repo-local AI setup, policy, local-only settings, deterministic fallbacks, CPU/GPU llama.cpp runtime selection, model manifests, advisory routing, exact-input daily task cache behavior, read-only brokered direct repository search, daily text tasks, benchmark-only embeddings, document/vision helpers, and benchmark procedures. Mermaid generation and validation stay with mermaid-diagrams-azure-devops.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/local-ai-helper"
+  ],
+  "version": "1.0.0"
+}

@@ -1,0 +1,404 @@
+@page "/devices"
+
+@inject HttpClient Http
+
+<PageTitle>Devices · TreadmillRunner</PageTitle>
+
+<section class="page-stack" aria-labelledby="devices-title">
+    <header class="page-heading">
+        <div><p class="eyebrow">Local Bluetooth</p><h1 id="devices-title">Devices</h1></div>
+        <p>Add the household treadmill, Polar straps, and Garmin watch broadcasts once. Enabled heart-rate sensors reconnect automatically; each runner keeps an independent preferred device and fallback order.</p>
+    </header>
+
+    <section class="safety-banner" aria-label="Device safety notice">
+        <span class="safety-icon" aria-hidden="true">!</span>
+        <p><strong>The physical console remains authoritative.</strong> This screen can discover, read, and subscribe only. A hardware-verified Start control appears only on the Run screen.</p>
+    </section>
+
+    <section class="device-grid" aria-label="Enrolled device status">
+        @{ DeviceEnrollmentView? treadmill = enrollments.FirstOrDefault(item => item.Role == "Treadmill"); }
+        <article class="panel-card device-card">
+            <p class="eyebrow">Treadmill</p>
+            <h2>@(treadmill?.DisplayName ?? "Not enrolled")</h2>
+            @if (treadmill is null)
+            {
+                <p>No local treadmill enrollment.</p>
+            }
+            else
+            {
+                <dl class="device-facts">
+                    <div><dt>Connection</dt><dd>@(status?.Treadmill.State.ToString() ?? "Unavailable")</dd></div>
+                    <div><dt>Firmware</dt><dd>@(treadmill.FirmwareRevision ?? "Not reported")</dd></div>
+                </dl>
+                <details class="advanced-settings"><summary>Connection details</summary>
+                    <dl class="device-facts">
+                        <div><dt>Protocol</dt><dd>@treadmill.ProtocolId</dd></div>
+                        <div><dt>Mode</dt><dd>@treadmill.TelemetryMode</dd></div>
+                        <div><dt>Identity</dt><dd>@RedactDeviceId(treadmill.DeviceId)</dd></div>
+                    </dl>
+                </details>
+                <button class="touch-action" type="button" @onclick="() => ForgetAsync(treadmill)">Forget treadmill</button>
+            }
+        </article>
+
+        @foreach (DeviceEnrollmentView enrollment in enrollments.Where(item => item.Role == "HeartRate"))
+        {
+            HeartRateSourceSnapshot? source = status?.HeartRateSources?.FirstOrDefault(item => item.EnrollmentId == enrollment.Id);
+            <article class="panel-card device-card">
+                <p class="eyebrow">Heart-rate sensor</p>
+                <h2>@enrollment.DisplayName</h2>
+                <div class="sensor-badges" aria-label="Heart-rate sensor type">
+                    <span class="sensor-badge">@KindLabel(enrollment.HeartRateDeviceKind)</span>
+                    <span class="sensor-badge">@(enrollment.HeartRateDeviceFamily ?? "Bluetooth")</span>
+                    @if (IsPolar(enrollment) || enrollment.Assignments.Any(item => item.IsPreferred))
+                    {
+                        <span class="sensor-badge sensor-badge--preferred">Preferred</span>
+                    }
+                </div>
+                <dl class="device-facts">
+                    <div><dt>Connection</dt><dd>@(source?.State.ToString() ?? "Waiting")</dd></div>
+                    <div><dt>Current pulse</dt><dd>@(source?.BeatsPerMinute is ushort bpm ? $"{bpm} bpm" : "No reading")</dd></div>
+                </dl>
+                <details class="advanced-settings"><summary>Manage sensor</summary>
+                <dl class="device-facts">
+                    <div><dt>Freshness</dt><dd>@FormatFreshness(source?.ObservedAt)</dd></div>
+                    <div><dt>Auto-connect</dt><dd>@(IsPolar(enrollment) ? "Always on" : enrollment.Assignments.Any(item => item.AutoConnect) ? "On" : "Off")</dd></div>
+                </dl>
+                <fieldset class="sensor-assignment-editor">
+                    <legend>Use for runner</legend>
+                    <div class="runner-button-row">
+                        @foreach (ProfileSummary profile in profiles)
+                        {
+                            bool assigned = enrollment.Assignments.Any(item => item.UserProfileId == profile.Id);
+                            <button type="button" class="sensor-runner-choice @(assigned ? "sensor-runner-choice--selected" : null)"
+                                    aria-pressed="@assigned" @onclick="() => ToggleRunnerAsync(enrollment, profile.Id)">@profile.DisplayName</button>
+                        }
+                    </div>
+                </fieldset>
+                <div class="device-actions">
+                    @if (!IsPolar(enrollment))
+                    {
+                        <button class="touch-action" type="button" @onclick="() => ToggleAutoConnectAsync(enrollment)">
+                            @(enrollment.Assignments.Any(item => item.AutoConnect) ? "Disable auto-connect" : "Enable auto-connect")
+                        </button>
+                        <button class="touch-action" type="button" @onclick="() => MakePreferredAsync(enrollment)">Make preferred</button>
+                    }
+                    <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, -1)" aria-label="Raise fallback priority">Priority ↑</button>
+                    <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, 1)" aria-label="Lower fallback priority">Priority ↓</button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(source?.Fault))
+                {
+                    <p class="device-fault" role="alert">@source.Fault</p>
+                }
+                <button class="touch-action" type="button" @onclick="() => ForgetAsync(enrollment)">Forget sensor</button>
+                </details>
+            </article>
+        }
+        @if (!enrollments.Any(item => item.Role == "HeartRate"))
+        {
+            <article class="panel-card device-card"><p class="eyebrow">Heart-rate sensors</p><h2>None added</h2><p>Scan below while a Polar strap or Garmin HR Broadcast is advertising.</p></article>
+        }
+    </section>
+
+    <section class="panel-card device-discovery" aria-labelledby="discovery-title">
+        <div class="section-heading">
+            <div><p class="eyebrow">Bounded passive scan</p><h2 id="discovery-title">Nearby supported devices</h2></div>
+            <button class="primary-action" type="button" @onclick="ScanAsync" disabled="@isScanning">
+                @(isScanning ? "Scanning…" : "Scan for 5 seconds")
+            </button>
+        </div>
+
+        <fieldset class="sensor-assignment-editor">
+            <legend>New heart-rate sensors are available to</legend>
+            <div class="runner-button-row">
+                @foreach (ProfileSummary profile in profiles)
+                {
+                    bool selected = newSensorProfiles.Contains(profile.Id);
+                    <button type="button" class="sensor-runner-choice @(selected ? "sensor-runner-choice--selected" : null)"
+                            aria-pressed="@selected" @onclick="() => ToggleNewSensorProfile(profile.Id)">@profile.DisplayName</button>
+                }
+                <button type="button" class="sensor-runner-choice" @onclick="SelectEveryone">Everyone</button>
+            </div>
+            <p class="field-hint">Polar can be shared by both runners. A private watch should be assigned only to its owner.</p>
+        </fieldset>
+
+        @if (candidates.Count == 0)
+        {
+            <p class="empty-state">@scanMessage</p>
+        }
+        else
+        {
+            <div class="device-list">
+                @foreach (ScanCandidate candidate in candidates)
+                {
+                    <article class="device-candidate">
+                        <div>
+                            <h3>@DisplayName(candidate)</h3>
+                            @if (candidate.SupportedRoles.Contains("HeartRate", StringComparer.OrdinalIgnoreCase))
+                            {
+                                <div class="sensor-badges">
+                                    <span class="sensor-badge">@KindLabel(candidate.HeartRateDeviceKind)</span>
+                                    @if (candidate.IsPreferredHeartRate)
+                                    {
+                                        <span class="sensor-badge sensor-badge--preferred">Polar preferred</span>
+                                    }
+                                </div>
+                            }
+                            <p>@RedactDeviceId(candidate.DeviceId) · signal @(candidate.SignalStrength?.ToString() ?? "unknown") dBm</p>
+                            <p>@candidate.ServiceUuids.Count advertised service(s)</p>
+                        </div>
+                        <div class="device-actions">
+                            @if (candidate.SupportedRoles.Contains("Treadmill", StringComparer.OrdinalIgnoreCase))
+                            {
+                                <label class="field">Telemetry path
+                                    <select @bind="telemetryMode">
+                                        <option value="Ftms">FTMS</option>
+                                        <option value="Vendor">Omega vendor notification</option>
+                                    </select>
+                                </label>
+                                <button class="touch-action" type="button" @onclick='() => EnrollAsync(candidate, "Treadmill")'>Enroll treadmill</button>
+                            }
+                            @if (candidate.SupportedRoles.Contains("HeartRate", StringComparer.OrdinalIgnoreCase))
+                            {
+                                <button class="touch-action" type="button" @onclick='() => EnrollAsync(candidate, "HeartRate")'>
+                                    @(candidate.IsPreferredHeartRate ? "Enroll preferred Polar" : "Enroll heart-rate monitor")
+                                </button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+        <p class="action-status" role="status">@actionStatus</p>
+    </section>
+
+    <details class="panel-card advanced-settings">
+        <summary id="watch-sync-title">Watch and health-app setup</summary>
+        <p><strong>Garmin Connect:</strong> start a native Treadmill activity on the watch and enable HR Broadcast. TreadmillRunner reads that live pulse while the watch records Garmin's full training metrics. Use the session FIT download only as a manual fallback to avoid duplicate activities.</p>
+        <p><strong>Apple Health:</strong> the Windows gateway cannot write HealthKit directly. FIT export is available now; a future iPhone companion can save the indoor workout and time-series samples with your permission.</p>
+        <p class="field-hint">Automatic connection cannot remotely switch Garmin broadcast on. Once the watch starts broadcasting the standard Bluetooth Heart Rate service, the gateway reconnects without another scan or setup.</p>
+    </details>
+</section>
+
+@code {
+    private IReadOnlyList<DeviceEnrollmentView> enrollments = Array.Empty<DeviceEnrollmentView>();
+    private IReadOnlyList<ProfileSummary> profiles = Array.Empty<ProfileSummary>();
+    private IReadOnlyList<ScanCandidate> candidates = Array.Empty<ScanCandidate>();
+    private readonly HashSet<Guid> newSensorProfiles = [];
+    private DeviceTelemetrySnapshot? status;
+    private string telemetryMode = "Ftms";
+    private string scanMessage = "Run a scan while the Omega Z and Polar H10 are powered and advertising.";
+    private string actionStatus = "Enrollment changes are available only while no workout is active.";
+    private bool isScanning;
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        enrollments = await Http.GetFromJsonAsync<DeviceEnrollmentView[]>("api/devices/enrollments")
+            ?? Array.Empty<DeviceEnrollmentView>();
+        profiles = await Http.GetFromJsonAsync<ProfileSummary[]>("api/planning/profiles")
+            ?? Array.Empty<ProfileSummary>();
+        if (newSensorProfiles.Count == 0)
+        {
+            foreach (ProfileSummary profile in profiles) newSensorProfiles.Add(profile.Id);
+        }
+        status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+    }
+
+    private async Task ScanAsync()
+    {
+        isScanning = true;
+        actionStatus = "Listening for supported advertisements…";
+        try
+        {
+            candidates = await Http.GetFromJsonAsync<ScanCandidate[]>("api/devices/scan?durationSeconds=5")
+                ?? Array.Empty<ScanCandidate>();
+            scanMessage = candidates.Count == 0
+                ? "No supported treadmill or heart-rate advertisements were observed. Check power and Bluetooth advertising, then try again."
+                : string.Empty;
+            actionStatus = $"Scan complete: {candidates.Count} supported device(s) found.";
+        }
+        catch (HttpRequestException)
+        {
+            actionStatus = "The bounded scan failed. The gateway log contains the local diagnostic detail.";
+        }
+        finally
+        {
+            isScanning = false;
+        }
+    }
+
+    private async Task EnrollAsync(ScanCandidate candidate, string role)
+    {
+        using HttpResponseMessage response = await Http.PostAsJsonAsync("api/devices/enrollments", new
+        {
+            operationId = Guid.NewGuid(),
+            role,
+            candidate.DeviceId,
+            displayName = DisplayName(candidate),
+            advertisedName = candidate.Name,
+            candidate.ServiceUuids,
+            modelNumber = (string?)null,
+            firmwareRevision = (string?)null,
+            telemetryMode = role == "Treadmill" ? telemetryMode : null,
+            ownerProfileIds = role == "HeartRate" ? newSensorProfiles.ToArray() : Array.Empty<Guid>(),
+            autoConnect = true,
+            isPreferred = candidate.IsPreferredHeartRate,
+        });
+        actionStatus = response.IsSuccessStatusCode
+            ? $"{DisplayName(candidate)} enrolled for {RoleLabel(role)}. The gateway is establishing read-only telemetry."
+            : await ReadFailureAsync(response, "The device could not be enrolled.");
+        if (response.IsSuccessStatusCode) await RefreshAsync();
+    }
+
+    private async Task ForgetAsync(DeviceEnrollmentView enrollment)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/devices/enrollments/{enrollment.Id}")
+        {
+            Content = JsonContent.Create(new { operationId = Guid.NewGuid(), expectedVersion = enrollment.Version }),
+        };
+        using HttpResponseMessage response = await Http.SendAsync(request);
+        actionStatus = response.IsSuccessStatusCode
+            ? $"{enrollment.DisplayName} was forgotten."
+            : await ReadFailureAsync(response, "The enrollment could not be removed.");
+        if (response.IsSuccessStatusCode) await RefreshAsync();
+    }
+
+    private void ToggleNewSensorProfile(Guid profileId)
+    {
+        if (!newSensorProfiles.Add(profileId)) newSensorProfiles.Remove(profileId);
+    }
+
+    private void SelectEveryone()
+    {
+        newSensorProfiles.Clear();
+        foreach (ProfileSummary profile in profiles) newSensorProfiles.Add(profile.Id);
+    }
+
+    private async Task ToggleRunnerAsync(DeviceEnrollmentView enrollment, Guid profileId)
+    {
+        Guid[] profileIds = enrollment.Assignments.Any(item => item.UserProfileId == profileId)
+            ? enrollment.Assignments.Where(item => item.UserProfileId != profileId).Select(item => item.UserProfileId).ToArray()
+            : enrollment.Assignments.Select(item => item.UserProfileId).Append(profileId).Distinct().ToArray();
+        await ConfigureAsync(enrollment, profileIds, enrollment.Assignments.Any(item => item.AutoConnect), enrollment.Assignments.Any(item => item.IsPreferred), CurrentPriority(enrollment));
+    }
+
+    private Task ToggleAutoConnectAsync(DeviceEnrollmentView enrollment) => ConfigureAsync(
+        enrollment,
+        enrollment.Assignments.Select(item => item.UserProfileId).ToArray(),
+        !enrollment.Assignments.Any(item => item.AutoConnect),
+        enrollment.Assignments.Any(item => item.IsPreferred),
+        CurrentPriority(enrollment));
+
+    private Task MakePreferredAsync(DeviceEnrollmentView enrollment) => ConfigureAsync(
+        enrollment,
+        enrollment.Assignments.Select(item => item.UserProfileId).ToArray(),
+        true,
+        true,
+        CurrentPriority(enrollment));
+
+    private Task ChangePriorityAsync(DeviceEnrollmentView enrollment, int change) => ConfigureAsync(
+        enrollment,
+        enrollment.Assignments.Select(item => item.UserProfileId).ToArray(),
+        enrollment.Assignments.Any(item => item.AutoConnect),
+        enrollment.Assignments.Any(item => item.IsPreferred),
+        Math.Clamp(CurrentPriority(enrollment) + change, 0, 99));
+
+    private async Task ConfigureAsync(
+        DeviceEnrollmentView enrollment,
+        Guid[] ownerProfileIds,
+        bool autoConnect,
+        bool preferred,
+        int priority)
+    {
+        using HttpResponseMessage response = await Http.PutAsJsonAsync(
+            $"api/devices/enrollments/{enrollment.Id}/assignments",
+            new { operationId = Guid.NewGuid(), ownerProfileIds, autoConnect, isPreferred = preferred, priority });
+        actionStatus = response.IsSuccessStatusCode
+            ? $"Automatic connection settings for {enrollment.DisplayName} were saved."
+            : await ReadFailureAsync(response, "The sensor settings could not be saved.");
+        if (response.IsSuccessStatusCode) await RefreshAsync();
+    }
+
+    private static int CurrentPriority(DeviceEnrollmentView enrollment) =>
+        enrollment.Assignments.Count == 0 ? HeartRateDeviceClassifier.Priority(enrollment.DisplayName) : enrollment.Assignments.Min(item => item.Priority);
+
+    private static bool IsPolar(DeviceEnrollmentView enrollment) =>
+        string.Equals(enrollment.HeartRateDeviceFamily, "Polar", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<string> ReadFailureAsync(HttpResponseMessage response, string fallback)
+    {
+        string detail = await response.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(detail) ? fallback : $"{fallback} {detail}";
+    }
+
+    private static string DisplayName(ScanCandidate candidate) =>
+        string.IsNullOrWhiteSpace(candidate.Name)
+            ? candidate.IsPreferredHeartRate ? "Polar heart-rate sensor" : "Unnamed Bluetooth device"
+            : candidate.Name;
+
+    private static string KindLabel(string? kind) =>
+        Enum.TryParse(kind, ignoreCase: true, out HeartRateDeviceKind parsed) ? KindLabel(parsed) : "HR sensor";
+
+    private static string KindLabel(HeartRateDeviceKind kind) => kind switch
+    {
+        HeartRateDeviceKind.ChestStrap => "Chest strap",
+        HeartRateDeviceKind.Watch => "Watch",
+        _ => "HR sensor",
+    };
+
+    private static string RoleLabel(string role) =>
+        string.Equals(role, "HeartRate", StringComparison.OrdinalIgnoreCase) ? "heart-rate telemetry" : "treadmill telemetry";
+
+    private static string RedactDeviceId(string deviceId) =>
+        deviceId.Length <= 4 ? "device …" : $"device …{deviceId[^4..]}";
+
+    private static string FormatTimestamp(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("g") ?? "Not yet verified";
+
+    private string FormatFreshness(DateTimeOffset? value) => value is null || status is null
+        ? "No sample"
+        : $"{Math.Max(0, (status.CapturedAt - value.Value).TotalSeconds):0.0} s";
+
+    private sealed record ScanCandidate(
+        string DeviceId,
+        string? Name,
+        short? SignalStrength,
+        IReadOnlyList<Guid> ServiceUuids,
+        IReadOnlyList<string> SupportedRoles,
+        string? HeartRateDeviceKind,
+        bool IsPreferredHeartRate);
+
+    private sealed record DeviceEnrollmentView(
+        Guid Id,
+        string Role,
+        string DeviceId,
+        string ProtocolId,
+        string IdentityFingerprint,
+        string DisplayName,
+        string? ModelNumber,
+        string? FirmwareRevision,
+        string? TelemetryMode,
+        TreadmillCapabilities? Capabilities,
+        string Evidence,
+        DateTimeOffset? LastVerifiedAtUtc,
+        int Version,
+        string? HeartRateDeviceKind,
+        string? HeartRateDeviceFamily,
+        IReadOnlyList<HeartRateAssignmentView> Assignments);
+
+    private sealed record HeartRateAssignmentView(
+        Guid Id,
+        Guid UserProfileId,
+        int Priority,
+        bool AutoConnect,
+        bool IsPreferred,
+        int Version);
+
+    private sealed class ProfileSummary
+    {
+        public Guid Id { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+    }
+}

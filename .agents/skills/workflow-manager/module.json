@@ -1,0 +1,671 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/automation_validation_rules.py"
+      ],
+      "effects": [],
+      "id": "command-822cd17b25e3",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/create_workflow.py"
+      ],
+      "effects": [],
+      "id": "command-cb9dab7b8476",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/eval_workflow.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-46f508e9fdb9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/index_workflow_runs.py"
+      ],
+      "effects": [],
+      "id": "command-232e3947d520",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/routing_contract.py"
+      ],
+      "effects": [],
+      "id": "command-7ea0787dd594",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/parallel_safety_fixture.py",
+        "--json"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "parallel-safety-fixture",
+      "timeout_seconds": 60,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/sync_automation_routing.py"
+      ],
+      "effects": [
+        "repository_write"
+      ],
+      "id": "command-9b00eb015f81",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/update_workflow_routing.py"
+      ],
+      "effects": [],
+      "id": "command-3e17c8a8c364",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_automations.py"
+      ],
+      "effects": [],
+      "id": "command-557ebebd4974",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_checkpoint.py"
+      ],
+      "effects": [],
+      "id": "command-4fc866877ca2",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_context_packet.py"
+      ],
+      "effects": [],
+      "id": "command-1d7439a6d633",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_manager_common.py"
+      ],
+      "effects": [],
+      "id": "command-631a2a7a100a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_plan_check.py"
+      ],
+      "effects": [],
+      "id": "command-9d1d252dd48a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_context_evidence.py"
+      ],
+      "effects": [],
+      "id": "command-76a65668b210",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_repo_manager.py"
+      ],
+      "effects": [],
+      "id": "command-3baecb8909f3",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_run_support.py"
+      ],
+      "effects": [],
+      "id": "command-7732e196eaf2",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/analytics.py"
+      ],
+      "effects": [],
+      "id": "command-3d38aa316cff",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/cli_parser.py"
+      ],
+      "effects": [],
+      "id": "command-39fcb6d78860",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/hooks.py"
+      ],
+      "effects": [],
+      "id": "command-7d54c627d4e3",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/plan_smoke.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-6e5e8dd5cfc9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/recovery.py"
+      ],
+      "effects": [],
+      "id": "command-0b71e15d57ae",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/review.py"
+      ],
+      "effects": [],
+      "id": "command-42459144238e",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/run_common.py"
+      ],
+      "effects": [],
+      "id": "command-122e951a239a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/run_render.py"
+      ],
+      "effects": [],
+      "id": "command-31ac23ac6e5c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/run_story_bug.py"
+      ],
+      "effects": [],
+      "id": "command-297ac7ec5777",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/scorecard.py"
+      ],
+      "effects": [],
+      "id": "command-b7851c7ea30c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/start_checklist.py"
+      ],
+      "effects": [],
+      "id": "command-a4fb9815b418",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/story_bug_quality.py"
+      ],
+      "effects": [],
+      "id": "command-13ec7aa44b87",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/smoke.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-8c332fb21711",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/template_layers.py"
+      ],
+      "effects": [],
+      "id": "command-0667bd0a16fd",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/workflow_support/validation_packets.py"
+      ],
+      "effects": [],
+      "id": "command-2a56d420e23e",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "which-workflow",
+        "<request>",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-441f17474f75",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "propose",
+        "--from-request",
+        "<request>",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b02127b294e7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+        "validate-automations",
+        "--root",
+        ".",
+        "--name",
+        "<workflow-name>",
+        "--strict-phase-quality",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-aaab27fc81db",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "metadata",
+        "inspect",
+        "--name",
+        "<workflow-name>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-3ddfaece40f0",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "smoke",
+        "--name",
+        "<workflow-name>",
+        "--dry-run",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-4d281b43de19",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "scorecard",
+        "--name",
+        "<workflow-name>",
+        "--no-lifecycle",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b93661b6d39a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "branch-policy",
+        "--branch",
+        "feature/example",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b7477028ceac",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "hooks",
+        "--all",
+        "--check",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-8dddbb71ec39",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "workflow",
+        "context",
+        "--all",
+        "--check",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5da6cdf0e64f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-automation-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-29c15ca7016f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs workflow dispatch, scaffolding, validation, evals, scorecards, run indexing, smoke checks, routing sync, and tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "local-ai-helper",
+      "purpose": "Optional validated local AI integration for workflow routing, triage, and rendered-document review.",
+      "version": "1.0.0"
+    }
+  ],
+  "determinism": {
+    "allowed_temporary_effects": [],
+    "environment_requirements": {
+      "executables": [
+        "git"
+      ],
+      "minimum_python": "3.12",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ]
+    },
+    "replay_commands": [
+      "command-b7477028ceac",
+      "command-8dddbb71ec39",
+      "command-5da6cdf0e64f",
+      "command-29c15ca7016f"
+    ],
+    "volatile_json_pointers": []
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "workflow-manager",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "scripts/workflow_support/worker_profiles.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary",
+      "handoff-draft",
+      "duplicate-overlap-detection",
+      "workflow-routing"
+    ]
+  },
+  "name": "workflow-manager",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/manage.py attest-skill --skill .agents/skills/workflow-manager --format json"
+    ],
+    "introduced": "2026-05-01",
+    "license": "repository",
+    "reviewed_at": "2026-07-11",
+    "source": "repo-owned",
+    "updated": "2026-07-18"
+  },
+  "quality": {
+    "eval_suites": [
+      {
+        "path": "suites/workflow-manager-evals.json",
+        "purpose": "Deterministic assertions for manifest, files, validation, commands, and budget."
+      }
+    ]
+  },
+  "related_modules": [
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-441f17474f75",
+    "command-b02127b294e7",
+    "command-aaab27fc81db",
+    "command-3ddfaece40f0",
+    "command-4d281b43de19",
+    "command-b93661b6d39a",
+    "command-b7477028ceac",
+    "command-8dddbb71ec39",
+    "command-5da6cdf0e64f",
+    "command-29c15ca7016f"
+  ],
+  "summary": "Creates, improves, validates, evaluates, scorecards, indexes, smokes, recovers, and resumes low-context workflow modules under automations/ with module.json contracts, WORKFLOW.md entries, deterministic context evidence, Mermaid diagrams, lifecycle hooks, declarative risk guidance, execution-ownership modes, template layers, integration checks, branch policy, retained-evidence cleanup, generated routing, and script-first validation.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/workflow-manager"
+  ],
+  "version": "1.0.0"
+}

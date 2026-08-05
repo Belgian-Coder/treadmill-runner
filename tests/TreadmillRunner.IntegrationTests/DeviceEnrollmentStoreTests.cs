@@ -1,0 +1,102 @@
+using Microsoft.EntityFrameworkCore;
+using TreadmillRunner.Core.Devices;
+using TreadmillRunner.Core.Profiles;
+using TreadmillRunner.Infrastructure.Persistence;
+
+namespace TreadmillRunner.IntegrationTests;
+
+public sealed class DeviceEnrollmentStoreTests : IAsyncLifetime
+{
+  private readonly string _directory = Path.Combine(Path.GetTempPath(), "TreadmillRunner.Tests", Guid.NewGuid().ToString("N"));
+  private IDbContextFactory<TreadmillRunnerDbContext> _factory = null!;
+
+  public async Task InitializeAsync()
+  {
+    Directory.CreateDirectory(_directory);
+    _factory = TreadmillRunnerDatabase.CreateFactory(Path.Combine(_directory, "devices.db"));
+    await using TreadmillRunnerDbContext context = await _factory.CreateDbContextAsync();
+    await context.Database.MigrateAsync();
+  }
+
+  public Task DisposeAsync()
+  {
+    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    Directory.Delete(_directory, recursive: true);
+    return Task.CompletedTask;
+  }
+
+  [Fact]
+  public async Task Store_allows_one_treadmill_and_multiple_distinct_heart_rate_sensors()
+  {
+    var store = new DeviceEnrollmentStore(_factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-03T18:00:00Z");
+    VersionedDeviceEnrollment treadmill = await store.EnrollAsync(
+      Treadmill("A1B2C3D4E5F6"), now, Op("device.enroll", now));
+    VersionedDeviceEnrollment heartRate = await store.EnrollAsync(
+      HeartRate("102030405060"), now, Op("device.enroll", now));
+    VersionedDeviceEnrollment watch = await store.EnrollAsync(
+      HeartRate("AABBCCDDEEFF", "Garmin fēnix 8"), now, Op("device.enroll", now));
+
+    Assert.Equal(3, (await store.ListActiveAsync()).Count);
+    Assert.Equal(1, treadmill.Version);
+    Assert.Equal(DeviceRole.HeartRate, heartRate.Enrollment.Role);
+    await Assert.ThrowsAsync<DbUpdateException>(() => store.EnrollAsync(
+      Treadmill("112233445566"), now, Op("device.enroll", now)));
+    await Assert.ThrowsAsync<DbUpdateException>(() => store.EnrollAsync(
+      HeartRate("AABBCCDDEEFF", "Duplicate watch"), now, Op("device.enroll", now)));
+    Assert.True(await store.ForgetByIdAsync(
+      watch.Enrollment.Id, watch.Version, now, Op("device.forget", now)));
+
+    await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => store.ForgetAsync(
+      DeviceRole.Treadmill, expectedVersion: 2, now, Op("device.forget", now)));
+    Assert.True(await store.ForgetAsync(
+      DeviceRole.Treadmill, treadmill.Version, now, Op("device.forget", now)));
+    Assert.Null(await store.FindActiveAsync(DeviceRole.Treadmill));
+
+    VersionedDeviceEnrollment replacement = await store.EnrollAsync(
+      Treadmill("112233445566"), now.AddMinutes(1), Op("device.enroll", now));
+    Assert.Equal("112233445566", replacement.Enrollment.DeviceId);
+  }
+
+  [Fact]
+  public async Task Assignments_are_profile_specific_and_preferred_selection_moves_atomically()
+  {
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-04T10:00:00Z");
+    var marc = new UserProfile(Guid.NewGuid(), "Marc", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(marc, now, Op("profile.create", now));
+    VersionedDeviceEnrollment polar = await store.EnrollWithAssignmentsAsync(
+      HeartRate("POLAR-A1B2C3D4"),
+      [new HeartRateAssignmentPreference(marc.Id, 0, true, true)],
+      now,
+      Op("device.enroll", now));
+    VersionedDeviceEnrollment watch = await store.EnrollWithAssignmentsAsync(
+      HeartRate("GARMIN-FENIX8", "Garmin fēnix 8"),
+      [new HeartRateAssignmentPreference(marc.Id, 1, true, false)],
+      now,
+      Op("device.enroll", now));
+
+    await store.ConfigureHeartRateAssignmentsAsync(
+      watch.Enrollment.Id,
+      [new HeartRateAssignmentPreference(marc.Id, 0, true, true)],
+      now.AddMinutes(1),
+      Op("device.assign-heart-rate", now));
+
+    IReadOnlyList<HeartRateDeviceAssignment> assignments = await store.ListHeartRateAssignmentsAsync();
+    Assert.False(assignments.Single(item => item.DeviceEnrollmentId == polar.Enrollment.Id).IsPreferred);
+    Assert.True(assignments.Single(item => item.DeviceEnrollmentId == watch.Enrollment.Id).IsPreferred);
+  }
+
+  private static DeviceEnrollment Treadmill(string deviceId) => new(
+    Guid.NewGuid(), DeviceRole.Treadmill, deviceId, "horizon-omega-z", new string('a', 64),
+    "Horizon Omega Z", "Omega Z", null, TreadmillTelemetryMode.Ftms,
+    new TreadmillCapabilities(), TreadmillCapabilityEvidence.Unknown, null);
+
+  private static DeviceEnrollment HeartRate(string deviceId, string name = "Polar H10") => new(
+    Guid.NewGuid(), DeviceRole.HeartRate, deviceId, "bluetooth-heart-rate", new string('b', 64),
+    name, "HR", null, null, null, TreadmillCapabilityEvidence.Unknown, null);
+
+  private static PersistenceWriteOperation Op(string type, DateTimeOffset now) => new(
+    Guid.NewGuid(), type, 200, "{}", now, new string('0', 64));
+}

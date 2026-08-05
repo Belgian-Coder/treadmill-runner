@@ -1,0 +1,17 @@
+sequenceDiagram
+  participant Browser
+  participant Gateway
+  participant PreviewStore
+  participant Importer
+  participant SQLite
+  Browser->>Gateway: Upload bounded workout file
+  Gateway->>Importer: Parse and validate bytes
+  Importer-->>Gateway: Normalized definition and warnings
+  Gateway->>PreviewStore: Store bytes and hash for 15 minutes
+  Gateway-->>Browser: Preview ID, steps, duration, warnings
+  Browser->>Gateway: Confirm preview with operation ID
+  Gateway->>PreviewStore: Reopen original bytes
+  Gateway->>Importer: Reparse and verify hash
+  Gateway->>SQLite: Commit workout, revision, audit, receipt
+  SQLite-->>Gateway: Existing or created outcome
+  Gateway-->>Browser: Idempotent confirmation result

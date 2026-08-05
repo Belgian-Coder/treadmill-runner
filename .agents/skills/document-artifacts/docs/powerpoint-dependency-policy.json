@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "install_command_owner": "doctor --install-python-deps",
+  "install_target": ".agents/.deps/document-artifacts",
+  "normal_commands_install": false,
+  "python_packages": [],
+  "external_tools": [
+    {
+      "name": "soffice",
+      "purpose": "Optional PPTX rendering to PDF."
+    },
+    {
+      "name": "libreoffice",
+      "purpose": "Optional PPTX rendering to PDF."
+    }
+  ]
+}

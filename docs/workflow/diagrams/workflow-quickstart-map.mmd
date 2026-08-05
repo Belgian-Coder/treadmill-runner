@@ -1,0 +1,11 @@
+graph TD;
+  request["Workflow request"] --> route["Read automations/routing.md"];
+  route --> decision{"Existing owner fits?"};
+  decision -->|yes| adapt["Adapt selected workflow"];
+  decision -->|no| scaffold["new --kind workflow"];
+  scaffold --> folder["Core workflow files"];
+  adapt --> focused["Focused gates"];
+  folder --> focused;
+  focused --> sync["sync-automation-routing"];
+  sync --> repoCheck["check-additions and check"];
+  repoCheck --> run["Lifecycle evidence"];

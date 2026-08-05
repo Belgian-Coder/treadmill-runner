@@ -1,0 +1,223 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/dotnet_security_review.py"
+      ],
+      "effects": [],
+      "id": "command-2e0782635b32",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/scanner/scan_security_patterns.py"
+      ],
+      "effects": [],
+      "id": "command-9ede34521c58",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-security-review",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-a1413efc9b1b",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-security-review",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-1e6cc2808fec",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-security-review",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-3ea2e8e60c4b",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-security-review/scripts/dotnet_security_review.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-46afc9befc3d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-security-review/scripts/dotnet_security_review.py",
+        "scan",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c34c504e0a4f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs the stdlib-only scanner, help surface, validation, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "Git",
+      "purpose": "Lists tracked changed files when --changed-only is used; this is local read-only discovery and does not include untracked files.",
+      "version": "optional"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "Inspection risk only: may inspect local secret-like configuration or credential findings; redact values, do not read profiles, do not configure credentials, and do not transfer externally.",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "dotnet-security-review",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/review-scope.md",
+    "docs/severity-and-reporting.md",
+    "docs/aspnet-security.md",
+    "scripts/"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review"
+    ]
+  },
+  "name": "dotnet-security-review",
+  "outputs": [],
+  "owners": [
+    "engineering",
+    "security"
+  ],
+  "provenance": {
+    "introduced": "2026-05-25",
+    "license": "repository plus reviewed MIT source concepts",
+    "reviewed_at": "2026-07-01",
+    "source": "Repo-owned .NET and ASP.NET security review skill with deterministic changed-file scanner evidence.",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-security-review-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Runs migrated scanner self-tests for supported security patterns and evidence formats."
+      }
+    ]
+  },
+  "related_modules": [
+    "dotnet-engineering",
+    "dotnet-legacy"
+  ],
+  "risk": {
+    "credentials": true,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-a1413efc9b1b",
+    "command-1e6cc2808fec",
+    "command-3ea2e8e60c4b",
+    "command-6066588d4453",
+    "command-46afc9befc3d",
+    "command-c34c504e0a4f"
+  ],
+  "summary": "Guides bounded .NET and ASP.NET security reviews and provides deterministic scanner evidence for .NET-adjacent changed-file security patterns.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-security-review"
+  ],
+  "version": "1.0.0"
+}

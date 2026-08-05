@@ -1,0 +1,282 @@
+{
+  "description": "Source-owned copy contract for install-harness. The installer uses these roots and exclusions when copying this reusable harness into a consumer project.",
+  "exclude_globs": [
+    ".git/**",
+    ".git",
+    ".cache/**",
+    "**/.cache/**",
+    ".vscode/**",
+    "**/.vscode/**",
+    ".idea/**",
+    "**/.idea/**",
+    ".mypy_cache/**",
+    "**/.mypy_cache/**",
+    ".pytest_cache/**",
+    "**/.pytest_cache/**",
+    ".ruff_cache/**",
+    "**/.ruff_cache/**",
+    ".venv/**",
+    "**/.venv/**",
+    "venv/**",
+    "**/venv/**",
+    "node_modules/**",
+    "**/node_modules/**",
+    "tmp/**",
+    "**/tmp/**",
+    "temp/**",
+    "**/temp/**",
+    "dist/**",
+    "**/dist/**",
+    "build/**",
+    "**/build/**",
+    "coverage/**",
+    "**/coverage/**",
+    "benchmark/**",
+    "**/benchmark/**",
+    "**/bin/**",
+    "**/obj/**",
+    "__pycache__/**",
+    "**/__pycache__/**",
+    "*.pyc",
+    "*.pyo",
+    "*.log",
+    ".DS_Store",
+    "docs/project/project-context.md",
+    "docs/project/project-context.generated.md",
+    "docs/project/project-context.json",
+    "docs/project/diagrams/**",
+    "docs/project/review/**",
+    "docs/project/validation/**"
+  ],
+  "include_roots": [
+    "AGENTS.md",
+    "orchestration.md",
+    "README.md",
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".aider.conf.yml",
+    "GEMINI.md",
+    "docs",
+    ".agents",
+    "automations",
+    ".github",
+    ".claude",
+    ".continue"
+  ],
+  "owner": "skill-manager",
+  "required_features": [
+    "core"
+  ],
+  "feature_bundles": {
+    "accepted-skills": {
+      "description": "Every accepted reusable skill; state and runtime payload exclusions still apply.",
+      "include_globs": [
+        ".agents/skills/**"
+      ],
+      "requires": [
+        "core",
+        "reference-guides"
+      ]
+    },
+    "all-workflows": {
+      "description": "Every tracked workflow definition, fixture, template, and deterministic helper.",
+      "include_globs": [
+        "automations/**"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "benchmarking": {
+      "description": "Benchmark skills, workflow definitions, fixtures, and guidance.",
+      "include_globs": [
+        ".agents/skills/agent-benchmarking/**",
+        "automations/agent-benchmarking/**",
+        "automations/local-ai-benchmark-workflow/**",
+        "docs/benchmarks/**"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "bug-workflow": {
+      "description": "Bug intake, reproduction, implementation, and validation workflow.",
+      "include_globs": [
+        "automations/bug-ticket-workflow/**"
+      ],
+      "requires": [
+        "core",
+        "workflow-integrations"
+      ]
+    },
+    "core": {
+      "description": "Core CLI, managers, routing generators, navigation/project-context owners, and first-use/daily guidance.",
+      "exclude_globs": [
+        ".agents/registry.json",
+        ".agents/routing.md",
+        "automations/registry.json",
+        "automations/routing.md",
+        "automations/navigation/artifacts/maps/**"
+      ],
+      "include_globs": [
+        "AGENTS.md",
+        "orchestration.md",
+        "README.md",
+        ".editorconfig",
+        ".gitattributes",
+        ".gitignore",
+        ".agents/manage.py",
+        ".agents/harness-payload.json",
+        ".agents/local-ai.json",
+        ".agents/skills/skill-manager/**",
+        ".agents/skills/workflow-manager/**",
+        ".agents/skills/repo-navigation/**",
+        ".agents/skills/project-context-generator/**",
+        ".agents/skills/dotnet-project-context/**",
+        ".agents/skills/local-ai-helper/**",
+        "automations/navigation/**",
+        "docs/start-here.md",
+        "docs/agent-start.md",
+        "docs/operations/daily-agent-path.md",
+        "docs/harness/copy-into-project.md",
+        "docs/harness/initialize-current-project.md",
+        "docs/harness/no-python.md",
+        "docs/harness/setup.md",
+        "docs/reference/documentation-map.md",
+        "docs/workflow/using-workflows.md",
+        "docs/workflow/diagrams/using-workflows-*"
+      ],
+      "requires": []
+    },
+    "disciplined-change-workflow": {
+      "description": "Reliability-oriented larger-change workflow.",
+      "include_globs": [
+        "automations/disciplined-change-workflow/**"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "integrations": {
+      "description": "Agent adapters, CI descriptors, and repository integration metadata.",
+      "include_globs": [
+        ".github/**",
+        ".claude/**",
+        ".continue/**",
+        ".aider.conf.yml",
+        "GEMINI.md"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "local-ai": {
+      "description": "Maintained local-AI support and offline guidance without caches, downloads, models, or runtime payloads.",
+      "include_globs": [
+        ".agents/local-ai/**",
+        ".agents/skills/local-ai-helper/**",
+        "docs/operations/repository-search.md",
+        "docs/operations/token-savings.md"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "reference-guides": {
+      "description": "Tracked reusable documentation and reference guides.",
+      "include_globs": [
+        "README.md",
+        "docs/**"
+      ],
+      "requires": [
+        "core"
+      ]
+    },
+    "story-workflow": {
+      "description": "User-story intake, planning, implementation, and validation workflow.",
+      "include_globs": [
+        "automations/user-story-workflow/**"
+      ],
+      "requires": [
+        "core",
+        "workflow-integrations"
+      ]
+    },
+    "workflow-integrations": {
+      "description": "Integration descriptors referenced by the standard story and bug workflows.",
+      "include_globs": [
+        ".agents/integrations/**"
+      ],
+      "requires": [
+        "core"
+      ]
+    }
+  },
+  "profiles": {
+    "full": {
+      "description": "Full harness surface; local state and secrets are still excluded.",
+      "exclude_features": [],
+      "extends": "standard",
+      "features": [
+        "all-workflows",
+        "benchmarking",
+        "integrations",
+        "local-ai",
+        "reference-guides"
+      ]
+    },
+    "minimal": {
+      "description": "Runnable harness with minimal first-read guidance and no optional setup unless requested.",
+      "exclude_features": [],
+      "features": [
+        "core"
+      ]
+    },
+    "standard": {
+      "description": "Default harness install for normal project work.",
+      "exclude_features": [],
+      "extends": "minimal",
+      "features": [
+        "accepted-skills",
+        "bug-workflow",
+        "disciplined-change-workflow",
+        "story-workflow"
+      ]
+    }
+  },
+  "schema_version": 2,
+  "state_exclude_globs": [
+    ".agents/harness.lock.json",
+    ".agents/harness-install.json",
+    ".agents/harness.overlay.json",
+    ".agents/harness-install-plan.json",
+    ".agents/harness-install-plan.md",
+    ".agents/harness-smoke-target.json",
+    ".agents/project-policy.json",
+    ".agents/orchestration.json",
+    ".agents/local-ai/cache/**",
+    ".agents/local-ai/bundle/**",
+    ".agents/local-ai/downloads/**",
+    ".agents/local-ai/runtime/**",
+    ".agents/tools/cache/**",
+    ".agents/local-ai/secrets.json",
+    ".agents/local-ai/secrets.local.json",
+    ".agents/local-ai/local.settings.json",
+    ".agents/local-ai/project.settings.json",
+    ".agents/.deps/**",
+    ".claude/settings.local.json",
+    ".github/copilot/settings.local.json",
+    "*.local",
+    "*.local.*",
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "automations/**/Scripts/output/**",
+    "automations/reference-refresh/References/repositories/**",
+    "automations/*/runs/**",
+    "automations/*/runs"
+  ],
+  "tool": "install-harness-payload"
+}

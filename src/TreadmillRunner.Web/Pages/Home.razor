@@ -1,0 +1,1380 @@
+@page "/"
+@using TreadmillRunner.Core.Workouts
+
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ActiveProfileState ActiveProfile
+
+<PageTitle>TreadmillRunner</PageTitle>
+
+<div class="runner-page">
+    @if (session?.Live.SessionState is SessionState.Completed or SessionState.Stopped)
+    {
+        <section class="debrief-card" aria-labelledby="debrief-title">
+            <p class="eyebrow">@(session.Live.SessionState == SessionState.Stopped ? "Run stopped" : "Run complete")</p>
+            <h1 id="debrief-title">How did that run feel?</h1>
+            <p>Review the result now; you can add or change this note later from history.</p>
+            <label class="field">Perceived effort
+                <select aria-label="Perceived effort" @bind="perceivedEffort">
+                    <option value="">Not set</option>
+                    @for (var effort = 1; effort <= 10; effort++)
+                    {
+                        <option value="@effort">@effort</option>
+                    }
+                </select>
+            </label>
+            <label class="field">Run note
+                <textarea aria-label="Run note" maxlength="1000" @bind="runNote"></textarea>
+            </label>
+            <button class="primary-action touch-action" type="button" @onclick="SaveDebriefAsync">Save debrief</button>
+            <span role="status" class="action-status">@actionStatus</span>
+        </section>
+    }
+    else if (session is not null && session.Live.SessionState is SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+    {
+        <header class="dashboard-header">
+            <div><p class="eyebrow">Authoritative gateway</p><h1>Live run</h1></div>
+            <span class="connection-state" role="status">@controlStatus · @session.Live.SessionState</span>
+        </header>
+
+        <section class="safety-banner" aria-label="Safety notice">
+            <span class="safety-icon" aria-hidden="true">!</span>
+            <p><strong>Physical controls remain authoritative.</strong> Use the safety key or console Stop whenever browser control is unavailable or uncertain.</p>
+        </section>
+
+        @if (session.Warnings.Count > 0)
+        {
+            <section class="session-notices" aria-label="Session notices">
+                @foreach (string warning in session.Warnings)
+                {
+                    <p role="status">@warning</p>
+                }
+            </section>
+        }
+
+        @if (session.LastCommandResult is { } commandResult)
+        {
+            <section class="command-result command-@commandResult.Disposition.ToString().ToLowerInvariant()" aria-live="assertive">
+                <strong>@commandResult.Kind: @commandResult.Disposition</strong>
+                <span>@commandResult.Reason</span>
+                @if (CommandValuesLabel(commandResult) is { } commandValues)
+                {
+                    <span>@commandValues</span>
+                }
+                <span>Connection generation @commandResult.ConnectionGeneration</span>
+            </section>
+        }
+
+        <section class="live-metric-grid">
+            <article class="primary-metric live-metric live-metric--speed" aria-label="Measured speed"><p>Speed</p><strong>@session.Live.SpeedKph.ToString("0.0") <small>km/h</small></strong><span>Requested @session.RequestedSpeedKph.ToString("0.0") · planned @(session.PlannedSpeedKph?.ToString("0.0") ?? "open")</span></article>
+            <article class="metric-card live-metric live-metric--heart" aria-label="Heart rate"><p>Heart rate</p><strong>@HeartRateValue <small>bpm</small></strong><span>@HeartRateTargetLabel</span></article>
+            <article class="metric-card live-metric" aria-label="Measured incline"><p>Incline</p><strong>@session.Live.InclinePercent.ToString("0.0")<small>%</small></strong><span>Requested @session.RequestedInclinePercent.ToString("0.0") · planned @(session.PlannedInclinePercent?.ToString("0.0") ?? "open")</span></article>
+            <article class="metric-card live-metric"><p>Elapsed</p><strong>@session.Live.Elapsed.ToString(@"mm\:ss")</strong><span>@(session.Remaining?.ToString(@"mm\:ss") ?? "distance goal") remaining</span></article>
+        </section>
+
+        <section class="controls-card live-controls" aria-labelledby="run-controls-title" aria-busy="@(isManualCommandPending || isStopPending)">
+            <div class="live-controls__heading">
+                <div><p class="eyebrow">Direct control</p><h2 id="run-controls-title">Run controls</h2></div>
+                <button class="sound-toggle" type="button" @onclick="ToggleSoundAsync" aria-pressed="@soundEnabled">Sound @(soundEnabled ? "on" : "off")</button>
+            </div>
+            <div class="adjustment-grid">
+                <div class="adjustment-control" role="group" aria-label="Speed controls">
+                    <button class="touch-action step-action" type="button" aria-label="Speed -0.1 km/h" @onclick="() => AdjustSpeedAsync(-0.1)" disabled="@(!CanAdjustSpeed)">−</button>
+                    <div><span>Speed</span><strong>@session.RequestedSpeedKph.ToString("0.0") <small>km/h</small></strong><small>0.1 steps</small></div>
+                    <button class="touch-action step-action primary-action" type="button" aria-label="Speed +0.1 km/h" @onclick="() => AdjustSpeedAsync(0.1)" disabled="@(!CanAdjustSpeed)">+</button>
+                </div>
+                <div class="adjustment-control" role="group" aria-label="Incline controls">
+                    <button class="touch-action step-action" type="button" aria-label="Incline -0.5%" @onclick="() => AdjustInclineAsync(-0.5)" disabled="@(!CanAdjustIncline)">−</button>
+                    <div><span>Incline</span><strong>@session.RequestedInclinePercent.ToString("0.0")<small>%</small></strong><small>0.5 steps</small></div>
+                    <button class="touch-action step-action primary-action" type="button" aria-label="Incline +0.5%" @onclick="() => AdjustInclineAsync(0.5)" disabled="@(!CanAdjustIncline)">+</button>
+                </div>
+            </div>
+            <div class="run-actions">
+                @if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
+                {
+                    <button class="touch-action primary-action pause-action" type="button" @onclick="ResumeAsync" disabled="@(!CanResume)">Resume at @session.MinimumStartSpeedKph?.ToString("0.0") km/h</button>
+                }
+                else
+                {
+                    <button class="touch-action pause-action" type="button" @onclick="PauseAsync" disabled="@(!CanPause)">Pause</button>
+                }
+                <button class="touch-action danger-action stop-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop</button>
+            </div>
+            @if (session.HeartRateTarget is not null)
+            {
+                <details class="automation-panel">
+                    <summary><span>Heart-rate speed control</span><strong>@AutomationLabel</strong></summary>
+                    <div class="automation-modes" role="group" aria-label="Heart-rate speed control">
+                        <button class="touch-action" type="button" aria-label="HR shadow" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Shadow)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Shadow)" disabled="@(!CanSetAutomation)">Monitor only</button>
+                        <button class="touch-action" type="button" aria-label="HR decreases" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.DecreaseOnly)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.DecreaseOnly)" disabled="@(!CanSetSpeedAutomation)">Slow down only</button>
+                        <button class="touch-action" type="button" aria-label="HR two-way" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Full)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Full)" disabled="@(!CanSetSpeedAutomation)">Full control</button>
+                        <button class="touch-action" type="button" aria-label="HR off" aria-pressed="@(session.HeartRateAutomationMode == HeartRateAutomationMode.Disabled)" @onclick="() => SetAutomationAsync(HeartRateAutomationMode.Disabled)" disabled="@(!CanSetAutomation)">Off</button>
+                    </div>
+                    <p>HR automation: @session.HeartRateAutomationMode · @session.HeartRateAutomationReason</p>
+                </details>
+            }
+            <span class="action-status" role="status">@actionStatus</span>
+        </section>
+
+        <section class="secondary-metrics" aria-label="Run totals">
+            <div><span>Distance</span><strong>@session.Live.DistanceKilometers.ToString("0.00") km</strong></div>
+            <div><span>Energy</span><strong>@Math.Round(session.Live.Elapsed.TotalMinutes * 9) kcal</strong></div>
+            <div><span>Current step</span><strong>@CurrentStepLabel</strong></div>
+            <div><span>Next</span><strong>@NextStepLabel</strong></div>
+        </section>
+
+        <details class="route-card workout-details" open="@(session.Live.SessionState != SessionState.Running)">
+            <summary>
+                <span><span class="eyebrow">Workout details</span><strong>@session.WorkoutTitle</strong></span>
+                <span>Plan and live chart</span>
+            </summary>
+            <div class="chart-plot-grid" aria-label="Live workout chart">
+                <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@LiveSpeedAxisMaximum, 1fr)">
+                    @foreach (int tick in LiveSpeedAxisTicks)
+                    {
+                        <span>@tick</span>
+                    }
+                </div>
+                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Planned, requested, and measured speed">
+                    @foreach (int tick in LiveSpeedAxisTicks)
+                    {
+                        double y = LiveChartY(tick);
+                        <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                    }
+                    <path class="chart-plan" d="@BuildLiveSpeedPath(static point => point.PlannedSpeedKph)" />
+                    <path class="chart-requested" d="@BuildLiveSpeedPath(static point => point.RequestedSpeedKph)" />
+                    <path class="chart-current" d="@BuildLiveSpeedPath(static point => point.MeasuredSpeedKph)" />
+                    @foreach (TimeSpan marker in liveOverrideMarkers)
+                    {
+                        double markerX = ChartX(marker);
+                        <line class="chart-event-marker" x1="@markerX" x2="@markerX" y1="10" y2="210" />
+                    }
+                    <line class="chart-cursor" x1="@LiveProgressX" x2="@LiveProgressX" y1="10" y2="210" data-elapsed-seconds="@LiveChartElapsedSeconds" data-duration-seconds="@LiveChartDurationSeconds" />
+                    @if (LatestLiveChartPoint is { } latest)
+                    {
+                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@LiveChartY(latest.MeasuredSpeedKph)" r="5" />
+                    }
+                </svg>
+                <div></div>
+                <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatChartAxisTime(TimeSpan.FromTicks(LiveChartDuration.Ticks / 2))">
+                    @foreach (LiveChartTimeTick tick in LiveChartTimeTicks)
+                    {
+                        <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatChartAxisTime(tick.Elapsed)</span>
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="legend"><span><i class="legend-line legend-line--plan" aria-hidden="true"></i>Planned</span><span><i class="legend-line legend-line--requested" aria-hidden="true"></i>Requested</span><span><i class="legend-line legend-line--measured" aria-hidden="true"></i>Measured</span></div>
+            </div>
+        </details>
+    }
+    else if (session?.Live.SessionState == SessionState.ArmedWaitingForPhysicalStart)
+    {
+        <header class="dashboard-header">
+            <div><p class="eyebrow">Run prepared</p><h1>Ready at the treadmill</h1></div>
+            <span class="connection-state" role="status">@controlStatus · @session.Live.SessionState</span>
+        </header>
+
+        <section class="safety-banner" aria-label="Remote start safety notice">
+            <span class="safety-icon" aria-hidden="true">!</span>
+            <p><strong>Confirm the belt is clear and wear the safety key.</strong> The physical Stop remains authoritative. Never rely on Bluetooth disconnect to stop the belt.</p>
+        </section>
+
+        <section class="controls-card start-card" aria-labelledby="start-title">
+            <div>
+                <p class="eyebrow">Single-use command</p>
+                <h2 id="start-title">Start at @(session.MinimumStartSpeedKph?.ToString("0.0") ?? "—") km/h</h2>
+                @if (session.CanStartRemotely)
+                {
+                    <p>Press and hold for three seconds. Releasing, moving away, or pressing Escape cancels before the command is sent.</p>
+                }
+                else
+                {
+                    <p>Remote Start is unavailable until this exact model and firmware pass the hardware gate. Start from the physical console.</p>
+                }
+            </div>
+            <button class="touch-action primary-action hold-start-action"
+                    type="button"
+                    disabled="@(!CanStart)"
+                    aria-describedby="start-hold-status"
+                    @onpointerdown="BeginStartPointerHoldAsync"
+                    @onpointerup="CancelStartHold"
+                    @onpointerleave="CancelStartHold"
+                    @onpointercancel="CancelStartHold"
+                    @onkeydown="StartKeyDownAsync"
+                    @onkeyup="CancelStartHold"
+                    @onblur="CancelStartHold">
+                @(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")
+            </button>
+            <button class="touch-action danger-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop / cancel workout</button>
+            <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
+        </section>
+
+        @if (session.LastCommandResult is { } armedResult)
+        {
+            <section class="command-result command-@armedResult.Disposition.ToString().ToLowerInvariant()" aria-live="assertive">
+                <strong>@armedResult.Kind: @armedResult.Disposition</strong>
+                <span>@armedResult.Reason</span>
+            </section>
+        }
+    }
+    else
+    {
+        <header class="dashboard-header">
+            <div><p class="eyebrow">Today</p><h1>Ready to run</h1></div>
+            <span class="connection-state" role="status">@connectionStatus</span>
+        </header>
+
+        <section class="safety-banner" aria-label="Safety notice">
+            <span class="safety-icon" aria-hidden="true">!</span>
+            <p><strong>Safety key and physical Stop required.</strong><span class="desktop-safety-detail"> Remote Start appears only for an exact model and firmware with hardware-verified capability; otherwise use the physical console.</span></p>
+        </section>
+
+        <section class="preflight-grid">
+            <article class="selection-card">
+                <p class="eyebrow">Choose today’s run</p>
+                <fieldset class="runner-choice" aria-label="Choose runner">
+                    <legend>Runner</legend>
+                    <div role="radiogroup" aria-label="Choose runner">
+                        @foreach (ProfileView profile in profiles.Where(static profile => !string.IsNullOrWhiteSpace(profile.DisplayName)))
+                        {
+                            <button class="runner-choice__button @(selectedProfileId == profile.Id ? "runner-choice__button--selected" : null)" type="button" role="radio"
+                                    aria-checked="@(selectedProfileId == profile.Id ? "true" : "false")"
+                                    @onclick="() => SelectProfileAsync(profile.Id)">@profile.DisplayName</button>
+                        }
+                    </div>
+                </fieldset>
+
+                @if (selectedProfileId is not null)
+                {
+                    <section class="next-run-card" aria-label="Recommended next run">
+                        <span class="next-run-card__icon" aria-hidden="true">→</span>
+                        <span class="next-run-card__copy">
+                            <small>Next for @SelectedProfileName</small>
+                            @if (CalendarNeedsChoice)
+                            {
+                                <strong>Choose today’s calendar workout</strong>
+                                <span>More than one option is scheduled today.</span>
+                            }
+                            else if (RecommendedChoice is { } recommendation)
+                            {
+                                <strong>@recommendation.Name</strong>
+                                <span>@recommendation.Context · @recommendation.Stats</span>
+                            }
+                            else
+                            {
+                                <strong>Manual run</strong>
+                                <span>Control speed and incline as you go.</span>
+                            }
+                        </span>
+                        @if (!CalendarNeedsChoice && RecommendedChoice is { } recommended)
+                        {
+                            <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(recommended)">Select</button>
+                        }
+                    </section>
+                }
+
+                <section class="workout-picker" aria-label="Choose workout">
+                    <div class="workout-picker__heading"><strong>Workout</strong><span>@VisibleWorkoutChoices.Count available</span></div>
+                    <button class="workout-choice-card workout-choice-card--manual" type="button"
+                            aria-pressed="@(ManualWorkout is { } manual && selectedRevisionId == manual.CurrentRevisionId ? "true" : "false")"
+                            @onclick="SelectManualRunAsync">
+                        <span><strong>Manual run</strong><small>No preset</small></span>
+                        <span>Start with the treadmill minimum and control speed and incline yourself.</span>
+                        <small>Up to 4 hours · no planned intervals</small>
+                    </button>
+                    <div class="workout-source-tabs" role="group" aria-label="Workout source">
+                        <button type="button" aria-pressed="@(workoutSource == "scheduled" ? "true" : "false")" @onclick='() => workoutSource = "scheduled"'>Calendar</button>
+                        <button type="button" aria-pressed="@(workoutSource == "programs" ? "true" : "false")" @onclick='() => workoutSource = "programs"'>Training plans</button>
+                        <button type="button" aria-pressed="@(workoutSource == "library" ? "true" : "false")" @onclick='() => workoutSource = "library"'>All workouts</button>
+                    </div>
+                    <label class="field">Search workouts
+                        <input type="search" @bind="workoutSearch" @bind:event="oninput" placeholder="Title or description" />
+                    </label>
+                    <div class="workout-choice-list">
+                        @if (workoutSource == "programs")
+                        {
+                            @if (FilteredProgramChoices.Count == 0)
+                            {
+                                <p class="empty-state">No training plans match this view.</p>
+                            }
+                            @foreach (WorkoutProgramView program in FilteredProgramChoices)
+                            {
+                                <article class="run-program-card">
+                                    <span><strong>@program.Name</strong><small>@program.Category · @program.CompletedItemCount/@program.Items.Count complete</small></span>
+                                    @if (program.Run is not null && ProgramChoice(program) is { } nextChoice)
+                                    {
+                                        <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(nextChoice)">Next workout</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart plan")</button>
+                                    }
+                                    @if (pendingProgramStart is { } pending && pending.Program.Id == program.Id)
+                                    {
+                                        <section class="program-start-confirm" role="alertdialog" aria-labelledby="run-program-start-confirm-title">
+                                            <strong id="run-program-start-confirm-title">@(pending.Restart ? $"Restart {program.Name}?" : $"Start {program.Name}?")</strong>
+                                            <p>@ProgramStartWarning(pending)</p>
+                                            <div class="card-actions">
+                                                <button class="secondary-action compact-action" type="button" @onclick="CancelProgramStart">Cancel</button>
+                                                <button class="primary-action compact-action" type="button" @onclick="ConfirmProgramStartAsync">@ProgramStartConfirmLabel(pending)</button>
+                                            </div>
+                                        </section>
+                                    }
+                                </article>
+                            }
+                        }
+                        else if (VisibleWorkoutChoices.Count == 0)
+                        {
+                            <p class="empty-state">@(workoutSource == "scheduled" ? "Nothing is scheduled in the next 31 days. Try All workouts." : "No workouts match this view.")</p>
+                        }
+                        else
+                        {
+                            @foreach (WorkoutChoice choice in VisibleWorkoutChoices.Take(40))
+                            {
+                                <button class="workout-choice-card" type="button"
+                                        aria-pressed="@(selectedRevisionId == choice.RevisionId ? "true" : "false")"
+                                        @onclick="() => SelectWorkoutAsync(choice)">
+                                    <span><strong>@choice.Name</strong><small>@choice.Context</small></span>
+                                    <span>@(string.IsNullOrWhiteSpace(choice.Description) ? "No description" : choice.Description)</span>
+                                    <small>@choice.Stats</small>
+                                </button>
+                            }
+                        }
+                    </div>
+                </section>
+                <dl class="selection-summary">
+                    <div><dt>Selected runner</dt><dd aria-label="Selected runner">@SelectedProfileName</dd></div>
+                    <div><dt>Selected workout</dt><dd aria-label="Selected workout">@SelectedWorkoutName</dd></div>
+                    <div><dt>Expected</dt><dd>@ExpectedDuration</dd></div>
+                    <div><dt>Intensity</dt><dd>@(preflight?.IntensityLabel ?? "Select a workout")</dd></div>
+                </dl>
+                <div class="preflight-actions">
+                    <p>Only one screen can control the treadmill at a time.</p>
+                    <button class="primary-action touch-action" type="button" @onclick="TakeControlAsync" disabled="@(!CanTakeControl)">Enable controls</button>
+                    <button class="touch-action" type="button" @onclick="ArmAsync" disabled="@(!CanArm)">Prepare run</button>
+                    <span role="status" class="action-status">@actionStatus</span>
+                </div>
+            </article>
+
+            <details class="readiness-card">
+                <summary><span>Pre-run checks</span><strong>@(preflight is null ? "Select a run" : preflight.IsReady ? "Ready" : "Needs attention")</strong></summary>
+                <ul class="readiness-list">
+                    @foreach (PreflightCheck check in preflight?.Checks ?? Array.Empty<PreflightCheck>())
+                    {
+                        <li class="@CheckClass(check.Status)"><strong>@check.Label</strong><span>@check.Detail</span></li>
+                    }
+                </ul>
+                @if (preflight?.TargetEvaluations.Any(static target => target.Disposition != WorkoutTargetDisposition.Accepted) == true)
+                {
+                    <details class="target-evaluations">
+                        <summary>Target adjustments</summary>
+                        <ul class="readiness-list">
+                            @foreach (WorkoutTargetEvaluation target in preflight.TargetEvaluations.Where(static target => target.Disposition != WorkoutTargetDisposition.Accepted))
+                            {
+                                <li class="@(target.Disposition == WorkoutTargetDisposition.Rejected ? "check-blocked" : "check-ready")">
+                                    <strong>@target.Path</strong>
+                                    <span>Requested @target.Requested.ToString("0.0") · @(target.Normalized is { } normalized ? $"normalized {normalized:0.0}" : "rejected") · @target.Reason</span>
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                @if (preflight is null)
+                {
+                    <p class="empty-state">Select a runner and workout to check readiness.</p>
+                }
+            </details>
+        </section>
+
+    }
+</div>
+
+@code {
+    private const string HolderStorageKey = "treadmillrunner.controller-holder";
+    private const string SoundStorageKey = "treadmillrunner.sound-enabled";
+    private HubConnection? hubConnection;
+    private CancellationTokenSource? heartbeatCancellation;
+    private CancellationTokenSource? startHoldCancellation;
+    private Task? heartbeatTask;
+    private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
+    private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
+    private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
+    private IReadOnlyList<CalendarSeriesView> calendarSeries = Array.Empty<CalendarSeriesView>();
+    private CalendarRangeView? planningCalendar;
+    private Guid? selectedProfileId;
+    private Guid? selectedRevisionId;
+    private string? selectedWorkoutLabel;
+    private string selectedWorkoutSource = "Library";
+    private Guid? selectedProgramRunId;
+    private Guid? selectedProgramItemId;
+    private string workoutSource = "library";
+    private string workoutSearch = string.Empty;
+    private PreflightSnapshot? preflight;
+    private ActiveSessionSnapshot? session;
+    private ControlLease? lease;
+    private string holderId = string.Empty;
+    private string connectionStatus = "Connecting to gateway";
+    private string controlStatus = "Observer";
+    private string actionStatus = "Select a runner and workout.";
+    private int? perceivedEffort;
+    private string? runNote;
+    private bool soundEnabled;
+    private int liveSpeedAxisMaximum = 10;
+    private bool isManualCommandPending;
+    private bool isStopPending;
+    private bool stopRequestedDuringCommand;
+    private PendingProgramStart? pendingProgramStart;
+    private int? startHoldSecondsRemaining;
+    private readonly BoundedLiveSeries<LiveChartPoint> liveChartPoints = new(43_200);
+    private long renderedLiveChartVersion = -1;
+    private IReadOnlyList<LiveChartPoint> renderedLiveChartPoints = [];
+    private readonly List<TimeSpan> liveOverrideMarkers = [];
+
+    private string SelectedProfileName => profiles.FirstOrDefault(item => item.Id == selectedProfileId)?.DisplayName ?? "Not selected";
+    private string SelectedWorkoutName => selectedWorkoutLabel ??
+        workouts.FirstOrDefault(item => item.CurrentRevisionId == selectedRevisionId)?.Name ?? "Not selected";
+    private WorkoutSummaryView? ManualWorkout => workouts
+        .Where(static workout => !workout.IsArchived)
+        .OrderByDescending(static workout => workout.UpdatedAtUtc)
+        .FirstOrDefault(static workout => string.Equals(workout.Kind, "ManualTemplate", StringComparison.Ordinal));
+    private IReadOnlyList<WorkoutChoice> VisibleWorkoutChoices
+    {
+        get
+        {
+            IEnumerable<WorkoutChoice> choices = workoutSource switch
+            {
+                "scheduled" => ScheduledWorkoutChoices(),
+                "programs" => ProgramWorkoutChoices(),
+                _ => workouts.Where(static workout => !workout.IsArchived && !string.Equals(workout.Kind, "ManualTemplate", StringComparison.Ordinal)).Select(ChoiceFromSummary),
+            };
+            if (!string.IsNullOrWhiteSpace(workoutSearch))
+            {
+                choices = choices.Where(choice =>
+                    choice.Name.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
+                    (choice.Description?.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false));
+            }
+            return choices.GroupBy(static choice => choice.RevisionId)
+                .Select(static group => group.First())
+                .OrderBy(static choice => choice.SortDate)
+                .ThenBy(static choice => choice.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+        }
+    }
+    private IReadOnlyList<WorkoutProgramView> FilteredProgramChoices => programs
+        .Where(program => string.IsNullOrWhiteSpace(workoutSearch) ||
+            program.Name.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
+            (program.Description?.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
+        .OrderBy(static program => program.Name, StringComparer.CurrentCultureIgnoreCase)
+        .ToArray();
+    private IReadOnlyList<CalendarOptionView> TodayCalendarOptions => planningCalendar?.Days
+        .FirstOrDefault(day => day.Date == DateOnly.FromDateTime(DateTime.Today))?.Options ?? [];
+    private bool CalendarNeedsChoice => TodayCalendarOptions.Count > 1 && TodayCalendarOptions.All(static option => !option.IsSelected);
+    private WorkoutChoice? RecommendedChoice
+    {
+        get
+        {
+            CalendarOptionView? calendar = TodayCalendarOptions.FirstOrDefault(static option => option.IsSelected) ??
+                (TodayCalendarOptions.Count == 1 ? TodayCalendarOptions[0] : null);
+            if (calendar is not null)
+            {
+                WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == calendar.WorkoutRevisionId);
+                return new WorkoutChoice(calendar.WorkoutRevisionId, calendar.WorkoutName, summary?.Description, "Today’s calendar", SummaryStats(summary, calendar.RevisionNumber), DateOnly.FromDateTime(DateTime.Today), "Calendar");
+            }
+            if (CalendarNeedsChoice) return null;
+            WorkoutProgramView? active = programs.FirstOrDefault(static program => program.Run is not null && !program.IsComplete && program.NextItemId is not null);
+            if (active is not null) return ProgramChoice(active);
+            return ManualWorkout is { } manual ? ChoiceFromSummary(manual) with { Context = "Manual fallback", SelectionSource = "Manual" } : null;
+        }
+    }
+    private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
+    private bool CanTakeControl => preflight?.IsReady == true;
+    private bool CanArm => lease is not null && preflight?.IsReady == true;
+    private bool CanStart => lease is not null && session is
+    {
+        CanStartRemotely: true,
+        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
+    };
+    private bool CanStop => !isStopPending && lease is not null && session?.CanStopRemotely == true && session.Live.SessionState is
+        SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
+    private bool CanAdjustSpeed => !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
+    private bool CanAdjustIncline => !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
+        (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
+    private bool CanPause => !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
+        session.Live.SessionState == SessionState.Running;
+    private bool CanResume => !isManualCommandPending && lease is not null && session?.CanStartRemotely == true &&
+        session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume;
+    private bool CanSetAutomation => !isManualCommandPending && lease is not null &&
+        session?.Live.SessionState == SessionState.Running;
+    private bool CanSetSpeedAutomation => CanSetAutomation && session?.CanSetSpeedRemotely == true;
+    private string CurrentStepLabel => session?.CurrentStep is { } step ? $"{step.Index + 1} of {step.TotalStepCount}" : "Complete";
+    private string NextStepLabel => session?.NextStep is { } step ? $"Step {step.Index + 1}" : "Finish";
+    private string HeartRateTargetLabel => session?.HeartRateTarget is { } target
+        ? $"Target {target.MinimumBpm?.ToString() ?? "—"}–{target.MaximumBpm?.ToString() ?? "—"} bpm"
+        : "No HR target";
+    private string HeartRateValue => session?.Live.HeartRateBpm?.ToString(CultureInfo.InvariantCulture) ?? "—";
+    private string AutomationLabel => session?.HeartRateAutomationMode switch
+    {
+        HeartRateAutomationMode.Disabled => "Off",
+        HeartRateAutomationMode.Shadow => "Monitor only",
+        HeartRateAutomationMode.DecreaseOnly => "Slow down only",
+        HeartRateAutomationMode.Full => "Full control",
+        HeartRateAutomationMode.SuspendedManualOverride => "Paused after manual change",
+        HeartRateAutomationMode.SuspendedSafety => "Paused for safety",
+        _ => "Unavailable",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
+        workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
+        selectedProfileId = await ActiveProfile.GetAsync();
+        if (selectedProfileId is not null)
+        {
+            await LoadProfilePlanningAsync();
+            await ApplyRecommendationAsync();
+        }
+        holderId = await JS.InvokeAsync<string?>("localStorage.getItem", HolderStorageKey) ?? string.Empty;
+        soundEnabled = string.Equals(
+            await JS.InvokeAsync<string?>("localStorage.getItem", SoundStorageKey),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(holderId))
+        {
+            holderId = Guid.NewGuid().ToString("N");
+            await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
+        }
+
+        using HttpResponseMessage activeSessionResponse = await Http.GetAsync("api/live/session");
+        session = activeSessionResponse.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await activeSessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+        if (session is not null)
+        {
+            AppendLiveChartPoint(session);
+            if (session.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+            {
+                Navigation.NavigateTo("/control", replace: true);
+                return;
+            }
+
+            await TakeControlAsync(restoring: true);
+        }
+
+        connectionStatus = "Gateway ready";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
+            .WithAutomaticReconnect()
+            .Build();
+        hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async incoming =>
+        {
+            int? previousStepIndex = session?.CurrentStep?.Index;
+            session = incoming;
+            AppendLiveChartPoint(incoming);
+            if (incoming.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+            {
+                Navigation.NavigateTo("/control", replace: true);
+                return;
+            }
+            actionStatus = incoming.Live.SessionState switch
+            {
+                SessionState.ArmedWaitingForPhysicalStart => "Waiting for physical treadmill movement",
+                SessionState.Running => "Gateway is following the measured treadmill movement.",
+                SessionState.PausedWaitingForPhysicalResume => "Paused — resume from the physical treadmill console.",
+                SessionState.Completed => actionStatus == "Run saved" ? actionStatus : "Run completed.",
+                _ => actionStatus,
+            };
+            if (soundEnabled && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
+            {
+                await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting to gateway");
+        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready");
+        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable");
+        try
+        {
+            await hubConnection.StartAsync();
+        }
+        catch (HttpRequestException)
+        {
+            connectionStatus = "Gateway unavailable";
+        }
+    }
+
+    private async Task SelectProfileAsync(Guid profileId)
+    {
+        selectedProfileId = profileId;
+        selectedRevisionId = null;
+        selectedWorkoutLabel = null;
+        selectedWorkoutSource = "Library";
+        selectedProgramRunId = null;
+        selectedProgramItemId = null;
+        await ActiveProfile.SetAsync(profileId);
+        await LoadProfilePlanningAsync();
+        await ApplyRecommendationAsync();
+    }
+
+    private async Task SelectWorkoutAsync(WorkoutChoice choice)
+    {
+        selectedRevisionId = choice.RevisionId;
+        selectedWorkoutLabel = choice.Name;
+        selectedWorkoutSource = choice.SelectionSource;
+        selectedProgramRunId = choice.ProgramRunId;
+        selectedProgramItemId = choice.ProgramItemId;
+        await RefreshPreflightAsync();
+    }
+
+    private async Task SelectManualRunAsync()
+    {
+        WorkoutSummaryView? manual = ManualWorkout;
+        if (manual is null)
+        {
+            actionStatus = "Preparing manual run…";
+            var step = new WorkoutBlockInput(
+                "step", 1, [], "time", 240, "fixed", 0.8, 0.8,
+                0, 0, 0, 0.8, 0.8, 40,
+                "fixed", 0, 0, null, "Manual speed and incline control.");
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                "api/planning/workouts",
+                new WorkoutSaveRequest(
+                    Guid.NewGuid(),
+                    "Manual run",
+                    "Open-ended treadmill session controlled from the live dashboard.",
+                    [step],
+                    "ManualTemplate"));
+            if (!response.IsSuccessStatusCode)
+            {
+                actionStatus = "The manual run could not be prepared.";
+                return;
+            }
+
+            workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? [];
+            manual = ManualWorkout;
+        }
+
+        if (manual is null)
+        {
+            actionStatus = "The manual run is unavailable.";
+            return;
+        }
+
+        await SelectWorkoutAsync(ChoiceFromSummary(manual) with { Context = "Manual run", SelectionSource = "Manual" });
+    }
+
+    private async Task LoadProfilePlanningAsync()
+    {
+        if (selectedProfileId is not { } profileId)
+        {
+            planningCalendar = null;
+            calendarSeries = Array.Empty<CalendarSeriesView>();
+            programs = Array.Empty<WorkoutProgramView>();
+            return;
+        }
+
+        DateOnly from = DateOnly.FromDateTime(DateTime.Today);
+        DateOnly to = from.AddDays(30);
+        planningCalendar = await Http.GetFromJsonAsync<CalendarRangeView>(
+            $"api/planning/calendar/{profileId}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+        calendarSeries = await Http.GetFromJsonAsync<CalendarSeriesView[]>(
+            $"api/planning/calendar/series?profileId={profileId}") ?? Array.Empty<CalendarSeriesView>();
+        programs = await Http.GetFromJsonAsync<WorkoutProgramView[]>(
+            $"api/planning/programs?profileId={profileId}") ?? Array.Empty<WorkoutProgramView>();
+    }
+
+    private async Task ApplyRecommendationAsync()
+    {
+        if (CalendarNeedsChoice)
+        {
+            workoutSource = "scheduled";
+            await RefreshPreflightAsync();
+            return;
+        }
+
+        if (RecommendedChoice is { } recommendation)
+        {
+            workoutSource = recommendation.SelectionSource switch
+            {
+                "Calendar" => "scheduled",
+                "Program" => "programs",
+                _ => "library",
+            };
+            await SelectWorkoutAsync(recommendation);
+            return;
+        }
+
+        await RefreshPreflightAsync();
+    }
+
+    private IEnumerable<WorkoutChoice> ScheduledWorkoutChoices() =>
+        planningCalendar?.Days.SelectMany(day => day.Options.Select(option =>
+        {
+            WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == option.WorkoutRevisionId);
+            return new WorkoutChoice(
+                option.WorkoutRevisionId,
+                option.WorkoutName,
+                summary?.Description,
+                day.Date.ToString("ddd d MMM"),
+                SummaryStats(summary, option.RevisionNumber),
+                day.Date,
+                "Calendar");
+        })) ?? Array.Empty<WorkoutChoice>();
+
+    private IEnumerable<WorkoutChoice> ProgramWorkoutChoices()
+    {
+        return programs.Select(ProgramChoice).OfType<WorkoutChoice>();
+    }
+
+    private WorkoutChoice? ProgramChoice(WorkoutProgramView program)
+    {
+        if (program.Run is null || program.NextItemId is not { } itemId || program.NextWorkoutRevisionId is not { } revisionId) return null;
+        WorkoutProgramItemView? item = program.Items.FirstOrDefault(candidate => candidate.Id == itemId);
+        if (item is null) return null;
+        WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == revisionId);
+        return new WorkoutChoice(
+            revisionId,
+            item.WorkoutName,
+            summary?.Description,
+            $"{program.Name} · workout {program.CompletedItemCount + 1} of {program.Items.Count}",
+            $"Revision {item.WorkoutRevisionNumber} · {DurationLabel(item.DurationMinutes)}",
+            DateOnly.MinValue,
+            "Program",
+            program.Run.Id,
+            item.Id);
+    }
+
+    private async Task StartProgramAsync(WorkoutProgramView program, bool restart)
+    {
+        if (selectedProfileId is not { } profileId) return;
+        string action = restart ? "restart" : "start";
+        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        using HttpResponseMessage response = await Http.PostAsJsonAsync(
+            $"api/planning/programs/{program.Id}/{action}",
+            new WorkoutProgramStartRequest(Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version));
+        actionStatus = response.IsSuccessStatusCode ? $"{program.Name} started." : "The training plan could not be started.";
+        if (!response.IsSuccessStatusCode)
+        {
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                actionStatus = "The active plan changed in another browser. Review the latest progress and try again.";
+                await LoadProfilePlanningAsync();
+            }
+            return;
+        }
+        await LoadProfilePlanningAsync();
+        await ApplyRecommendationAsync();
+    }
+
+    private void RequestProgramStart(WorkoutProgramView program, bool restart)
+    {
+        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        pendingProgramStart = new PendingProgramStart(program, restart, active);
+    }
+
+    private void CancelProgramStart() => pendingProgramStart = null;
+
+    private async Task ConfirmProgramStartAsync()
+    {
+        if (pendingProgramStart is not { } pending) return;
+        pendingProgramStart = null;
+        await StartProgramAsync(pending.Program, pending.Restart);
+    }
+
+    private static string ProgramStartWarning(PendingProgramStart pending)
+    {
+        if (pending.Active is { } active && active.Id != pending.Program.Id)
+        {
+            return $"{active.Name} ({ProgramProgress(active)}) will be abandoned. {pending.Program.Name} will begin at workout 1.";
+        }
+        if (pending.Restart)
+        {
+            return $"Current progress ({ProgramProgress(pending.Program)}) will be reset and the latest plan revision will begin at workout 1.";
+        }
+        return "The plan will begin at workout 1 for the selected runner.";
+    }
+
+    private static string ProgramStartConfirmLabel(PendingProgramStart pending) =>
+        pending.Active is { } active && active.Id != pending.Program.Id
+            ? "Abandon and start"
+            : pending.Restart ? "Reset and restart" : "Start plan";
+
+    private static string ProgramProgress(WorkoutProgramView program) =>
+        program.Run is null ? $"{program.Items.Count} workouts" : program.IsComplete ? "complete" : $"{program.CompletedItemCount} of {program.Items.Count} complete";
+
+    private static string DurationLabel(double? durationMinutes) => durationMinutes is null ? "Distance-based" : $"{durationMinutes:0} min";
+
+    private static WorkoutChoice ChoiceFromSummary(WorkoutSummaryView workout) => new(
+        workout.CurrentRevisionId,
+        workout.Name,
+        workout.Description,
+        "Workout library",
+        SummaryStats(workout, workout.CurrentRevisionNumber),
+        DateOnly.MaxValue);
+
+    private static string SummaryStats(WorkoutSummaryView? workout, int? revision) => workout is null
+        ? $"Revision {revision?.ToString() ?? "saved"}"
+        : $"{workout.ExpandedStepCount} steps · {(workout.DurationMinutes is null ? "Distance-based" : $"{workout.DurationMinutes:0} min")}";
+
+    private sealed record PendingProgramStart(WorkoutProgramView Program, bool Restart, WorkoutProgramView? Active);
+
+    private async Task RefreshPreflightAsync()
+    {
+        preflight = selectedProfileId is { } profileId && selectedRevisionId is { } revisionId
+            ? await Http.GetFromJsonAsync<PreflightSnapshot>($"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}")
+            : null;
+        actionStatus = preflight?.IsReady == true ? "Gateway ready — take control when you are prepared." : "Complete the pre-run checks.";
+    }
+
+    private Task TakeControlAsync() => TakeControlAsync(restoring: false);
+
+    private async Task TakeControlAsync(bool restoring)
+    {
+        HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/acquire", new { holderId });
+        if (response.IsSuccessStatusCode)
+        {
+            lease = await response.Content.ReadFromJsonAsync<ControlLease>();
+            controlStatus = restoring ? "Controller restored" : "Controller ready";
+            actionStatus = controlStatus;
+            StartHeartbeat();
+        }
+        else
+        {
+            controlStatus = "Observer";
+            actionStatus = "Another browser currently controls manual actions.";
+        }
+    }
+
+    private async Task ArmAsync()
+    {
+        if (selectedProfileId is not { } profileId || selectedRevisionId is not { } revisionId || lease is null) return;
+        HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/arm", new
+        {
+            operationId = Guid.NewGuid(),
+            profileId,
+            workoutRevisionId = revisionId,
+            holderId,
+            leaseId = lease.Id,
+            selectionSource = selectedWorkoutSource,
+            programRunId = selectedProgramRunId,
+            programItemId = selectedProgramItemId,
+        });
+        if (response.IsSuccessStatusCode)
+        {
+            session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            actionStatus = session?.CanStartRemotely == true
+                ? $"Ready — hold to start at {session.MinimumStartSpeedKph:0.0} km/h."
+                : "Waiting for physical treadmill movement.";
+            Navigation.NavigateTo("/control");
+        }
+        else
+        {
+            actionStatus = "The workout could not be armed.";
+        }
+    }
+
+    private async Task AdjustInclineAsync(double adjustmentPercent)
+    {
+        if (!CanAdjustIncline || session is null || lease is null) return;
+        isManualCommandPending = true;
+        actionStatus = "Changing incline…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/incline-override", new
+            {
+                operationId = Guid.NewGuid(),
+                targetPercent = session.RequestedInclinePercent + adjustmentPercent,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            await RefreshAfterManualControlAsync(response, "incline");
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private async Task AdjustSpeedAsync(double adjustmentKph)
+    {
+        if (!CanAdjustSpeed || session is null || lease is null) return;
+        isManualCommandPending = true;
+        actionStatus = "Changing speed…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/speed-override", new
+            {
+                operationId = Guid.NewGuid(),
+                adjustmentKph,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                using JsonDocument payload = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                session = payload.RootElement.GetProperty("snapshot").Deserialize<ActiveSessionSnapshot>(
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (session is not null)
+                {
+                    AppendLiveChartPoint(session);
+                    liveOverrideMarkers.Add(session.Live.Elapsed);
+                }
+                actionStatus = $"Requested speed changed to {session?.RequestedSpeedKph:0.0} km/h.";
+            }
+            else
+            {
+                actionStatus = "The requested speed could not be changed.";
+            }
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private Task BeginStartPointerHoldAsync(PointerEventArgs _) => BeginStartHoldAsync();
+
+    private Task StartKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.Ordinal))
+        {
+            CancelStartHold();
+            return Task.CompletedTask;
+        }
+
+        return args.Key is "Enter" or " " ? BeginStartHoldAsync() : Task.CompletedTask;
+    }
+
+    private async Task BeginStartHoldAsync()
+    {
+        if (!CanStart || startHoldCancellation is not null) return;
+        startHoldCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = startHoldCancellation.Token;
+        try
+        {
+            for (var remaining = 3; remaining > 0; remaining--)
+            {
+                startHoldSecondsRemaining = remaining;
+                actionStatus = $"Keep holding — Start in {remaining}.";
+                if (soundEnabled) await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+
+            startHoldSecondsRemaining = null;
+            await SendCommandAsync(TreadmillCommandKind.Start);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            actionStatus = "Remote Start canceled before sending.";
+        }
+        finally
+        {
+            startHoldSecondsRemaining = null;
+            startHoldCancellation?.Dispose();
+            startHoldCancellation = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CancelStartHold()
+    {
+        startHoldCancellation?.Cancel();
+    }
+
+    private Task StopAsync()
+    {
+        CancelStartHold();
+        if (isManualCommandPending)
+        {
+            stopRequestedDuringCommand = true;
+            actionStatus = "Stop requested — finishing the in-flight command, then sending one current-state Stop.";
+            return InvokeAsync(StateHasChanged);
+        }
+        return SendCommandAsync(TreadmillCommandKind.Stop);
+    }
+    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
+    private Task ResumeAsync() => SendCommandAsync(TreadmillCommandKind.Start);
+
+    private async Task RefreshAfterManualControlAsync(HttpResponseMessage response, string control)
+    {
+        if (!response.IsSuccessStatusCode)
+        {
+            actionStatus = $"The requested {control} could not be changed.";
+            return;
+        }
+
+        using JsonDocument payload = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        session = payload.RootElement.GetProperty("snapshot").Deserialize<ActiveSessionSnapshot>(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (session is not null)
+        {
+            AppendLiveChartPoint(session);
+            liveOverrideMarkers.Add(session.Live.Elapsed);
+        }
+        actionStatus = session?.LastCommandResult?.Reason ?? $"Requested {control} changed.";
+    }
+
+    private async Task SetAutomationAsync(HeartRateAutomationMode mode)
+    {
+        if (!CanSetAutomation || session is null || lease is null) return;
+        isManualCommandPending = true;
+        actionStatus = "Updating heart-rate control…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/heart-rate-automation", new
+            {
+                operationId = Guid.NewGuid(),
+                mode,
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+                actionStatus = session?.HeartRateAutomationReason ?? $"Heart-rate automation set to {mode}.";
+            }
+            else
+            {
+                actionStatus = "Heart-rate automation could not be changed.";
+            }
+        }
+        finally
+        {
+            await CompleteManualCommandAsync();
+        }
+    }
+
+    private async Task SendCommandAsync(TreadmillCommandKind kind)
+    {
+        bool isStopCommand = kind == TreadmillCommandKind.Stop;
+        if (isStopCommand ? isStopPending : isManualCommandPending || isStopPending) return;
+        ActiveSessionSnapshot? currentSession = session;
+        ControlLease? currentLease = lease;
+        if (currentSession is null || currentLease is null) return;
+        if (isStopCommand) isStopPending = true;
+        else isManualCommandPending = true;
+        string operation = kind switch
+        {
+            TreadmillCommandKind.Start => "start",
+            TreadmillCommandKind.Pause => "pause",
+            _ => "stop",
+        };
+        actionStatus = $"Sending single-use {operation} command…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{operation}", new
+            {
+                operationId = Guid.NewGuid(),
+                holderId,
+                leaseId = currentLease.Id,
+                expectedSessionVersion = currentSession.Version,
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                actionStatus = $"{kind} was rejected before a command could be confirmed.";
+                return;
+            }
+
+            TreadmillCommandResult? result = await response.Content.ReadFromJsonAsync<TreadmillCommandResult>();
+            actionStatus = result?.Disposition switch
+            {
+                TreadmillCommandDisposition.Confirmed => result.Reason,
+                TreadmillCommandDisposition.Unknown => $"Unknown outcome: {result.Reason} Use physical Stop and inspect the treadmill.",
+                _ => result?.Reason ?? $"{kind} was rejected.",
+            };
+            using HttpResponseMessage sessionResponse = await Http.GetAsync("api/live/session");
+            if (sessionResponse.IsSuccessStatusCode)
+            {
+                session = await sessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            }
+        }
+        finally
+        {
+            if (isStopCommand) isStopPending = false;
+            else await CompleteManualCommandAsync();
+        }
+    }
+
+    private async Task CompleteManualCommandAsync()
+    {
+        isManualCommandPending = false;
+        if (!stopRequestedDuringCommand) return;
+        stopRequestedDuringCommand = false;
+        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
+        session = response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+        await SendCommandAsync(TreadmillCommandKind.Stop);
+    }
+
+    private static string? CommandValuesLabel(TreadmillCommandResult result)
+    {
+        string? unit = result.Kind switch
+        {
+            TreadmillCommandKind.Start or TreadmillCommandKind.SetSpeed => "km/h",
+            TreadmillCommandKind.SetIncline => "%",
+            _ => null,
+        };
+        if (unit is null) return null;
+
+        var values = new List<string>(3);
+        if (result.RequestedValue is { } requested) values.Add($"Requested {requested.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        if (result.AcceptedValue is { } accepted) values.Add($"accepted {accepted.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        if (result.MeasuredValue is { } measured) values.Add($"measured {measured.ToString("0.0", CultureInfo.InvariantCulture)} {unit}");
+        return values.Count == 0 ? null : string.Join(" · ", values);
+    }
+
+    private void StartHeartbeat()
+    {
+        heartbeatCancellation?.Cancel();
+        heartbeatCancellation?.Dispose();
+        heartbeatCancellation = new CancellationTokenSource();
+        heartbeatTask = RenewLeaseAsync(heartbeatCancellation.Token);
+    }
+
+    private async Task RenewLeaseAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                ControlLease? currentLease = lease;
+                if (currentLease is null) return;
+                using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                    "api/live/lease/heartbeat",
+                    currentLease,
+                    cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    lease = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    lease = null;
+                    controlStatus = "Observer";
+                    actionStatus = "Controller lease expired. Take control again to use manual actions.";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Page disposal or a replacement heartbeat loop owns the expected cancellation.
+        }
+    }
+
+    private async Task SaveDebriefAsync()
+    {
+        if (session is null) return;
+        HttpResponseMessage response = await Http.PutAsJsonAsync($"api/history/{session.SessionId}/debrief", new
+        {
+            perceivedExertion = perceivedEffort,
+            note = runNote,
+        });
+        actionStatus = response.IsSuccessStatusCode ? "Run saved" : "Could not save the run debrief.";
+    }
+
+    private async Task ToggleSoundAsync()
+    {
+        soundEnabled = !soundEnabled;
+        await JS.InvokeVoidAsync("localStorage.setItem", SoundStorageKey, soundEnabled ? "true" : "false");
+        if (soundEnabled)
+        {
+            await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+        }
+
+        actionStatus = soundEnabled ? "Sound cues enabled for this browser." : "Sound cues disabled.";
+    }
+
+    private void AppendLiveChartPoint(ActiveSessionSnapshot snapshot)
+    {
+        if (snapshot.Live.SessionState is not (SessionState.Running or SessionState.PausedWaitingForPhysicalResume)) return;
+        var point = new LiveChartPoint(
+            snapshot.Live.Elapsed,
+            snapshot.PlannedSpeedKph,
+            snapshot.RequestedSpeedKph,
+            snapshot.Live.SpeedKph);
+        double planMaximum = snapshot.WorkoutPlan.Count == 0
+            ? 0
+            : snapshot.WorkoutPlan.Max(static item => item.SpeedKph ?? 0);
+        double observed = Math.Max(point.PlannedSpeedKph ?? 0, Math.Max(point.RequestedSpeedKph, point.MeasuredSpeedKph));
+        liveSpeedAxisMaximum = (int)Math.Ceiling(Math.Max(liveSpeedAxisMaximum, Math.Max(planMaximum, observed)));
+        liveChartPoints.AppendOrReplace(point, static (previous, current) => (long)previous.Elapsed.TotalSeconds == (long)current.Elapsed.TotalSeconds);
+    }
+
+    private string BuildLiveSpeedPath(Func<LiveChartPoint, double?> selector)
+    {
+        if (liveChartPoints.Count == 0) return string.Empty;
+        IReadOnlyList<LiveChartPoint> points = RenderLiveChartPoints();
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (LiveChartPoint point in points)
+        {
+            if (selector(point) is not { } speed)
+            {
+                started = false;
+                continue;
+            }
+            double y = LiveChartY(speed);
+            path.Append(started ? " L" : "M");
+            path.Append(ChartX(point.Elapsed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            started = true;
+        }
+
+        return path.ToString();
+    }
+
+    private IReadOnlyList<LiveChartPoint> RenderLiveChartPoints()
+    {
+        if (renderedLiveChartVersion == liveChartPoints.Version) return renderedLiveChartPoints;
+
+        IReadOnlyList<LiveChartPoint> points = liveChartPoints.Snapshot();
+        const int maximumRenderedPoints = 720;
+        if (points.Count <= maximumRenderedPoints)
+        {
+            renderedLiveChartVersion = liveChartPoints.Version;
+            renderedLiveChartPoints = points;
+            return renderedLiveChartPoints;
+        }
+        const int bucketCount = maximumRenderedPoints / 12;
+        int bucketSize = (int)Math.Ceiling(points.Count / (double)bucketCount);
+        var selected = new List<LiveChartPoint>(maximumRenderedPoints);
+        for (int start = 0; start < points.Count; start += bucketSize)
+        {
+            LiveChartPoint[] bucket = points.Skip(start).Take(Math.Min(bucketSize, points.Count - start)).ToArray();
+            var extrema = new List<LiveChartPoint>
+            {
+                bucket[0], bucket[^1],
+                bucket.MinBy(static point => point.MeasuredSpeedKph)!, bucket.MaxBy(static point => point.MeasuredSpeedKph)!,
+                bucket.MinBy(static point => point.RequestedSpeedKph)!, bucket.MaxBy(static point => point.RequestedSpeedKph)!,
+            };
+            LiveChartPoint[] planned = bucket.Where(static point => point.PlannedSpeedKph is not null).ToArray();
+            if (planned.Length > 0)
+            {
+                extrema.Add(planned.MinBy(static point => point.PlannedSpeedKph)!);
+                extrema.Add(planned.MaxBy(static point => point.PlannedSpeedKph)!);
+            }
+            int[] transitions = Enumerable.Range(1, bucket.Length - 1)
+                .Where(index => bucket[index - 1].PlannedSpeedKph.HasValue != bucket[index].PlannedSpeedKph.HasValue)
+                .ToArray();
+            foreach (int transition in transitions.Length <= 2 ? transitions : new[] { transitions[0], transitions[^1] })
+            {
+                extrema.Add(bucket[transition - 1]);
+                extrema.Add(bucket[transition]);
+            }
+            selected.AddRange(extrema.Distinct().OrderBy(static point => point.Elapsed));
+        }
+        renderedLiveChartVersion = liveChartPoints.Version;
+        renderedLiveChartPoints = selected;
+        return renderedLiveChartPoints;
+    }
+
+    private double ChartX(TimeSpan elapsed)
+        => LiveChartTimeline.PositionX(elapsed, LiveChartDuration);
+
+    private TimeSpan LiveChartDuration => LiveChartTimeline.ResolveDuration(
+        session,
+        LatestLiveChartPoint?.Elapsed ?? TimeSpan.Zero);
+    private LiveChartPoint? LatestLiveChartPoint => liveChartPoints.Snapshot().LastOrDefault();
+    private int LiveSpeedAxisMaximum => liveSpeedAxisMaximum;
+    private IEnumerable<int> LiveSpeedAxisTicks => Enumerable.Range(1, LiveSpeedAxisMaximum).Reverse();
+    private double LiveChartY(double speed) => 210 - (Math.Clamp(speed / LiveSpeedAxisMaximum, 0, 1) * 200);
+    private double LiveProgressX => ChartX(session?.Live.Elapsed ?? TimeSpan.Zero);
+    private string LiveChartElapsedSeconds => (session?.Live.Elapsed.TotalSeconds ?? 0).ToString("0.###", CultureInfo.InvariantCulture);
+    private string LiveChartDurationSeconds => LiveChartDuration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+    private IReadOnlyList<LiveChartTimeTick> LiveChartTimeTicks
+    {
+        get
+        {
+            TimeSpan duration = LiveChartDuration;
+            double minutes = duration.TotalMinutes;
+            int intervalMinutes = LiveAxisIntervalMinutes(minutes);
+            var ticks = new List<LiveChartTimeTick> { new(TimeSpan.Zero, 0) };
+            for (double minute = intervalMinutes; minute < minutes; minute += intervalMinutes)
+            {
+                TimeSpan elapsed = TimeSpan.FromMinutes(minute);
+                ticks.Add(new LiveChartTimeTick(elapsed, elapsed.TotalSeconds / Math.Max(1, duration.TotalSeconds) * 100));
+            }
+            if (ticks.Count > 1 && (duration - ticks[^1].Elapsed).TotalMinutes < intervalMinutes * .75) ticks.RemoveAt(ticks.Count - 1);
+            if (duration > TimeSpan.Zero) ticks.Add(new LiveChartTimeTick(duration, 100));
+            return ticks;
+        }
+    }
+    private static string FormatChartAxisTime(TimeSpan elapsed) => elapsed.TotalHours >= 1
+        ? elapsed.ToString(@"h\:mm", CultureInfo.InvariantCulture)
+        : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+    private static int LiveAxisIntervalMinutes(double durationMinutes)
+    {
+        double desired = durationMinutes / 5;
+        return desired <= 1 ? 1 : desired <= 2 ? 2 : desired <= 5 ? 5 : desired <= 10 ? 10 : desired <= 15 ? 15 : 30;
+    }
+
+    private static string CheckClass(PreflightCheckStatus status) => status switch
+    {
+        PreflightCheckStatus.Ready => "check-ready",
+        PreflightCheckStatus.NotRequired => "check-optional",
+        _ => "check-waiting",
+    };
+
+    private async Task SetConnectionAsync(string status)
+    {
+        connectionStatus = status;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        startHoldCancellation?.Cancel();
+        heartbeatCancellation?.Cancel();
+        if (heartbeatTask is not null)
+        {
+            await heartbeatTask;
+        }
+        heartbeatCancellation?.Dispose();
+        startHoldCancellation?.Dispose();
+        if (hubConnection is not null) await hubConnection.DisposeAsync();
+    }
+
+    private sealed record LiveChartPoint(
+        TimeSpan Elapsed,
+        double? PlannedSpeedKph,
+        double RequestedSpeedKph,
+        double MeasuredSpeedKph);
+
+    private sealed record LiveChartTimeTick(TimeSpan Elapsed, double PositionPercent);
+
+    private sealed record WorkoutChoice(
+        Guid RevisionId,
+        string Name,
+        string? Description,
+        string Context,
+        string Stats,
+        DateOnly SortDate,
+        string SelectionSource = "Library",
+        Guid? ProgramRunId = null,
+        Guid? ProgramItemId = null);
+}

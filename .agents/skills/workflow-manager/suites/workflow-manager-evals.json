@@ -1,0 +1,838 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/create_workflow.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_repo_manager.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_automations.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/sync_automation_routing.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/index_workflow_runs.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/eval_workflow.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/sync_automation_references.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/automation_validation_rules.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validation_support/contracts.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/validation_support/discovery.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validation_support/manifests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validation_support/module_checks.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validation_support/reporting.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validation_support/scanning.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/test_support/fixtures.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/workflow_manager_common.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_plan_check.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/smoke.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/scorecard.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/template_layers.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/context_contract.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/context_sources.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/schemas/context-packet.schema.json",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/validation_packets.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/recovery.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/start_checklist.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/workflow_support/intent_builder.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_context_health.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/workflow-template/WORKFLOW.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/workflow-templates",
+          "type": "file_absent"
+        }
+      ],
+      "id": "workflow-scripts-present"
+    },
+    {
+      "assertions": [
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "text": "strict read-only/offline/no-profile/no-temp/no-write dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "path": "module.json",
+          "text": "strict_read_only_commands",
+          "type": "file_contains"
+        },
+        {
+          "text": "Medium confidence requires a more specific request or explicit user/agent confirmation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "workflow_repo_manager.py validate-automations",
+          "type": "skill_contains"
+        },
+        {
+          "text": "workflow hooks --all --check",
+          "type": "skill_contains"
+        },
+        {
+          "text": "workflow smoke --dry-run",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline/no-profile/no-temp/no-write excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "tempfile/subprocess/cleanup-backed tools",
+          "type": "skill_contains"
+        },
+        {
+          "path": "docs/workflow/workflows.md",
+          "text": "Strict no-write/no-temp lifecycle dogfood is planning smoke only",
+          "type": "repo_file_contains"
+        },
+        {
+          "text": "evidence paths",
+          "type": "skill_contains"
+        },
+        {
+          "text": "unsupported claims",
+          "type": "skill_contains"
+        },
+        {
+          "text": "evidence entries or evidence paths",
+          "type": "skill_contains"
+        },
+        {
+          "text": "external validation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "optional task graphs",
+          "type": "skill_contains"
+        },
+        {
+          "text": "__pycache__",
+          "type": "skill_contains"
+        },
+        {
+          "text": "PYTHONDONTWRITEBYTECODE",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Mermaid",
+          "type": "skill_contains"
+        },
+        {
+          "text": "erDiagram",
+          "type": "skill_contains"
+        },
+        {
+          "text": "frontmatter",
+          "type": "skill_contains"
+        },
+        {
+          "text": "index-workflow-runs --name <workflow-name> --check",
+          "type": "skill_contains"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1200
+        }
+      ],
+      "id": "budget"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "workflow",
+            "--help"
+          ],
+          "text": "read-only/offline",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "start",
+            "--help"
+          ],
+          "text": "write/run-state",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--help"
+          ],
+          "text": "write/temp",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "scorecard",
+            "--help"
+          ],
+          "text": "lifecycle writes",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "context",
+            "--help"
+          ],
+          "text": "read-only check",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "context",
+            "--help"
+          ],
+          "text": "--include-completed",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "checkpoint",
+            "--help"
+          ],
+          "text": "read-only check",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "context-evidence",
+            "--help"
+          ],
+          "text": "read-only check",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "recover",
+            "--help"
+          ],
+          "text": "write recovered run.json",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "write/temp",
+          "type": "file_contains"
+        },
+        {
+          "command": [
+            "create-workflow",
+            "--help"
+          ],
+          "text": "--name",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "create-workflow",
+            "--help"
+          ],
+          "text": "--uses-skill",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "create-workflow",
+            "--help"
+          ],
+          "text": "--uses-script",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "status",
+            "--help"
+          ],
+          "text": "--full",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "route",
+            "--help"
+          ],
+          "text": "query",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "check",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--help"
+          ],
+          "text": "--from-request",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "recipes",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "create",
+            "--help"
+          ],
+          "text": "--write",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "adjust",
+            "--help"
+          ],
+          "text": "--from-request",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "recipes",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "recipes",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "recipe_count",
+          "type": "repo_command_json_field_equals",
+          "value": 6
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "create a workflow for reviewing release evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "mode",
+          "type": "repo_command_json_field_equals",
+          "value": "propose"
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "create a workflow for reviewing release evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "action",
+          "type": "repo_command_json_field_equals",
+          "value": "create-new"
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "create a workflow for reviewing release evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "writes",
+          "type": "repo_command_json_field_equals",
+          "value": false
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "create a workflow for reviewing release evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "write_mode",
+          "type": "repo_command_json_field_equals",
+          "value": "read-only"
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "single command to fix a bug ticket with reproduction evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "action",
+          "type": "repo_command_json_field_equals",
+          "value": "do-not-create"
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "single command to fix a bug ticket with reproduction evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "selected_workflow",
+          "type": "repo_command_json_field_equals",
+          "value": ""
+        },
+        {
+          "command": [
+            "workflow",
+            "propose",
+            "--from-request",
+            "single command to fix a bug ticket with reproduction evidence",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "target_workflow",
+          "type": "repo_command_json_field_equals",
+          "value": ""
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--help"
+          ],
+          "text": "--lifecycle-only",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--name",
+            "dotnet-framework-migration",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--name",
+            "dotnet-framework-migration",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "dry_run",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--name",
+            "dotnet-upgrade",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "smoke",
+            "--name",
+            "dotnet-upgrade",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "dry_run",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "template",
+            "gate-check",
+            "--help"
+          ],
+          "text": "--all",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "template",
+            "gate-check",
+            "--all",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "validation-packet",
+            "--help"
+          ],
+          "text": "playwright-screenshots",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "scorecard",
+            "--help"
+          ],
+          "text": "--no-lifecycle",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "scorecard",
+            "--all",
+            "--summary",
+            "--compact",
+            "--format",
+            "json",
+            "--no-lifecycle"
+          ],
+          "path": "ok",
+          "timeout_seconds": 360,
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "eval",
+            "--help"
+          ],
+          "text": "--compact",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "eval",
+            "--all",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "timeout_seconds": 360,
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "context",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "recover",
+            "--help"
+          ],
+          "text": "--write",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "plan-check",
+            "--help"
+          ],
+          "text": "--template",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "plan-check",
+            "--name",
+            "user-story-workflow",
+            "--template",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "hooks",
+            "--all",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "sync",
+            "--help"
+          ],
+          "text": "--check",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "finish",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "review",
+            "agent-benchmarking",
+            "--help"
+          ],
+          "text": "--plan",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "new",
+            "--kind",
+            "workflow",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate-automations"
+          ],
+          "type": "repo_command_succeeds"
+        },
+        {
+          "command": [
+            "index-workflow-runs",
+            "--help"
+          ],
+          "text": "--write",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "eval-workflow",
+            "--help"
+          ],
+          "text": "--suite",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate-automations",
+            "--help"
+          ],
+          "text": "--name",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "sync-automation-routing",
+            "--check"
+          ],
+          "type": "repo_command_succeeds"
+        }
+      ],
+      "id": "public-command-behavior"
+    }
+  ],
+  "skill_name": "workflow-manager"
+}

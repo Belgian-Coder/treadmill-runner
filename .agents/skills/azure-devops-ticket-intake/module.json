@@ -1,0 +1,228 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/import_azure_devops_work_item.py"
+      ],
+      "effects": [
+        "network",
+        "credentials"
+      ],
+      "id": "command-03acf6b43585",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/summarize_imported_ticket.py"
+      ],
+      "effects": [],
+      "id": "command-91456a027e76",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/azure-devops-ticket-intake",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-f934e7306707",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/azure-devops-ticket-intake",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-8f24f3f8b19a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "azure-devops-ticket-intake",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-4dc43424ea64",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-de8eb8da8bdf",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/azure-devops-ticket-intake/scripts/summarize_imported_ticket.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c7efcd73cc68",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/azure-devops-ticket-intake/scripts/summarize_imported_ticket.py",
+        ".agents/skills/azure-devops-ticket-intake/__strict_dogfood_missing__",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-f879e6babd3d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs the stdlib-only intake importer, deterministic summary validator, and self-tests.",
+      "version": "3.12+"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": true,
+    "credential_expectations": "PAT via AZURE_DEVOPS_PAT, --pat, or an explicitly configured gitignored server profile; no credentials needed for fixture/manual dry-runs or summaries.",
+    "data_copied_locally": [
+      "work item fields",
+      "relations",
+      "comments when requested",
+      "attachments unless skipped"
+    ],
+    "source_systems": [
+      "Azure DevOps REST API",
+      "TFS collection/server"
+    ]
+  },
+  "id": "azure-devops-ticket-intake",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary",
+      "vision-pdf"
+    ]
+  },
+  "name": "azure-devops-ticket-intake",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/azure-devops-ticket-intake",
+      "python -B .agents/skills/azure-devops-ticket-intake/scripts/run_self_tests.py"
+    ],
+    "introduced": "2026-05-06",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/azure-devops-ticket-intake-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Normal validation for REST/PAT intake, automatic type detection, field and relation capture, attachment downloads, description image rewrites, fixture parsing, duplicate detection, redaction, deterministic import summaries, attachment hash visibility, and path safety; uses temporary fixtures and is not strict no-temp/no-write safe."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": true,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-f934e7306707",
+    "command-8f24f3f8b19a",
+    "command-4dc43424ea64",
+    "command-de8eb8da8bdf",
+    "command-c7efcd73cc68",
+    "command-f879e6babd3d"
+  ],
+  "summary": "Imports Azure DevOps REST API or TFS work items into workflow-owned Markdown folders, then deterministically validates and summarizes imported evidence with stable JSON and Markdown output.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/azure-devops-ticket-intake"
+  ],
+  "version": "1.0.0"
+}

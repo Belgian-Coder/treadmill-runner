@@ -1,0 +1,242 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/sync_references.py"
+      ],
+      "effects": [
+        "network"
+      ],
+      "id": "command-8202995c99c9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/external-reference-manager",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-e90e46d37610",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/external-reference-manager",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-bbc0aae93a2e",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "external-reference-manager",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-239b2d3f2855",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/external-reference-manager/scripts/sync_references.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c53d21b29c0b",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/external-reference-manager/scripts/sync_references.py",
+        "--manifest",
+        "automations/reference-refresh/artifacts/references/reference-manifest.json",
+        "--output-root",
+        "automations/reference-refresh/artifacts/references",
+        "--workspace-root",
+        ".",
+        "--no-fetch",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b348bdd5255c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/external-reference-manager/scripts/sync_references.py",
+        "--manifest",
+        "automations/reference-refresh/artifacts/references/reference-manifest.json",
+        "--output-root",
+        "automations/reference-refresh/artifacts/references",
+        "--workspace-root",
+        ".",
+        "--dry-run",
+        "--no-fetch",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-cacfe0b74525",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs the stdlib-only reference synchronizer, read-only report/dry-run modes, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "Git",
+      "purpose": "Inspects local mirrors in report mode and clones/fetches/pins external repositories only in approved write mode.",
+      "version": "2.30+"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "No credentials in manifests; live fetches rely on local Git credential manager or environment-supported authentication.",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "external-reference-manager",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "inventory-summary",
+      "changed-files-summary",
+      "duplicate-overlap-detection",
+      "handoff-draft"
+    ]
+  },
+  "name": "external-reference-manager",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/external-reference-manager"
+    ],
+    "introduced": "2026-05-06",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/external-reference-manager-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Covers fixture Git repositories, deterministic reports, pin generation, cards, and dirty checkout protection."
+      }
+    ]
+  },
+  "related_modules": [
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": true,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-e90e46d37610",
+    "command-bbc0aae93a2e",
+    "command-239b2d3f2855",
+    "command-6066588d4453",
+    "command-c53d21b29c0b",
+    "command-b348bdd5255c",
+    "command-cacfe0b74525"
+  ],
+  "summary": "Clones, fetches, pins, and summarizes external Git references into compact cards and reproducible manifests for workflow use.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/external-reference-manager"
+  ],
+  "version": "1.0.0"
+}

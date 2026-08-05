@@ -1,0 +1,151 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/treadmillrunner-protocol-evidence",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-validate-protocol-evidence",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/treadmillrunner-protocol-evidence",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-inspect-protocol-evidence",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "treadmillrunner-protocol-evidence",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-budget-protocol-evidence",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [],
+  "extensions": {
+    "treadmillrunner-delivery/protocol-evidence": {
+      "inputs": [
+        "bounded evidence question",
+        "approved docs/project/protocol-evidence path",
+        "project-owned fixture and validation commands",
+        "stage-specific hardware approval record"
+      ],
+      "outputs": [
+        "sanitized provenance evidence",
+        "golden fixture and CRC evidence",
+        "hardware-stage result or explicit skip",
+        "unsupported claims and next safe action"
+      ]
+    }
+  },
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none; BLE pairing secrets, account credentials, and device identifiers must not be retained",
+    "data_copied_locally": [
+      "owner-provided sanitized BLE captures",
+      "project-authored golden fixture bytes",
+      "approved non-motion hardware observations"
+    ],
+    "source_systems": [
+      "explicitly approved locally connected treadmill"
+    ]
+  },
+  "id": "treadmillrunner-protocol-evidence",
+  "inputs": [
+    "bounded protocol evidence question",
+    "owner-provided sanitized captures",
+    "project-authored golden fixtures",
+    "project-owned decoder and CRC tests",
+    "stage-specific hardware approval when applicable"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": []
+  },
+  "name": "treadmillrunner-protocol-evidence",
+  "outputs": [
+    "docs/project/protocol-evidence/provenance records",
+    "docs/project/protocol-evidence/sanitization records",
+    "docs/project/protocol-evidence/golden fixture and CRC validation evidence",
+    "docs/project/protocol-evidence/hardware validation evidence when explicitly approved"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-08-02",
+    "license": "repository",
+    "source": "Independently designed for this repository; no third-party implementation code copied or translated.",
+    "updated": "2026-08-02"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/treadmillrunner-protocol-evidence-evals.json"
+    ]
+  },
+  "related_modules": [
+    "dotnet-engineering",
+    "dotnet-quality-gates",
+    "skill-manager"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-validate-protocol-evidence",
+    "command-inspect-protocol-evidence",
+    "command-budget-protocol-evidence"
+  ],
+  "summary": "Produces sanitized, independently authored BLE protocol provenance, golden fixture and CRC evidence, and staged non-motion hardware observations.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/treadmillrunner-protocol-evidence"
+  ],
+  "version": "1.0.0"
+}

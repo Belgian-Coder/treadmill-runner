@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "tool": "workflow-manager.runtime-observation",
+  "workflow": "story-flow",
+  "run_id": "run-a",
+  "phase": "execute",
+  "host": {
+    "attested": true,
+    "source": "host-runtime",
+    "surface": "codex",
+    "capabilities": [
+      "model-selection",
+      "deliberation-control",
+      "native-subagents",
+      "complete-thread-tree",
+      "complete-usage-telemetry",
+      "isolated-worker-runtime",
+      "context-inheritance-control",
+      "deterministic-hooks",
+      "session-resume"
+    ]
+  },
+  "model": {
+    "attested": true,
+    "source": "host-runtime",
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "observed_deliberation": "high"
+  }
+}

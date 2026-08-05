@@ -1,0 +1,272 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/compare_coverage.py"
+      ],
+      "effects": [],
+      "id": "command-61dcdc2cf987",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/export_coverage.py"
+      ],
+      "effects": [
+        "network",
+        "credentials"
+      ],
+      "id": "command-2eee4f218e24",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/export_hotspots.py"
+      ],
+      "effects": [
+        "network",
+        "credentials"
+      ],
+      "id": "command-c97c6fdc1a01",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/export_issues.py"
+      ],
+      "effects": [
+        "network",
+        "credentials"
+      ],
+      "id": "command-fef128d8f22a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/export_quality_profile.py"
+      ],
+      "effects": [
+        "network",
+        "credentials"
+      ],
+      "id": "command-b5b3af93f8ff",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_analysis.py"
+      ],
+      "effects": [],
+      "id": "command-0b25e9365158",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/sonarqube_client.py"
+      ],
+      "effects": [],
+      "id": "command-665d4d76e28b",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/sonarqube-diagnostics",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-d9194467fae6",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/sonarqube-diagnostics",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-5460aaee7fb9",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "sonarqube-diagnostics",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-7f25a610f110",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-dd297b6357da",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c3ef29d19305",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs stdlib-only SonarQube export, comparison, scanner wrapper, and self-test scripts.",
+      "version": "3.12+"
+    },
+    {
+      "name": ".NET SonarScanner",
+      "purpose": "Optional for explicit scanner publishing.",
+      "version": "project-defined"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "sonarqube-diagnostics",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary"
+    ]
+  },
+  "name": "sonarqube-diagnostics",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/sonarqube-diagnostics"
+    ],
+    "introduced": "2026-05-06",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/sonarqube-diagnostics-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Covers response normalization and coverage comparison without network access; creates temporary fixture files and is not strict no-temp/no-write safe."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": true,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "credentialed",
+    "uploads": true
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-d9194467fae6",
+    "command-5460aaee7fb9",
+    "command-7f25a610f110",
+    "command-dd297b6357da",
+    "command-c3ef29d19305"
+  ],
+  "summary": "Exports normalized SonarQube diagnostics, compares local and remote coverage, exports quality profile metadata, and wraps explicit .NET scanner publishing with credential-aware boundaries.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/sonarqube-diagnostics"
+  ],
+  "version": "1.0.0"
+}

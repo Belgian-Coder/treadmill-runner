@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tool": "skill-manager.corrections",
+  "review_state": "reviewed",
+  "reviewed": true,
+  "reviewed_by": "repository-owner",
+  "reviewed_events_sha256": "f6b48bffdbe37a0b60b12663fcca67f7ecac317e349911cb963992e6ffbb3178",
+  "events": [
+    {
+      "id": "unknown-copilot-model-stays-generic",
+      "target_kind": "repo",
+      "target": "harness",
+      "task_class": "bounded-implementation",
+      "host_surface": "github-copilot",
+      "model_provider": "unknown",
+      "model": "",
+      "semantic_profile": "implementation-medium",
+      "prompt": "Resolve the execution route when Copilot does not attest the underlying model.",
+      "incorrect_behavior": "Assume an OpenAI model and apply an OpenAI-specific prompt overlay.",
+      "correct_behavior": "Keep the implementation semantic profile, use the generic model overlay, and enable only attested Copilot surface capabilities.",
+      "acceptance_criteria": [
+        "The selected model overlay is generic-v1.",
+        "The host surface remains github-copilot.",
+        "The effective execution mode is serial-active-model unless route identity is attested."
+      ],
+      "source_refs": [
+        "docs/reference/model-compatibility-and-routing.md"
+      ]
+    }
+  ]
+}

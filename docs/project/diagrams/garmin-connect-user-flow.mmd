@@ -1,0 +1,17 @@
+sequenceDiagram
+  participant Runner
+  participant UI as Profile UI
+  participant Gateway
+  participant Garmin
+  participant Queue as Durable outbox
+
+  Runner->>UI: Connect Garmin
+  UI->>Gateway: Start profile-bound OAuth
+  Gateway->>Gateway: Hash state, protect PKCE verifier
+  Gateway-->>Runner: Redirect to Garmin consent
+  Garmin-->>Gateway: Authorization code + state
+  Gateway->>Gateway: Consume state once, exchange code, protect tokens
+  Gateway->>Queue: Enqueue current workouts, plans, calendar
+  Queue->>Garmin: Publish with idempotency key
+  Garmin-->>Queue: Remote identifier
+  Queue-->>UI: Synced status

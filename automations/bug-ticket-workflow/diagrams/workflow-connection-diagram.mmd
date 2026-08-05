@@ -1,0 +1,10 @@
+graph TD;
+  workflow["bug-ticket-workflow"] --> ticket["ticket intake evidence"];
+  workflow --> metadata["metadata contract"];
+  workflow --> contextPacket["context packet"];
+  workflow --> planDoc["plan.md"];
+  planDoc --> planCheck["workflow plan-check"];
+  workflow --> quality["quality profile script"];
+  planDoc --> diagrams["process, connection, and ERD diagrams"];
+  quality --> evidence["validation evidence"];
+  planCheck --> evidence;

@@ -1,0 +1,855 @@
+{
+  "schema_version": 3,
+  "host_guidance": [
+    "Choose the semantic profile from task consequence and phase before considering a host or model.",
+    "Resolve model prompt delivery from trusted observed model-provider identity; unknown models use generic-v1.",
+    "Resolve caching, continuation, orchestration, subagents, and usage handling from trusted host-surface capabilities, never from the model name.",
+    "Codex, GitHub Copilot, Claude Code, direct model APIs, and local AI are first-class surfaces; none is a fallback class for another.",
+    "Missing identity, capability, telemetry, or promotion evidence forces generic prompt delivery and serial active-model execution."
+  ],
+  "host_support": [
+    {
+      "host": "codex",
+      "worker_selection": "benchmark-gated",
+      "model_selection": "attestation-required",
+      "fallback": "serial-active-model",
+      "mitigation": "Use AGENTS.md and .agents/skills; enable native subagents only when capability and complete thread-tree evidence are attested."
+    },
+    {
+      "host": "github-copilot",
+      "worker_selection": "capability-gated",
+      "model_selection": "attestation-required",
+      "fallback": "serial-active-model",
+      "mitigation": "Use repository instructions and .agents/skills; enable custom-agent or subagent behavior only on an attested supporting surface."
+    },
+    {
+      "host": "claude-code",
+      "worker_selection": "capability-gated",
+      "model_selection": "attestation-required",
+      "fallback": "serial-active-model",
+      "mitigation": "Use CLAUDE.md and generated Claude skills; enable subagents or hooks only when the runtime attests them."
+    },
+    {
+      "host": "openai-responses-api",
+      "worker_selection": "capability-gated",
+      "model_selection": "attestation-required",
+      "fallback": "direct-tools",
+      "mitigation": "Enable prompt caching, reasoning continuation, or hosted programmatic orchestration only when each capability is attested for the request path."
+    },
+    {
+      "host": "anthropic-messages-api",
+      "worker_selection": "capability-gated",
+      "model_selection": "attestation-required",
+      "fallback": "direct-tools",
+      "mitigation": "Enable API prompt caching or other provider features only when the direct Anthropic surface reports the required capability and usage detail."
+    },
+    {
+      "host": "local-ai",
+      "worker_selection": "validation-triage-only",
+      "model_selection": "repo-local-default",
+      "fallback": "paid-model",
+      "mitigation": "Use local AI for declared advisory tasks; deterministic command output remains authoritative."
+    },
+    {
+      "host": "unknown",
+      "worker_selection": "unsupported",
+      "model_selection": "unsupported",
+      "fallback": "serial-active-model",
+      "mitigation": "Keep the semantic profile, use generic-v1, call tools directly, and record unavailable capabilities explicitly."
+    }
+  ],
+  "surface_adapters": {
+    "generic-v1": {
+      "host_surfaces": [
+        "unknown"
+      ],
+      "instruction_surfaces": [
+        "AGENTS.md"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {},
+      "capability_requirements": {}
+    },
+    "codex-v1": {
+      "host_surfaces": [
+        "codex"
+      ],
+      "instruction_surfaces": [
+        "AGENTS.md",
+        ".agents/skills"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {
+        "context-inheritance-control": "controlled-worker-context",
+        "native-subagents": "native-subagents",
+        "session-resume": "host-session-resume"
+      },
+      "capability_requirements": {
+        "native-subagents": [
+          "complete-thread-tree",
+          "complete-usage-telemetry",
+          "isolated-worker-runtime",
+          "context-inheritance-control"
+        ]
+      }
+    },
+    "github-copilot-v1": {
+      "host_surfaces": [
+        "github-copilot"
+      ],
+      "instruction_surfaces": [
+        ".github/copilot-instructions.md",
+        "AGENTS.md",
+        ".agents/skills"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "delivery_directive": "Keep repository requests specific, include relevant examples, name required validation, and never infer the underlying model.",
+      "capability_modes": {
+        "context-inheritance-control": "controlled-worker-context",
+        "native-subagents": "native-subagents",
+        "session-resume": "host-session-resume"
+      },
+      "capability_requirements": {
+        "native-subagents": [
+          "complete-thread-tree",
+          "complete-usage-telemetry",
+          "isolated-worker-runtime",
+          "context-inheritance-control"
+        ]
+      }
+    },
+    "claude-code-v1": {
+      "host_surfaces": [
+        "claude-code"
+      ],
+      "instruction_surfaces": [
+        ".claude/CLAUDE.md",
+        ".claude/rules",
+        ".claude/skills"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {
+        "context-inheritance-control": "controlled-worker-context",
+        "deterministic-hooks": "deterministic-hooks",
+        "native-subagents": "native-subagents",
+        "session-resume": "host-session-resume"
+      },
+      "capability_requirements": {
+        "native-subagents": [
+          "complete-thread-tree",
+          "complete-usage-telemetry",
+          "isolated-worker-runtime",
+          "context-inheritance-control"
+        ]
+      }
+    },
+    "openai-responses-v1": {
+      "host_surfaces": [
+        "openai-responses-api"
+      ],
+      "instruction_surfaces": [
+        "api-request"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {
+        "hosted-program-orchestration": "hosted-program",
+        "prompt-cache-control": "explicit-prompt-cache",
+        "prompt-cache-telemetry": "per-call-cache-telemetry",
+        "reasoning-continuation": "provider-reasoning-continuation"
+      },
+      "capability_requirements": {}
+    },
+    "anthropic-messages-v1": {
+      "host_surfaces": [
+        "anthropic-messages-api"
+      ],
+      "instruction_surfaces": [
+        "api-request"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {
+        "prompt-cache-control": "explicit-prompt-cache",
+        "prompt-cache-telemetry": "per-call-cache-telemetry"
+      },
+      "capability_requirements": {}
+    },
+    "local-ai-v1": {
+      "host_surfaces": [
+        "local-ai"
+      ],
+      "instruction_surfaces": [
+        ".agents/skills",
+        "broker-packet"
+      ],
+      "base_orchestration_mode": "direct-tools",
+      "capability_modes": {},
+      "capability_requirements": {}
+    }
+  },
+  "model_compatibility": {
+    "selection_mode": "attestation-required",
+    "unknown_model_policy": "generic-overlay-serial-active-model",
+    "portable_deliberation_tiers": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "verified_at": "2026-07-19",
+    "stale_after_days": 30,
+    "sources": [
+      {
+        "id": "openai-model-catalog",
+        "url": "https://developers.openai.com/api/docs/models",
+        "proves": "Public OpenAI model names and current catalog roles.",
+        "does_not_prove": "Availability, selection, or transport capabilities on the active host."
+      },
+      {
+        "id": "openai-gpt-5-5-guide",
+        "url": "https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.5",
+        "proves": "GPT-5.5-specific prompt-delivery guidance.",
+        "does_not_prove": "That GPT-5.5 is selected or that Responses API features are exposed by the host."
+      },
+      {
+        "id": "openai-gpt-5-6-guide",
+        "url": "https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6",
+        "proves": "GPT-5.6 prompt-delivery and migration guidance.",
+        "does_not_prove": "That a GPT-5.6 model is selected or that Responses API features are exposed by the host."
+      },
+      {
+        "id": "anthropic-prompting-guide",
+        "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices",
+        "proves": "Current prompt-delivery guidance for Claude model families.",
+        "does_not_prove": "That Claude Code or another host selected a model or exposed direct Anthropic API controls."
+      },
+      {
+        "id": "anthropic-model-catalog",
+        "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "proves": "Public Anthropic model family names and current catalog roles.",
+        "does_not_prove": "Availability, selection, or transport capabilities on the active host."
+      },
+      {
+        "id": "github-copilot-best-practices",
+        "url": "https://docs.github.com/en/copilot/get-started/best-practices",
+        "proves": "Host-level Copilot guidance for specific requests, examples, and validation.",
+        "does_not_prove": "The underlying model identity or per-request transport capabilities."
+      }
+    ],
+    "aliases": [
+      {
+        "model_provider": "openai",
+        "alias": "gpt-5.6",
+        "canonical_model": "gpt-5.6-sol"
+      }
+    ],
+    "models": [
+      {
+        "model_provider": "openai",
+        "model": "gpt-5.5",
+        "overlay_id": "openai-5.5-v1",
+        "promotion_state": "existing-default"
+      },
+      {
+        "model_provider": "openai",
+        "model": "gpt-5.6-sol",
+        "overlay_id": "openai-5.6-v1",
+        "promotion_state": "experimental"
+      },
+      {
+        "model_provider": "openai",
+        "model": "gpt-5.6-terra",
+        "overlay_id": "openai-5.6-v1",
+        "promotion_state": "experimental"
+      },
+      {
+        "model_provider": "openai",
+        "model": "gpt-5.6-luna",
+        "overlay_id": "openai-5.6-v1",
+        "promotion_state": "experimental"
+      },
+      {
+        "model_provider": "anthropic",
+        "model": "claude-opus-4.1",
+        "overlay_id": "anthropic-claude-v1",
+        "promotion_state": "existing-default"
+      },
+      {
+        "model_provider": "anthropic",
+        "model": "claude-sonnet-4.5",
+        "overlay_id": "anthropic-claude-v1",
+        "promotion_state": "existing-default"
+      },
+      {
+        "model_provider": "anthropic",
+        "model": "claude-haiku-4.5",
+        "overlay_id": "anthropic-claude-v1",
+        "promotion_state": "existing-default"
+      }
+    ]
+  },
+  "model_prompt_overlays": {
+    "generic-v1": {
+      "version": 1,
+      "generation": "generic",
+      "promotion_state": "portable-default",
+      "instructions": [
+        "Follow the semantic task profile exactly.",
+        "Use only capabilities attested for the current host surface.",
+        "Do not change tools, authority, output contract, delegation, or validation requirements."
+      ],
+      "source_refs": []
+    },
+    "openai-5.5-v1": {
+      "version": 1,
+      "generation": "gpt-5.5",
+      "promotion_state": "existing-default",
+      "instructions": [
+        "State the expected outcome, success criteria, allowed side effects, evidence rules, output shape, and stopping rule.",
+        "Leave the solution path to the model unless the product requires an exact process; keep tool and delegation expectations explicit.",
+        "Do not change tools, authority, output contract, delegation, or validation requirements."
+      ],
+      "source_refs": [
+        "openai-gpt-5-5-guide"
+      ]
+    },
+    "openai-5.6-v1": {
+      "version": 1,
+      "generation": "gpt-5.6",
+      "promotion_state": "experimental",
+      "instructions": [
+        "Keep the prompt lean and state each instruction once; avoid repeated scaffolding.",
+        "Lead with the conclusion and retain required evidence, material caveats, and the next action.",
+        "Do not change tools, authority, output contract, delegation, or validation requirements."
+      ],
+      "source_refs": [
+        "openai-gpt-5-6-guide"
+      ]
+    },
+    "anthropic-claude-v1": {
+      "version": 1,
+      "generation": "claude",
+      "promotion_state": "existing-default",
+      "instructions": [
+        "Describe the outcome, relevant context, constraints, and verifiable success criteria clearly.",
+        "Use examples or explicit output structure when they materially reduce ambiguity.",
+        "Do not change tools, authority, output contract, delegation, or validation requirements."
+      ],
+      "source_refs": [
+        "anthropic-prompting-guide"
+      ]
+    }
+  },
+  "execution_modes": {
+    "serial": {
+      "authority": "default",
+      "lifecycle_owner": "current task",
+      "write_policy": "shared workspace writes remain serial",
+      "required_evidence": [
+        "task or run identifier",
+        "observed host and model or explicit unattested fallback"
+      ],
+      "fallback": "serial"
+    },
+    "direct-child-agent": {
+      "authority": "explicit subagent request or workflow owner declaration",
+      "lifecycle_owner": "parent task",
+      "write_policy": "read-only unless declared isolation and disjoint write scopes are proven",
+      "required_evidence": [
+        "parent and direct-child identifiers",
+        "observed host surface, model provider, and model",
+        "complete direct-child usage tree",
+        "isolation and cleanup evidence for writes"
+      ],
+      "fallback": "serial active-model worker"
+    },
+    "independent-thread": {
+      "authority": "explicit user request for separately visible durable work",
+      "lifecycle_owner": "user-owned task",
+      "write_policy": "isolated workspace and resources required before concurrent writes",
+      "required_evidence": [
+        "thread identifier and user authorization",
+        "observed host surface, model provider, and model",
+        "handoff and validation ownership",
+        "aggregate usage across manager and workers"
+      ],
+      "fallback": "direct child or serial worker in the current task"
+    }
+  },
+  "risk_routing": {
+    "status": "benchmark-gated",
+    "selection_mode": "declarative-manual",
+    "source_refs": [
+      "openai-model-catalog",
+      "anthropic-model-catalog"
+    ],
+    "verified_at": "2026-07-19",
+    "availability_boundary": "Catalog entries are guidance, not proof that a host selected a model or exposed a transport capability; trusted runtime observation remains required.",
+    "selection_basis": [
+      "blast radius and reversibility",
+      "security data migration and public-contract consequence",
+      "scope clarity and bounded acceptance criteria",
+      "repeated deterministic failure or conflicting evidence"
+    ],
+    "routes": [
+      {
+        "id": "high-consequence",
+        "when_any": [
+          "security or privacy boundary",
+          "data migration or irreversible change",
+          "public contract or architecture decision",
+          "conflicting evidence after focused validation"
+        ],
+        "profiles": [
+          "planning-high",
+          "review-high"
+        ]
+      },
+      {
+        "id": "simple-bounded",
+        "when_all": [
+          "clear reversible write scope with no security privacy migration architecture or public-contract consequence",
+          "one owning deterministic verifier is known",
+          "one serial implementation pass is sufficient unless failure or new evidence changes scope"
+        ],
+        "profiles": [
+          "implementation-low"
+        ]
+      },
+      {
+        "id": "bounded-implementation",
+        "when_all": [
+          "approved bounded write scope",
+          "acceptance criteria and verifier are known"
+        ],
+        "profiles": [
+          "implementation-medium",
+          "implementation-mini"
+        ]
+      },
+      {
+        "id": "coordination-and-evidence",
+        "when_all": [
+          "read-only or handoff-only work",
+          "no architecture or final validation authority"
+        ],
+        "profiles": [
+          "coordination-low-cost",
+          "evidence-mini",
+          "handoff-mini"
+        ]
+      }
+    ],
+    "rules": [
+      "Route by consequence and task shape, not perceived difficulty, host name, or model nickname.",
+      "A model overlay cannot alter authority, tools, validation, or surface capabilities.",
+      "A surface adapter cannot infer model identity or weaken the semantic contract.",
+      "Simple bounded work stays serial, uses one scoped implementation pass and one owning verifier, then stops unless failure or new evidence changes scope.",
+      "Independent threads are opt-in user-owned workstreams, not a replacement for requested subagents.",
+      "Promotion evidence is scoped to the measured host surface, model provider, task class, and execution mode."
+    ],
+    "promotion_gate": "Provider-backed repeated trials must show noninferior quality and rework for each promoted host surface and task class."
+  },
+  "validation_authority": {
+    "authoritative": [
+      "deterministic command exit codes",
+      "test output",
+      "build output",
+      "lint/static-analysis output",
+      "recorded workflow evidence"
+    ],
+    "advisory": [
+      "local-AI validation triage",
+      "paid-model validation triage",
+      "model-written summaries of validation output"
+    ],
+    "required_record": "run.json checks and validation evidence must record host surface, model-provider identity or fallback, command results, skipped checks, and unavailable capabilities."
+  },
+  "surface_route_sets": {
+    "planning-high": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "high"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "high"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-opus-4.1",
+          "deliberation_tier": "high"
+        }
+      ],
+      "openai-responses-api": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "high"
+        }
+      ],
+      "anthropic-messages-api": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-opus-4.1",
+          "deliberation_tier": "high"
+        }
+      ]
+    },
+    "implementation-medium": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-sonnet-4.5",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "openai-responses-api": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "anthropic-messages-api": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-sonnet-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "implementation-low": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.6-luna",
+          "deliberation_tier": "low"
+        },
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.6-terra",
+          "deliberation_tier": "low"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "low"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-haiku-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "implementation-mini": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        },
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.5",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-haiku-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "validation-local": {
+      "local-ai": [
+        {
+          "model_provider": "local",
+          "agent_type": "validator",
+          "model": "repo-local-default",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "validation-mini": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-haiku-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "evidence-mini": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "medium"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-haiku-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "coordination-low-cost": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.6-luna",
+          "deliberation_tier": "low"
+        },
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.6-terra",
+          "deliberation_tier": "low"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "worker",
+          "model": "gpt-5.4-mini",
+          "deliberation_tier": "low"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "worker",
+          "model": "claude-haiku-4.5",
+          "deliberation_tier": "medium"
+        }
+      ]
+    },
+    "review-high": {
+      "codex": [
+        {
+          "model_provider": "openai",
+          "agent_type": "reviewer",
+          "model": "gpt-5.6-sol",
+          "deliberation_tier": "high"
+        },
+        {
+          "model_provider": "openai",
+          "agent_type": "reviewer",
+          "model": "gpt-5.6-terra",
+          "deliberation_tier": "high"
+        }
+      ],
+      "github-copilot": [
+        {
+          "model_provider": "openai",
+          "agent_type": "reviewer",
+          "model": "gpt-5.6-sol",
+          "deliberation_tier": "high"
+        }
+      ],
+      "claude-code": [
+        {
+          "model_provider": "anthropic",
+          "agent_type": "reviewer",
+          "model": "claude-opus-4.1",
+          "deliberation_tier": "high"
+        }
+      ]
+    }
+  },
+  "profile_sets": {
+    "portable-default": {
+      "planning-high": {
+        "purpose": "Plan architecture, scope, risks, validation, and approval gates.",
+        "prompt_adapter": "planning",
+        "context_budget": "expanded",
+        "tool_policy": "read-only",
+        "expected_output": "Decision-ready plan with scope, risks, validation, and approval gate.",
+        "validation_gate": "approval-required",
+        "route_set": "planning-high"
+      },
+      "implementation-medium": {
+        "purpose": "Apply approved code, docs, or workflow changes in a bounded write scope.",
+        "prompt_adapter": "implementation",
+        "context_budget": "standard",
+        "tool_policy": "bounded-write",
+        "expected_output": "Scoped patch with changed paths and evidence notes.",
+        "validation_gate": "record-evidence",
+        "route_set": "implementation-medium"
+      },
+      "implementation-low": {
+        "purpose": "Apply one clear, reversible, low-consequence change in a single serial pass; run one owning deterministic verifier and stop unless failure or new evidence changes scope.",
+        "prompt_adapter": "implementation",
+        "context_budget": "lean",
+        "tool_policy": "bounded-write",
+        "expected_output": "Minimal scoped patch plus one owning verifier result; escalate ambiguity, consequence, or repeated failure.",
+        "validation_gate": "deterministic-checks",
+        "route_set": "implementation-low"
+      },
+      "implementation-mini": {
+        "purpose": "Apply bounded approved changes using the cost-conscious implementation route; escalate for ambiguity or repeated deterministic failures.",
+        "prompt_adapter": "implementation",
+        "context_budget": "standard",
+        "tool_policy": "bounded-write",
+        "expected_output": "Scoped patch with changed paths and escalation evidence.",
+        "validation_gate": "record-evidence",
+        "route_set": "implementation-mini"
+      },
+      "test-authoring-medium": {
+        "purpose": "Write meaningful unit, integration, or regression tests when expected behavior, fixtures, or edge cases need reasoning.",
+        "prompt_adapter": "test-authoring",
+        "context_budget": "standard",
+        "tool_policy": "bounded-write",
+        "expected_output": "Behavior-defining tests plus expected verifier command.",
+        "validation_gate": "deterministic-checks",
+        "route_set": "implementation-medium"
+      },
+      "validation-local": {
+        "purpose": "Run deterministic checks and triage validation evidence with local AI first; use a paid model only when local triage is unavailable or inconclusive.",
+        "prompt_adapter": "validation",
+        "context_budget": "lean",
+        "tool_policy": "deterministic-validation",
+        "expected_output": "First failing fact or clean validation evidence.",
+        "validation_gate": "deterministic-checks",
+        "route_set": "validation-local"
+      },
+      "validation-mini": {
+        "purpose": "Run tests, inspect deterministic validation output, and identify the first failing fact.",
+        "prompt_adapter": "validation",
+        "context_budget": "lean",
+        "tool_policy": "deterministic-validation",
+        "expected_output": "First failing fact or clean validation evidence.",
+        "validation_gate": "deterministic-checks",
+        "route_set": "validation-mini"
+      },
+      "evidence-mini": {
+        "purpose": "Collect intake, context, benchmark, or handoff evidence without broad code edits.",
+        "prompt_adapter": "evidence",
+        "context_budget": "lean",
+        "tool_policy": "evidence-only",
+        "expected_output": "Compact evidence packet with sources and skipped checks.",
+        "validation_gate": "record-evidence",
+        "route_set": "evidence-mini"
+      },
+      "handoff-mini": {
+        "purpose": "Prepare concise final reports, handoffs, and follow-up classifications.",
+        "prompt_adapter": "handoff",
+        "context_budget": "lean",
+        "tool_policy": "handoff-only",
+        "expected_output": "Concise handoff with status, evidence, blockers, risks.",
+        "validation_gate": "handoff-contract",
+        "route_set": "evidence-mini"
+      },
+      "coordination-low-cost": {
+        "purpose": "Route, monitor, and summarize bounded work without implementation, architecture, or final-validation authority.",
+        "prompt_adapter": "evidence",
+        "context_budget": "lean",
+        "tool_policy": "read-only",
+        "expected_output": "Routing decision with task IDs, model attestation, budget status, evidence, and escalation trigger.",
+        "validation_gate": "record-evidence",
+        "route_set": "coordination-low-cost"
+      },
+      "review-high": {
+        "purpose": "Review architecture, security, public contracts, migrations, or conflicting evidence at high consequence boundaries.",
+        "prompt_adapter": "validation",
+        "context_budget": "expanded",
+        "tool_policy": "read-only",
+        "expected_output": "Risk-ranked review with direct evidence, first material defect, unresolved assumptions, and required reruns.",
+        "validation_gate": "fresh-validation",
+        "route_set": "review-high"
+      },
+      "general-medium": {
+        "purpose": "Do normal workflow work when a phase does not justify a specialized worker.",
+        "prompt_adapter": "general",
+        "context_budget": "standard",
+        "tool_policy": "bounded-write",
+        "expected_output": "Current phase result with evidence and next action.",
+        "validation_gate": "record-evidence",
+        "route_set": "implementation-medium"
+      }
+    }
+  }
+}

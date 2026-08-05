@@ -1,0 +1,814 @@
+@page "/calendar"
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject ActiveProfileState ActiveProfile
+@inject IJSRuntime JS
+
+<PageTitle>Calendar · TreadmillRunner</PageTitle>
+
+<div class="planning-page">
+    <header class="planning-hero">
+        <div><p class="eyebrow">Training rhythm</p><h1>Calendar</h1><p>Plan recurring runs, then move one session or shift everything that follows.</p></div>
+        <button class="primary-action" type="button" @onclick="ToggleSeriesForm">@(showSeriesForm ? "Close editor" : "New schedule")</button>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="notice" role="status">@message</p>
+    }
+
+    @if (activeProfileId is null)
+    {
+        <section class="planning-panel empty-state"><h2>Choose an active profile first</h2><p>Calendar choices belong to a household profile.</p><a class="primary-action" href="/profiles">Choose profile</a></section>
+    }
+    else
+    {
+        @if (showSeriesForm)
+        {
+            <section class="planning-panel" aria-labelledby="series-title">
+                <div class="panel-heading"><h2 id="series-title">Weekly schedule</h2><span>Europe/Brussels</span></div>
+                <EditForm Model="series" OnValidSubmit="SaveSeriesAsync" FormName="calendar-series-form">
+                    <div class="form-grid">
+                        <label class="field field--wide">Schedule name<input @bind="series.Name" required maxlength="160" /></label>
+                        <label class="field">Starts<input @bind="series.StartDate" type="date" required /></label>
+                        <label class="field">Ends (optional)<input @bind="series.EndDate" type="date" /></label>
+                        <label class="field">Repeat every (weeks)<input @bind="series.IntervalWeeks" type="number" min="1" max="52" /></label>
+                        <label class="field">Primary workout<select @bind="series.PrimaryRevisionId" required><option value="">Choose workout</option>@foreach (WorkoutSummaryView workout in workouts){<option value="@workout.CurrentRevisionId">@workout.Name · r@(workout.CurrentRevisionNumber)</option>}</select></label>
+                        <label class="field">Alternative<select @bind="series.AlternativeRevisionId"><option value="">None</option>@foreach (WorkoutSummaryView workout in workouts){<option value="@workout.CurrentRevisionId">@workout.Name · r@(workout.CurrentRevisionNumber)</option>}</select></label>
+                    </div>
+                    <fieldset class="weekday-picker"><legend>Training days</legend>
+                        @foreach ((string label, int flag) in Weekdays)
+                        {
+                            <label><input type="checkbox" checked="@series.WeekdayFlags.Contains(flag)" @onchange="args => ToggleWeekday(flag, args)" />@label</label>
+                        }
+                    </fieldset>
+                    <details class="exception-editor">
+                        <summary>Add an exception</summary>
+                        <div class="form-grid">
+                            <label class="field">Date<input @bind="series.ExceptionDate" type="date" /></label>
+                            <label class="field">Action<select @bind="series.ExceptionKind"><option value="Skip">Skip</option><option value="Replace">Replace</option><option value="Add">Add</option></select></label>
+                        </div>
+                        <p class="field-help">Replace/Add use the selected alternative workout. Skip leaves the day empty.</p>
+                    </details>
+                    <div class="form-actions"><button class="primary-action" type="submit" disabled="@savingSeries">@(savingSeries ? "Saving…" : "Save schedule")</button></div>
+                </EditForm>
+            </section>
+        }
+
+        @if (ScheduleGroups.Count > 0)
+        {
+            <section class="schedule-overview" aria-labelledby="schedule-overview-title">
+                <div class="panel-heading"><div><p class="eyebrow">Your schedules</p><h2 id="schedule-overview-title">Workout groups</h2></div><span>@ScheduleGroups.Count active</span></div>
+                <div class="schedule-group-grid">
+                    @foreach (ScheduleGroupSummary group in ScheduleGroups)
+                    {
+                        <article class="schedule-group-card">
+                            <div><h3>@group.Name</h3><p>@SchedulePattern(group)</p></div>
+                            <dl class="compact-stats">
+                                <div><dt>Starts</dt><dd>@group.StartDate.ToString("d MMM")</dd></div>
+                                <div><dt>Workouts</dt><dd>@group.WorkoutCount</dd></div>
+                            </dl>
+                            <button class="secondary-action compact-action" type="button" @onclick="() => OpenGroupManager(group)">Manage group</button>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="planning-panel calendar-agenda-panel" aria-labelledby="range-title">
+            <div class="panel-heading calendar-heading">
+                <div><p class="eyebrow">Effective plan</p><h2 id="range-title">@visibleMonth.ToString("MMMM yyyy")</h2></div>
+                <div class="calendar-navigation" role="group" aria-label="Calendar period">
+                    <button class="secondary-action" type="button" aria-label="Previous month" @onclick="() => ChangeMonthAsync(-1)">‹</button>
+                    <button class="secondary-action" type="button" @onclick="GoToTodayAsync">Today</button>
+                    <button class="secondary-action" type="button" aria-label="Next month" @onclick="() => ChangeMonthAsync(1)">›</button>
+                </div>
+            </div>
+            @if (loading)
+            {
+                <p class="empty-state">Resolving calendar…</p>
+            }
+            else
+            {
+                <div class="calendar-agenda" aria-label="Training agenda for @visibleMonth.ToString("MMMM yyyy")">
+                    @foreach ((CalendarAgendaWeek agendaWeek, int weekIndex) in CalendarAgendaWeeks.Select((week, index) => (week, index)))
+                    {
+                        <details class="calendar-agenda-week" open="@ShouldOpenAgendaWeek(agendaWeek, weekIndex)">
+                            <summary><span>@FormatAgendaWeek(agendaWeek)</span><strong>@agendaWeek.WorkoutCount scheduled</strong></summary>
+                            <div class="calendar-agenda-week__days">
+                                @foreach (CalendarAgendaDay agendaDay in agendaWeek.Days)
+                                {
+                                    <article class="calendar-agenda-day @(agendaDay.Date == DateOnly.FromDateTime(DateTime.Today) ? "calendar-agenda-day--today" : null)">
+                                        <time datetime="@agendaDay.Date.ToString("yyyy-MM-dd")"><strong>@agendaDay.Date.ToString("ddd")</strong><span>@agendaDay.Date.ToString("d MMM")</span></time>
+                                        <div class="calendar-agenda-day__workouts">
+                                    @foreach (CalendarOptionView option in agendaDay.Day.Options)
+                                    {
+                                        <div class="calendar-option-shell">
+                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(agendaDay.Day, option)" aria-pressed="@option.IsSelected">
+                                                <span>@option.WorkoutName</span><small>@option.ScheduleName · revision @option.RevisionNumber</small>
+                                            </button>
+                                            <button class="calendar-option-manage" type="button" @onclick="() => OpenSessionManager(agendaDay.Date, option)" aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">•••</button>
+                                        </div>
+                                    }
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+                <div class="calendar-month" role="grid" aria-label="Training calendar for @visibleMonth.ToString("MMMM yyyy")">
+                    @foreach (string weekday in CalendarWeekdays)
+                    {
+                        <div class="calendar-weekday" role="columnheader">@weekday</div>
+                    }
+                    @foreach (DateOnly date in CalendarDates)
+                    {
+                        CalendarDayView? day = DayFor(date);
+                        <article class="calendar-cell @CalendarCellClass(date)" role="gridcell" aria-label="@date.ToString("dddd d MMMM")">
+                            <time datetime="@date.ToString("yyyy-MM-dd")"><span>@date.Day</span></time>
+                            @if (day is not null)
+                            {
+                                <div class="calendar-cell__workouts">
+                                @foreach (CalendarOptionView option in day.Options.Take(2))
+                                {
+                                    <div class="calendar-option-shell">
+                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(day, option)" aria-pressed="@option.IsSelected">
+                                            <span>@option.WorkoutName</span><small>r@option.RevisionNumber</small>
+                                        </button>
+                                        <button class="calendar-option-manage" type="button" @onclick="() => OpenSessionManager(date, option)" aria-label="Manage @option.WorkoutName on @date.ToString("d MMMM")">•••</button>
+                                    </div>
+                                }
+                                @if (day.Options.Count > 2)
+                                {
+                                    <span class="calendar-more">+@(day.Options.Count - 2) more</span>
+                                 }
+                                 </div>
+                            }
+                        </article>
+                    }
+                </div>
+                @if (calendar?.Days.Count is not > 0)
+                {
+                    <p class="empty-state">No workouts are planned this month. Create a weekly schedule to begin.</p>
+                }
+            }
+        </section>
+    }
+</div>
+
+@if (managedSession is not null)
+{
+    <div id="schedule-dialog-backdrop" class="schedule-dialog-backdrop" @onclick="CloseManagerAsync">
+        <section class="schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="schedule-dialog-title" @onclick:stopPropagation="true">
+            <div class="panel-heading">
+                <div><p class="eyebrow">@managedSession.ScheduleName</p><h2 id="schedule-dialog-title">@(managedSession.IsWholeGroup ? "Manage workout group" : managedSession.WorkoutName)</h2></div>
+                <button class="text-action" type="button" @onclick="CloseManagerAsync" aria-label="Close schedule manager" autofocus>Close</button>
+            </div>
+            @if (!managedSession.IsWholeGroup)
+            {
+                <p class="schedule-dialog__summary">Scheduled for <strong>@managedSession.SourceDate.ToString("dddd d MMMM")</strong>.</p>
+                @if (managerStep == ManagerSteps.Actions)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-choice-grid" aria-label="Session actions" aria-live="polite" tabindex="-1">
+                        <button class="schedule-choice" type="button" aria-label="Move session" aria-describedby="move-session-description" @onclick="() => SetManagerStepAsync(ManagerSteps.MoveDate)">
+                            <strong>Move session</strong><span id="move-session-description">Choose another date, then decide whether later sessions move too.</span>
+                        </button>
+                        <button class="schedule-choice schedule-choice--danger" type="button" aria-label="Delete from schedule" aria-describedby="delete-schedule-description" @onclick="() => SetManagerStepAsync(ManagerSteps.DeleteScope)">
+                            <strong>Delete from schedule</strong><span id="delete-schedule-description">Remove this date or the complete workout group.</span>
+                        </button>
+                    </div>
+                }
+                else if (managerStep == ManagerSteps.MoveDate)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                        <div><p class="eyebrow">Step 1 of 2</p><h3>Choose the new date</h3></div>
+                        <label class="field">Move to<input type="date" @bind="moveTargetDate" min="@managedSession.SourceDate.AddDays(-365).ToString("yyyy-MM-dd")" max="@managedSession.SourceDate.AddDays(365).ToString("yyyy-MM-dd")" /></label>
+                        @if (moveTargetDate == managedSession.SourceDate)
+                        {
+                            <p class="field-help">Choose a date other than @managedSession.SourceDate.ToString("d MMMM").</p>
+                        }
+                        <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
+                            <button class="secondary-action" type="button" @onclick="ReturnToManagerActions">Back</button>
+                            <button class="primary-action" type="button" @onclick="ContinueToMoveScope" disabled="@(moveTargetDate == managedSession.SourceDate)">Continue</button>
+                        </div>
+                    </div>
+                }
+                else if (managerStep == ManagerSteps.MoveScope)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                        <div><p class="eyebrow">Step 2 of 2</p><h3>Should later sessions move too?</h3></div>
+                        <p class="schedule-dialog__summary">Move from <strong>@managedSession.SourceDate.ToString("d MMM")</strong> to <strong>@moveTargetDate.ToString("d MMM")</strong> (@MoveOffsetLabel).</p>
+                        <div class="schedule-choice-grid">
+                            <button class="schedule-choice" type="button" aria-label="Only this session" aria-describedby="move-one-description" @onclick="() => MoveManagedSessionAsync(false)" disabled="@scheduleActionBusy">
+                                <strong>Only this session</strong><span id="move-one-description">Every other date in @managedSession.ScheduleName stays unchanged.</span>
+                            </button>
+                            <button class="schedule-choice" type="button" aria-label="This and all later sessions" aria-describedby="move-following-description" @onclick="() => SetManagerStepAsync(ManagerSteps.ConfirmFollowingMove)" disabled="@scheduleActionBusy">
+                                <strong>This and all later sessions</strong><span id="move-following-description">Shift this session and every session after it by the same amount.</span>
+                            </button>
+                        </div>
+                        <button class="text-action" type="button" @onclick="() => SetManagerStepAsync(ManagerSteps.MoveDate)" disabled="@scheduleActionBusy">Change date</button>
+                    </div>
+                }
+                else if (managerStep == ManagerSteps.ConfirmFollowingMove)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-inline-confirm" aria-live="polite" tabindex="-1">
+                        <div><p class="eyebrow">Final confirmation</p><h3>Move this and every later session?</h3></div>
+                        <p>The group will shift @MoveOffsetLabel, beginning on <strong>@moveTargetDate.ToString("d MMM")</strong>.</p>
+                        <button class="secondary-action" type="button" @onclick="() => SetManagerStepAsync(ManagerSteps.MoveScope)" disabled="@scheduleActionBusy">Back</button>
+                        <button class="primary-action" type="button" @onclick="() => MoveManagedSessionAsync(true)" disabled="@scheduleActionBusy">Yes, move later sessions</button>
+                    </div>
+                }
+                else if (managerStep == ManagerSteps.DeleteScope)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                        <div><p class="eyebrow">Delete scope</p><h3>What should be removed?</h3></div>
+                        <div class="schedule-choice-grid">
+                            <button class="schedule-choice schedule-choice--danger" type="button" aria-label="Only this session" aria-describedby="delete-one-description" @onclick="() => SetManagerStepAsync(ManagerSteps.ConfirmSessionDelete)">
+                                <strong>Only this session</strong><span id="delete-one-description">Remove @managedSession.SourceDate.ToString("d MMMM") and keep the rest of the group.</span>
+                            </button>
+                            <button class="schedule-choice schedule-choice--danger" type="button" aria-label="Complete workout group" aria-describedby="delete-group-description" @onclick="() => SetManagerStepAsync(ManagerSteps.ConfirmGroupDelete)">
+                                <strong>Complete workout group</strong><span id="delete-group-description">Remove every current and future session in @managedSession.ScheduleName.</span>
+                            </button>
+                        </div>
+                        <button class="text-action" type="button" @onclick="ReturnToManagerActions">Cancel</button>
+                    </div>
+                }
+                else if (managerStep == ManagerSteps.ConfirmSessionDelete)
+                {
+                    <div id="schedule-dialog-stage" class="schedule-inline-confirm" aria-live="polite" tabindex="-1">
+                        <p><strong>Delete only this session?</strong> @managedSession.SourceDate.ToString("dddd d MMMM") will be removed. Completed runs stay in history.</p>
+                        <button class="secondary-action" type="button" @onclick="() => SetManagerStepAsync(ManagerSteps.DeleteScope)" disabled="@scheduleActionBusy">Back</button>
+                        <button class="primary-action danger-action" type="button" @onclick="DeleteManagedSessionAsync" disabled="@scheduleActionBusy">Yes, delete session</button>
+                    </div>
+                }
+            }
+            @if (managedSession.IsWholeGroup && managerStep != ManagerSteps.ConfirmGroupDelete)
+            {
+                <div id="schedule-dialog-stage" class="schedule-group-danger" aria-live="polite" tabindex="-1">
+                    <p>Remove this schedule and all current and future sessions. Completed runs stay in history.</p>
+                    <button class="text-action danger-action" type="button" @onclick="() => SetManagerStepAsync(ManagerSteps.ConfirmGroupDelete)">Delete complete workout group</button>
+                </div>
+            }
+            @if (managerStep == ManagerSteps.ConfirmGroupDelete)
+            {
+                <div id="schedule-dialog-stage" class="schedule-inline-confirm" aria-live="polite" tabindex="-1">
+                    <p><strong>Delete the complete workout group?</strong> All current and future sessions in @managedSession.ScheduleName will be removed. Completed runs stay in history.</p>
+                    <button class="secondary-action" type="button" @onclick="ReturnFromGroupConfirmation" disabled="@scheduleActionBusy">Back</button>
+                    <button class="primary-action danger-action" type="button" @onclick="DeleteManagedGroupAsync" disabled="@scheduleActionBusy">Yes, delete group</button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly (string Label, int Flag)[] Weekdays =
+    [
+        ("Mon", 1), ("Tue", 2), ("Wed", 4), ("Thu", 8), ("Fri", 16), ("Sat", 32), ("Sun", 64),
+    ];
+    private static readonly string[] CalendarWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private readonly CalendarSeriesForm series = new();
+    private DateOnly visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private Guid? activeProfileId;
+    private List<WorkoutSummaryView> workouts = [];
+    private List<CalendarSeriesView> calendarSeries = [];
+    private CalendarRangeView? calendar;
+    private bool initialized;
+    private bool loading = true;
+    private bool showSeriesForm;
+    private bool savingSeries;
+    private string? message;
+    private Guid pendingSeriesOperationId = Guid.NewGuid();
+    private readonly Dictionary<DateOnly, Guid> pendingSelectionOperations = [];
+    private ManagedSchedule? managedSession;
+    private DateOnly moveTargetDate;
+    private bool scheduleActionBusy;
+    private string managerStep = ManagerSteps.Actions;
+    private bool openModalPending;
+    private bool focusModalStagePending;
+    private DotNetObjectReference<Calendar>? modalReference;
+
+    private IReadOnlyList<ScheduleGroupSummary> ScheduleGroups => calendarSeries
+        .GroupBy(static item => item.ScheduleGroupId)
+        .Select(group => new ScheduleGroupSummary(
+            group.Key,
+            group.OrderBy(static item => item.StartDate).First().Name,
+            group.Min(static item => item.StartDate),
+            group.Any(static item => item.EndDate is null) ? null : group.Max(static item => item.EndDate),
+            group.SelectMany(static item => item.Alternatives).Select(static item => item.WorkoutRevisionId).Distinct().Count(),
+            group.OrderByDescending(static item => item.StartDate).First()))
+        .OrderBy(static group => group.StartDate)
+        .ToArray();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !initialized)
+        {
+            initialized = true;
+            activeProfileId = await ActiveProfile.GetAsync();
+            if (activeProfileId is not null)
+            {
+                workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
+                await ReloadCalendarAsync();
+            }
+
+            loading = false;
+            StateHasChanged();
+        }
+
+        if (openModalPending && managedSession is not null)
+        {
+            openModalPending = false;
+            modalReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "schedule-dialog-backdrop", modalReference);
+        }
+        else if (focusModalStagePending && managedSession is not null)
+        {
+            focusModalStagePending = false;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", "schedule-dialog-stage");
+        }
+    }
+
+    private void ToggleSeriesForm() => showSeriesForm = !showSeriesForm;
+
+    private void ToggleWeekday(int flag, ChangeEventArgs args)
+    {
+        bool selected = args.Value is bool value && value;
+        if (selected)
+        {
+            series.WeekdayFlags.Add(flag);
+        }
+        else
+        {
+            series.WeekdayFlags.Remove(flag);
+        }
+    }
+
+    private async Task SaveSeriesAsync(EditContext _)
+    {
+        if (activeProfileId is null || series.PrimaryRevisionId is null)
+        {
+            message = "Choose an active profile and primary workout.";
+            return;
+        }
+
+        savingSeries = true;
+        var alternatives = new List<CalendarAlternativeInput> { new(series.PrimaryRevisionId.Value, 0) };
+        if (series.AlternativeRevisionId is { } alternative && alternative != series.PrimaryRevisionId)
+        {
+            alternatives.Add(new CalendarAlternativeInput(alternative, 1));
+        }
+
+        List<CalendarExceptionInput> exceptions = [];
+        if (series.ExceptionDate is { } exceptionDate)
+        {
+            IReadOnlyList<CalendarAlternativeInput> exceptionAlternatives = series.ExceptionKind == "Skip"
+                ? []
+                : alternatives.Skip(1).DefaultIfEmpty(alternatives[0]).Take(1).ToArray();
+            exceptions.Add(new CalendarExceptionInput(exceptionDate, series.ExceptionKind, exceptionAlternatives));
+        }
+
+        var request = new CalendarSeriesSaveRequest(
+            pendingSeriesOperationId,
+            activeProfileId.Value,
+            series.Name,
+            "Europe/Brussels",
+            series.StartDate,
+            series.EndDate,
+            series.IntervalWeeks,
+            series.WeekdayFlags.Aggregate(0, static (current, flag) => current | flag),
+            alternatives,
+            exceptions);
+        using HttpResponseMessage response = await Http.PostAsJsonAsync("api/planning/calendar/series", request);
+        message = response.IsSuccessStatusCode ? "Schedule saved." : "The schedule could not be saved.";
+        if (response.IsSuccessStatusCode)
+        {
+            pendingSeriesOperationId = Guid.NewGuid();
+            showSeriesForm = false;
+            await ReloadCalendarAsync();
+        }
+
+        savingSeries = false;
+    }
+
+    private async Task SelectDayAsync(CalendarDayView day, CalendarOptionView option)
+    {
+        if (activeProfileId is null)
+        {
+            return;
+        }
+
+        if (!pendingSelectionOperations.TryGetValue(day.Date, out Guid operationId))
+        {
+            operationId = Guid.NewGuid();
+            pendingSelectionOperations.Add(day.Date, operationId);
+        }
+
+        using HttpResponseMessage response = await Http.PostAsJsonAsync(
+            $"api/planning/calendar/{activeProfileId}/days/{day.Date:yyyy-MM-dd}/selection",
+            new CalendarSelectionRequest(operationId, option.SeriesId, option.WorkoutRevisionId));
+        message = response.IsSuccessStatusCode ? $"{option.WorkoutName} selected for {day.Date:d MMM}." : "The day choice could not be saved.";
+        if (response.IsSuccessStatusCode)
+        {
+            pendingSelectionOperations.Remove(day.Date);
+            await ReloadCalendarAsync();
+        }
+    }
+
+    private async Task ReloadCalendarAsync()
+    {
+        DateOnly rangeStart = CalendarGridStart;
+        DateOnly rangeEnd = CalendarGridEnd;
+        Task<List<CalendarSeriesView>?> seriesTask = Http.GetFromJsonAsync<List<CalendarSeriesView>>(
+            $"api/planning/calendar/series?profileId={activeProfileId}");
+        Task<CalendarRangeView?> rangeTask = Http.GetFromJsonAsync<CalendarRangeView>(
+            $"api/planning/calendar/{activeProfileId}?from={rangeStart:yyyy-MM-dd}&to={rangeEnd:yyyy-MM-dd}");
+        await Task.WhenAll(seriesTask, rangeTask);
+        calendarSeries = await seriesTask ?? [];
+        calendar = await rangeTask;
+    }
+
+    private void OpenSessionManager(DateOnly date, CalendarOptionView option)
+    {
+        CalendarSeriesView? segment = calendarSeries.FirstOrDefault(item => item.Id == option.SeriesId);
+        if (segment is null)
+        {
+            message = "This schedule changed. Reload the calendar and try again.";
+            return;
+        }
+
+        managedSession = new ManagedSchedule(
+            segment.Id,
+            segment.ScheduleGroupId,
+            segment.Version,
+            option.ScheduleName,
+            option.WorkoutName,
+            date,
+            false);
+        moveTargetDate = date;
+        managerStep = ManagerSteps.Actions;
+        openModalPending = true;
+    }
+
+    private void OpenGroupManager(ScheduleGroupSummary group)
+    {
+        CalendarSeriesView segment = group.CurrentSegment;
+        managedSession = new ManagedSchedule(
+            segment.Id,
+            group.Id,
+            segment.Version,
+            group.Name,
+            string.Empty,
+            segment.StartDate,
+            true);
+        moveTargetDate = segment.StartDate;
+        managerStep = ManagerSteps.Actions;
+        openModalPending = true;
+    }
+
+    private async Task CloseManagerAsync()
+    {
+        if (scheduleActionBusy)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        modalReference = null;
+        managedSession = null;
+        managerStep = ManagerSteps.Actions;
+    }
+
+    [JSInvokable]
+    public async Task<bool> CloseScheduleManagerFromJs()
+    {
+        if (scheduleActionBusy)
+        {
+            return false;
+        }
+
+        modalReference = null;
+        managedSession = null;
+        managerStep = ManagerSteps.Actions;
+        await InvokeAsync(StateHasChanged);
+        return true;
+    }
+
+    private async Task MoveManagedSessionAsync(bool moveFollowing)
+    {
+        if (managedSession is null || managedSession.IsWholeGroup)
+        {
+            return;
+        }
+
+        if (moveTargetDate == managedSession.SourceDate)
+        {
+            message = "Choose a different date.";
+            return;
+        }
+
+        scheduleActionBusy = true;
+        try
+        {
+            var request = new CalendarOccurrenceMoveRequest(
+                Guid.NewGuid(),
+                moveTargetDate,
+                moveFollowing,
+                managedSession.ExpectedVersion,
+                moveFollowing
+                    ? calendarSeries
+                        .Where(segment => segment.ScheduleGroupId == managedSession.ScheduleGroupId)
+                        .Select(segment => new CalendarSegmentVersion(segment.Id, segment.Version))
+                        .ToArray()
+                    : null);
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/series/{managedSession.SeriesId}/occurrences/{managedSession.SourceDate:yyyy-MM-dd}/move",
+                request);
+            if (!response.IsSuccessStatusCode)
+            {
+                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The schedule changed elsewhere. It has been reloaded; open the session again to move it."
+                    : "That session could not be moved.";
+                await DismissManagerAfterActionAsync();
+                await ReloadCalendarAsync();
+                return;
+            }
+
+            message = moveFollowing
+                ? $"Moved this session and all later sessions to begin on {moveTargetDate:d MMM}."
+                : $"Moved this session to {moveTargetDate:d MMM}.";
+            await DismissManagerAfterActionAsync();
+            await ReloadCalendarAsync();
+        }
+        finally
+        {
+            scheduleActionBusy = false;
+        }
+    }
+
+    private async Task DeleteManagedSessionAsync()
+    {
+        if (managedSession is null || managedSession.IsWholeGroup)
+        {
+            return;
+        }
+
+        scheduleActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/series/{managedSession.SeriesId}/occurrences/{managedSession.SourceDate:yyyy-MM-dd}/delete",
+                new CalendarOccurrenceDeleteRequest(Guid.NewGuid(), managedSession.ExpectedVersion));
+            message = response.IsSuccessStatusCode
+                ? "Session removed from the schedule."
+                : response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The schedule changed elsewhere. It has been reloaded; open the session again to delete it."
+                    : "That session could not be removed.";
+            if (response.IsSuccessStatusCode)
+            {
+                await DismissManagerAfterActionAsync();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                await DismissManagerAfterActionAsync();
+            }
+            await ReloadCalendarAsync();
+        }
+        finally
+        {
+            scheduleActionBusy = false;
+        }
+    }
+
+    private async Task DeleteManagedGroupAsync()
+    {
+        if (managedSession is null)
+        {
+            return;
+        }
+
+        scheduleActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/series/{managedSession.SeriesId}/delete-group",
+                new CalendarGroupDeleteRequest(
+                    Guid.NewGuid(),
+                    calendarSeries
+                        .Where(segment => segment.ScheduleGroupId == managedSession.ScheduleGroupId)
+                        .Select(segment => new CalendarSegmentVersion(segment.Id, segment.Version))
+                        .ToArray()));
+            message = response.IsSuccessStatusCode
+                ? $"{managedSession.ScheduleName} and all of its scheduled sessions were deleted."
+                : response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The workout group changed elsewhere. It has been reloaded; open it again to delete it."
+                    : "The workout group could not be deleted.";
+            if (response.IsSuccessStatusCode)
+            {
+                await DismissManagerAfterActionAsync();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                await DismissManagerAfterActionAsync();
+            }
+            await ReloadCalendarAsync();
+        }
+        finally
+        {
+            scheduleActionBusy = false;
+            managerStep = ManagerSteps.Actions;
+        }
+    }
+
+    private static string SchedulePattern(ScheduleGroupSummary group)
+    {
+        string end = group.EndDate is { } endDate ? $" through {endDate:d MMM yyyy}" : string.Empty;
+        return $"Recurring from {group.StartDate:d MMM yyyy}{end}";
+    }
+
+    private async Task DismissManagerAfterActionAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        modalReference = null;
+        managedSession = null;
+        managerStep = ManagerSteps.Actions;
+    }
+
+    private string MoveOffsetLabel
+    {
+        get
+        {
+            if (managedSession is null) return string.Empty;
+            int days = moveTargetDate.DayNumber - managedSession.SourceDate.DayNumber;
+            return days > 0 ? $"{days} day{(days == 1 ? string.Empty : "s")} later" : $"{Math.Abs(days)} day{(days == -1 ? string.Empty : "s")} earlier";
+        }
+    }
+
+    private Task ContinueToMoveScope()
+    {
+        return managedSession is not null && moveTargetDate != managedSession.SourceDate
+            ? SetManagerStepAsync(ManagerSteps.MoveScope)
+            : Task.CompletedTask;
+    }
+
+    private async Task ReturnToManagerActions()
+    {
+        if (managedSession is not null) moveTargetDate = managedSession.SourceDate;
+        await SetManagerStepAsync(ManagerSteps.Actions);
+    }
+
+    private Task ReturnFromGroupConfirmation() => SetManagerStepAsync(managedSession?.IsWholeGroup == true
+        ? ManagerSteps.Actions
+        : ManagerSteps.DeleteScope);
+
+    private Task SetManagerStepAsync(string step)
+    {
+        managerStep = step;
+        focusModalStagePending = true;
+        return Task.CompletedTask;
+    }
+
+    private DateOnly CalendarGridStart
+    {
+        get
+        {
+            int daysFromMonday = ((int)visibleMonth.DayOfWeek + 6) % 7;
+            return visibleMonth.AddDays(-daysFromMonday);
+        }
+    }
+
+    private DateOnly CalendarGridEnd
+    {
+        get
+        {
+            DateOnly last = visibleMonth.AddMonths(1).AddDays(-1);
+            int daysToSunday = (7 - (int)last.DayOfWeek) % 7;
+            return last.AddDays(daysToSunday);
+        }
+    }
+
+    private IReadOnlyList<DateOnly> CalendarDates
+    {
+        get
+        {
+            var dates = new List<DateOnly>();
+            for (DateOnly date = CalendarGridStart; date <= CalendarGridEnd; date = date.AddDays(1)) dates.Add(date);
+            return dates;
+        }
+    }
+
+    private CalendarDayView? DayFor(DateOnly date) => calendar?.Days.FirstOrDefault(day => day.Date == date);
+
+    private IReadOnlyList<CalendarAgendaWeek> CalendarAgendaWeeks
+    {
+        get
+        {
+            var days = new List<CalendarAgendaDay>();
+            foreach (DateOnly date in CalendarDates.Where(date => date.Month == visibleMonth.Month && date.Year == visibleMonth.Year))
+            {
+                if (DayFor(date) is { } day)
+                {
+                    days.Add(new CalendarAgendaDay(date, day));
+                }
+            }
+
+            return days
+                .GroupBy(static item => item.Date.AddDays(-(((int)item.Date.DayOfWeek + 6) % 7)))
+                .Select(group => new CalendarAgendaWeek(
+                    group.Key,
+                    group.Key.AddDays(6),
+                    group.ToArray(),
+                    group.Sum(static item => item.Day.Options.Count)))
+                .ToArray();
+        }
+    }
+
+    private bool ShouldOpenAgendaWeek(CalendarAgendaWeek week, int index)
+    {
+        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        bool showingCurrentMonth = today.Month == visibleMonth.Month && today.Year == visibleMonth.Year;
+        return showingCurrentMonth ? today >= week.Start && today <= week.End : index == 0;
+    }
+
+    private static string FormatAgendaWeek(CalendarAgendaWeek week) => week.Start.Month == week.End.Month
+        ? $"{week.Start:d MMM}–{week.End.Day}"
+        : $"{week.Start:d MMM}–{week.End:d MMM}";
+
+    private string CalendarCellClass(DateOnly date)
+    {
+        var classes = new List<string>(2);
+        if (date.Month != visibleMonth.Month) classes.Add("calendar-cell--outside");
+        if (date == DateOnly.FromDateTime(DateTime.Today)) classes.Add("calendar-cell--today");
+        return string.Join(' ', classes);
+    }
+
+    private async Task ChangeMonthAsync(int months)
+    {
+        visibleMonth = visibleMonth.AddMonths(months);
+        loading = true;
+        await ReloadCalendarAsync();
+        loading = false;
+    }
+
+    private async Task GoToTodayAsync()
+    {
+        visibleMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
+        loading = true;
+        await ReloadCalendarAsync();
+        loading = false;
+    }
+
+    private sealed class CalendarSeriesForm
+    {
+        public string Name { get; set; } = "Weekly rhythm";
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly? EndDate { get; set; }
+        public int IntervalWeeks { get; set; } = 1;
+        public HashSet<int> WeekdayFlags { get; } = [1, 4, 32];
+        public Guid? PrimaryRevisionId { get; set; }
+        public Guid? AlternativeRevisionId { get; set; }
+        public DateOnly? ExceptionDate { get; set; }
+        public string ExceptionKind { get; set; } = "Skip";
+    }
+
+    private sealed record CalendarAgendaDay(DateOnly Date, CalendarDayView Day);
+    private sealed record CalendarAgendaWeek(DateOnly Start, DateOnly End, IReadOnlyList<CalendarAgendaDay> Days, int WorkoutCount);
+    private sealed record ScheduleGroupSummary(
+        Guid Id,
+        string Name,
+        DateOnly StartDate,
+        DateOnly? EndDate,
+        int WorkoutCount,
+        CalendarSeriesView CurrentSegment);
+    private sealed record ManagedSchedule(
+        Guid SeriesId,
+        Guid ScheduleGroupId,
+        int ExpectedVersion,
+        string ScheduleName,
+        string WorkoutName,
+        DateOnly SourceDate,
+        bool IsWholeGroup);
+
+    private static class ManagerSteps
+    {
+        public const string Actions = "actions";
+        public const string MoveDate = "move-date";
+        public const string MoveScope = "move-scope";
+        public const string ConfirmFollowingMove = "confirm-following-move";
+        public const string DeleteScope = "delete-scope";
+        public const string ConfirmSessionDelete = "confirm-session-delete";
+        public const string ConfirmGroupDelete = "confirm-group-delete";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (managedSession is not null)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
+            catch (JSDisconnectedException) { }
+        }
+        modalReference = null;
+    }
+}

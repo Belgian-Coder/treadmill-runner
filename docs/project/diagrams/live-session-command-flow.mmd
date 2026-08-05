@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant B as Controller browser
+  participant G as Live session coordinator
+  participant C as Serialized command coordinator
+  participant T as Omega Z FTMS control point
+  participant R as Read-only telemetry
+  B->>G: Hold completes with operation, lease, expected version
+  G->>G: Bind session state and connection generation
+  G->>C: Submit four-second single-use intent
+  C->>C: Consume operation and verify exact hardware capability
+  C->>T: Request Control 00
+  T-->>C: Response 80 00 result
+  C->>C: Recheck lease, state, expiry, generation, stopped belt
+  C->>T: Start 07 or Stop 08 01 once
+  T-->>C: Matching FTMS response
+  T-->>R: Fresh measured speed telemetry
+  R-->>C: Generation-bound measurement
+  C-->>G: Confirmed, Rejected, or Unknown
+  G-->>B: Persistent result and authoritative session snapshot
+  Note over C,T: Timeout after the motion write is Unknown and is never retried

@@ -1,0 +1,123 @@
+---
+title: Garmin integrations
+type: integration-runbook
+status: implemented-setup-required
+owner: project
+audience: runner-operator-and-developer
+updated: 2026-08-05
+---
+
+# Garmin integrations
+
+TreadmillRunner deliberately separates three Garmin paths because they have different trust, support, and duplicate risks.
+
+| Path | Purpose | Support level | Account/developer requirement | Default |
+|---|---|---|---|---|
+| Connect IQ companion | Explicitly record a native treadmill activity on the runner's watch; optionally display the local session | Garmin public Connect IQ APIs; source prepared, SDK/store acceptance pending | Garmin developer account/key for IQ Store publishing; ordinary Garmin account for watch sync | Standalone recording available after installation; gateway pairing optional |
+| Completed-activity upload | Upload TreadmillRunner's locally exported FIT when no watch recorded the run | **Unsupported private Garmin consumer interface** through pinned `garminconnect` adapter | Runner's own Garmin credentials and possibly MFA; no Connect Developer Program approval | Disabled per profile |
+| Official training sync (TR-011) | Publish workouts/plans/calendar content to Garmin | Supported Garmin Connect Developer Program Training API | Approved program credentials and Garmin-supplied contract | Disabled until approved/configured |
+
+Do not enable completed-activity upload for a run that was also recorded on a Garmin watch unless the runner accepts a likely duplicate. TreadmillRunner cannot reliably deduplicate a locally uploaded FIT against a separately synchronized watch activity.
+
+## Recommended household choices
+
+- If a watch is worn: open **TreadmillRunner Companion** on the watch, press Select to record, and leave unsupported activity upload disabled for that profile.
+- If no watch is worn: enable completed-activity upload for that runner before the run. The NUC queues the completed local FIT automatically.
+- If only workouts/plans need to appear on Garmin devices: use the official Training API path after Garmin approval. It does not upload completed activities.
+
+## Unsupported completed-activity upload
+
+### Profile setup
+
+1. Install the pinned Python adapter on the NUC as described below.
+2. Open TreadmillRunner over trusted HTTPS, or open it locally on the NUC. Plain remote HTTP is rejected for credential entry.
+3. Open **Profiles**, edit the runner, and find **Garmin activity upload — Unsupported**.
+4. Enter that runner's Garmin email and password. The password is streamed once to an isolated Python process and is never persisted.
+5. If Garmin requests MFA, enter the current verification code. Challenges expire after five minutes and are bound to the selected profile.
+6. Keep **Enable automatic upload after connecting** off if the watch is normally used; otherwise explicitly enable it.
+
+Each household profile has an independent protected account envelope, enable switch, jobs, failures, and disconnect action. An MFA challenge is cryptographically bound to its selected profile. TreadmillRunner intentionally has no household login: any trusted-LAN operator can administer either profile, so the application must not be exposed to a guest or public network.
+
+### Queue behavior and duplicate protection
+
+- Enabling records a UTC watermark. Only sessions ending after that explicit enable are eligible, so connecting, disconnecting, or reconnecting cannot upload old history unexpectedly.
+- The worker reconciles completed/stopped sessions for enabled connected profiles immediately when woken and at least once per minute.
+- A job is unique by local session and has a deterministic SHA-256 idempotency key over exporter version, profile, and session. Leasing uses an atomic status/attempt compare-and-set so two workers cannot upload the same pending job.
+- The gateway exports FIT from authoritative local session history into a temporary file, invokes the adapter, and deletes the temporary file.
+- Confirmed uploads are terminal. Refreshed Garmin tokens replace the prior encrypted token envelope.
+- Known authentication or provider failures use bounded attempts/backoff and are visible with the matching workout, start, duration, and History link. Only a known retryable provider failure can be retried explicitly. Authentication requires reconnect; provider-declared duplicate/rejection is terminal and dismiss-only.
+- A timeout, interrupted in-flight lease, or ambiguous response is **Unknown**. Unknown is never retried automatically or by the normal retry action, because doing so can create a duplicate. Review Garmin Connect, then dismiss the local warning; upload manually only if absence is certain.
+- A started upload cannot be cancelled safely. Disconnect is rejected while a request is in flight so its Confirmed/Failed/Unknown audit outcome cannot be erased. Wait for that outcome and disconnect again; a successful disconnect then deletes the profile's local protected token and queue. It does not delete activities already present in Garmin Connect.
+
+### Credential and process security
+
+- ASP.NET Core Data Protection encrypts Garmin session tokens at rest. Production keys use the release-independent service key directory and Windows DPAPI described in the release runbook.
+- Garmin passwords and MFA codes are never written to SQLite, configuration, logs, screenshots, diagnostics, or API responses.
+- The adapter communicates with the gateway as bounded JSON Lines over redirected standard input/output. Secret-bearing input is not used as a command-line argument.
+- The browser receives account labels, state, safe errors, counts, and job dispositions—never protected token material.
+- Upload account changes are idle-only. Credential requests are accepted only via HTTPS or from a loopback browser on the NUC.
+- Provider behavior is not guaranteed. Garmin may change or block the private consumer interface at any time.
+
+### Install or refresh the adapter
+
+The external reference is pinned to `garminconnect==0.3.8` and reviewed against repository commit `091cad8f8caeb1dbaa0b7d62679c725c12dee458`. Provenance is recorded in `automations/reference-refresh/artifacts/references/cards/python-garminconnect.md`. `requirements.lock.txt` fixes every transitive Windows x64/CPython 3.12 wheel and SHA-256; installation enforces `--require-hashes --only-binary=:all:`.
+
+From a trusted PowerShell session on the NUC:
+
+```powershell
+./eng/install-garmin-adapter.ps1 -TargetDirectory C:\ProgramData\TreadmillRunner\garmin-python
+```
+
+Configure the Windows service with release-independent paths:
+
+```text
+GarminActivityUpload__PythonExecutable=C:\Program Files\Python312\python.exe
+GarminActivityUpload__AdapterScriptPath=<installed-release>\tools\garmin\garmin_activity_adapter.py
+GarminActivityUpload__PythonPath=C:\ProgramData\TreadmillRunner\garmin-python
+GarminActivityUpload__TimeoutSeconds=45
+```
+
+The Python executable path must be absolute, readable by the Windows Service identity, and point to Python 3.12. A per-user `python` on `PATH` commonly works interactively but is not visible to LocalSystem. Validate both the executable and `PYTHONPATH` while running as the actual service identity before enabling upload. The update package includes the adapter script and exact requirements file, not the third-party Python environment. Keeping dependencies under ProgramData avoids modifying an immutable release during install and lets an operator validate/replace them independently. Re-run the installer only after reviewing a changed pin/license and validating against fake accounts first.
+
+### Status and recovery
+
+| State | Meaning | Action |
+|---|---|---|
+| Disconnected | No protected token envelope exists | Connect locally/over HTTPS if this runner wants unsupported upload |
+| Connected, disabled | Account is ready but no completed sessions are queued | Enable explicitly only for runs not recorded on the watch |
+| Pending | Job is waiting for its bounded attempt | Wait up to one worker interval |
+| Confirmed | Garmin returned a successful import result | Verify activity in that runner's Garmin Connect history |
+| Failed | Known provider/authentication error | Correct network/authentication; reconnect for auth errors or select retry for a known provider failure |
+| Unknown | Request may have reached Garmin, but confirmation was lost | Check Garmin Connect; do not retry blindly; dismiss after review |
+| Provider unavailable | Python/script/dependency missing or incompatible response | Reinstall the pinned adapter, leave upload disabled until tests pass |
+
+Backups contain encrypted token ciphertext and queue state. A restore under a different Windows DPAPI identity may make the token unreadable; disconnect/reconnect that runner. Never copy a database or Data Protection key ring to an untrusted host.
+
+## Connect IQ companion
+
+The companion uses Garmin's public ActivityRecording API with running/treadmill sport metadata. The watch—not the NUC—records and saves the activity. Pairing only calls the read-only `/api/watch/status` route and never exposes treadmill commands. See [Connect IQ companion setup, testing, and IQ Store release](connect-iq-companion.md).
+
+## Official Training API path
+
+TR-011 remains separate. It uses OAuth/PKCE, profile-owned encrypted tokens, and a durable publication outbox for supported structured workouts, plans, and calendar items. Garmin's detailed Training API contract is available after program approval, so production publication remains intentionally unavailable until approved endpoint/payload documentation and credentials exist. Do not point it at private consumer routes or reuse completed-activity tokens.
+
+Service configuration is documented by `GarminConnect__*` settings. `Provider=Mock` is development/test only; `Provider=Configured` additionally requires an independently implemented and fixture-tested approved contract adapter.
+
+Official references:
+
+- [Garmin Connect Developer Program](https://developer.garmin.com/gc-developer-program/overview/)
+- [Garmin Training API](https://developer.garmin.com/gc-developer-program/training-api/)
+- [Garmin Activity API](https://developer.garmin.com/gc-developer-program/activity-api/)
+- [Garmin Connect IQ overview](https://developer.garmin.com/connect-iq/overview/)
+- [python-garminconnect upstream](https://github.com/cyberjunky/python-garminconnect)
+
+## Removal
+
+1. Disable completed-activity upload on the runner profile.
+2. Disconnect the unsupported account to delete its local protected token/job aggregate.
+3. Revoke the Connect IQ watch binding from the same profile.
+4. Remove the app from the watch through Garmin Connect Mobile/IQ Store if no longer wanted.
+5. Optionally remove `C:\ProgramData\TreadmillRunner\garmin-python` during a maintenance window after resolving its absolute path and confirming no profile uses the adapter.
+6. Revoke any applicable Garmin sessions from the runner's Garmin account. Activities already uploaded remain until deleted in Garmin Connect.
+
+No removal action sends a treadmill command or deletes local TreadmillRunner session history.

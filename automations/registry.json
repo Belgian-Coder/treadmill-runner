@@ -1,0 +1,2472 @@
+{
+  "automations": [
+    {
+      "commands": [
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py"
+          ],
+          "effects": [],
+          "id": "command-83dd4022f381",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py"
+          ],
+          "effects": [],
+          "id": "command-b306e9aea364",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+          ],
+          "effects": [],
+          "id": "command-e486bb8b26e9",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py"
+          ],
+          "effects": [],
+          "id": "command-60eb15e2c95a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py"
+          ],
+          "effects": [],
+          "id": "command-e00690b1cdf3",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+            "--target",
+            "<project-root>",
+            "--write"
+          ],
+          "effects": [
+            "external_write"
+          ],
+          "id": "command-5e27b02e1d4a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+            "project-context",
+            "--target",
+            "<project-root>",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-fa2195e87c72",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "<project-root>/docs/project/validation/run_project_validation.py",
+            "--target",
+            "<project-root>",
+            "--evidence-dir",
+            "<project-root>/docs/project/validation/evidence"
+          ],
+          "effects": [],
+          "id": "command-29d064f05316",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py"
+          ],
+          "effects": [],
+          "id": "command-3a19a83dbfdc",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py"
+          ],
+          "effects": [],
+          "id": "command-ec61c9020307",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/bug-ticket-workflow/scripts/bug_regression_quality_profile.py"
+          ],
+          "effects": [],
+          "id": "command-4c3b4ba53232",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "plan-check",
+            "--name",
+            "bug-ticket-workflow",
+            "--run-id",
+            "<run-id>"
+          ],
+          "effects": [],
+          "id": "command-2456a7fe278a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context",
+            "--name",
+            "bug-ticket-workflow",
+            "--run-id",
+            "<run-id>",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-0e9ed6c1e7a3",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "bug-ticket-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-294d0d6deb66",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "bug-ticket-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-eb2c8bf91314",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+            "validate-automations",
+            "--root",
+            ".",
+            "--name",
+            "bug-ticket-workflow",
+            "--strict-phase-quality",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-8c36dbcfb0f9",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "lint",
+            "--name",
+            "bug-ticket-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-e7c37ec40e69",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "bug-ticket-workflow",
+            "--template",
+            "plan.md",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-b500d0a107c0",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "metadata",
+            "inspect",
+            "--name",
+            "bug-ticket-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-881f4fafdd9b",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "branch-policy",
+            "--branch",
+            "feature/dogfood-readonly",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-800b10e348dc",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "hooks",
+            "--name",
+            "bug-ticket-workflow",
+            "--check",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-7a2e23ffdae7",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "scorecard",
+            "--name",
+            "bug-ticket-workflow",
+            "--no-lifecycle",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-bb6d8ea1ed67",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "smoke",
+            "--name",
+            "bug-ticket-workflow",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-619cfaf029be",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        }
+      ],
+      "contract": "module.json",
+      "contract_file": "module.json",
+      "external_access": {
+        "attachments_retrieved": true,
+        "credential_expectations": "optional ADO, SonarQube, repo credentials; never commit secrets",
+        "data_copied_locally": [
+          "bug facts",
+          "comments/attachments",
+          "reports"
+        ],
+        "source_systems": [
+          "Azure DevOps",
+          "SonarQube",
+          "PR"
+        ]
+      },
+      "folder": "automations/bug-ticket-workflow",
+      "id": "bug-ticket-workflow",
+      "inputs": [
+        "WORKFLOW.md",
+        "instructions.md",
+        "module.json",
+        "suites/workflow-evals.json",
+        "templates/*.md",
+        "target docs/project/project-context.md"
+      ],
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft"
+        ]
+      },
+      "manifest": "present",
+      "outputs": [
+        "runs/<run-id>/run.json",
+        "runs/<run-id>/REPORT.md",
+        "runs/<run-id>/ticket-info.md",
+        "runs/<run-id>/plan.md",
+        "runs/<run-id>/execution-log.md",
+        "runs/<run-id>/validation/",
+        "runs/<run-id>/artifacts/project-context-check.json",
+        "runs/<run-id>/artifacts/context/context-packet.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.md",
+        "runs/<run-id>/artifacts/",
+        "target docs/project/",
+        "target fix, tests, and docs"
+      ],
+      "owners": [
+        "engineering"
+      ],
+      "phases": [
+        "intake-and-triage",
+        "reproduction-planning",
+        "approval-checkpoint",
+        "fix-implementation",
+        "regression-and-validation",
+        "follow-up-handling",
+        "pr-handoff"
+      ],
+      "related_modules": [
+        "azure-devops-ticket-intake",
+        "dotnet-quality-gates",
+        "mermaid-diagrams-azure-devops",
+        "playwright-integration",
+        "project-context-generator",
+        "repo-navigation",
+        "dotnet-security-review",
+        "sonarqube-diagnostics",
+        "local-ai-helper"
+      ],
+      "related_skills": [
+        "azure-devops-ticket-intake",
+        "dotnet-quality-gates",
+        "mermaid-diagrams-azure-devops",
+        "playwright-integration",
+        "project-context-generator",
+        "repo-navigation",
+        "dotnet-security-review",
+        "sonarqube-diagnostics",
+        "local-ai-helper"
+      ],
+      "risk_flags": [
+        "profile: credentialed",
+        "credentials",
+        "network"
+      ],
+      "routing": {
+        "activation_terms": [
+          "bug",
+          "defect",
+          "crash",
+          "reproduce",
+          "reproduction",
+          "root-cause"
+        ],
+        "terms": [
+          "bug",
+          "defect",
+          "regression",
+          "crash",
+          "failure",
+          "reproduce",
+          "reproduction",
+          "fix",
+          "repair",
+          "root-cause",
+          "observed",
+          "expected",
+          "ticket"
+        ],
+        "threshold": 2,
+        "winner_margin": 1
+      },
+      "scripts": [
+        [
+          "python",
+          "-B",
+          ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+          "--target",
+          "<project-root>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+          "project-context",
+          "--target",
+          "<project-root>",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          "<project-root>/docs/project/validation/run_project_validation.py",
+          "--target",
+          "<project-root>",
+          "--evidence-dir",
+          "<project-root>/docs/project/validation/evidence"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/bug-ticket-workflow/scripts/bug_regression_quality_profile.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "plan-check",
+          "--name",
+          "bug-ticket-workflow",
+          "--run-id",
+          "<run-id>"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context",
+          "--name",
+          "bug-ticket-workflow",
+          "--run-id",
+          "<run-id>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "bug-ticket-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "bug-ticket-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+          "validate-automations",
+          "--root",
+          ".",
+          "--name",
+          "bug-ticket-workflow",
+          "--strict-phase-quality",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "lint",
+          "--name",
+          "bug-ticket-workflow",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "bug-ticket-workflow",
+          "--template",
+          "plan.md",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "metadata",
+          "inspect",
+          "--name",
+          "bug-ticket-workflow",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "branch-policy",
+          "--branch",
+          "feature/dogfood-readonly",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "hooks",
+          "--name",
+          "bug-ticket-workflow",
+          "--check",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "scorecard",
+          "--name",
+          "bug-ticket-workflow",
+          "--no-lifecycle",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "smoke",
+          "--name",
+          "bug-ticket-workflow",
+          "--dry-run",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ]
+      ],
+      "skill_extensions": [],
+      "start_file": "WORKFLOW.md",
+      "summary": "Bug intake, reproduction, approved fix, validation, and PR handoff.",
+      "version": "1.0.0",
+      "worker_profiles": {
+        "extends": "portable-default",
+        "max_parallel_workers": 2,
+        "mode": "auto-when-supported",
+        "phase_assignments": {
+          "approval-checkpoint": "planning-high",
+          "fix-implementation": "implementation-medium",
+          "follow-up-handling": "handoff-mini",
+          "intake-and-triage": "evidence-mini",
+          "pr-handoff": "handoff-mini",
+          "regression-and-validation": "validation-local",
+          "reproduction-planning": "planning-high"
+        }
+      }
+    },
+    {
+      "commands": [
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "review",
+            "--skill"
+          ],
+          "effects": [],
+          "id": "command-166c885736ec",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "review",
+            "<workflow-name>"
+          ],
+          "effects": [],
+          "id": "command-d667241788a3",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "check"
+          ],
+          "effects": [],
+          "id": "command-4b98106ee56f",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "validate-automations"
+          ],
+          "effects": [],
+          "id": "command-0b3d96214782",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "check-changed"
+          ],
+          "effects": [],
+          "id": "command-41b1b8606de4",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "local-ai"
+          ],
+          "effects": [],
+          "id": "command-c9d75b96fcaa",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+          ],
+          "effects": [],
+          "id": "command-e486bb8b26e9",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "disciplined-change-workflow",
+            "--template",
+            "plan.md"
+          ],
+          "effects": [],
+          "id": "command-45c80cd9e803",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "disciplined-change-workflow",
+            "--template",
+            "plan.md",
+            "--profile",
+            "lean"
+          ],
+          "effects": [],
+          "id": "command-fb8f754e4fc0",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "lint",
+            "--name",
+            "disciplined-change-workflow"
+          ],
+          "effects": [],
+          "id": "command-b7c7fb0b5048",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "metadata",
+            "inspect",
+            "--name",
+            "disciplined-change-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-5d2b61d01517",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "branch-policy"
+          ],
+          "effects": [],
+          "id": "command-82a77663e640",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context",
+            "--name",
+            "disciplined-change-workflow",
+            "--run-id",
+            "<run-id>",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-ec23e7e198ff",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "checkpoint",
+            "--name",
+            "disciplined-change-workflow",
+            "--run-id",
+            "<run-id>",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-967d89631a32",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "disciplined-change-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-d30382ed4947",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "disciplined-change-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-1d92f97fa1cf",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+            "validate-automations",
+            "--root",
+            ".",
+            "--name",
+            "disciplined-change-workflow",
+            "--strict-phase-quality",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-b33ab3439f2f",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "lint",
+            "--name",
+            "disciplined-change-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-4e1bf4099c34",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "disciplined-change-workflow",
+            "--template",
+            "plan.md",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-d3245df061f3",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "branch-policy",
+            "--branch",
+            "feature/dogfood-readonly",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-800b10e348dc",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "scorecard",
+            "--name",
+            "disciplined-change-workflow",
+            "--no-lifecycle",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-0030f7fc74bf",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "smoke",
+            "--name",
+            "disciplined-change-workflow",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-5375a89dae1d",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        }
+      ],
+      "contract": "module.json",
+      "contract_file": "module.json",
+      "external_access": {
+        "attachments_retrieved": false,
+        "credential_expectations": "none",
+        "data_copied_locally": [
+          "run packets",
+          "implementation packets",
+          "validation"
+        ],
+        "source_systems": [
+          "none by default"
+        ]
+      },
+      "folder": "automations/disciplined-change-workflow",
+      "id": "disciplined-change-workflow",
+      "inputs": [
+        "WORKFLOW.md",
+        "instructions.md",
+        "module.json",
+        "suites/workflow-evals.json"
+      ],
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft"
+        ]
+      },
+      "manifest": "present",
+      "outputs": [
+        "runs/<run-id>/run.json",
+        "runs/<run-id>/REPORT.md",
+        "runs/<run-id>/execution-log.md",
+        "runs/<run-id>/plan.md",
+        "runs/<run-id>/validation/",
+        "runs/<run-id>/artifacts/",
+        "runs/<run-id>/artifacts/context/context-packet.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.md"
+      ],
+      "owners": [
+        "engineering"
+      ],
+      "phases": [
+        "orientation",
+        "scope-control",
+        "implementation-planning",
+        "execute-with-evidence",
+        "failed-validation-debugging",
+        "two-stage-review",
+        "finish-with-fresh-evidence"
+      ],
+      "related_modules": [
+        "agent-benchmarking",
+        "dotnet-quality-gates",
+        "local-ai-helper",
+        "mermaid-diagrams-azure-devops",
+        "repo-navigation",
+        "dotnet-security-review",
+        "skill-manager",
+        "workflow-manager"
+      ],
+      "related_skills": [
+        "agent-benchmarking",
+        "dotnet-quality-gates",
+        "local-ai-helper",
+        "mermaid-diagrams-azure-devops",
+        "repo-navigation",
+        "dotnet-security-review",
+        "skill-manager",
+        "workflow-manager"
+      ],
+      "risk_flags": [
+        "profile: local-write"
+      ],
+      "routing": {
+        "activation_terms": [
+          "disciplined",
+          "lifecycle",
+          "dogfood",
+          "smoke",
+          "smoke-test"
+        ],
+        "terms": [
+          "disciplined",
+          "lifecycle",
+          "dogfood",
+          "smoke",
+          "smoke-test",
+          "larger",
+          "checkpoint",
+          "handoff",
+          "finish",
+          "evidence",
+          "validation",
+          "strict",
+          "next_command",
+          "ambiguity",
+          "fresh",
+          "maintainer"
+        ],
+        "threshold": 7,
+        "winner_margin": 1
+      },
+      "scripts": [
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "review",
+          "--skill"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "review",
+          "<workflow-name>"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "check"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "validate-automations"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "check-changed"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "local-ai"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "disciplined-change-workflow",
+          "--template",
+          "plan.md"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "disciplined-change-workflow",
+          "--template",
+          "plan.md",
+          "--profile",
+          "lean"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "lint",
+          "--name",
+          "disciplined-change-workflow"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "metadata",
+          "inspect",
+          "--name",
+          "disciplined-change-workflow",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "branch-policy"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context",
+          "--name",
+          "disciplined-change-workflow",
+          "--run-id",
+          "<run-id>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "checkpoint",
+          "--name",
+          "disciplined-change-workflow",
+          "--run-id",
+          "<run-id>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "disciplined-change-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "disciplined-change-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+          "validate-automations",
+          "--root",
+          ".",
+          "--name",
+          "disciplined-change-workflow",
+          "--strict-phase-quality",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "lint",
+          "--name",
+          "disciplined-change-workflow",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "disciplined-change-workflow",
+          "--template",
+          "plan.md",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "branch-policy",
+          "--branch",
+          "feature/dogfood-readonly",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "scorecard",
+          "--name",
+          "disciplined-change-workflow",
+          "--no-lifecycle",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "smoke",
+          "--name",
+          "disciplined-change-workflow",
+          "--dry-run",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ]
+      ],
+      "skill_extensions": [],
+      "start_file": "WORKFLOW.md",
+      "summary": "Guides larger repo changes through owner selection, scoped planning, execution, review, and fresh validation.",
+      "version": "1.0.0",
+      "worker_profiles": {
+        "extends": "portable-default",
+        "max_parallel_workers": 2,
+        "mode": "auto-when-supported",
+        "phase_assignments": {
+          "execute-with-evidence": "implementation-medium",
+          "failed-validation-debugging": "validation-local",
+          "finish-with-fresh-evidence": "handoff-mini",
+          "implementation-planning": "planning-high",
+          "orientation": "evidence-mini",
+          "scope-control": "planning-high",
+          "two-stage-review": "validation-local"
+        }
+      }
+    },
+    {
+      "commands": [
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/update_navigation.py",
+            "--target",
+            ".",
+            "--check"
+          ],
+          "effects": [],
+          "id": "command-aa3324c5a3eb",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/update_navigation.py",
+            "--target",
+            ".",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-c6287d4f433a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/project_context.py",
+            "--target",
+            ".",
+            "--check"
+          ],
+          "effects": [],
+          "id": "command-3754d280bbb7",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/project_context.py",
+            "--target",
+            ".",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-3a7b7696d641",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "which-workflow",
+            "<request>",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-441f17474f75",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "validate-automations",
+            "--name",
+            "navigation",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-be0af2abee7c",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "metadata",
+            "inspect",
+            "--name",
+            "navigation",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-2fb86840f8a7",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/update_navigation.py",
+            "--target",
+            ".",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-98d5860cb16a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/navigation/scripts/project_context.py",
+            "--target",
+            ".",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-9155c9557d7e",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        }
+      ],
+      "contract": "module.json",
+      "contract_file": "module.json",
+      "external_access": {
+        "attachments_retrieved": false,
+        "credential_expectations": "none",
+        "data_copied_locally": [
+          "project file names",
+          "hashes",
+          "deterministic summaries"
+        ],
+        "source_systems": []
+      },
+      "folder": "automations/navigation",
+      "id": "navigation",
+      "inputs": [
+        "WORKFLOW.md",
+        "module.json",
+        "instructions.md",
+        "project source files"
+      ],
+      "local_ai": {
+        "use_case_count": 0,
+        "use_cases": []
+      },
+      "manifest": "present",
+      "outputs": [
+        "artifacts/maps/NAVIGATION.md",
+        "artifacts/maps/HANDOFF.md",
+        "artifacts/maps/handoff.json",
+        "artifacts/maps/TECHNICAL_CONTEXT.md",
+        "artifacts/maps/CONVENTIONS.md",
+        "artifacts/maps/PROJECT_CONTEXT_DRAFT.md",
+        "artifacts/maps/staleness.json",
+        "docs/project/project-context.md"
+      ],
+      "owners": [
+        "engineering"
+      ],
+      "phases": [
+        "scan",
+        "project-context",
+        "write",
+        "check"
+      ],
+      "related_modules": [
+        "repo-navigation"
+      ],
+      "related_skills": [
+        "repo-navigation"
+      ],
+      "risk_flags": [
+        "profile: local-write"
+      ],
+      "routing": {
+        "activation_terms": [
+          "navigation",
+          "project-context",
+          "staleness"
+        ],
+        "terms": [
+          "navigation",
+          "map",
+          "maps",
+          "handoff",
+          "capsule",
+          "project-context",
+          "staleness",
+          "stale",
+          "refresh",
+          "read-order"
+        ],
+        "threshold": 2,
+        "winner_margin": 1
+      },
+      "scripts": [
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/update_navigation.py",
+          "--target",
+          ".",
+          "--check"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/update_navigation.py",
+          "--target",
+          ".",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/project_context.py",
+          "--target",
+          ".",
+          "--check"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/project_context.py",
+          "--target",
+          ".",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "which-workflow",
+          "<request>",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "validate-automations",
+          "--name",
+          "navigation",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "metadata",
+          "inspect",
+          "--name",
+          "navigation",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/update_navigation.py",
+          "--target",
+          ".",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/navigation/scripts/project_context.py",
+          "--target",
+          ".",
+          "--check",
+          "--format",
+          "json"
+        ]
+      ],
+      "skill_extensions": [],
+      "start_file": "WORKFLOW.md",
+      "summary": "Generate deterministic project navigation maps, technical context, conventions, and freshness evidence.",
+      "version": "1.0.0"
+    },
+    {
+      "commands": [
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py"
+          ],
+          "effects": [],
+          "id": "command-83dd4022f381",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py"
+          ],
+          "effects": [],
+          "id": "command-b306e9aea364",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+          ],
+          "effects": [],
+          "id": "command-e486bb8b26e9",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py"
+          ],
+          "effects": [],
+          "id": "command-60eb15e2c95a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py"
+          ],
+          "effects": [],
+          "id": "command-e00690b1cdf3",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+            "--target",
+            "<project-root>",
+            "--write"
+          ],
+          "effects": [
+            "external_write"
+          ],
+          "id": "command-5e27b02e1d4a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+            "project-context",
+            "--target",
+            "<project-root>",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-fa2195e87c72",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "<project-root>/docs/project/validation/run_project_validation.py",
+            "--target",
+            "<project-root>",
+            "--evidence-dir",
+            "<project-root>/docs/project/validation/evidence"
+          ],
+          "effects": [],
+          "id": "command-29d064f05316",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py"
+          ],
+          "effects": [],
+          "id": "command-3a19a83dbfdc",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py"
+          ],
+          "effects": [],
+          "id": "command-ec61c9020307",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            "automations/user-story-workflow/scripts/story_quality_profile.py"
+          ],
+          "effects": [],
+          "id": "command-7a6883bd6b47",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "plan-check",
+            "--name",
+            "user-story-workflow",
+            "--run-id",
+            "<run-id>"
+          ],
+          "effects": [],
+          "id": "command-f015384885c9",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context",
+            "--name",
+            "user-story-workflow",
+            "--run-id",
+            "<run-id>",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-82ea3ed3e2d7",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "user-story-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--write"
+          ],
+          "effects": [
+            "repository_write"
+          ],
+          "id": "command-4cd9c6dca3b8",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "context-evidence",
+            "--name",
+            "user-story-workflow",
+            "--run-id",
+            "<run-id>",
+            "--event",
+            "start",
+            "--check",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-9b899b227624",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+            "validate-automations",
+            "--root",
+            ".",
+            "--name",
+            "user-story-workflow",
+            "--strict-phase-quality",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-67bfc9ec9387",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "smoke",
+            "--name",
+            "user-story-workflow",
+            "--dry-run",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-bc8ffadb5c9a",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "user-story-workflow",
+            "--template",
+            "plan.md",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-b61afcca1284",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "resolve",
+            "--name",
+            "user-story-workflow",
+            "--template",
+            "plan.md",
+            "--profile",
+            "lean",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-cd636c1d5f78",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "template",
+            "lint",
+            "--name",
+            "user-story-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-288eb2620dbb",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        },
+        {
+          "argv": [
+            "python",
+            "-B",
+            ".agents/manage.py",
+            "workflow",
+            "metadata",
+            "inspect",
+            "--name",
+            "user-story-workflow",
+            "--format",
+            "json"
+          ],
+          "effects": [],
+          "id": "command-35692e44107f",
+          "timeout_seconds": 300,
+          "working_directory": "repository"
+        }
+      ],
+      "contract": "module.json",
+      "contract_file": "module.json",
+      "external_access": {
+        "attachments_retrieved": true,
+        "credential_expectations": "optional ADO, SonarQube, and repo credentials; never commit secrets",
+        "data_copied_locally": [
+          "story facts",
+          "comments/attachments",
+          "validation reports"
+        ],
+        "source_systems": [
+          "Azure DevOps",
+          "SonarQube",
+          "PR"
+        ]
+      },
+      "folder": "automations/user-story-workflow",
+      "id": "user-story-workflow",
+      "inputs": [
+        "WORKFLOW.md",
+        "instructions.md",
+        "module.json",
+        "suites/workflow-evals.json",
+        "templates/*.md",
+        "target docs/project/project-context.md"
+      ],
+      "local_ai": {
+        "use_case_count": 5,
+        "use_cases": [
+          "validation-triage",
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft"
+        ]
+      },
+      "manifest": "present",
+      "outputs": [
+        "runs/<run-id>/run.json",
+        "runs/<run-id>/REPORT.md",
+        "runs/<run-id>/ticket-info.md",
+        "runs/<run-id>/plan.md",
+        "runs/<run-id>/pr-description.md",
+        "runs/<run-id>/execution-log.md",
+        "runs/<run-id>/validation/",
+        "runs/<run-id>/artifacts/project-context-check.json",
+        "runs/<run-id>/artifacts/context/context-packet.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.json",
+        "runs/<run-id>/artifacts/documentation/documentation-delta.md",
+        "runs/<run-id>/artifacts/",
+        "target docs/project/",
+        "target project implementation, tests, and docs"
+      ],
+      "owners": [
+        "engineering"
+      ],
+      "phases": [
+        "intake",
+        "planning",
+        "approval-checkpoint",
+        "implementation",
+        "validation",
+        "follow-up-handling",
+        "pr-handoff"
+      ],
+      "related_modules": [
+        "azure-devops-ticket-intake",
+        "dotnet-quality-gates",
+        "mermaid-diagrams-azure-devops",
+        "playwright-integration",
+        "project-context-generator",
+        "repo-navigation",
+        "dotnet-security-review",
+        "sonarqube-diagnostics",
+        "local-ai-helper"
+      ],
+      "related_skills": [
+        "azure-devops-ticket-intake",
+        "dotnet-quality-gates",
+        "mermaid-diagrams-azure-devops",
+        "playwright-integration",
+        "project-context-generator",
+        "repo-navigation",
+        "dotnet-security-review",
+        "sonarqube-diagnostics",
+        "local-ai-helper"
+      ],
+      "risk_flags": [
+        "profile: credentialed",
+        "credentials",
+        "network"
+      ],
+      "routing": {
+        "activation_terms": [
+          "story",
+          "user-story",
+          "feature",
+          "enhancement",
+          "endpoint",
+          "acceptance"
+        ],
+        "terms": [
+          "story",
+          "user-story",
+          "feature",
+          "enhancement",
+          "implement",
+          "implementation",
+          "add",
+          "build",
+          "create",
+          "endpoint",
+          "acceptance",
+          "criteria",
+          "functionality",
+          "ticket"
+        ],
+        "threshold": 2,
+        "winner_margin": 1
+      },
+      "scripts": [
+        [
+          "python",
+          "-B",
+          ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+          "--target",
+          "<project-root>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+          "project-context",
+          "--target",
+          "<project-root>",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          "<project-root>/docs/project/validation/run_project_validation.py",
+          "--target",
+          "<project-root>",
+          "--evidence-dir",
+          "<project-root>/docs/project/validation/evidence"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py"
+        ],
+        [
+          "python",
+          "-B",
+          "automations/user-story-workflow/scripts/story_quality_profile.py"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "plan-check",
+          "--name",
+          "user-story-workflow",
+          "--run-id",
+          "<run-id>"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context",
+          "--name",
+          "user-story-workflow",
+          "--run-id",
+          "<run-id>",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "user-story-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--write"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "context-evidence",
+          "--name",
+          "user-story-workflow",
+          "--run-id",
+          "<run-id>",
+          "--event",
+          "start",
+          "--check",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+          "validate-automations",
+          "--root",
+          ".",
+          "--name",
+          "user-story-workflow",
+          "--strict-phase-quality",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "smoke",
+          "--name",
+          "user-story-workflow",
+          "--dry-run",
+          "--summary",
+          "--compact",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "user-story-workflow",
+          "--template",
+          "plan.md",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "resolve",
+          "--name",
+          "user-story-workflow",
+          "--template",
+          "plan.md",
+          "--profile",
+          "lean",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "template",
+          "lint",
+          "--name",
+          "user-story-workflow",
+          "--format",
+          "json"
+        ],
+        [
+          "python",
+          "-B",
+          ".agents/manage.py",
+          "workflow",
+          "metadata",
+          "inspect",
+          "--name",
+          "user-story-workflow",
+          "--format",
+          "json"
+        ]
+      ],
+      "skill_extensions": [],
+      "start_file": "WORKFLOW.md",
+      "summary": "Story workflow for intake, planning, approved implementation, validation, follow-up, and PR handoff evidence.",
+      "version": "1.0.0",
+      "worker_profiles": {
+        "extends": "portable-default",
+        "max_parallel_workers": 2,
+        "mode": "auto-when-supported",
+        "phase_assignments": {
+          "approval-checkpoint": "planning-high",
+          "follow-up-handling": "handoff-mini",
+          "implementation": "implementation-mini",
+          "intake": "evidence-mini",
+          "planning": "planning-high",
+          "pr-handoff": "handoff-mini",
+          "validation": "validation-local"
+        }
+      }
+    }
+  ],
+  "source_root": "automations",
+  "version": 4
+}

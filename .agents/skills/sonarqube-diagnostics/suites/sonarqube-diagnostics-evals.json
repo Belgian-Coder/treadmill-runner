@@ -1,0 +1,165 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "credentialed"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/export_issues.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/export_quality_profile.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_analysis.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "SonarQube diagnostics",
+          "type": "description_contains"
+        },
+        {
+          "text": "no_upload_assertion",
+          "type": "skill_contains"
+        },
+        {
+          "text": "scanner publishing",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict read-only/offline/no-profile/no-temp/no-write dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline/no-profile/no-temp/no-write excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not offline/no-write",
+          "type": "skill_contains"
+        },
+        {
+          "text": "no `--output-json`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not strict-dogfood safe",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Outside strict dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Skip `credential-doctor`, including summary mode, when profile reads are disallowed",
+          "type": "skill_contains"
+        },
+        {
+          "path": "docs/evidence-examples.md",
+          "text": "require network access and write evidence files",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/export_issues.py",
+          "text": "network/read-only-no-upload",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/compare_coverage.py",
+          "text": "offline/read-only",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_analysis.py",
+          "text": "upload/write/runtime",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "write/temp",
+          "type": "file_contains"
+        },
+        {
+          "key": "credentials",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "uploads",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "diagnostics-contract"
+    },
+    {
+      "assertions": [
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 700
+        }
+      ],
+      "id": "budget-and-trigger"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "text": "sonarqube-diagnostics",
+          "type": "public_command_behavior"
+        }
+      ],
+      "id": "public-command"
+    }
+  ],
+  "skill_name": "sonarqube-diagnostics"
+}

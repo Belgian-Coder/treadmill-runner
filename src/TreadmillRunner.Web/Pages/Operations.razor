@@ -1,0 +1,246 @@
+@page "/operations"
+@using System.Net.Http.Headers
+@using System.Text.Json
+@inject HttpClient Http
+
+<PageTitle>Operations · TreadmillRunner</PageTitle>
+
+<section class="page-stack" aria-labelledby="operations-title">
+    <header class="page-heading">
+        <div><p class="eyebrow">Recovery and release</p><h1 id="operations-title">Operations</h1></div>
+        <p>Backup, restore, diagnostics, and signed updates are available only while no workout is active.</p>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
+
+    <details class="panel-card advanced-settings">
+        <summary>Backup and diagnostics</summary>
+        <div class="controls-card">
+            <a class="secondary-action" href="/api/operations/backup" download>Download full backup</a>
+            <a class="secondary-action" href="/api/operations/diagnostics" download>Download diagnostics</a>
+        </div>
+    </details>
+
+    <details class="panel-card advanced-settings">
+        <summary>Restore from backup</summary>
+        <p>Select a TreadmillRunner backup (.trb; legacy .db is also accepted). Nothing is replaced until its preview is shown and you confirm.</p>
+        <label class="file-field">Backup file
+            <InputFile OnChange="PreviewRestoreAsync" accept=".trb,.db,application/vnd.treadmillrunner.backup,application/vnd.sqlite3" />
+        </label>
+        @if (restorePreview is { } preview)
+        {
+            <dl class="zone-list">
+                <div><dt>SHA-256</dt><dd>@preview.GetProperty("sha256").GetString()</dd></div>
+                <div><dt>Profiles</dt><dd>@preview.GetProperty("profileCount").GetInt32()</dd></div>
+                <div><dt>Workouts</dt><dd>@preview.GetProperty("workoutCount").GetInt32()</dd></div>
+                <div><dt>Sessions</dt><dd>@preview.GetProperty("sessionCount").GetInt32()</dd></div>
+            </dl>
+            <button class="danger-action touch-action" type="button" @onclick="ConfirmRestoreAsync">Confirm restore</button>
+        }
+    </details>
+
+    <section class="panel-card">
+        <h2>Signed updates</h2>
+        <p role="status" aria-live="polite">@updateStatus.Message</p>
+        <dl class="zone-list" aria-label="Update status">
+            <div><dt>State</dt><dd>@updateStatus.State</dd></div>
+            <div><dt>Current</dt><dd>@updateStatus.CurrentVersion</dd></div>
+            <div><dt>Available</dt><dd>@(updateStatus.AvailableVersion ?? "—")</dd></div>
+            <div><dt>Staged</dt><dd>@(updateStatus.StagedVersion ?? "—")</dd></div>
+            <div><dt>Source</dt><dd>@(updateStatus.FeedSource ?? "—")</dd></div>
+            <div><dt>Last checked</dt><dd>@FormatTimestamp(updateStatus.LastCheckedAtUtc)</dd></div>
+        </dl>
+        @if (!string.IsNullOrWhiteSpace(updateStatus.ReleaseNotes))
+        {
+            <p><strong>Release notes:</strong> @updateStatus.ReleaseNotes</p>
+        }
+        <div class="controls-card">
+            <button class="secondary-action" type="button" @onclick="CheckUpdateAsync" disabled="@updateBusy">Check now</button>
+            @if (updateStatus.State == "Available")
+            {
+                <button class="secondary-action" type="button" @onclick="StageUpdateAsync" disabled="@updateBusy">Verify and stage</button>
+            }
+            @if (updateStatus.State == "Staged" && !activationConfirming)
+            {
+                <button class="danger-action touch-action" type="button" @onclick="BeginActivationConfirmation" disabled="@updateBusy">Activate staged update</button>
+            }
+        </div>
+        <details class="advanced-settings update-file-fallback">
+            <summary>Install from a signed file</summary>
+            <p>Use this when GitHub or the local feed is unavailable. The bundle must be newer and signed by the already trusted TreadmillRunner key; uploading never activates it automatically.</p>
+            <label class="file-field">Signed update bundle (.zip)
+                <InputFile OnChange="ImportUpdateAsync" accept=".zip,application/vnd.treadmillrunner.update+zip" disabled="@updateBusy" />
+            </label>
+        </details>
+        @if (activationConfirming && updateStatus.State == "Staged" && activationVersion == updateStatus.StagedVersion)
+        {
+            <section class="inline-confirmation" aria-label="Confirm software update activation">
+                <p><strong>Install @updateStatus.StagedVersion now?</strong> The gateway will back up its database, briefly disconnect, and automatically restore the previous release if readiness fails.</p>
+                <div class="controls-card">
+                    <button class="secondary-action" type="button" @onclick="() => activationConfirming = false" disabled="@updateBusy">Cancel</button>
+                    <button class="danger-action touch-action" type="button" @onclick="ActivateUpdateAsync" disabled="@updateBusy">@(updateBusy ? "Activating…" : "Confirm activation")</button>
+                </div>
+            </section>
+        }
+        <p class="muted-copy">Activation is accepted only while idle. The service creates a database backup and rolls back automatically if the new release does not become ready.</p>
+    </section>
+</section>
+
+@code {
+    private const long MaximumRestoreBytes = 256L * 1024 * 1024;
+    private JsonElement? restorePreview;
+    private string? message;
+    private UpdateStatusModel updateStatus = UpdateStatusModel.Empty;
+    private bool updateBusy;
+    private bool activationConfirming;
+    private string? activationVersion;
+
+    protected override async Task OnInitializedAsync() => await LoadUpdateStatusAsync();
+
+    private async Task PreviewRestoreAsync(InputFileChangeEventArgs args)
+    {
+        restorePreview = null;
+        await using Stream input = args.File.OpenReadStream(MaximumRestoreBytes);
+        using var content = new StreamContent(input);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.sqlite3");
+        content.Headers.ContentLength = args.File.Size;
+        using HttpResponseMessage response = await Http.PostAsync("api/operations/restore/preview", content);
+        if (response.IsSuccessStatusCode)
+        {
+            restorePreview = await response.Content.ReadFromJsonAsync<JsonElement>();
+            message = "Restore preview is ready. Review the counts before confirming.";
+        }
+        else message = "The selected backup could not be previewed.";
+    }
+
+    private async Task ConfirmRestoreAsync()
+    {
+        if (restorePreview is not { } preview) return;
+        using HttpResponseMessage response = await Http.PostAsJsonAsync("api/operations/restore/confirm", new
+        {
+            token = preview.GetProperty("token").GetGuid(),
+            confirmation = "RESTORE",
+        });
+        message = response.IsSuccessStatusCode
+            ? "Restore completed and the live database passed integrity validation."
+            : "Restore failed; the pre-restore database was retained or rolled back.";
+        restorePreview = null;
+    }
+
+    private async Task CheckUpdateAsync()
+    {
+        await RunUpdateActionAsync(() => Http.PostAsJsonAsync("api/updates/check", new { }),
+            "The update feed is unavailable or its configuration could not be validated.");
+    }
+
+    private async Task StageUpdateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(updateStatus.AvailableVersion)) return;
+        await RunUpdateActionAsync(() => Http.PostAsJsonAsync("api/updates/stage", new { expectedVersion = updateStatus.AvailableVersion }),
+            "The update could not be verified and staged.");
+    }
+
+    private async Task ImportUpdateAsync(InputFileChangeEventArgs args)
+    {
+        if (updateBusy) return;
+        updateBusy = true;
+        try
+        {
+            await using Stream input = args.File.OpenReadStream(UpdateManagerMaximumBundleBytes);
+            using var content = new StreamContent(input);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.treadmillrunner.update+zip");
+            content.Headers.ContentLength = args.File.Size;
+            using HttpResponseMessage response = await Http.PostAsync("api/updates/upload", content);
+            if (response.IsSuccessStatusCode) await LoadUpdateStatusAsync();
+            else updateStatus = updateStatus with { Message = "The file was not a valid newer signed TreadmillRunner update." };
+        }
+        catch (Exception exception) when (exception is IOException or HttpRequestException or ArgumentException)
+        {
+            updateStatus = updateStatus with { Message = "The signed update file could not be uploaded." };
+        }
+        finally
+        {
+            updateBusy = false;
+        }
+    }
+
+    private async Task ActivateUpdateAsync()
+    {
+        await RunUpdateActionAsync(() => Http.PostAsJsonAsync(
+            "api/updates/activate", new { confirmation = "ACTIVATE", expectedVersion = activationVersion }),
+            "Activation was not accepted.");
+        activationConfirming = false;
+    }
+
+    private async Task LoadUpdateStatusAsync()
+    {
+        try
+        {
+            updateStatus = await Http.GetFromJsonAsync<UpdateStatusModel>("api/updates/status")
+                ?? UpdateStatusModel.Empty;
+            if (updateStatus.State != "Staged" || activationVersion != updateStatus.StagedVersion)
+            {
+                activationConfirming = false;
+                activationVersion = null;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            updateStatus = UpdateStatusModel.Empty with { State = "Unavailable", Message = "Update status is unavailable." };
+        }
+    }
+
+    private void BeginActivationConfirmation()
+    {
+        activationVersion = updateStatus.StagedVersion;
+        activationConfirming = !string.IsNullOrWhiteSpace(activationVersion);
+    }
+
+    private async Task RunUpdateActionAsync(
+        Func<Task<HttpResponseMessage>> action,
+        string failureMessage)
+    {
+        if (updateBusy) return;
+        updateBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await action();
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadUpdateStatusAsync();
+            }
+            else
+            {
+                updateStatus = updateStatus with { Message = failureMessage };
+            }
+        }
+        catch (HttpRequestException)
+        {
+            updateStatus = updateStatus with { State = "Unavailable", Message = failureMessage };
+        }
+        finally
+        {
+            updateBusy = false;
+        }
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value) => value is null
+        ? "Never"
+        : value.Value.ToLocalTime().ToString("g");
+
+    private sealed record UpdateStatusModel(
+        string State,
+        string CurrentVersion,
+        string? AvailableVersion,
+        string? StagedVersion,
+        string? ReleaseNotes,
+        DateTimeOffset? LastCheckedAtUtc,
+        string Message,
+        string? FeedSource = null)
+    {
+        public static UpdateStatusModel Empty { get; } = new(
+            "NotChecked", "Unknown", null, null, null, null, "No update check has completed yet.", null);
+    }
+
+    private const long UpdateManagerMaximumBundleBytes = (1024L * 1024 * 1024) + (2L * 1024 * 1024);
+}

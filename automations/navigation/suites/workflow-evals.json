@@ -1,0 +1,89 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "module": "repo-navigation",
+          "type": "contract_declares_related_module"
+        },
+        {
+          "command": "update_navigation.py --target . --check",
+          "type": "contract_declares_command"
+        },
+        {
+          "text": "strict_read_only_commands",
+          "type": "contract_contains"
+        },
+        {
+          "text": "project_context.py --target . --check --format json",
+          "type": "contract_contains"
+        },
+        {
+          "path": "artifacts/maps/HANDOFF.md",
+          "type": "contract_declares_output"
+        },
+        {
+          "path": "docs/project/project-context.md",
+          "type": "contract_declares_output"
+        },
+        {
+          "path": "diagrams/navigation-process.mmd",
+          "type": "file_exists"
+        },
+        {
+          "path": "diagrams/navigation-process.svg",
+          "type": "file_exists"
+        },
+        {
+          "path": "diagrams/navigation-connection.mmd",
+          "type": "file_exists"
+        },
+        {
+          "path": "diagrams/navigation-connection.svg",
+          "type": "file_exists"
+        },
+        {
+          "path": "artifacts/maps/HANDOFF.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/update_navigation.py",
+          "type": "file_exists"
+        },
+        {
+          "text": "## Read-Only Dogfood",
+          "type": "start_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "start_contains"
+        },
+        {
+          "text": "do not follow a `workflow start` next command",
+          "type": "start_contains"
+        },
+        {
+          "text": "Strict read-only/offline/no-profile/no-temp/no-write dogfood does not write",
+          "type": "instructions_contains"
+        },
+        {
+          "path": "scripts/project_context.py",
+          "text": "python -B automations/navigation/scripts/project_context.py --target . --write",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/project_context.py",
+          "text": "python -B automations/navigation/scripts/update_navigation.py --target . --check",
+          "type": "file_contains"
+        }
+      ],
+      "id": "navigation-generated-workflow-validates",
+      "name": "Generated navigation workflow validates"
+    }
+  ],
+  "schema_version": 1,
+  "workflow_name": "navigation"
+}

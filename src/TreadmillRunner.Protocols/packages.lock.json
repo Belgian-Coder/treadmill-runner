@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "Garmin.FIT.Sdk": {
+        "type": "Direct",
+        "requested": "[21.205.0, )",
+        "resolved": "21.205.0",
+        "contentHash": "jjpY3rO4M9/jduX6k5LSO7ACK/A5Yi0Mwh6m7wnksNkE2WEuc8puzNCT6l/2qScz17daR8eNdN7IFoseFMIqVQ=="
+      },
+      "treadmillrunner.core": {
+        "type": "Project"
+      }
+    },
+    "net10.0/win-x64": {}
+  }
+}

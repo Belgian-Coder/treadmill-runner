@@ -1,0 +1,98 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": ".agents/skills/disciplined-change-workflow/SKILL.md",
+          "type": "file_absent"
+        },
+        {
+          "text": "No new skills are created by this workflow.",
+          "type": "start_contains"
+        },
+        {
+          "text": "## Example Prompts",
+          "type": "start_contains"
+        }
+      ],
+      "id": "workflow-shaped-not-skill",
+      "name": "Workflow shape stays narrow"
+    },
+    {
+      "assertions": [
+        {
+          "text": "## Phase: Scope Control",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "## Phase: Failed Validation Debugging",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "## Phase: Two-Stage Review",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "fresh validation",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "Bounded Work Packages",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "Plan Variance",
+          "type": "instructions_contains"
+        }
+      ],
+      "id": "discipline-phases",
+      "name": "Discipline phases present"
+    },
+    {
+      "assertions": [
+        {
+          "module": "skill-manager",
+          "type": "contract_declares_related_module"
+        },
+        {
+          "module": "workflow-manager",
+          "type": "contract_declares_related_module"
+        },
+        {
+          "text": "Use related skills through their commands; do not embed their full instructions here.",
+          "type": "start_contains"
+        },
+        {
+          "path": "runs/<run-id>/run.json",
+          "type": "contract_declares_output"
+        },
+        {
+          "type": "contract_local_ai_use_cases",
+          "use_cases": [
+            "validation-triage",
+            "changed-files-summary",
+            "failure-cluster",
+            "test-gap-summary",
+            "handoff-draft"
+          ]
+        }
+      ],
+      "id": "contract-uses-reusable-capabilities",
+      "name": "Contract uses related modules"
+    },
+    {
+      "assertions": [
+        {
+          "type": "workflow_lifecycle_smoke_ok"
+        }
+      ],
+      "id": "discipline-lifecycle-smoke",
+      "name": "Discipline lifecycle smoke has evidence"
+    }
+  ],
+  "schema_version": 1,
+  "suite": "discipline-workflow-shape"
+}

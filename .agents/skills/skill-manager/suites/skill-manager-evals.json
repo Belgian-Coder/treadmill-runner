@@ -1,0 +1,750 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        }
+      ],
+      "id": "validates",
+      "name": "The skill manager validates as an accepted skill."
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/analyze_location.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/module_contract_v3.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/eval_skill.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/eval_skill.py",
+          "text": "DEFAULT_COMMAND_TIMEOUT_SECONDS",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/eval_skill.py",
+          "text": "repo_file_contains",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/attest_skill.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/skill_inventory.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/triage_candidates.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/measure_skill_budget.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/audit_skill_determinism.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/candidate_source_audit.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_manager.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_common.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_determinism.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_generated.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_health.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_health_links.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_harness_profiles.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_harness_paths.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_prevention.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_changed.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/analysis_common.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/dependency_parsers.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/signal_scanner.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/import_review.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/report_rendering.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/analysis_support/core.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_harness_path_safety.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_determinism_planning.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_determinism_isolation.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_determinism_comparison.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/self_tests/test_determinism_orchestration.py",
+          "type": "file_exists"
+        },
+        {
+          "command": [
+            "determinism-check",
+            "--help"
+          ],
+          "text": "--changed",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "path": "scripts/skill_manager_common.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_skill.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_agent_compatibility.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/sync_skill_routing.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/repo_support/repo_feedback.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/schemas/correction-events-v1.schema.json",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/fixtures/correction-events-v1.json",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/manage_repo.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/self_test.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/sync_references.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/sync_skill_references.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/skill_common.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/local_ai_routing.py",
+          "type": "file_absent"
+        },
+        {
+          "path": "scripts/setup_local_ai.py",
+          "type": "file_absent"
+        }
+      ],
+      "id": "command-files",
+      "name": "The skill manager command scripts are present."
+    },
+    {
+      "assertions": [
+        {
+          "text": "versioning",
+          "type": "description_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "key": "destructive",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "credentialed"
+        },
+        {
+          "text": "dotnet-legacy",
+          "type": "skill_contains"
+        },
+        {
+          "text": "5MB",
+          "type": "skill_contains"
+        },
+        {
+          "text": "__pycache__",
+          "type": "skill_contains"
+        },
+        {
+          "text": "PYTHONDONTWRITEBYTECODE",
+          "type": "skill_contains"
+        },
+        {
+          "text": "frontmatter",
+          "type": "skill_contains"
+        },
+        {
+          "text": "reachable from `docs/start-here.md`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict no-write/no-temp/no-profile offline dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline permits only the step 2 commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict no-write/no-temp/no-profile",
+          "type": "skill_contains"
+        },
+        {
+          "text": "credential or profile read",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Report stale generated files without writing",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Outside strict dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "repo-root `docs/reference/commands.md`",
+          "type": "skill_contains"
+        },
+        {
+          "path": "module.json",
+          "text": "strict_read_only_commands",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_cli_parser.py",
+          "text": "read-only drift detection",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_qol_parsers.py",
+          "text": "write/create or update a gitignored local service profile",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_cli_skill_commands.py",
+          "text": "suites may execute commands or self-tests",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_cli_skill_commands.py",
+          "text": "local folder/file path only; stage remote sources manually",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "write/temp",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "test_sync_check_bypasses_failure_triage_for_strict_read_only",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "test_skill_routing_check_stale_message_separates_strict_and_write_mode",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/sync_skill_routing.py",
+          "text": "Strict read-only: report stale generated skill routing/registry",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "text": "test_inspect_skill_recommends_read_only_sync_checks_for_dogfood",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/inspect_skill.py",
+          "text": "sync-skill-routing --check",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/inspect_skill.py",
+          "text": "strict no-write dogfood",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_cli_parser.py",
+          "text": "For read-only/offline use",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_doctor_groups.py",
+          "text": "write/run-state",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/repo_support/repo_commands.py",
+          "text": "For read-only/offline use",
+          "type": "file_contains"
+        }
+      ],
+      "id": "description-and-risk",
+      "name": "The skill description and declared risk stay explicit."
+    },
+    {
+      "assertions": [
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1200
+        }
+      ],
+      "id": "budget",
+      "name": "The trigger-loaded skill body stays compact."
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "path": "mode",
+          "type": "repo_command_json_field_equals",
+          "value": "fast"
+        },
+        {
+          "command": [
+            "analyze-location",
+            "--help"
+          ],
+          "text": "--review-profile",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "triage-candidates",
+            "--help"
+          ],
+          "text": "--review-profile",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate-agent-compatibility",
+            "--help"
+          ],
+          "text": "adapter surfaces",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate-agent-compatibility",
+            "--help"
+          ],
+          "text": "--installed-hosts",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate-agent-compatibility"
+          ],
+          "text": "Agent Compatibility Validation",
+          "type": "public_command_behavior"
+        },
+        {
+          "command": [
+            "validate-agent-compatibility"
+          ],
+          "text": "flat skill layout",
+          "type": "public_command_behavior"
+        },
+        {
+          "command": [
+            "inspect-skill",
+            "--help"
+          ],
+          "text": "--fast",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "check-changed",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "validate",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "status",
+            "--help"
+          ],
+          "text": "--full",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "what-now",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "what-now",
+            "--from-command",
+            "python -B .agents/manage.py commands --help",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "failure_type",
+          "type": "repo_command_json_field_equals",
+          "value": "passed"
+        },
+        {
+          "command": [
+            "credential-doctor",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "credential-doctor",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "workflow",
+            "eval",
+            "--help"
+          ],
+          "text": "--compact",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "workflow",
+            "eval",
+            "--all",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "timeout_seconds": 360,
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "route",
+            "--help"
+          ],
+          "text": "query",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "check",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "sync",
+            "--help"
+          ],
+          "text": "--check",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "finish",
+            "--help"
+          ],
+          "text": "--deep",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "review",
+            ".agents/skills/skill-manager",
+            "--help"
+          ],
+          "text": "--plan",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "new",
+            "--kind",
+            "workflow",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "audit-skill-determinism",
+            "--help"
+          ],
+          "text": "--strict",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "audit-candidate-source",
+            "--help"
+          ],
+          "text": "routing",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "sync-skill-routing",
+            "--help"
+          ],
+          "text": "routing Markdown",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "commands",
+            "--format",
+            "markdown"
+          ],
+          "text": "skill route-audit --summary --compact --format json",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "commands",
+            "--format",
+            "markdown"
+          ],
+          "text": "benchmark release-gate --json --summary --compact",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "commands",
+            "--format",
+            "markdown"
+          ],
+          "text": "benchmark friction --summary --compact --format json",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "clean-room-validate",
+            "--help"
+          ],
+          "text": "--work-dir",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "environment-preflight",
+            "--help"
+          ],
+          "text": "--summary",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "command-docs-smoke",
+            "--summary",
+            "--compact",
+            "--format",
+            "json"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "local-ai",
+            "--help"
+          ],
+          "text": "local-ai readiness --summary --compact --json",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "local-ai",
+            "--help"
+          ],
+          "text": "local-ai bootstrap --dry-run",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "local-ai",
+            "--help"
+          ],
+          "text": "Strict no-profile/no-cache dogfood uses local-ai-helper strict_read_only_commands",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "feedback",
+            "review-digest",
+            "--corrections",
+            ".agents/skills/skill-manager/assets/fixtures/correction-events-v1.json",
+            "--format",
+            "json"
+          ],
+          "path": "reviewed_events_sha256",
+          "type": "repo_command_json_field_equals",
+          "value": "f6b48bffdbe37a0b60b12663fcca67f7ecac317e349911cb963992e6ffbb3178"
+        },
+        {
+          "command": [
+            "feedback",
+            "eval-packet",
+            "--help"
+          ],
+          "text": "--output",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "measure-skill-budget",
+            "--help"
+          ],
+          "text": "--write-trend",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "measure-skill-budget",
+            "--help"
+          ],
+          "text": "--baseline-ref",
+          "type": "repo_command_output_contains"
+        }
+      ],
+      "id": "public-command-behavior",
+      "name": "Public repo commands expose the expected fast and deep behavior."
+    }
+  ],
+  "skill_name": "skill-manager"
+}

@@ -1,0 +1,180 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-61703550f6f8",
+            "command-32464c9b8359",
+            "command-8d83283fdff4",
+            "command-82ed6c9a5ead",
+            "command-b9b48d020bb9",
+            "command-619d5fc9c209",
+            "command-1b74ea3a53d0",
+            "command-6e6719c4cb6c",
+            "command-f1e23ffaaf8c",
+            "command-6066588d4453"
+          ]
+        },
+        {
+          "key": "installs",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/check_playwright_readiness.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/detect_playwright_project.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/lint_playwright_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/parse_playwright_results.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/diagnose_flaky_playwright.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/validate_playwright_screenshots.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/playwright-quality-guide.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "Playwright",
+          "type": "description_contains"
+        },
+        {
+          "text": ".NET",
+          "type": "skill_contains"
+        },
+        {
+          "text": "without local AI",
+          "type": "skill_contains"
+        },
+        {
+          "text": "--accepted-dir",
+          "type": "skill_contains"
+        },
+        {
+          "text": "read-only/offline dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict no-temp/no-write/no-profile boundaries",
+          "type": "skill_contains"
+        },
+        {
+          "text": "`--auto-install --preflight-install` is only for approved setup planning",
+          "type": "skill_contains"
+        },
+        {
+          "path": "docs/playwright-quality-guide.md",
+          "text": "Workflow Evidence Commands, Not Strict Read-Only",
+          "type": "file_contains"
+        },
+        {
+          "path": "module.json",
+          "text": "strict_read_only_commands",
+          "type": "file_contains"
+        },
+        {
+          "path": "module.json",
+          "text": "strict_safe_commands",
+          "type": "file_contains"
+        },
+        {
+          "text": "classify by printed/report status before treating the command as failed",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Pass `--skip-llm-analysis` unless local-AI vision use is allowed by policy/workflow",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Runtime PATH checks are blockers only for the matching declared language support",
+          "type": "skill_contains"
+        },
+        {
+          "text": "detection/readiness may still report the absence as skipped metadata evidence",
+          "type": "skill_contains"
+        },
+        {
+          "text": "narrow app/project root",
+          "type": "skill_contains"
+        },
+        {
+          "path": "scripts/check_playwright_readiness.py",
+          "text": "stdout-only read-only reporting",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/validate_playwright_screenshots.py",
+          "text": "write/capture",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/playwright-quality-guide.md",
+          "text": "stdout-only preflight is approved setup planning evidence",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/playwright-quality-guide.md",
+          "text": "Treat a missing runtime as a blocker only when the matching language support is declared",
+          "type": "file_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "playwright-integration"
+}

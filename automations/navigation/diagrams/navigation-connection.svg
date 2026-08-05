@@ -1,0 +1,26 @@
+<svg id="navigation-connection" xmlns="http://www.w3.org/2000/svg" width="720" height="204" viewBox="0 -24 720 204" style="max-width: 720px; background-color: transparent;" preserveAspectRatio="xMidYMid meet" data-mermaid-vertical-padding="24" role="img" aria-labelledby="navigation-connection-title navigation-connection-desc">
+<title id="navigation-connection-title">Navigation workflow connections</title>
+<desc id="navigation-connection-desc">Project files feed the navigation scanner, which writes maps and project context used by implementation workflows.</desc>
+<defs><marker id="navigation-connection-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+<g fill="#111827" stroke="#64748b" stroke-width="1.5">
+<rect x="24" y="54" width="124" height="44" rx="6"/>
+<rect x="194" y="54" width="142" height="44" rx="6"/>
+<rect x="390" y="18" width="144" height="44" rx="6"/>
+<rect x="390" y="108" width="186" height="44" rx="6"/>
+<rect x="602" y="64" width="94" height="58" rx="6"/>
+</g>
+<g stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#navigation-connection-arrow)">
+<path d="M148,76 L194,76"/>
+<path d="M336,76 C360,76 360,40 390,40"/>
+<path d="M336,76 C360,76 360,130 390,130"/>
+<path d="M534,40 C582,40 582,82 602,82"/>
+<path d="M576,130 C594,130 594,104 602,104"/>
+</g>
+<g font-family="Arial, sans-serif" font-size="13" fill="#e5e7eb" text-anchor="middle">
+<text x="86" y="73">Project</text><text x="86" y="89">files</text>
+<text x="265" y="73">Navigation</text><text x="265" y="89">scanner</text>
+<text x="462" y="37">artifacts/maps</text><text x="462" y="53">outputs</text>
+<text x="483" y="127">docs/project</text><text x="483" y="143">project context</text>
+<text x="649" y="84">Workflows</text><text x="649" y="100">consume</text>
+</g>
+</svg>

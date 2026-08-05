@@ -1,0 +1,2937 @@
+{
+  "commit": "0000000000000000000000000000000000000000",
+  "files": [
+    {
+      "bytes": 7749,
+      "path": ".agents/harness-payload.json",
+      "sha256": "7fc10685348a34a86228809ccdfed8d56d83af2ba6d84a7a3e217fbfbd4efdf1"
+    },
+    {
+      "bytes": 950,
+      "path": ".agents/integrations/azure-devops-ticket-intake/integration.json",
+      "sha256": "0fe40911e402bf23a9196751d9d0c7953216d9cbb3a00f6ec0b87969b558c5ca"
+    },
+    {
+      "bytes": 616,
+      "path": ".agents/integrations/pr-system/integration.json",
+      "sha256": "626bf58934fb85cef0fbb041030bf120d5528fb917b147da88c2c0324324c779"
+    },
+    {
+      "bytes": 923,
+      "path": ".agents/integrations/sonarqube-diagnostics/integration.json",
+      "sha256": "97ac76310bd97258449af93609d7989b0a6360eb1cfc7ec71e526407ed9a2191"
+    },
+    {
+      "bytes": 12206,
+      "path": ".agents/local-ai.json",
+      "sha256": "460d601b12fbd1f7a9d5aed024c1dae86a43303781ab971014514514194e42bd"
+    },
+    {
+      "bytes": 2119,
+      "path": ".agents/manage.py",
+      "sha256": "3a0156fe6a2a75a27782895795fa76ef05ef37c63912a21095aa7de9f8d9a2b9"
+    },
+    {
+      "bytes": 7781,
+      "path": ".agents/skills/agent-benchmarking/SKILL.md",
+      "sha256": "b29436254c54320dddc6f23adac48c44c78ea6cecb37f622950ac9e8e33c4c61"
+    },
+    {
+      "bytes": 34610,
+      "path": ".agents/skills/agent-benchmarking/docs/benchmark-methodology.md",
+      "sha256": "3c34d0dbc783b65ba6828490b91f72a2a2e681aa578aaec2452cd5efb5c6d927"
+    },
+    {
+      "bytes": 14620,
+      "path": ".agents/skills/agent-benchmarking/module.json",
+      "sha256": "64cd7ffc3fbbda2b34a4a8c769969710acfb4bdd51e6b4e0ef8b4ea7b1aad440"
+    },
+    {
+      "bytes": 13690,
+      "path": ".agents/skills/agent-benchmarking/scripts/anchored_edit_v1.py",
+      "sha256": "fb043f0d42e5c1e37f5363180143fd27f304dd1ef36b43ffbd3a91c92f498a73"
+    },
+    {
+      "bytes": 7346,
+      "path": ".agents/skills/agent-benchmarking/scripts/benchmark_common.py",
+      "sha256": "93c0334669c84b279c6fbd123b4048c1aa6af71ffa5c96747ae0c00209a1fff3"
+    },
+    {
+      "bytes": 10721,
+      "path": ".agents/skills/agent-benchmarking/scripts/benchmark_determinism.py",
+      "sha256": "68bf9451c59522f78f96473ab62c0fb352dea88418b4272edae717ad4721c791"
+    },
+    {
+      "bytes": 13779,
+      "path": ".agents/skills/agent-benchmarking/scripts/benchmark_feature_card.py",
+      "sha256": "b4843c9f6a70bac7046c5bf9b27fa252b33133ba608122b8b2331bbfd3b2cec9"
+    },
+    {
+      "bytes": 18722,
+      "path": ".agents/skills/agent-benchmarking/scripts/benchmark_prompt_packet.py",
+      "sha256": "4647fa2b0ae769e6a1aae41ce1748953a7b7a778a601aacd8ffabc155ff8db18"
+    },
+    {
+      "bytes": 9939,
+      "path": ".agents/skills/agent-benchmarking/scripts/capability_matrix.py",
+      "sha256": "13acf9a42dc8f3efeec7477435c27539a943f5ee73f7bf3c062cfc34a9df2fa9"
+    },
+    {
+      "bytes": 14970,
+      "path": ".agents/skills/agent-benchmarking/scripts/clean_folder_control.py",
+      "sha256": "d82d809ba8ad47fe040f995f2e837fb42fbe48718905c28e5b8d7e72b2c1740d"
+    },
+    {
+      "bytes": 29116,
+      "path": ".agents/skills/agent-benchmarking/scripts/codex_usage_ledger.py",
+      "sha256": "ae3102b3a1d5ceac56454c971177d47365260d9f15df1a5b2fae6f0ed3962051"
+    },
+    {
+      "bytes": 53158,
+      "path": ".agents/skills/agent-benchmarking/scripts/compare_benchmark_runs.py",
+      "sha256": "e2e852e720ed3be44b816133c52aca20f7ce53e33e1a6d83233bcd94a4723684"
+    },
+    {
+      "bytes": 12115,
+      "path": ".agents/skills/agent-benchmarking/scripts/compare_prompt_packet_pair.py",
+      "sha256": "b726eb475a75c0a946c862edc6216fe8ab6082ee6d51383e7ad5372ea474a61d"
+    },
+    {
+      "bytes": 9939,
+      "path": ".agents/skills/agent-benchmarking/scripts/compare_three_arm_artifact_tokens.py",
+      "sha256": "85e95c49cb845af2d94644bff36d929df1f2cc9216f8c551c01cae26a3f5c517"
+    },
+    {
+      "bytes": 37681,
+      "path": ".agents/skills/agent-benchmarking/scripts/dotnet_feature_project_fixture.py",
+      "sha256": "09674168f78d9e310c519c2664f597867dd4aa1e07029bfbb7043b29743f958f"
+    },
+    {
+      "bytes": 21225,
+      "path": ".agents/skills/agent-benchmarking/scripts/execution_harness_experiments.py",
+      "sha256": "e1d6e9930440e3742acd6b6e9a8cace22b99c4ea51e67929cce1236669c868d2"
+    },
+    {
+      "bytes": 25282,
+      "path": ".agents/skills/agent-benchmarking/scripts/lesson_promotion.py",
+      "sha256": "d56e14a941dcf470b65a66a7e604f970b82abf64e9e9f9172d588de1b4c71321"
+    },
+    {
+      "bytes": 12747,
+      "path": ".agents/skills/agent-benchmarking/scripts/prepare_benchmark_run.py",
+      "sha256": "2ec749c0e2a621fd57678d064ecca92495efac9f25793127e22e85573d22529d"
+    },
+    {
+      "bytes": 12819,
+      "path": ".agents/skills/agent-benchmarking/scripts/provider_host_matrix.py",
+      "sha256": "2090b8118e1a2d6b78a95eda2ecee3e97f5257151e2ea4796dcfaeb6f4c9eece"
+    },
+    {
+      "bytes": 21526,
+      "path": ".agents/skills/agent-benchmarking/scripts/record_benchmark_result.py",
+      "sha256": "3fe3805c63d3bb51d7874c196985016fa9abab9c4bcee7f3962e76f775a67c8f"
+    },
+    {
+      "bytes": 17192,
+      "path": ".agents/skills/agent-benchmarking/scripts/repository_search_benchmark.py",
+      "sha256": "5cd278c28d136da715327ceb91c554432d59a741835f80c868f8b379ac10258e"
+    },
+    {
+      "bytes": 28354,
+      "path": ".agents/skills/agent-benchmarking/scripts/routing_evidence_eval.py",
+      "sha256": "36c93c5002cef3d470c35b1e07c8bb84bf61f38f057f9564f40adb78dd3a7bb3"
+    },
+    {
+      "bytes": 9721,
+      "path": ".agents/skills/agent-benchmarking/scripts/run_packet.py",
+      "sha256": "a80b4aa885f6553a7ce644a856be8e69e44b381f07f56d2f1c699ffa37e9013a"
+    },
+    {
+      "bytes": 323005,
+      "path": ".agents/skills/agent-benchmarking/scripts/run_self_tests.py",
+      "sha256": "0e6bc1c5ddad16df7a9a63798464a3e6f49cdf1171c9e3299370f67cbb1f140a"
+    },
+    {
+      "bytes": 18422,
+      "path": ".agents/skills/agent-benchmarking/scripts/structural_search_benchmark.py",
+      "sha256": "684f8ecac1a11028ac21b08ddc2b13ae3566b2fea04f87bf520e690fc5898732"
+    },
+    {
+      "bytes": 55,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/__init__.py",
+      "sha256": "536da8a25b32658972792dcc49e6e71c2f65c7a48835bcdb2c82a27171c1c158"
+    },
+    {
+      "bytes": 8125,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/benchmark_common_contracts.py",
+      "sha256": "6d00abe26cca098f4d828018fbd445709ffd2041f288188adeda35159c16e749"
+    },
+    {
+      "bytes": 58776,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/benchmark_common_metrics.py",
+      "sha256": "62ba74d4239784aff981b7d37a66e68e6326ddf32ad96a2bf75c14ebea8fa55b"
+    },
+    {
+      "bytes": 6494,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/execution_prompt_marker.py",
+      "sha256": "bf6adc757b653eb1221d5c1fc542a62544a20bfb0b1d29c84a7a180405d7808c"
+    },
+    {
+      "bytes": 3895,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/navigation_benchmark_support.py",
+      "sha256": "634c1587aaaac6d61b342affcf769bd5da09764b81b16c3aef665d9830cfad43"
+    },
+    {
+      "bytes": 37167,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/openai_responses_adapter_v1.py",
+      "sha256": "997fe081aae62d6ea3438a9297666c47d3a1f33417aad0d141da3ed0abcb3401"
+    },
+    {
+      "bytes": 72607,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/provider_evidence_adapters.py",
+      "sha256": "7add8e0d7fa45a815b0afac62ae74b241d9ecad64e22d521846b60d3b5f9903c"
+    },
+    {
+      "bytes": 20249,
+      "path": ".agents/skills/agent-benchmarking/scripts/support/token_measurement_v1.py",
+      "sha256": "c90a4bef14f681cf69387e3a4c4b63de1e774ee335ce88d02e88c0507a8533d6"
+    },
+    {
+      "bytes": 150527,
+      "path": ".agents/skills/agent-benchmarking/scripts/three_arm_full_run.py",
+      "sha256": "70a5feb1b3c0623f53c3e2dc5fab9a368571695b382d07f2d2f3553905834c0a"
+    },
+    {
+      "bytes": 23642,
+      "path": ".agents/skills/agent-benchmarking/scripts/web_evidence_benchmark.py",
+      "sha256": "6bbab56fafcfb4cdf4022ae82b756cd300f96fa1ef6b4c66296713f589737c92"
+    },
+    {
+      "bytes": 6521,
+      "path": ".agents/skills/agent-benchmarking/suites/agent-benchmarking-evals.json",
+      "sha256": "2c2c3a8e0b210f8f95355ba7f379f85334a318ab6cb7cb1d7cc69500f48682a2"
+    },
+    {
+      "bytes": 7326,
+      "path": ".agents/skills/azure-devops-ticket-intake/SKILL.md",
+      "sha256": "0364e1e464906cf17f07f685a67b5a561e7189115ac8a3dd94d983d228d801b6"
+    },
+    {
+      "bytes": 1054,
+      "path": ".agents/skills/azure-devops-ticket-intake/docs/evidence-examples.md",
+      "sha256": "5a2fdaaf6d5483db57e95094a3f2dfd3b297e6938f531b026592cb2eb4c1b933"
+    },
+    {
+      "bytes": 6032,
+      "path": ".agents/skills/azure-devops-ticket-intake/module.json",
+      "sha256": "8ff63d6759dfd450d2d86020b20fdeb6df964977be550c960f3c86a5220aadcf"
+    },
+    {
+      "bytes": 26211,
+      "path": ".agents/skills/azure-devops-ticket-intake/scripts/import_azure_devops_work_item.py",
+      "sha256": "2842bc61d4594ed72049d71f0e28b912c2983c9687fe56df2d610074dc8542a0"
+    },
+    {
+      "bytes": 63,
+      "path": ".agents/skills/azure-devops-ticket-intake/scripts/intake_support/__init__.py",
+      "sha256": "efa0603bf60ec464c5575dc91c9c0846b7b8901a3cc1d6c0d38e948bc9510f10"
+    },
+    {
+      "bytes": 11597,
+      "path": ".agents/skills/azure-devops-ticket-intake/scripts/intake_support/common.py",
+      "sha256": "1c7fbe32143b0b11f0e51487bfec841a22e0953cd8a53e96d41281eec1f27317"
+    },
+    {
+      "bytes": 28377,
+      "path": ".agents/skills/azure-devops-ticket-intake/scripts/run_self_tests.py",
+      "sha256": "2c2dab2b7d7c27a6e43542dbb648778be9cb6268a08d474e50a758575b00d0d0"
+    },
+    {
+      "bytes": 17839,
+      "path": ".agents/skills/azure-devops-ticket-intake/scripts/summarize_imported_ticket.py",
+      "sha256": "b32c5ddad55e3b1a404d57d5f2558027e7f84293bc14b0860a9a4a4f9a1806e5"
+    },
+    {
+      "bytes": 3883,
+      "path": ".agents/skills/azure-devops-ticket-intake/suites/azure-devops-ticket-intake-evals.json",
+      "sha256": "9cf023e3a16cff53d02c1b5c71cb88f1ab92c1f1c94bf691a2a97719a39ede8b"
+    },
+    {
+      "bytes": 7282,
+      "path": ".agents/skills/document-artifacts/SKILL.md",
+      "sha256": "b1d1da875dda13c391cbc941d8a2775a5658d572a9bf320bb023e6cf11530bab"
+    },
+    {
+      "bytes": 254,
+      "path": ".agents/skills/document-artifacts/assets/excel/fixtures/README.md",
+      "sha256": "b3fff6aa64ab681e48ef43a368f53e1abed4618f7a7d61836425c05bf51cd987"
+    },
+    {
+      "bytes": 248,
+      "path": ".agents/skills/document-artifacts/assets/pdf/fixtures/README.md",
+      "sha256": "e1a905b79b9088203b4b2b1e486019a75851f542d283b8e2b262d8d441fdc041"
+    },
+    {
+      "bytes": 248,
+      "path": ".agents/skills/document-artifacts/assets/powerpoint/fixtures/README.md",
+      "sha256": "75f032fd8d58b9b0288b5f54b1e2e1120301d1fcaf7484c4566581df518e6393"
+    },
+    {
+      "bytes": 235,
+      "path": ".agents/skills/document-artifacts/assets/word/fixtures/README.md",
+      "sha256": "f20b94cdd96057d01ec27d94b66888785aa4421ac143164d6d06d3417d5fa236"
+    },
+    {
+      "bytes": 650,
+      "path": ".agents/skills/document-artifacts/docs/excel-dependency-policy.json",
+      "sha256": "6f135d7d76029aa07866c0e9126c85c81279af6820d1081fe77a5a5ad886bff2"
+    },
+    {
+      "bytes": 580,
+      "path": ".agents/skills/document-artifacts/docs/excel-evidence-schema.json",
+      "sha256": "9e9a3a4249de700153a816fb284d128efb53524a6431393d0d05559f90de28e6"
+    },
+    {
+      "bytes": 3917,
+      "path": ".agents/skills/document-artifacts/docs/excel-evidence-usage.md",
+      "sha256": "0a2e89ecf0d26d1eeef0e67e5c7c43889fddaca3aa52b1c5102ea1137fcd659b"
+    },
+    {
+      "bytes": 892,
+      "path": ".agents/skills/document-artifacts/docs/pdf-dependency-policy.json",
+      "sha256": "de41a6579141ee5e8df2323397afae0995395a74dcfe6c69dee1157b56aae767"
+    },
+    {
+      "bytes": 580,
+      "path": ".agents/skills/document-artifacts/docs/pdf-evidence-schema.json",
+      "sha256": "9e9a3a4249de700153a816fb284d128efb53524a6431393d0d05559f90de28e6"
+    },
+    {
+      "bytes": 3461,
+      "path": ".agents/skills/document-artifacts/docs/pdf-evidence-usage.md",
+      "sha256": "1fc054bfd0b5c5f4c3cfa64db6bdeb8e3a614060198ae93a73355c108d515af7"
+    },
+    {
+      "bytes": 410,
+      "path": ".agents/skills/document-artifacts/docs/powerpoint-dependency-policy.json",
+      "sha256": "148a99ebddbb116bdf9ea9c6d4974a8d52db89e7427a3e5c6986d885faa8720d"
+    },
+    {
+      "bytes": 580,
+      "path": ".agents/skills/document-artifacts/docs/powerpoint-evidence-schema.json",
+      "sha256": "9e9a3a4249de700153a816fb284d128efb53524a6431393d0d05559f90de28e6"
+    },
+    {
+      "bytes": 3853,
+      "path": ".agents/skills/document-artifacts/docs/powerpoint-evidence-usage.md",
+      "sha256": "0daa526ec53809d4938a65420e3bbc534dc9d1a805e4a02bf4b9d0572bcf77fe"
+    },
+    {
+      "bytes": 605,
+      "path": ".agents/skills/document-artifacts/docs/word-dependency-policy.json",
+      "sha256": "62d119f6de98711e43ac187656c364c71271bc2bc3650c50e88e286e67d856b9"
+    },
+    {
+      "bytes": 580,
+      "path": ".agents/skills/document-artifacts/docs/word-evidence-schema.json",
+      "sha256": "9e9a3a4249de700153a816fb284d128efb53524a6431393d0d05559f90de28e6"
+    },
+    {
+      "bytes": 3804,
+      "path": ".agents/skills/document-artifacts/docs/word-evidence-usage.md",
+      "sha256": "dcd1295ee90d5fa59a742db6e5c423df4a72bd6d56e074e465fd7f35a41eac15"
+    },
+    {
+      "bytes": 8106,
+      "path": ".agents/skills/document-artifacts/module.json",
+      "sha256": "3a5638049e2dffb4cc85c8695b4fecf0f7e53cdb92aeeba59619b3ab73bb8e4b"
+    },
+    {
+      "bytes": 3827,
+      "path": ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+      "sha256": "e50eb756cf64ced26b3334f861fcebb0574aabf76cc02840ea2ba4f59fb87ea3"
+    },
+    {
+      "bytes": 23038,
+      "path": ".agents/skills/document-artifacts/scripts/excel/excel_format_depth.py",
+      "sha256": "301a774c1bc5727a8351117cdfb5991676fdfdb962ccef43f7c25e05207fb96e"
+    },
+    {
+      "bytes": 39435,
+      "path": ".agents/skills/document-artifacts/scripts/excel/excel_tools.py",
+      "sha256": "4cd1347b4e8a6f0fef0478abfa5ec70422071bea91e90f70c082eedbe289aba5"
+    },
+    {
+      "bytes": 15390,
+      "path": ".agents/skills/document-artifacts/scripts/excel/run_self_tests.py",
+      "sha256": "466cd904eb01fb772a7789f27ec53d55d848522b7b304e698fbda146a3c154cc"
+    },
+    {
+      "bytes": 41949,
+      "path": ".agents/skills/document-artifacts/scripts/markdown/markdown_tools.py",
+      "sha256": "ce1e9a6c7ad613d8bc1d2d799324fd3e44580b9cadff85ec18bcdf8894f5cfd6"
+    },
+    {
+      "bytes": 26221,
+      "path": ".agents/skills/document-artifacts/scripts/markdown/run_self_tests.py",
+      "sha256": "a01446314ec190b688384d271bda9373d85da60162ab6d626c97c9d9f04c551d"
+    },
+    {
+      "bytes": 9808,
+      "path": ".agents/skills/document-artifacts/scripts/pdf/pdf_evidence_workflows.py",
+      "sha256": "fb9c5a81101d2f09d3119d797bd6ec4e7d2e6235f23f6e299b70aeb86fd5445f"
+    },
+    {
+      "bytes": 43230,
+      "path": ".agents/skills/document-artifacts/scripts/pdf/pdf_tools.py",
+      "sha256": "5dd83402a612767aa104ccb7912b9fc9bbb7534402b254e74c7cd2236158f511"
+    },
+    {
+      "bytes": 12592,
+      "path": ".agents/skills/document-artifacts/scripts/pdf/run_self_tests.py",
+      "sha256": "10b0465a727c473221b0fe76d99c816508038e7ba8043bf1db20204803fbc45e"
+    },
+    {
+      "bytes": 12743,
+      "path": ".agents/skills/document-artifacts/scripts/powerpoint/powerpoint_format_depth.py",
+      "sha256": "2abc565ee7e0906c06a21a36d7927f7aa0e42e7ddfb050c5136f84e3fa482d51"
+    },
+    {
+      "bytes": 45868,
+      "path": ".agents/skills/document-artifacts/scripts/powerpoint/powerpoint_tools.py",
+      "sha256": "6265f2b2b26f0e8d79be0aea67be8f3541a3c1cef0fc18aa064dc3f75b37f5b4"
+    },
+    {
+      "bytes": 15112,
+      "path": ".agents/skills/document-artifacts/scripts/powerpoint/run_self_tests.py",
+      "sha256": "da7e3cc7f40b7724e3bf7b7516f26df37b35a35f3210ea4d7723fedcce013f54"
+    },
+    {
+      "bytes": 3607,
+      "path": ".agents/skills/document-artifacts/scripts/run_self_tests.py",
+      "sha256": "91e970be3753e56ebced65369507f1dde08d4f57ec8c0b5c0797105cffda9734"
+    },
+    {
+      "bytes": 14280,
+      "path": ".agents/skills/document-artifacts/scripts/word/run_self_tests.py",
+      "sha256": "5f72101294bfd7a11b987d3e65d2415543742c38dd1ecdc719bf8e2dda057be1"
+    },
+    {
+      "bytes": 12365,
+      "path": ".agents/skills/document-artifacts/scripts/word/word_format_depth.py",
+      "sha256": "cdfc2a0ef37b5130fddaa7f6431c6cd068b7d6079366ebe28607dcb5dd8a0b0c"
+    },
+    {
+      "bytes": 42731,
+      "path": ".agents/skills/document-artifacts/scripts/word/word_tools.py",
+      "sha256": "43e87205c8b059e85d829dc512e7dc8d588e194e9ab9f3bb39effc9208967ccd"
+    },
+    {
+      "bytes": 6566,
+      "path": ".agents/skills/document-artifacts/suites/document-artifacts-evals.json",
+      "sha256": "11622b0dde2168f6384e6903baf5243ab2942db06386443aaccea2de0f2088f9"
+    },
+    {
+      "bytes": 4526,
+      "path": ".agents/skills/dotnet-delivery/SKILL.md",
+      "sha256": "43f6559de16cc3efa686902f4481ac252a1d23ed23ff02b6e941eb2fd8a7d43f"
+    },
+    {
+      "bytes": 4077,
+      "path": ".agents/skills/dotnet-delivery/docs/ci-packaging-release.md",
+      "sha256": "5d81e6292477336e2469f232f0482013f954e111141d4c0272daf228f7003f2b"
+    },
+    {
+      "bytes": 6149,
+      "path": ".agents/skills/dotnet-delivery/module.json",
+      "sha256": "79dcc97a6bbac7c8da97182519641087db124a9973a09ac3168f1604b7e0e2b5"
+    },
+    {
+      "bytes": 1627,
+      "path": ".agents/skills/dotnet-delivery/scripts/run_self_tests.py",
+      "sha256": "50ee49e124de0e8228038e5ebee0e60940fb464e027590b261ad84f76296bf3b"
+    },
+    {
+      "bytes": 4454,
+      "path": ".agents/skills/dotnet-delivery/suites/dotnet-delivery-evals.json",
+      "sha256": "318db94a1621d8e23811c27ede908b78365ca2d96869fe2f444568c6fa82747e"
+    },
+    {
+      "bytes": 4418,
+      "path": ".agents/skills/dotnet-diagnostics/SKILL.md",
+      "sha256": "dbeb770632717b27e567a16c82d6123cfa9d2fed50381f64a552ac9aef2fdbfd"
+    },
+    {
+      "bytes": 2026,
+      "path": ".agents/skills/dotnet-diagnostics/docs/dump-and-trace.md",
+      "sha256": "d3c74df74c26811a3b0cd4d98af7b1c2b5b6fff73a4a8f21c3b6fc549f868c3c"
+    },
+    {
+      "bytes": 1399,
+      "path": ".agents/skills/dotnet-diagnostics/docs/reporting.md",
+      "sha256": "52313ebdb566b5bb0246bed87da1dd3fb6600881a7602aec2e16d409b252e1c9"
+    },
+    {
+      "bytes": 1925,
+      "path": ".agents/skills/dotnet-diagnostics/docs/runtime-triage.md",
+      "sha256": "f65de313186cf99793a8b280723a7c1128383b9b910eaf0ad8dd3d3488f24d75"
+    },
+    {
+      "bytes": 6046,
+      "path": ".agents/skills/dotnet-diagnostics/module.json",
+      "sha256": "63422b661f51da946aeab56180d82b4ec2004ea324397d16a8e31c65fd4e0b41"
+    },
+    {
+      "bytes": 1942,
+      "path": ".agents/skills/dotnet-diagnostics/scripts/run_self_tests.py",
+      "sha256": "559056f4017ccc3e0094a76ecfc54c1a67c0d74f040ae4f89ca38354af933e77"
+    },
+    {
+      "bytes": 3619,
+      "path": ".agents/skills/dotnet-diagnostics/suites/dotnet-diagnostics-evals.json",
+      "sha256": "ace29001ef4c25465ac1a65552f75560b43cc2f1acace48fb4ba9e1891e49fc8"
+    },
+    {
+      "bytes": 7107,
+      "path": ".agents/skills/dotnet-engineering/SKILL.md",
+      "sha256": "487212f4c1bdd93e58359da9a1f8e1e9b94ea813f2da2ac59b224462bcc98aef"
+    },
+    {
+      "bytes": 3244,
+      "path": ".agents/skills/dotnet-engineering/docs/api-contracts.md",
+      "sha256": "d9fdd45753a8644ae5defe865c39565d69d77be14601dd61fa5ba4c70dfdbac8"
+    },
+    {
+      "bytes": 3774,
+      "path": ".agents/skills/dotnet-engineering/docs/architecture.md",
+      "sha256": "991e1d05424e35cef29e703d895f22d17ca2e190f1e9eb31213f211640eb2700"
+    },
+    {
+      "bytes": 3733,
+      "path": ".agents/skills/dotnet-engineering/docs/aspnet-backend.md",
+      "sha256": "4e30f12b0664448b7883e4f797e0907e9f7306d645f02c94e688c2eb17ed6845"
+    },
+    {
+      "bytes": 3765,
+      "path": ".agents/skills/dotnet-engineering/docs/csharp-foundations.md",
+      "sha256": "f88702fd81aef9574fdb4bedee8dd4710d6ec377a2571ead63b6c2ec2ce993af"
+    },
+    {
+      "bytes": 3605,
+      "path": ".agents/skills/dotnet-engineering/docs/csharp-runtime.md",
+      "sha256": "8033fa0f134278287ad648a0c2b870f1519ba150d3ce4a6091a35c6362ca2b0c"
+    },
+    {
+      "bytes": 3615,
+      "path": ".agents/skills/dotnet-engineering/docs/data-and-integration.md",
+      "sha256": "606c56363639d039bfb012822a98333b4b665c98c1eb142e4b69ef75b56443fb"
+    },
+    {
+      "bytes": 2982,
+      "path": ".agents/skills/dotnet-engineering/docs/delivery.md",
+      "sha256": "4cbd7fe4d44f8f2c852db4ba96f51a3a4e39213f45a302cc4c26d3146ea107c5"
+    },
+    {
+      "bytes": 1970,
+      "path": ".agents/skills/dotnet-engineering/docs/documentation.md",
+      "sha256": "14d9debf1d14c6673c9afef97d897cefadb5dea0b438fd6f36fd6c6c6395cb45"
+    },
+    {
+      "bytes": 2710,
+      "path": ".agents/skills/dotnet-engineering/docs/openxml-and-pdf.md",
+      "sha256": "9cd4fb2331f82cb1c971dff5d228e6c640c9003c46b6e5fe4b6b193db0c23197"
+    },
+    {
+      "bytes": 2761,
+      "path": ".agents/skills/dotnet-engineering/docs/runtime-tooling.md",
+      "sha256": "296b2b1d350b2c4bf0a439752e50ab902ce1c5fdf2339e4429430ba654783a88"
+    },
+    {
+      "bytes": 2293,
+      "path": ".agents/skills/dotnet-engineering/docs/test-strategy.md",
+      "sha256": "c65645e40dafb15683fa9203e2f8b43f6911331e01a08ccf3297c91d36e5e8f3"
+    },
+    {
+      "bytes": 2489,
+      "path": ".agents/skills/dotnet-engineering/docs/testing.md",
+      "sha256": "2c12f81bfe0bf021b5eda163bf2e6f11053fc4a5ec9e9a2832e8325aea76c2e8"
+    },
+    {
+      "bytes": 2309,
+      "path": ".agents/skills/dotnet-engineering/docs/ui-frameworks.md",
+      "sha256": "dacf5ba8e1f27e4aadd9e78784c546d5cc8725cbe1fb0f098422d0d45d84631a"
+    },
+    {
+      "bytes": 3494,
+      "path": ".agents/skills/dotnet-engineering/docs/ui.md",
+      "sha256": "92c0efda0c34f768d52cfc3494bf36f0d721b3f3910440ebc6dc14c380d19e68"
+    },
+    {
+      "bytes": 7202,
+      "path": ".agents/skills/dotnet-engineering/module.json",
+      "sha256": "e1b4a134a2cc7f9530107acf7fa90761f10c7e692690280691c901e0bbfd9b05"
+    },
+    {
+      "bytes": 26824,
+      "path": ".agents/skills/dotnet-engineering/scripts/dotnet_repo_inspector.py",
+      "sha256": "b6169a6ea3a288a78490e271f8239795b713b9b0b29027012902a6cd48414954"
+    },
+    {
+      "bytes": 7609,
+      "path": ".agents/skills/dotnet-engineering/scripts/run_self_tests.py",
+      "sha256": "58679fb83d64e1903c950fffb2f7bc0247f30694691a2fbd7e7f27300127430c"
+    },
+    {
+      "bytes": 6506,
+      "path": ".agents/skills/dotnet-engineering/suites/dotnet-engineering-evals.json",
+      "sha256": "a8d63435e8198679d804e6f24bedf0eaa411b4b9dac04a8ee74b1ad4162ebd8d"
+    },
+    {
+      "bytes": 5470,
+      "path": ".agents/skills/dotnet-legacy/SKILL.md",
+      "sha256": "696ad6c190b642cd3e6a829f23a2c6b39f14249a2e482dea825cb9dc29576e7f"
+    },
+    {
+      "bytes": 1745,
+      "path": ".agents/skills/dotnet-legacy/docs/build-and-runtime.md",
+      "sha256": "dea5b6e550f2d78915eb2a98964a0dbb135c194bc391bb08df9aec8690f97dac"
+    },
+    {
+      "bytes": 1792,
+      "path": ".agents/skills/dotnet-legacy/docs/framework-assessment.md",
+      "sha256": "789addfb2df6b37eed943e88a5a027b7cfbe84c91aea99fecfbb736774142247"
+    },
+    {
+      "bytes": 2386,
+      "path": ".agents/skills/dotnet-legacy/docs/framework-patterns.md",
+      "sha256": "3ed5ab85e605c6e812fdeef1c29ecb422e309407e0dbc4c8e2382ed17c03ef3c"
+    },
+    {
+      "bytes": 1728,
+      "path": ".agents/skills/dotnet-legacy/docs/legacy-ui.md",
+      "sha256": "3aef270a50b6ab6b84a46d67123c8ce228b7aa5e99aaacd1a7aa53295f3a39eb"
+    },
+    {
+      "bytes": 1519,
+      "path": ".agents/skills/dotnet-legacy/docs/maintenance.md",
+      "sha256": "6cb45e0cba5d5c537b46143860e969cc59f1a006f7a89784280627305eb51f18"
+    },
+    {
+      "bytes": 1973,
+      "path": ".agents/skills/dotnet-legacy/docs/migration-playbook.md",
+      "sha256": "d805164376874ccf9727379642ae4ce81981b78103abb90c02cf45e20e62611c"
+    },
+    {
+      "bytes": 1559,
+      "path": ".agents/skills/dotnet-legacy/docs/testing-and-validation.md",
+      "sha256": "526c77b1ace0ba8bd4c75dfef0b629a2c25bb9ce5c980b8093184abadb858b5d"
+    },
+    {
+      "bytes": 1721,
+      "path": ".agents/skills/dotnet-legacy/docs/ui-and-hosting.md",
+      "sha256": "3d1cd9b5431513de1415fa8ff9a3dda75c5ddefe9ebfcf3e4810db8dfe421f9b"
+    },
+    {
+      "bytes": 6350,
+      "path": ".agents/skills/dotnet-legacy/module.json",
+      "sha256": "176fcad1b541b143873b660c6c20bea2592eab314059f95592dc3613a0c5b7a6"
+    },
+    {
+      "bytes": 2417,
+      "path": ".agents/skills/dotnet-legacy/scripts/run_self_tests.py",
+      "sha256": "e64d8d8b1cb6b598f41191f7ae9b3b3066f27e15b236595861aa5ee35cf6cfd3"
+    },
+    {
+      "bytes": 4062,
+      "path": ".agents/skills/dotnet-legacy/suites/dotnet-legacy-evals.json",
+      "sha256": "4a5346cab47f7550c1b163586f37ea706e61074f2a3e10e7fbd229193fb626e6"
+    },
+    {
+      "bytes": 5983,
+      "path": ".agents/skills/dotnet-project-context/SKILL.md",
+      "sha256": "14a0207635bb752fc092bdf48bcb3e8b1fb84bc23fa93c63179542126bd60377"
+    },
+    {
+      "bytes": 6753,
+      "path": ".agents/skills/dotnet-project-context/module.json",
+      "sha256": "f2422d3b70e486fbce137caff729cf7be03619144738bb79d35d68588e037cd1"
+    },
+    {
+      "bytes": 50,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/__init__.py",
+      "sha256": "78f6682ccb4d573a3339e2b16244b83923d70e9412a5233688e3dae8950e9f4d"
+    },
+    {
+      "bytes": 8102,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/cli_probes.py",
+      "sha256": "92608d9c5c38d528f9ed53a96b5435da01a2bddbc87831cf66ddaf12dbe7d92b"
+    },
+    {
+      "bytes": 3071,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/common.py",
+      "sha256": "7af864740d6741623695943de9c6f41e24b0917b191abc83ddd1a0865b1d3e05"
+    },
+    {
+      "bytes": 16176,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/context_sections.py",
+      "sha256": "4de6ade947a1ee06b3cef571ff2a0da1b0ad4a14534474fca08254cd5a06964f"
+    },
+    {
+      "bytes": 27377,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/implementation.py",
+      "sha256": "d2dc5b82251390c175714d3db2d27f74c51f1d4f3e026c55411fa0929d2e06e3"
+    },
+    {
+      "bytes": 6432,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/nuget.py",
+      "sha256": "28aeca73986b4cf8388bccde1e3b120db203436482523f55a8e4267358e991a3"
+    },
+    {
+      "bytes": 8680,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_context_support/project_files.py",
+      "sha256": "5a29c2572236c8a7ac2c19bbb215d2e2bfd9520cfe57a5489064a1ac3d842da3"
+    },
+    {
+      "bytes": 1012,
+      "path": ".agents/skills/dotnet-project-context/scripts/dotnet_project_context.py",
+      "sha256": "e720293eb184af111ca455ec3a7738b77d3a205810c42a6c3a5352a0d4094677"
+    },
+    {
+      "bytes": 25260,
+      "path": ".agents/skills/dotnet-project-context/scripts/run_self_tests.py",
+      "sha256": "63d3e5f22317878a86a7faa8484e61ed27afd3423a9cea9a11387bc41fcf12bc"
+    },
+    {
+      "bytes": 2007,
+      "path": ".agents/skills/dotnet-project-context/suites/dotnet-project-context-evals.json",
+      "sha256": "f040389a1d7da047025b66a84b3c755bbd6634927b98f1bafdcca5b28f8a2235"
+    },
+    {
+      "bytes": 7757,
+      "path": ".agents/skills/dotnet-quality-gates/SKILL.md",
+      "sha256": "18bb6b7001005fff40b5aabd69ca533257faabcdf38d4a694f0bb0658845d1a4"
+    },
+    {
+      "bytes": 7100,
+      "path": ".agents/skills/dotnet-quality-gates/module.json",
+      "sha256": "b7dcc0039dd2d41dc21ab5cd3eac7569811d547a10633aed94624da51f9c0a6f"
+    },
+    {
+      "bytes": 98422,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/run_self_tests.py",
+      "sha256": "ad9f01392d8216ea218c59409e22c93bf5d0c77b01461a1317d5631fb784be3c"
+    },
+    {
+      "bytes": 61,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/__init__.py",
+      "sha256": "a18375ea2c05dbea92b80e750c1093749f82ccf6353ea4c60528670abaef8b1a"
+    },
+    {
+      "bytes": 4947,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/csharp_concurrency_scans.py",
+      "sha256": "4b1ea786f65f47e268f58ea7cad4296c05bde7eab0f714c814f679eb7656102b"
+    },
+    {
+      "bytes": 2371,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/csharp_linq_scans.py",
+      "sha256": "e9909d383806c0ac3f9d3ae9552e3a44ebfc6d39e2f335fb841b3b35eabdb8c7"
+    },
+    {
+      "bytes": 3044,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/csharp_suppression_scans.py",
+      "sha256": "d58353a5b1fd2d30414be8a46f5d67098600350cec97a604b2ccecdb7b229661"
+    },
+    {
+      "bytes": 51759,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/local_quality_scans.py",
+      "sha256": "baf1f6101926ad976d5628cc285487c6cf1b0dff42175c318fd40c98e0377b76"
+    },
+    {
+      "bytes": 7764,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/support/project_file_scans.py",
+      "sha256": "8c1f27ac1e397ba8ba725a190401946fe087bbf35bd7aca2ae3de237d1d3e115"
+    },
+    {
+      "bytes": 10213,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/validate_coverage.py",
+      "sha256": "e53b443cdda2943d97a2e2f4213af1c8d051c3a8e534f91f9e5a6b6af4c3dbd3"
+    },
+    {
+      "bytes": 7782,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/validate_line_endings.py",
+      "sha256": "3f6957e2c1ab7f2354334280355d55c9b025d5c5c494889deb7af4fbc08d798f"
+    },
+    {
+      "bytes": 37765,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/validate_local_quality.py",
+      "sha256": "fc470118e1632230e0cc9f4dcf4db3ffa788ef9de7fc4680a6c0a11b4888b523"
+    },
+    {
+      "bytes": 6255,
+      "path": ".agents/skills/dotnet-quality-gates/scripts/verify_static_analysis.py",
+      "sha256": "6183d9f678c16717c8ec3a0e31b0d485b539af77684bf2edc1c13b501686bdf5"
+    },
+    {
+      "bytes": 6298,
+      "path": ".agents/skills/dotnet-quality-gates/suites/dotnet-quality-gates-evals.json",
+      "sha256": "f3334e2f2a9594efba0ebdca60ba3d9ec1ccde2e2a8286521cb8286b73806e34"
+    },
+    {
+      "bytes": 5840,
+      "path": ".agents/skills/dotnet-security-review/SKILL.md",
+      "sha256": "9064360de641764985b1791d9198c5eb732fbbfcdbae58eb3186a9ee07ee27a0"
+    },
+    {
+      "bytes": 3620,
+      "path": ".agents/skills/dotnet-security-review/docs/aspnet-security.md",
+      "sha256": "ad0e848ef52de67fc177435a91eb19057730f6a1472f5009dddc06783fce36bb"
+    },
+    {
+      "bytes": 1856,
+      "path": ".agents/skills/dotnet-security-review/docs/review-scope.md",
+      "sha256": "44c1d696fa072207e1a484c391e3d20daa958e33c8823b0285f8e6d5091bbeb4"
+    },
+    {
+      "bytes": 1825,
+      "path": ".agents/skills/dotnet-security-review/docs/severity-and-reporting.md",
+      "sha256": "a7b3cabb5f30a4e1f38aef620cca7c5ad9698f9d88d8f67e66af4388c0eeb280"
+    },
+    {
+      "bytes": 5807,
+      "path": ".agents/skills/dotnet-security-review/module.json",
+      "sha256": "3106e1e550934d7898cffef7ab77211a408679533192f19c9fcf2a99cbe5b6fd"
+    },
+    {
+      "bytes": 1806,
+      "path": ".agents/skills/dotnet-security-review/scripts/dotnet_security_review.py",
+      "sha256": "cd4f03e745aa376ce37289401f2b11649313f76673394fa834c83f6fa4b6db72"
+    },
+    {
+      "bytes": 571,
+      "path": ".agents/skills/dotnet-security-review/scripts/run_self_tests.py",
+      "sha256": "604b7d590c9b7cad19124d51aedb0dbf681e034ffd2985b09deda397c522af80"
+    },
+    {
+      "bytes": 30592,
+      "path": ".agents/skills/dotnet-security-review/scripts/scanner/run_self_tests.py",
+      "sha256": "66313227fd1d97a25e3be428fa24be279d55632bf08470ea36e1e28f0e8a3c2e"
+    },
+    {
+      "bytes": 3292,
+      "path": ".agents/skills/dotnet-security-review/scripts/scanner/sarif_support.py",
+      "sha256": "fc57cf5209598365702528704b7dd24828c823606407f921bde967b9b265837d"
+    },
+    {
+      "bytes": 24056,
+      "path": ".agents/skills/dotnet-security-review/scripts/scanner/scan_security_patterns.py",
+      "sha256": "63d168d7f07a4baf2fcd1daa907a8da6137c7c5ddd03115f2cb94af52570a7b9"
+    },
+    {
+      "bytes": 4084,
+      "path": ".agents/skills/dotnet-security-review/suites/dotnet-security-review-evals.json",
+      "sha256": "aa2ff39021a59033b2f15c12292d8869e8368a56418b95f38aa56f6e061f0178"
+    },
+    {
+      "bytes": 5765,
+      "path": ".agents/skills/external-reference-manager/SKILL.md",
+      "sha256": "5ab53e225b2ae4d08801ab680a35d189d7cb03fc5e5ecb142a2cf106aab3eea7"
+    },
+    {
+      "bytes": 1053,
+      "path": ".agents/skills/external-reference-manager/docs/evidence-examples.md",
+      "sha256": "7d9a88886098c0bfc8df40ef9fef123bd8f7e3eb42c4c84e01440e21d5b90fd8"
+    },
+    {
+      "bytes": 6375,
+      "path": ".agents/skills/external-reference-manager/module.json",
+      "sha256": "7364fa702ac57112f90bdd427519f559ed7ae7d243a09055326aa993ee7ba729"
+    },
+    {
+      "bytes": 20965,
+      "path": ".agents/skills/external-reference-manager/scripts/run_self_tests.py",
+      "sha256": "3bf2b5ac27ca75f1b512decb2b5c8f02cb32e388e03497a7127ec6082718f20b"
+    },
+    {
+      "bytes": 35355,
+      "path": ".agents/skills/external-reference-manager/scripts/sync_references.py",
+      "sha256": "aecf33dd7a267c122852942b35c2e83440742fc2e40f4fd0b7ac20b12cc77ee8"
+    },
+    {
+      "bytes": 4409,
+      "path": ".agents/skills/external-reference-manager/suites/external-reference-manager-evals.json",
+      "sha256": "4ca3231394d597b0a408a7e14b2c3690e8d0019c7ab576e509f0c25d274d9db9"
+    },
+    {
+      "bytes": 6771,
+      "path": ".agents/skills/local-ai-helper/SKILL.md",
+      "sha256": "933abf36d209faf6a8f1af4875d01f0907d1d20274d6cb16aab30e5ec7f370b2"
+    },
+    {
+      "bytes": 1293,
+      "path": ".agents/skills/local-ai-helper/docs/evidence-examples.md",
+      "sha256": "f9858149226f95f4313c452c4784b26084e2757541fe3c60b7f26b3717b52cc7"
+    },
+    {
+      "bytes": 7508,
+      "path": ".agents/skills/local-ai-helper/module.json",
+      "sha256": "186094b2956948eb0e52a5bc3b3cdb7c76939d2eb5bc8c3725d878ae5d50b79a"
+    },
+    {
+      "bytes": 427,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_routing.py",
+      "sha256": "6f7cd1b460cc73459ae065fd38835564d65be20df7adac85a367d30eda5e3a9b"
+    },
+    {
+      "bytes": 59,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/__init__.py",
+      "sha256": "8c2ccde52ff66060bb317373420de7df0c361f547e11c30c459256512d7f179d"
+    },
+    {
+      "bytes": 4324,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/benchmark_metrics.py",
+      "sha256": "317f8bf70f4f9bcf8c033aa4bcdb0120cc1988a093c48288e26c8b25f2300379"
+    },
+    {
+      "bytes": 16166,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/broker_tools.py",
+      "sha256": "aa72542b50c45e1a25bb51d6370d03fb35d75292e2952e2bb676b79642fbfc03"
+    },
+    {
+      "bytes": 9821,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/candidate_screening.py",
+      "sha256": "94cea3b796a3143b18c2a028539f61c2cfd471d012dc32f2f4c9dc7789cf5d2e"
+    },
+    {
+      "bytes": 25305,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/daily_impl.py",
+      "sha256": "2ba35a1de348392c93e8ccb1582747a7f9685921880898bc74d6948a7fe75403"
+    },
+    {
+      "bytes": 6211,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/document_impl.py",
+      "sha256": "ecdf937f9b35394dee8393f3eed261936b3e7f885985261fe8206cabeb7ba5c7"
+    },
+    {
+      "bytes": 13466,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/model_lease.py",
+      "sha256": "451409ae937eb01500851c81321caf11603eed12ba8f5e08c51c57e1ebc6b114"
+    },
+    {
+      "bytes": 11536,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/policy_impl.py",
+      "sha256": "659e3a80a55befa238d392875d457bbddd17a4335fcb1a5c85b996172024a27a"
+    },
+    {
+      "bytes": 5433,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/report_support.py",
+      "sha256": "4ad6560d9dfff90160cb564df343677561e9ae77f0c6bd00a03a21113b10283b"
+    },
+    {
+      "bytes": 17128,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/resources_impl.py",
+      "sha256": "1105502f31a86768ce329452c34ced2379dcfa31ec33dc3af0664f8181ce9083"
+    },
+    {
+      "bytes": 14009,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/routing_defaults.py",
+      "sha256": "80ea60acbcff346ee7ce8e463a3190ba875d5fd98766fb78635b6b26b9a846d1"
+    },
+    {
+      "bytes": 115885,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/routing_impl.py",
+      "sha256": "0f60837012f6912ac473dffc2ce09902ead612a3e66fc84fbab1a5026984e22d"
+    },
+    {
+      "bytes": 21570,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_catalog.py",
+      "sha256": "172b6bc330006aea64adda9422bc7378f9b5667a930c94481e629453d25ecce8"
+    },
+    {
+      "bytes": 219,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_constants.py",
+      "sha256": "343fcc45ee056a3b1c09fe908e0fdef7a412382a07ac1ac3c1f14b3742221593"
+    },
+    {
+      "bytes": 163250,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_impl.py",
+      "sha256": "f29844475ad680a83f753a6272e71f50304952646d26cf560e32844c0119fbed"
+    },
+    {
+      "bytes": 7554,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_integration_support.py",
+      "sha256": "f47e0a2017ac51e5661853de7fbaa822da103c5fefbc943e0c321ce34f973a9b"
+    },
+    {
+      "bytes": 19390,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_parser.py",
+      "sha256": "3ac80526ef8e30a813324c1f952f5ca04fa7ebb4fd0ed8248cdd7fcd2aea1e5f"
+    },
+    {
+      "bytes": 860,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/setup_proxy.py",
+      "sha256": "b86d39c6e94659f484409a9914795c090b6f276a9d9b376ee7ff851b2285ed11"
+    },
+    {
+      "bytes": 12282,
+      "path": ".agents/skills/local-ai-helper/scripts/local_ai_support/vision_impl.py",
+      "sha256": "58cfab03442410e2707de7758f9ce08e23eed50a25c22c08a62b6490bc349092"
+    },
+    {
+      "bytes": 173983,
+      "path": ".agents/skills/local-ai-helper/scripts/run_self_tests.py",
+      "sha256": "4ee518f3cb0ef798f2eec46a397cd3f8121146393e9c566fff6e39337142de86"
+    },
+    {
+      "bytes": 467,
+      "path": ".agents/skills/local-ai-helper/scripts/setup_local_ai.py",
+      "sha256": "42a1a7c65b00bc4ff70c90808544176da307c9a06004afcac177baf4a569a720"
+    },
+    {
+      "bytes": 3486,
+      "path": ".agents/skills/local-ai-helper/suites/local-ai-helper-evals.json",
+      "sha256": "5c4bbfb4e47eae02a6efb6ad78ee23e9e3d62b4538540b3a72916f1345f2cf27"
+    },
+    {
+      "bytes": 7595,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/SKILL.md",
+      "sha256": "4ff1a1c67e3f42d26442646ef2774ee6085b53fda0f57f26c0ca957825668052"
+    },
+    {
+      "bytes": 281,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/classDiagram.md",
+      "sha256": "22eff21ad6ed9d88fcf0c73a601c67ddfd6e26d83297b3cf9bc9503660c0e0aa"
+    },
+    {
+      "bytes": 396,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/erDiagram.md",
+      "sha256": "43e14aa1b296129b0f6bc0748e03d5512a6b7262f06d0706ab96ca0b0ad19c61"
+    },
+    {
+      "bytes": 325,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/gantt.md",
+      "sha256": "ff8e46f7b27907f58d1a3618a2d89868be958ab687cb733cc930c4b32264e9d1"
+    },
+    {
+      "bytes": 239,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/gitGraph.md",
+      "sha256": "d9456b3198b9529fcb8fc6a1b8c0240c87765132e1b1ad560e4378f369ea79e1"
+    },
+    {
+      "bytes": 295,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/graph.md",
+      "sha256": "1c3b903b8e9605a05be5f9ce5f7972da4dc8c6b3be1e4ec15b48686c4ce308f2"
+    },
+    {
+      "bytes": 267,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/journey.md",
+      "sha256": "c14828cf9d08a49c06b9a059d6fdb93e26a4ae65540e0c03072d0384f6867318"
+    },
+    {
+      "bytes": 136,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/pie.md",
+      "sha256": "f10dd0692d454c1c53b90efed7d528b5c41ccb1481585daea0912ee568b16232"
+    },
+    {
+      "bytes": 332,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/requirementDiagram.md",
+      "sha256": "1a439844db7a3d099dc40893c07951eacf84499741b565b468de858dd4bdb0f2"
+    },
+    {
+      "bytes": 260,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/sequenceDiagram.md",
+      "sha256": "1974e2e9d206f410a7d8e5fe9b4caa9b3d3776ce5155006fa93f3b1700772244"
+    },
+    {
+      "bytes": 216,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/stateDiagram-v2.md",
+      "sha256": "b5bd95fee19c841d959f491d92e83866b2a590a741ca7e8142f7f9b50967a4a9"
+    },
+    {
+      "bytes": 187,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/assets/mermaid-templates/timeline.md",
+      "sha256": "a8cf87a511895d88bf68008c86db6f91ee885cc730318361f7cd4a4db32eb28b"
+    },
+    {
+      "bytes": 1852,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/docs/azure-devops-mermaid-limits.md",
+      "sha256": "d152b112c2522fdde3bf9c73baaaf624f276a522fc73bcc240fcea6cb778272f"
+    },
+    {
+      "bytes": 1577,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/docs/diagram-selection-guide.md",
+      "sha256": "93278c4c320cd284ee69ffd16c4b2293e63556ae2124910f29dafb0888a4eba9"
+    },
+    {
+      "bytes": 2012,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/docs/doctor-evidence-packet.md",
+      "sha256": "2e20bc78198c9ec92aec8eab6e8e9a23832b832b4cffeefccb09cc9994ff1977"
+    },
+    {
+      "bytes": 4073,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/docs/mermaid-style-guide.md",
+      "sha256": "0be8dedf44e50e923fc2b203219098c78e00ec615d5764fe73b88d6c949b93c8"
+    },
+    {
+      "bytes": 5938,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/module.json",
+      "sha256": "f0c19f34f2333e4269fcfa826d6b3b15c9e154855d59065cfbd8162ec8800e89"
+    },
+    {
+      "bytes": 15055,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/materialize_diagrams.py",
+      "sha256": "3198c3a66b434c327f86af1d77c502f0cee1a8da994d2edc1c6db07ecdf99df4"
+    },
+    {
+      "bytes": 63,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/__init__.py",
+      "sha256": "0a75976d30cabfba64f6e194da29fb413880350807b2bc03440bc85591705efb"
+    },
+    {
+      "bytes": 9791,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/artifact_validation.py",
+      "sha256": "b5de04a65702fb80d99a337299a5b7e9f9f04b7b6e05d88101080346dff4d8b7"
+    },
+    {
+      "bytes": 2354,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/autofix.py",
+      "sha256": "d945a2953d5868490457e6ed6fab6643e83aea765c9d87ef3902e996036c2cad"
+    },
+    {
+      "bytes": 6292,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/file_scanning.py",
+      "sha256": "02f4d111b597929195489cbc0805294212605bbca0953605a3b9a932d75772a8"
+    },
+    {
+      "bytes": 1214,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/models.py",
+      "sha256": "c7748eb195333ad10d631d42952e2a6fec85b7bcf8d8b49045c4929348959a9f"
+    },
+    {
+      "bytes": 5471,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/rendering.py",
+      "sha256": "d2591f697929fb09a1557fd5bb2875c7fd3c731769b46010b84fb5880c033836"
+    },
+    {
+      "bytes": 12533,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/reporting.py",
+      "sha256": "46030cc987d7caa9392ef92c0d2e3d69937319d630b0c55fbc64a958c152d6fc"
+    },
+    {
+      "bytes": 14070,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/syntax_rules.py",
+      "sha256": "a664941a1378c3d36b30d5325c84587c347165d3a3d0a5864ab1d26429913497"
+    },
+    {
+      "bytes": 3260,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/validation_core.py",
+      "sha256": "b5162c7b749851e37ccfee65cf21593ea28e6f2a54c2b565e3b03872fa36dfee"
+    },
+    {
+      "bytes": 6642,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/mermaid_support/validation_impl.py",
+      "sha256": "d1073f0082a53672d3408ae3277844eb27bc06982556eed4992fabdf5d473372"
+    },
+    {
+      "bytes": 49259,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/run_self_tests.py",
+      "sha256": "3c6070fc0c6a0e11702cca3feabd0230bab7f1ecdd0dbcf859a8068346460717"
+    },
+    {
+      "bytes": 12790,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/setup_vscode_mermaid_preview.py",
+      "sha256": "a63662e000118346e886f5414d576d35370aa80acf4721cadf7a196a6e3e357a"
+    },
+    {
+      "bytes": 379,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py",
+      "sha256": "fbf579a348e97b7e37bc7a07ec779b0df725c142ca4070640d6b2fa3a1d06b96"
+    },
+    {
+      "bytes": 5281,
+      "path": ".agents/skills/mermaid-diagrams-azure-devops/suites/mermaid-diagrams-azure-devops-evals.json",
+      "sha256": "ba624ea9523e2a2a5e06894e2ebd23c47dbb258fba4ceae2b363da8a027db73e"
+    },
+    {
+      "bytes": 8318,
+      "path": ".agents/skills/playwright-integration/SKILL.md",
+      "sha256": "a748ee7d0319724955536c3ab5a5f7078d0c2aa871a2476feb7b4c65c1058a92"
+    },
+    {
+      "bytes": 2336,
+      "path": ".agents/skills/playwright-integration/docs/playwright-evidence-examples.md",
+      "sha256": "56b0646c1cb27a2bef6a7e16f7079e2dd21093e181616ee7666dbaba83cbb9b0"
+    },
+    {
+      "bytes": 7522,
+      "path": ".agents/skills/playwright-integration/docs/playwright-quality-guide.md",
+      "sha256": "13320fa9ff1feb2352c062bd5c8dce0af49763846cdcb1a6f9701c2183e20607"
+    },
+    {
+      "bytes": 8549,
+      "path": ".agents/skills/playwright-integration/module.json",
+      "sha256": "f494f8f3a25beaea35773277412f0dc8106400278c19f02a227af4b794a39b32"
+    },
+    {
+      "bytes": 19179,
+      "path": ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py",
+      "sha256": "d2fe45e8c24244bec973527680212317fe70ccbe056235d63bca91f0f3daab28"
+    },
+    {
+      "bytes": 6760,
+      "path": ".agents/skills/playwright-integration/scripts/detect_playwright_project.py",
+      "sha256": "5462c2cac0b1affc63af8ee12ca40610c805c2459ce6262344bf5562260fd196"
+    },
+    {
+      "bytes": 4944,
+      "path": ".agents/skills/playwright-integration/scripts/diagnose_flaky_playwright.py",
+      "sha256": "96e896cf621942884d66582414fc3e636a3f46b714188ea62fad5c6384063d01"
+    },
+    {
+      "bytes": 9040,
+      "path": ".agents/skills/playwright-integration/scripts/lint_playwright_tests.py",
+      "sha256": "d7455606ac9cbb0c647b7942fcb900927254238137dc74ef5146ec71f106a10a"
+    },
+    {
+      "bytes": 5273,
+      "path": ".agents/skills/playwright-integration/scripts/parse_playwright_results.py",
+      "sha256": "315ccdcb0b91e8a3195b5de1d63424b8b327a10e1e361ff647cb825789210686"
+    },
+    {
+      "bytes": 15727,
+      "path": ".agents/skills/playwright-integration/scripts/playwright_project_support.py",
+      "sha256": "4439fa60d77bf93ab03291685d01a7aef6fa955245eddcf55535cfca36aec442"
+    },
+    {
+      "bytes": 25783,
+      "path": ".agents/skills/playwright-integration/scripts/run_self_tests.py",
+      "sha256": "d193ee94d10986e498e94ca75baf557cd95a7877bb6eb2ce78f3ff2f8322f2ed"
+    },
+    {
+      "bytes": 18687,
+      "path": ".agents/skills/playwright-integration/scripts/validate_playwright_screenshots.py",
+      "sha256": "b076e74b97afd0ec04c78ff474bc01aed9aa46ab89d00d3db3c1c58a32efe0b8"
+    },
+    {
+      "bytes": 5100,
+      "path": ".agents/skills/playwright-integration/suites/playwright-integration-evals.json",
+      "sha256": "4494e33a55335f395b9b55357083e63d591d7c234ab5f92bef2d541fa06e3dee"
+    },
+    {
+      "bytes": 6790,
+      "path": ".agents/skills/project-context-generator/SKILL.md",
+      "sha256": "49c6621eaffb80364eb56ee2b234de9ecf550326d886c87d4b3c41e653e30593"
+    },
+    {
+      "bytes": 6499,
+      "path": ".agents/skills/project-context-generator/module.json",
+      "sha256": "4ae81abd95aae8fa2dfc399e7cae5914afb7dffc5e726c8a3e5417c129158156"
+    },
+    {
+      "bytes": 30094,
+      "path": ".agents/skills/project-context-generator/scripts/generate_project_context.py",
+      "sha256": "ae3279a78b2a5861b9dcdacc1c76f45b8b0f13641698dec257f7f5e3dd56ad84"
+    },
+    {
+      "bytes": 18605,
+      "path": ".agents/skills/project-context-generator/scripts/run_project_validation.py",
+      "sha256": "bc818b01ee12a194e3773e2ef57af3d5a976dcc41b2a3a09578142d93a1a1b88"
+    },
+    {
+      "bytes": 19299,
+      "path": ".agents/skills/project-context-generator/scripts/run_self_tests.py",
+      "sha256": "6dc3981d5c2241dc99f650464ee61bae641b3d9e85749607589a1fe303771613"
+    },
+    {
+      "bytes": 4375,
+      "path": ".agents/skills/project-context-generator/suites/project-context-generator-evals.json",
+      "sha256": "7270333594ef97e8b5a1c4bb466fb47c73eeed45a79c6b7d08785da40a7edf6c"
+    },
+    {
+      "bytes": 5548,
+      "path": ".agents/skills/repo-navigation/SKILL.md",
+      "sha256": "6ea9e14b894f75661362dec52f077c7ed5c6c73eb60e30897d4e062967129556"
+    },
+    {
+      "bytes": 7638,
+      "path": ".agents/skills/repo-navigation/module.json",
+      "sha256": "ad02dd9444a6a8ba5f7cd85c092a9fd1093724d59a8856d7a6fa400cdb2917ff"
+    },
+    {
+      "bytes": 32651,
+      "path": ".agents/skills/repo-navigation/scripts/briefing/brief_repo.py",
+      "sha256": "8dfa13a0c54499613d9eb7bd593c4ff2605bdf13ed340af4ca6d4b916baec95b"
+    },
+    {
+      "bytes": 12674,
+      "path": ".agents/skills/repo-navigation/scripts/briefing/run_self_tests.py",
+      "sha256": "c1cebf0351b7c20c25d53d8eb4535e3abde73bd4915572ed92d540d90c8494e4"
+    },
+    {
+      "bytes": 25803,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/install_navigation_workflow.py",
+      "sha256": "9c227a12442036e0d2ae15f1e0a2270c9c213c9c5a0c6e1f94ed8e5b49b64979"
+    },
+    {
+      "bytes": 66219,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/navigation_core.py",
+      "sha256": "4ee729ad6def69f1b4f97fa2640ca14c4e8084359ef850594a7034d7a756bfcc"
+    },
+    {
+      "bytes": 18225,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/project_context.py",
+      "sha256": "095eb66dc71792df0a9553988654e02f3b26aa114f4c086de3abb1515acc2e0f"
+    },
+    {
+      "bytes": 76427,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/run_self_tests.py",
+      "sha256": "20f8d44f791b5c520186ad2deca3ccfd94e4485f2a09259a154a0b90b74775e6"
+    },
+    {
+      "bytes": 38895,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/source_focus.py",
+      "sha256": "6be8a079b4b45d70ca996f8963e03011102bb92ca672631442378f00b00e6732"
+    },
+    {
+      "bytes": 5040,
+      "path": ".agents/skills/repo-navigation/scripts/navigation/update_navigation.py",
+      "sha256": "a1d2500e4654205e0c867fd47bd78495e27a4e281cdb23cfb876bb8bd6fcaacb"
+    },
+    {
+      "bytes": 2726,
+      "path": ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+      "sha256": "ec0976f978b7d7b269dc477927a71d283754c7236ad980b45ecaa4a8f4cc808a"
+    },
+    {
+      "bytes": 1532,
+      "path": ".agents/skills/repo-navigation/scripts/run_self_tests.py",
+      "sha256": "466d101f1a1ba94a0bbbf53d9e36e0626aca42ae94a98beffcfced88a3759001"
+    },
+    {
+      "bytes": 4825,
+      "path": ".agents/skills/repo-navigation/suites/repo-navigation-evals.json",
+      "sha256": "1e00255452370caafae182a8162219df949e94b2dbc051564e96fffd22929169"
+    },
+    {
+      "bytes": 8120,
+      "path": ".agents/skills/skill-manager/SKILL.md",
+      "sha256": "cc483b06158c9eeab14e2a0b2175f1362453d68894db67e6f1db75ea32753732"
+    },
+    {
+      "bytes": 1264,
+      "path": ".agents/skills/skill-manager/assets/fixtures/correction-events-v1.json",
+      "sha256": "bd899900d6da6358ea2e63e3a0bd1ef406b64301cc0328f25dd065aa77e4b6ac"
+    },
+    {
+      "bytes": 260,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/Directory.Packages.props",
+      "sha256": "ad72f26bb2208797eea689e50cea941b6c5fd884979be6dae3e63fd3d3b45aa3"
+    },
+    {
+      "bytes": 204,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/NuGet.config",
+      "sha256": "07d0c144b87fb7c9234dabfd4d3cfcc3699ec34880b081e1614f550e97f37a4e"
+    },
+    {
+      "bytes": 564,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/README.md",
+      "sha256": "c6a33d976c21703bed81b444443616eae26bd446b7e66bd77e8dfbbf79a9a099"
+    },
+    {
+      "bytes": 770,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/docs/project/project-context.md",
+      "sha256": "97222b889f7a74a9afd5ef0ef12480452ebb3f09c241e8b21503da577abae953"
+    },
+    {
+      "bytes": 227,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/src/SampleConsumer/Program.cs",
+      "sha256": "1c6d20d012a50545ce63540e80d8f15c05da898970f5151c04f2b06dee7061f4"
+    },
+    {
+      "bytes": 354,
+      "path": ".agents/skills/skill-manager/assets/fixtures/sample-consumer/src/SampleConsumer/SampleConsumer.csproj",
+      "sha256": "1caa7c13161458984e35918163225d7450173cfbf5ef0c8b34bad73d0f52ce14"
+    },
+    {
+      "bytes": 4524,
+      "path": ".agents/skills/skill-manager/assets/schemas/correction-events-v1.schema.json",
+      "sha256": "e1bba60eb38de82bf00d266724e5783fb9adb946a873c747711a0e54e745f8f9"
+    },
+    {
+      "bytes": 884,
+      "path": ".agents/skills/skill-manager/assets/schemas/evidence-packet.schema.json",
+      "sha256": "f7e86b0eb935ee45d53654f23bee2bfefd9740060deff4694323725c536a661e"
+    },
+    {
+      "bytes": 37690,
+      "path": ".agents/skills/skill-manager/assets/schemas/module.schema.json",
+      "sha256": "172d95cfbdc84a7e6666794d68c9a52603a62a5b6391b194589374dfbb30cce0"
+    },
+    {
+      "bytes": 57898,
+      "path": ".agents/skills/skill-manager/assets/schemas/project-policy.schema.json",
+      "sha256": "84b57eef86b3f7ae6a95ee7eca15db4c35c1c31442e41d43cd13affde10e0ebd"
+    },
+    {
+      "bytes": 1229,
+      "path": ".agents/skills/skill-manager/assets/schemas/run-packet.schema.json",
+      "sha256": "b85fff8e2a7908865f3b004e1f3c52b3ddf29c98a621d835956186e78c0995ad"
+    },
+    {
+      "bytes": 2493,
+      "path": ".agents/skills/skill-manager/assets/tools/ripgrep/manifest.json",
+      "sha256": "6dd0ab875f7bd3073cd1ac7da86e05b9a32d4496a2b420cae35570ba4ecbfa05"
+    },
+    {
+      "bytes": 333,
+      "path": ".agents/skills/skill-manager/docs/diagrams/upgrade-and-quality-workflow-flow.mmd",
+      "sha256": "764564598f4c2628e73372e8a26059f41ad636254db422bc34facce7779af1bf"
+    },
+    {
+      "bytes": 18192,
+      "path": ".agents/skills/skill-manager/docs/diagrams/upgrade-and-quality-workflow-flow.svg",
+      "sha256": "993f1bfc6385bff78acc27052962175b9f79c6f4047639f4fa88004f6250a91d"
+    },
+    {
+      "bytes": 3650,
+      "path": ".agents/skills/skill-manager/docs/intake-and-review.md",
+      "sha256": "ee8245ba7cf5d070e4043b0bc7b741bcc9062998de190dca1b7f006bb8f0ea9e"
+    },
+    {
+      "bytes": 3568,
+      "path": ".agents/skills/skill-manager/docs/repository-layout.md",
+      "sha256": "1ea832f85065ada62ae9750e19a70e3788ba3aad649426016e01b71f3d2d331e"
+    },
+    {
+      "bytes": 4349,
+      "path": ".agents/skills/skill-manager/docs/skill-design-guide.md",
+      "sha256": "4ec40868b7a6392c27a7397aa73b6fd5934151f8b0b1df6a126970d0b1dfba4e"
+    },
+    {
+      "bytes": 2575,
+      "path": ".agents/skills/skill-manager/docs/upgrade-and-quality-workflow.md",
+      "sha256": "45975bbf9cfd2dfd25c55d4947aaec142efa6cbb8043335252099ab72e2df419"
+    },
+    {
+      "bytes": 11519,
+      "path": ".agents/skills/skill-manager/module.json",
+      "sha256": "af66659a0933fb7643daea58fcaf2e6f40a5cdc240fbb042b72c01ec99c3e3c0"
+    },
+    {
+      "bytes": 102,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/__init__.py",
+      "sha256": "445b45aeef23cf70fa2e9b960acc1f5e0ad70a1f64eb95a5425d7ad30759a5fc"
+    },
+    {
+      "bytes": 4238,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/analysis_common.py",
+      "sha256": "9274b68152d7e0fe5a699678c3e104a281212d0e7682f34984974d36f3dd4c51"
+    },
+    {
+      "bytes": 9202,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/audit.py",
+      "sha256": "afc397948e5baa3ec3ef20cd18564280a2489fdbf5cd75adc502aad15b0a3df9"
+    },
+    {
+      "bytes": 5019,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/briefing.py",
+      "sha256": "360d512c81d701232d66398a4947c98efbe6c451aa136370ff3d2a1663b72015"
+    },
+    {
+      "bytes": 16329,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/core.py",
+      "sha256": "bb33b7929898e2674a6a76478ced9d651c968e231c735fbd369ddc47e303c33f"
+    },
+    {
+      "bytes": 9870,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/dependency_parsers.py",
+      "sha256": "c7ebc31d0b10e586275b21bbaade231e25bb1bc37d802abba73b7e365eb4ae3a"
+    },
+    {
+      "bytes": 11662,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/import_review.py",
+      "sha256": "604b7c01500e23bcbd4b450a4a3787424576c8fd02c6f105ce5c3f37ea32126f"
+    },
+    {
+      "bytes": 11922,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/report_rendering.py",
+      "sha256": "00f1c2ff987e024cfc64198226ff5c4d3bdf5450b9fdb6c8f50b0f36a839e6fe"
+    },
+    {
+      "bytes": 19066,
+      "path": ".agents/skills/skill-manager/scripts/analysis_support/signal_scanner.py",
+      "sha256": "109b161a84dd2155db73f1e3f037e7863235c85e4653bd17d1db6427bb31ecb0"
+    },
+    {
+      "bytes": 851,
+      "path": ".agents/skills/skill-manager/scripts/analyze_location.py",
+      "sha256": "3e1bfc3deb479255af0a419e96e5ca9d9b84a93c633a0f0656e1ab7b9a3a3c98"
+    },
+    {
+      "bytes": 6472,
+      "path": ".agents/skills/skill-manager/scripts/attest_skill.py",
+      "sha256": "9a894a9416d4f41c371a3f9521252b046962da599a4d55f6419c52a7c7791817"
+    },
+    {
+      "bytes": 10959,
+      "path": ".agents/skills/skill-manager/scripts/audit_skill_determinism.py",
+      "sha256": "4e001eb178731902f524807a9a15b92d80dd0618e02cfff2b7785dabf04b91da"
+    },
+    {
+      "bytes": 14490,
+      "path": ".agents/skills/skill-manager/scripts/candidate_source_audit.py",
+      "sha256": "260c719466f2f9418d62e18cf2e10f4f45cec670a6f70cecd7a08bcc0de22eeb"
+    },
+    {
+      "bytes": 14623,
+      "path": ".agents/skills/skill-manager/scripts/compare_skill_versions.py",
+      "sha256": "ad5c8d4517334b06a79cccdf444260ac5860a826c96d89c92beae24db2db817c"
+    },
+    {
+      "bytes": 25697,
+      "path": ".agents/skills/skill-manager/scripts/eval_skill.py",
+      "sha256": "4138c1316f83576b12e6560c6a1efe313cba3bb7c685324035ec723b013f5ffa"
+    },
+    {
+      "bytes": 12980,
+      "path": ".agents/skills/skill-manager/scripts/fixtures/workflow-routing-regression.json",
+      "sha256": "51ca0801a3b78619f0a24d890f55773c86f347912941530fae4800014369c62f"
+    },
+    {
+      "bytes": 17677,
+      "path": ".agents/skills/skill-manager/scripts/inspect_skill.py",
+      "sha256": "746f16fd86e25fd5d9b09b9f289d3ca1ac191150b6ff0607e2f67d46c90987f1"
+    },
+    {
+      "bytes": 42727,
+      "path": ".agents/skills/skill-manager/scripts/measure_skill_budget.py",
+      "sha256": "7633e8722f3edac93809b0f82c02570b52eb2d3d07403417b30a4624a781a813"
+    },
+    {
+      "bytes": 780,
+      "path": ".agents/skills/skill-manager/scripts/module_command.py",
+      "sha256": "78651e46f64ff26c4d31ac095749106daa99c4a66188bed55360323875c20071"
+    },
+    {
+      "bytes": 75861,
+      "path": ".agents/skills/skill-manager/scripts/module_contract_v3.py",
+      "sha256": "ac165d63b36c0dba93cfc835d9e509e948f015d032d1f2f4e31d9cdaedc4222e"
+    },
+    {
+      "bytes": 12212,
+      "path": ".agents/skills/skill-manager/scripts/project_policy_contract_v2.py",
+      "sha256": "bc28897419b420bad7d085d8758fcf47686e561bf077e63b594ecc1ad95beeed"
+    },
+    {
+      "bytes": 44890,
+      "path": ".agents/skills/skill-manager/scripts/repo_manager.py",
+      "sha256": "c3491f7af1742edd534918397b4eef37523d8edef4951fb77c724454737ec159"
+    },
+    {
+      "bytes": 45,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/__init__.py",
+      "sha256": "7bd2d2e27178db954aa1556d570ef08a8b6eb397903c20598fceb889dd01e98d"
+    },
+    {
+      "bytes": 11929,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_addition_acceptance.py",
+      "sha256": "008dc2840fb855b12396bd4cbc3d0964d4a2eb40428d56eff0f484da721595f1"
+    },
+    {
+      "bytes": 27805,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_benchmark.py",
+      "sha256": "b78db8473b11aabe680d1c15894960ce56946cb1c2f95f6c2a41026079cb3f2c"
+    },
+    {
+      "bytes": 11326,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_capability_audit.py",
+      "sha256": "18cc3a4d0cd2139f59e8a0a13cfb7a1be32901191be2513aa79a93063d3e17f6"
+    },
+    {
+      "bytes": 60755,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_changed.py",
+      "sha256": "73bb378a36da020e6b036112ca02460873d4e5b58639e9d39cb256e95b105cb8"
+    },
+    {
+      "bytes": 2649,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_changed_git.py",
+      "sha256": "852178cdd9b30f4002d467a96501578b0f171238f0b9fdb05b260ac0598bf4ad"
+    },
+    {
+      "bytes": 14757,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_changed_summary.py",
+      "sha256": "d7c346bef6c450e526c516b332dbb1cd505d47c54f40ac6893d1fe244e941a3a"
+    },
+    {
+      "bytes": 3193,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_checklists.py",
+      "sha256": "2964cba63d7aed0c08131afee41b48e88af54baee1fa5db24cb0b417081f3c36"
+    },
+    {
+      "bytes": 67575,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_cli_parser.py",
+      "sha256": "2921f1ca79fcc99c9b13cb03b3d312d61aa8baa4b1637fc1326d7d243e45c44f"
+    },
+    {
+      "bytes": 16222,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_cli_skill_commands.py",
+      "sha256": "849bebcc66ae451c82f343aa321d7c26e450bc437259779c982891fe4d8eb8d0"
+    },
+    {
+      "bytes": 21121,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_command_metrics.py",
+      "sha256": "2ea6bef7adf8c7ca637b70938371963bb5d7839c386fd07962693e5f5d908163"
+    },
+    {
+      "bytes": 54774,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_commands.py",
+      "sha256": "53c4cf5f9c213acd4f88769af92b79321d702f4d0ae9af5015e5e009a8ffaf96"
+    },
+    {
+      "bytes": 9187,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_common.py",
+      "sha256": "0954a80d537e062078d00d539d532a0769e5e31196b9f8d6746ad562948ade5f"
+    },
+    {
+      "bytes": 16735,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_context_guardrails.py",
+      "sha256": "4717a7e85d3aa18f2af89ac320ded74834f0411144ae1c08eeca250dd67802ed"
+    },
+    {
+      "bytes": 59998,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_cost_policy.py",
+      "sha256": "f4f4ee8ca768e64af1d6c3f3edf58ab06eb3e706bc302e6a21bb440d53ebd759"
+    },
+    {
+      "bytes": 81919,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_determinism.py",
+      "sha256": "9454f9b4b73218f92ab70eb992b046a3fe9ac3c85474bb5312e2fe50b23daceb"
+    },
+    {
+      "bytes": 13904,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_doctor.py",
+      "sha256": "09d967ac20dee800fd6a557f97c664ab9f50fe3a5bdb4d72791a3ec7a89e8894"
+    },
+    {
+      "bytes": 16033,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_doctor_benchmarks.py",
+      "sha256": "7dc944c08c02a6248612711c24e6a6cc0bb68b24e4cb6c17ea48338836dd696d"
+    },
+    {
+      "bytes": 19715,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_doctor_checks.py",
+      "sha256": "a3f680bb1bab846c647f364826a6cbc523b92148c2a9d16d19f271af55ee1e07"
+    },
+    {
+      "bytes": 22625,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_doctor_clone.py",
+      "sha256": "451226c86f0082d6bc71cc8e5d1d3ec559d55bb486a36ec25f844de9e3249a40"
+    },
+    {
+      "bytes": 54727,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_doctor_groups.py",
+      "sha256": "b7459cf9bc73689ce9b67e76f669dbd6b3e726340a7e5eda7e2560a340cf0ab1"
+    },
+    {
+      "bytes": 53034,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_feedback.py",
+      "sha256": "40143981109a01ea1981087576241fd9ec1f7a4d24bc2efad66d1db85a4a0881"
+    },
+    {
+      "bytes": 5827,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_fingerprint.py",
+      "sha256": "0372f2f4461919e3ad220ebe67efb8a11d2cbd3582df6d4b0a8ad6526e03f199"
+    },
+    {
+      "bytes": 17252,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_generated.py",
+      "sha256": "620cadefb8646643ad571f4f835f1ad181efa76cf33a3c43822a2b8c54271d28"
+    },
+    {
+      "bytes": 67135,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_install.py",
+      "sha256": "6d56b9cacfba32d25c2739718162397fc3a88bf81ec6c86c324835e8e84d1291"
+    },
+    {
+      "bytes": 26321,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_paths.py",
+      "sha256": "130ef4d4d122216f3162f846160397055cd6db2751dd8cc270a6426bc99bd5b4"
+    },
+    {
+      "bytes": 20431,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_profiles.py",
+      "sha256": "75b8c1ca71417c5466fcc6f3bf55b8cb81e73e8d649e4055c369414f944ccdbe"
+    },
+    {
+      "bytes": 21510,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_promote.py",
+      "sha256": "8dd15c7a974b7c37b2710d44941bdd990125134072984d613271507d713d02f8"
+    },
+    {
+      "bytes": 9054,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_render.py",
+      "sha256": "8985083a65e2f784b3e2b1d704cc76dd1760b6bf0f8b716b730565cab0e92dad"
+    },
+    {
+      "bytes": 48778,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_harness_update.py",
+      "sha256": "dcf680f44b997daf642e3e457db7a8d82e1d73bef1e0cbbd6823ecb80de6032c"
+    },
+    {
+      "bytes": 29788,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_health.py",
+      "sha256": "5123a32b3f136ebc49097b5787b74322f8de11963a5b925a2ca4dd17f22ab4c8"
+    },
+    {
+      "bytes": 3054,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_health_hidden.py",
+      "sha256": "b6dc9909bda59c77d286f60f08d64ad4acf66dad11bc66a19ba6c819795070f8"
+    },
+    {
+      "bytes": 8914,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_health_links.py",
+      "sha256": "997f44b954048bd90f9aa8d365158adbb3866b168dac6df190035c3da81363a9"
+    },
+    {
+      "bytes": 52066,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_health_surface.py",
+      "sha256": "09ca4c0086b56c09007fdee38e2b20917af8a5a269eb020ac466bc819ad411f8"
+    },
+    {
+      "bytes": 8705,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_local_ai.py",
+      "sha256": "033291613a151761640cfad76fdf61c43b371cab9014493e7ab15d558d148f9b"
+    },
+    {
+      "bytes": 3643,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_naming.py",
+      "sha256": "91674f33047e88cdca1e418c9c72ceb918dc2ec6e932aca822f81eaabc3e3cca"
+    },
+    {
+      "bytes": 27527,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_navigation_status.py",
+      "sha256": "7cae4ddd8414a347143c77cfbc54ce92387e67e61f5a86a7389caf36c3673346"
+    },
+    {
+      "bytes": 88972,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_onboarding.py",
+      "sha256": "0ed2a38f14491c19da332fc950c4e3093b21f2046835bf257f53a92e206544f0"
+    },
+    {
+      "bytes": 39242,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_optimizations.py",
+      "sha256": "7530c3c7d96f4ed6cc3fdfd586174345d26e2d18a754bc66c4ee5d798b774af1"
+    },
+    {
+      "bytes": 44406,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_policy.py",
+      "sha256": "a61b4ef2d377c35f042bef71a9e1912bb9934ac7f2d6cf88ac0826ae74718d6d"
+    },
+    {
+      "bytes": 9364,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_portability.py",
+      "sha256": "c19b3878adca45566a3b0eca5e20f67484c174f1171368cd4f98534ac1be7499"
+    },
+    {
+      "bytes": 16937,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_portable_tools.py",
+      "sha256": "f8f343f95df1364f7da4fe80983551cb8315da4802119c54c60c0e21ff53e6cd"
+    },
+    {
+      "bytes": 22980,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_prevention.py",
+      "sha256": "1b87552d178cacbe285c04bb7c676bc974569b81f3cf39550fb7998e7443dcac"
+    },
+    {
+      "bytes": 12842,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_proof_hygiene.py",
+      "sha256": "eec7a1e3bc3947dcc878f3e741252d9e05ba48dc88592f49b5c46c89d8950466"
+    },
+    {
+      "bytes": 2156,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_public_commands.py",
+      "sha256": "7674a1cbaa690aa77bde41a5d4e7d010c65dd44bf36cab10070b60911bd60e2b"
+    },
+    {
+      "bytes": 51496,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol.py",
+      "sha256": "f7f76ff935e67c28d98214a22d07566c57ab31c766b035eb9bc9eb24d2da3d7b"
+    },
+    {
+      "bytes": 10561,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_capture.py",
+      "sha256": "a8d254e50e5a178aec593e087e8c51e9146b49dd37bdcbbe40b48713f56bd6bc"
+    },
+    {
+      "bytes": 41357,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_context.py",
+      "sha256": "3fb037f9c42b50f219509b5749e3969aa525de89b6dae1457066ab7748756e53"
+    },
+    {
+      "bytes": 15138,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_costs.py",
+      "sha256": "93bf9528cf8b12057e4fcad635e306cb3dacc689ce841233fca69ee7d6cfcfb3"
+    },
+    {
+      "bytes": 53247,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_daily.py",
+      "sha256": "80ed8758ddc3df841b0919548bee45f904fb549330e2b9bfcc7c3adc24242d3b"
+    },
+    {
+      "bytes": 51686,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_dashboard.py",
+      "sha256": "7dc2dcebbb8a1bfd1a21bc9857d903e5185deaed33404af5ca80516713f45891"
+    },
+    {
+      "bytes": 15952,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_evidence.py",
+      "sha256": "c9d622fa086307eda4e71280cd1b3a10bf0f20e90cd7bc7e648383bde2a63516"
+    },
+    {
+      "bytes": 41022,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_finish.py",
+      "sha256": "dc2966cc08886a67faa1d73848ecd4826be5066c40cb14791b6b6c7a0aea9509"
+    },
+    {
+      "bytes": 22599,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_finish_packets.py",
+      "sha256": "009a1c7c5de124f68423a46f4fff3f66cde5115549dae6e830c80ab664bb5ea2"
+    },
+    {
+      "bytes": 3345,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_github.py",
+      "sha256": "e5ae50388f8393eb808d2f6a3e43b184151f2aaa4592e4dcc9215a5599c3bf70"
+    },
+    {
+      "bytes": 29050,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_parsers.py",
+      "sha256": "2703457933404c01a220231e3cc6106c9dc24f3501825f4e82dd2e289f192999"
+    },
+    {
+      "bytes": 15242,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_readiness.py",
+      "sha256": "743d53d0188f462cdb79887b1ead58f9d0cf6b530fd83fe3390cdf43a6350be3"
+    },
+    {
+      "bytes": 24278,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_render.py",
+      "sha256": "2c499f9168fa60d9a2e8c687665837981a3bcc1c4839b5fd5f91f18a5a25a662"
+    },
+    {
+      "bytes": 35775,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_review_loop.py",
+      "sha256": "b2991ecd12f7d392f15d4f1d44919c73e6dfe94a5da220d3e7861b3877aa9067"
+    },
+    {
+      "bytes": 14332,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_qol_triage.py",
+      "sha256": "07aee201724662874b29e8dee0c6236e59f24672faf3b5240d8f9a22b00733e7"
+    },
+    {
+      "bytes": 15437,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_review_costs.py",
+      "sha256": "e6487a8e9394f43e96601ee26117144cf92471ba0030caac9706eb84bf115741"
+    },
+    {
+      "bytes": 16999,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_review_hunks.py",
+      "sha256": "21bf268fd8caf643301f6b6d468ad67dc9a412b544c174a9c12a1d76746cbb97"
+    },
+    {
+      "bytes": 36698,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_review_packet.py",
+      "sha256": "04b2a265a9c86c23f46fb1026a90dab9fea19948931b9d7c0c2f54ffbc22e76f"
+    },
+    {
+      "bytes": 47851,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_review_progress.py",
+      "sha256": "45ec4877b8d55cec9121141cae1d86d502992b1ad75ed80ecc7ee7eff72ffc4b"
+    },
+    {
+      "bytes": 56828,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_routing.py",
+      "sha256": "fec026e4b12ca029a77debeeb88e1c21bf2887a7fe48778053af413cc0b8932d"
+    },
+    {
+      "bytes": 12949,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_service_config.py",
+      "sha256": "8d03e66bf0a7fea76a09da7e014bb46d92f01d77100c88e30ec4839ec7e8ecba"
+    },
+    {
+      "bytes": 42556,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_setup.py",
+      "sha256": "5acee05f3ab6196177b2630b77f3debbb13a43e108b50a488cd885177c557caa"
+    },
+    {
+      "bytes": 4940,
+      "path": ".agents/skills/skill-manager/scripts/repo_support/repo_syntax.py",
+      "sha256": "cdd214c1e16b41e6823850ba8323fb1b965aed1a1c9fab16160eb61033abb1cb"
+    },
+    {
+      "bytes": 10999,
+      "path": ".agents/skills/skill-manager/scripts/review_skill_command.py",
+      "sha256": "f675f04a5d3e547a59c00cd873783773dada14741a2cd94f50ab86ddbcdd4765"
+    },
+    {
+      "bytes": 691687,
+      "path": ".agents/skills/skill-manager/scripts/run_self_tests.py",
+      "sha256": "e78e651abfa9180b96575af86bc36c1c2201be5e3f147cfe41e2940f4884451e"
+    },
+    {
+      "bytes": 13007,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_determinism_comparison.py",
+      "sha256": "ac5c42e4ce25c3d5832a11e21cfc0c790415c62974bfe8e528626a7f8345e2c5"
+    },
+    {
+      "bytes": 21064,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_determinism_isolation.py",
+      "sha256": "35360a9170e24417764e10c2c30130f2c8d244a554fd30989985b31f4df0810d"
+    },
+    {
+      "bytes": 16198,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_determinism_orchestration.py",
+      "sha256": "b8f7dbc24be530342b9f93cca897e85fda7ab5c7605cb3679e8687846050e1a2"
+    },
+    {
+      "bytes": 7621,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_determinism_planning.py",
+      "sha256": "3fb7ca77c751c3bc9d2bd71b3dddc442208d3e631dae7232d0517d5c75a1aaf5"
+    },
+    {
+      "bytes": 26077,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_feedback.py",
+      "sha256": "c9084f07f25f2265b6b3b8e77e77eb51ba56a419338a9b0915bb75d8819bb27d"
+    },
+    {
+      "bytes": 50078,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_harness_path_safety.py",
+      "sha256": "9bcd9342171164d5877ee442f410bd422ba71fb4350624b3080a5286f01449ec"
+    },
+    {
+      "bytes": 37662,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_harness_profiles.py",
+      "sha256": "6ef3fe92bafa26bc9c3f6808cce99a1eb024ada75b743841d3b65e0edbaf29e3"
+    },
+    {
+      "bytes": 28349,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_harness_update.py",
+      "sha256": "6ab35e693de4251715ed38c1ba4bfe340a843e016fd2bf9e2ac97266730532f7"
+    },
+    {
+      "bytes": 45035,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_module_contract_v3.py",
+      "sha256": "b60bdd1e82c37658ea3bdc4f8806c6ab0744d5a926a77ddbab429c8807791e6e"
+    },
+    {
+      "bytes": 77503,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_optimizations.py",
+      "sha256": "98145b6842ee6b6cfa8274b28bae69af87e8234a5ee4796e873d8366c4e35b2d"
+    },
+    {
+      "bytes": 15739,
+      "path": ".agents/skills/skill-manager/scripts/self_tests/test_project_policy.py",
+      "sha256": "22c7b2951c733acc6474f71c54553c7567db22d20592d6a99617deb8398e021f"
+    },
+    {
+      "bytes": 16666,
+      "path": ".agents/skills/skill-manager/scripts/skill_inventory.py",
+      "sha256": "565946664ce485fd60036f450f050163bb8dab5e71eb686681e2de1ff8c6202b"
+    },
+    {
+      "bytes": 32128,
+      "path": ".agents/skills/skill-manager/scripts/skill_manager_common.py",
+      "sha256": "dc6b951bdf9de4574f7e5ea9c9e29282bf3e55884e62a4ceb41ed04506087e87"
+    },
+    {
+      "bytes": 17236,
+      "path": ".agents/skills/skill-manager/scripts/sync_skill_routing.py",
+      "sha256": "d6c792944aecc0f3daf143b5a9efaeb2b871e62c231bc1a1c38246bf51ec7d9d"
+    },
+    {
+      "bytes": 13503,
+      "path": ".agents/skills/skill-manager/scripts/triage_candidates.py",
+      "sha256": "e43ca224e430ed97c7510b41b9c866be3b961b0707b6a1f371a9613c447c5eb5"
+    },
+    {
+      "bytes": 5114,
+      "path": ".agents/skills/skill-manager/scripts/upgrade_skill.py",
+      "sha256": "4938abfa9e97d130edfaf8f577dbad368cde161d59b6c39dd6fa2fa5d233aeed"
+    },
+    {
+      "bytes": 38353,
+      "path": ".agents/skills/skill-manager/scripts/validate_agent_compatibility.py",
+      "sha256": "bb8532b06c9eacb2616e8edc18ac42f979f058d3633d238b4b98136d11133763"
+    },
+    {
+      "bytes": 25969,
+      "path": ".agents/skills/skill-manager/scripts/validate_skill.py",
+      "sha256": "451e6689844bc12174fb235c51af19ede12374d88a0600125774a9938e394360"
+    },
+    {
+      "bytes": 19726,
+      "path": ".agents/skills/skill-manager/suites/skill-manager-evals.json",
+      "sha256": "1c5cfb88d0523dd47b59661314d811139fa389289b7c0454c8de2ec98c839c06"
+    },
+    {
+      "bytes": 5709,
+      "path": ".agents/skills/sonarqube-diagnostics/SKILL.md",
+      "sha256": "3788632bd87732d4035c9302e9f765fe9da8f0fb00e09079314d4c806fdd5335"
+    },
+    {
+      "bytes": 1216,
+      "path": ".agents/skills/sonarqube-diagnostics/docs/evidence-examples.md",
+      "sha256": "48dcec7375099b2a23533c8ce4c55d6c9610b0b61bc637df4bc3ef02b0d93a54"
+    },
+    {
+      "bytes": 6353,
+      "path": ".agents/skills/sonarqube-diagnostics/module.json",
+      "sha256": "8bc7153ace83c88407f19861b4a0709b03008f8f1a0519d1574bc6fb0b792357"
+    },
+    {
+      "bytes": 4467,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py",
+      "sha256": "e5657e67042d56d9deff0d28d9823a6e9a1bda60609f4e6fd055813ef64c72fb"
+    },
+    {
+      "bytes": 2809,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/export_coverage.py",
+      "sha256": "64ea2335feff8c2b1fd702d11f2776684888378a58d26b716b8c78e35a70c57b"
+    },
+    {
+      "bytes": 3438,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/export_hotspots.py",
+      "sha256": "f4230b40724bd0446782cbff4d836a45626bb8e319d0b06baa3c51f009edb860"
+    },
+    {
+      "bytes": 3856,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/export_issues.py",
+      "sha256": "590288afbbcdd402fdc2ab95bc4cf4d4403fbff33f5c6dd73b8e99cae78ed055"
+    },
+    {
+      "bytes": 2882,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/export_quality_profile.py",
+      "sha256": "2de15681a12ec5a5cbcced16c362bfa4edc623f546958e8a48fb6c8549609149"
+    },
+    {
+      "bytes": 5854,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/run_analysis.py",
+      "sha256": "676fb7cc1bd2c3d7d4f0470990f578e7372c01e8fc9721ce9c66c05e67dcba4d"
+    },
+    {
+      "bytes": 10806,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/run_self_tests.py",
+      "sha256": "f20ac333c1793cbee68fc0c668042264b70e74eea32eb3afbb79cc0c9da42878"
+    },
+    {
+      "bytes": 10436,
+      "path": ".agents/skills/sonarqube-diagnostics/scripts/sonarqube_client.py",
+      "sha256": "1c13220758176bf0c7ba3296f500eed722a6617562e2b9aeb2471d313b4b998a"
+    },
+    {
+      "bytes": 4080,
+      "path": ".agents/skills/sonarqube-diagnostics/suites/sonarqube-diagnostics-evals.json",
+      "sha256": "89dd75f2b8d20ede6b117319dbefb2b0c8cc3d89b26ff1773740f2a5f11814a2"
+    },
+    {
+      "bytes": 8145,
+      "path": ".agents/skills/workflow-manager/SKILL.md",
+      "sha256": "5334114a5b2e8cc991b7932afb149172ecea69f8c8449e04e64fad57e4c6bc42"
+    },
+    {
+      "bytes": 416,
+      "path": ".agents/skills/workflow-manager/assets/fixtures/README.md",
+      "sha256": "1a2f20096b289dbf811cf9a50022a9661bfe0612c8cbf7afdb3f6a6db168c9e0"
+    },
+    {
+      "bytes": 695,
+      "path": ".agents/skills/workflow-manager/assets/fixtures/runtime-observation-v1.json",
+      "sha256": "aad8b28349370061a534a03539110cfbb145818c1e57853cd28e7c7b9c47fe67"
+    },
+    {
+      "bytes": 5706,
+      "path": ".agents/skills/workflow-manager/assets/orchestration-defaults.json",
+      "sha256": "e865caf3eca9cbfe671f2b51b5503f91f3bb6ddfe27a2574a62ebf988abbbdff"
+    },
+    {
+      "bytes": 29143,
+      "path": ".agents/skills/workflow-manager/assets/schemas/context-packet.schema.json",
+      "sha256": "43671709a8d22bae579c08f8a4af543d0a822ca4ec9d685ab73780fb933dfdc0"
+    },
+    {
+      "bytes": 2772,
+      "path": ".agents/skills/workflow-manager/assets/schemas/orchestration.schema.json",
+      "sha256": "d393d52f2fba96d028a99cd77f5745e4542b776c8ac216c8f74052939c39d323"
+    },
+    {
+      "bytes": 6415,
+      "path": ".agents/skills/workflow-manager/assets/schemas/runtime-observation-input-v1.schema.json",
+      "sha256": "b444f2c694251c45d89c8438caf93b3171d6253de27675f5b446e8246563f0ea"
+    },
+    {
+      "bytes": 3789,
+      "path": ".agents/skills/workflow-manager/assets/workflow-template/WORKFLOW.md",
+      "sha256": "57740f26982e9f6d55c391f704cf30ab5786a2b3235e82d8fa35899fcfb417dc"
+    },
+    {
+      "bytes": 2332,
+      "path": ".agents/skills/workflow-manager/assets/workflow-template/instructions.md",
+      "sha256": "dca099fba42c4e000375e7e7e7a80ea3c54ebeaf546966b29b74177c9de8d189"
+    },
+    {
+      "bytes": 6219,
+      "path": ".agents/skills/workflow-manager/docs/workflow-design-guide.md",
+      "sha256": "6aa8be28c26d1cd634f9fab40f5d77e07a016446231dcc43090faaec5d533df3"
+    },
+    {
+      "bytes": 15140,
+      "path": ".agents/skills/workflow-manager/module.json",
+      "sha256": "547d92c8e83e525180f287eac73508c6664f32cb3bc78b8646e6bc0e2c91a3c9"
+    },
+    {
+      "bytes": 2211,
+      "path": ".agents/skills/workflow-manager/scripts/automation_validation_rules.py",
+      "sha256": "b8c253dbb09fbe884b3c3193ef7d650c4aa043ee55699740ee49c95b2942678f"
+    },
+    {
+      "bytes": 36979,
+      "path": ".agents/skills/workflow-manager/scripts/create_workflow.py",
+      "sha256": "10309977391d69a3eef12251249a84f05d7017a02bfd29085faf0f5c2e7a5dab"
+    },
+    {
+      "bytes": 29512,
+      "path": ".agents/skills/workflow-manager/scripts/eval_workflow.py",
+      "sha256": "a61e10c658f5a1ec03f7a71c1963ddc0afd69824767b50927edf95aaa2cfde13"
+    },
+    {
+      "bytes": 14281,
+      "path": ".agents/skills/workflow-manager/scripts/index_workflow_runs.py",
+      "sha256": "a7766498a48a4c376a8b1ac476f0060bde9194ce0c16d166455a8421d5b5c7bf"
+    },
+    {
+      "bytes": 5710,
+      "path": ".agents/skills/workflow-manager/scripts/parallel_safety_fixture.py",
+      "sha256": "1575422893f9cd7ba8ab43b1d789661e33261d3752fd3d0e3791d037f957c084"
+    },
+    {
+      "bytes": 5937,
+      "path": ".agents/skills/workflow-manager/scripts/routing_contract.py",
+      "sha256": "b8ca882b997b5e40452da273854f2cd71d640ced35cd36573e10c96d621a0339"
+    },
+    {
+      "bytes": 390461,
+      "path": ".agents/skills/workflow-manager/scripts/run_self_tests.py",
+      "sha256": "bf401b4d687c6e8d3fa80a820578c172ba8ffff989cbc1936ebc2ba0b136a6b1"
+    },
+    {
+      "bytes": 5917,
+      "path": ".agents/skills/workflow-manager/scripts/self_tests/test_analytics.py",
+      "sha256": "2f029b83b844f0b1fffbf0f8bf13e258af3b773b02608ea0f8da9313a2580737"
+    },
+    {
+      "bytes": 7140,
+      "path": ".agents/skills/workflow-manager/scripts/self_tests/test_context_health.py",
+      "sha256": "6f2ba2d669f5ecb5a613149f4058ca5a6e4193ef11d716c3aabd018accaacf86"
+    },
+    {
+      "bytes": 4851,
+      "path": ".agents/skills/workflow-manager/scripts/self_tests/test_orchestration.py",
+      "sha256": "08722192e2467c56b7fb7b7e99065e34a062c9abb358db30deb470f97a60ff67"
+    },
+    {
+      "bytes": 13332,
+      "path": ".agents/skills/workflow-manager/scripts/sync_automation_routing.py",
+      "sha256": "7b5fdabe7dd11cc1a4fb5f6f092929228e95f8e3a97f332d6782e047891ee062"
+    },
+    {
+      "bytes": 5786,
+      "path": ".agents/skills/workflow-manager/scripts/update_workflow_routing.py",
+      "sha256": "fcfe0ce3ba62db27e5b1a023ffa342cc669aa29cf31ee98b27085e0f5d844950"
+    },
+    {
+      "bytes": 2010,
+      "path": ".agents/skills/workflow-manager/scripts/validate_automations.py",
+      "sha256": "d43f84cc30b97406710a01bb5a8fda3a3c289c09d8ebbda1eb893575c22e5775"
+    },
+    {
+      "bytes": 62,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/__init__.py",
+      "sha256": "05cd5b47fdd1d2db3696ed03105ffcfba7c3402996fa26f65d6b7aeb6acad55b"
+    },
+    {
+      "bytes": 904,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/discovery.py",
+      "sha256": "7cab9545717ea8a050cdb013720d1af5c63167211cbe53852d9ac82b47204c1b"
+    },
+    {
+      "bytes": 41055,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/manifests.py",
+      "sha256": "5596014fc13d7aab84ebc3d07e4381feec50f030bde15460f0ab7be598550287"
+    },
+    {
+      "bytes": 23685,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/module_checks.py",
+      "sha256": "2ae2f2b0121d1746b0325d4f413c5b3c9a8dbfea8f17fdf15a2f6b3826a982a8"
+    },
+    {
+      "bytes": 3086,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/reporting.py",
+      "sha256": "267ce5f2b6938d159f3956db7e602e983c2d8a16679d735928e34566ff1b6340"
+    },
+    {
+      "bytes": 1826,
+      "path": ".agents/skills/workflow-manager/scripts/validation_support/scanning.py",
+      "sha256": "17fc0002ac4609da35ec50b0013ba474fc729100b024b21bec1aed5c465e8a08"
+    },
+    {
+      "bytes": 16821,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_checkpoint.py",
+      "sha256": "af4650e70f6dacfa689ddba8a2a36e1fc6795bc39e497d3fa649101f6e37a2cb"
+    },
+    {
+      "bytes": 30305,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_context_evidence.py",
+      "sha256": "3cc3dbcb80f757953439b11003f25548bcb16ff204c9cdfb02fad23208707467"
+    },
+    {
+      "bytes": 22021,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_context_packet.py",
+      "sha256": "868362ec7f17b4da78873ab51602532b12e0f6ed2455c2c9ae4bf05af89a0293"
+    },
+    {
+      "bytes": 5374,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_manager_common.py",
+      "sha256": "149c17b552cbbdb445b6419ff37df2e823896ffcfb45bd4a71d8c79d46b24ce7"
+    },
+    {
+      "bytes": 44885,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_plan_check.py",
+      "sha256": "1ba68aea4569f589bfe7045e49eb9457a6f76cec90adde7729ce2cb9de8341af"
+    },
+    {
+      "bytes": 83151,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_repo_manager.py",
+      "sha256": "ca9336812a8eae78f5ee5425840c57c0a92c2fae6d6ef178fd3b6d1e525d32a2"
+    },
+    {
+      "bytes": 65132,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_run_support.py",
+      "sha256": "a9f045cadffa3cac5288bddf1d7b7e386fa698ef9e6734c681d7b1ed6f4e6437"
+    },
+    {
+      "bytes": 49,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/__init__.py",
+      "sha256": "eac88f2b27f9d9431b9cda48bde2c24c2cf2cbe773b2a47c6d6881cba057d1e8"
+    },
+    {
+      "bytes": 12275,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/analytics.py",
+      "sha256": "12350b40f7c8a92e73ede24973972be0c300f78ab318b98d22ca5524ca32b1c4"
+    },
+    {
+      "bytes": 43929,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/cli_parser.py",
+      "sha256": "4800e18656423df489748eb73c195ca6226417db27be17732ce8acea2658500a"
+    },
+    {
+      "bytes": 19853,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_budget.py",
+      "sha256": "dbe361c8675acc07ef9a9ee5e5ba95529fd4f6b02ab662be1453abf62ca07bde"
+    },
+    {
+      "bytes": 25171,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_contract.py",
+      "sha256": "5b586145357a30fd6cf7161da9e50227c7901c61de952bdddfc4f21ad2724390"
+    },
+    {
+      "bytes": 7835,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_coordinates.py",
+      "sha256": "a69799666e722f3e1f3fc8024798002feb3d95090b8266407d5b1b5a75866d47"
+    },
+    {
+      "bytes": 4713,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_documentation.py",
+      "sha256": "0da0baeca610a7bd42ac567457ac27be8302543bce1b0707a58e868619df13d9"
+    },
+    {
+      "bytes": 10138,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_evidence.py",
+      "sha256": "5c7a68c3ef10339f337d722f754bcd7b1f9cfa99a09cb5b0f09273227c5887fb"
+    },
+    {
+      "bytes": 2929,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_instructions.py",
+      "sha256": "d78b83357ed4b230b22b1560c54921dd3c8ed020b769b1fee1f739d1946e733c"
+    },
+    {
+      "bytes": 3890,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_markdown.py",
+      "sha256": "5f2baeb724fc3b6f0d172dc07d7a09988173e6c692c7bcab9d2ffe5487f5e66a"
+    },
+    {
+      "bytes": 2450,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_paths.py",
+      "sha256": "4beecd4363766c1bc19877991b2ead4a129c679606417ad4f259b058aab6b957"
+    },
+    {
+      "bytes": 10732,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_render.py",
+      "sha256": "b6afc3b21cf8738cdacebadb7f809e8e96276dcc9308093513e3b0b47e224c81"
+    },
+    {
+      "bytes": 5835,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/context_sources.py",
+      "sha256": "57c2eccfb3b918022848f63c01fa4d08396090ae0b8d98f8706ab500a66b85a6"
+    },
+    {
+      "bytes": 17955,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/hooks.py",
+      "sha256": "cdcf4e3bb15e71e39fdf6b0d39e487b6d63a299daf4c7999fb5121597700a83e"
+    },
+    {
+      "bytes": 46478,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/intent_builder.py",
+      "sha256": "ca98a1de906ae4e215682f6da5d5e7f902654d19d0f59684223b6e99cea5e82a"
+    },
+    {
+      "bytes": 12735,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/orchestration.py",
+      "sha256": "33e01669a88c2f568a1290e7595b661ff2952deb5ed8f127e074738b03be726b"
+    },
+    {
+      "bytes": 21500,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/plan_smoke.py",
+      "sha256": "2e99b0feb68cf3a43c8cef616d658c2f43b1059053bcc0baec0039bf823eb214"
+    },
+    {
+      "bytes": 7021,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/recovery.py",
+      "sha256": "69f0fb870fd2f6f59a5a391a9012aac9b150c1a659d77bbacb7a815a0475f784"
+    },
+    {
+      "bytes": 26071,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/review.py",
+      "sha256": "4cc47d76095669662900caf2db70a616e2fd39e471cf0e27ee6d0751808295a6"
+    },
+    {
+      "bytes": 17586,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/run_common.py",
+      "sha256": "155c8457eb228ce48cdba4eb5b7ccfb3a442f60ac938dc5a2199e6d3ab62c110"
+    },
+    {
+      "bytes": 15791,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/run_lifecycle.py",
+      "sha256": "93d9e0c329b57c93f3be1873be8c81d00150ac0aa0fb2e2904185a5b59809cf6"
+    },
+    {
+      "bytes": 21349,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/run_render.py",
+      "sha256": "e6b332d8b46dd8b122eb5e723501d93f1ac9543c2d951337036ce7933860c0d2"
+    },
+    {
+      "bytes": 9672,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/run_story_bug.py",
+      "sha256": "be0691ea846e84bc08fb530a70acebf78e7ba1224e2674b1c53aab0216c321ca"
+    },
+    {
+      "bytes": 12340,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/scorecard.py",
+      "sha256": "8837a2121668f33d7b5e76eb2f9c938ed491313bc8a27ce9d5384dd6ca1689fe"
+    },
+    {
+      "bytes": 21332,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/smoke.py",
+      "sha256": "175d994861c98eae9cb139a5738b41804bc43047d1e60dd993a5c061f707870f"
+    },
+    {
+      "bytes": 20633,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/smoke_common.py",
+      "sha256": "3e596ced1cbfe12291939e559412e4861772e3e693fc9fef5bc3eb36fb79a2a4"
+    },
+    {
+      "bytes": 30607,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/smoke_domain.py",
+      "sha256": "0aa157d1dc8550fe65008cfb95475d13e8dd83380b59d31aade892e61fe43d46"
+    },
+    {
+      "bytes": 7282,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/start_checklist.py",
+      "sha256": "ae96a3f41c759a88a58c8cb624bfbc0e3fedc5330e125db43aedcd21c3270f06"
+    },
+    {
+      "bytes": 22430,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/story_bug_quality.py",
+      "sha256": "4aa15f57e123ec59e83492bd3216ab3431ca64691c2e4e3ff663e80634a35373"
+    },
+    {
+      "bytes": 35568,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/template_layers.py",
+      "sha256": "b90d47ce9e8b308c13031bcecb4aee4da96abaa1e2600bb9d6a4a32ce47acad8"
+    },
+    {
+      "bytes": 11907,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/validation_packets.py",
+      "sha256": "4b926eca16f2b275e399579d3c74506ae6e61d008155441edf531508288618cc"
+    },
+    {
+      "bytes": 29879,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/worker_profiles.json",
+      "sha256": "8abbdfade87f56935b3e4babb8ea2280ce52875f3f896e1ecb0127c7b1b4f011"
+    },
+    {
+      "bytes": 134733,
+      "path": ".agents/skills/workflow-manager/scripts/workflow_support/workers.py",
+      "sha256": "fddbfb481c4ffba0bf31bac5742e18e30d62fcfc27b956dc28cad5236629fc74"
+    },
+    {
+      "bytes": 20603,
+      "path": ".agents/skills/workflow-manager/suites/workflow-manager-evals.json",
+      "sha256": "905a355e60f2f9b41b50f5cbbdde4f7f11fc79d2350a44f011e36d7e850690da"
+    },
+    {
+      "bytes": 254,
+      "path": ".editorconfig",
+      "sha256": "a51f0bbbe4b86f18feb3c03948315c4c1da520a796dc52d6ed402168efce0f8a"
+    },
+    {
+      "bytes": 917,
+      "path": ".gitattributes",
+      "sha256": "64e99f63c3c1c156b31c511fe3820ea46bf6ddc6cf2624d79cca20400a850048"
+    },
+    {
+      "bytes": 3904,
+      "path": "AGENTS.md",
+      "sha256": "ff3b776927eef73f8327e9c60546a6273aafdb46127cc460d462cc0cc74dff86"
+    },
+    {
+      "bytes": 1989,
+      "path": "automations/bug-ticket-workflow/WORKFLOW.md",
+      "sha256": "c637d00c8bac66b3fb6ba3a0c581e6d322895137cd04560bca726dee4656cbba"
+    },
+    {
+      "bytes": 457,
+      "path": "automations/bug-ticket-workflow/diagrams/workflow-connection-diagram.mmd",
+      "sha256": "d005049aca1fba823869c6d18c4be30995b82b3e239034bb7be3c894fa075572"
+    },
+    {
+      "bytes": 22862,
+      "path": "automations/bug-ticket-workflow/diagrams/workflow-connection-diagram.svg",
+      "sha256": "c62c920d2db43d103202cc9ad173023e4c7fcbdf9375b2bad09ea44ceb9acd31"
+    },
+    {
+      "bytes": 616,
+      "path": "automations/bug-ticket-workflow/diagrams/workflow-process-diagram.mmd",
+      "sha256": "84bcc5ec130a9cfe25c625a435506a09de02614c645e41f2f80e272b7565f128"
+    },
+    {
+      "bytes": 25938,
+      "path": "automations/bug-ticket-workflow/diagrams/workflow-process-diagram.svg",
+      "sha256": "cf2668067cf9e54adefe89d4748d4a6960b5ab8ad4672098aac08c8c140a2923"
+    },
+    {
+      "bytes": 5937,
+      "path": "automations/bug-ticket-workflow/instructions.md",
+      "sha256": "ede1598f0db5127c2f0ddd7c68981cb0cd770825f76e3ff57115e44ec1365dc3"
+    },
+    {
+      "bytes": 1413,
+      "path": "automations/bug-ticket-workflow/metadata/workflow-metadata.json",
+      "sha256": "40aaadd6345843dd3542af252be13a0f872b93d8f2e5facbac1165b4a8528a65"
+    },
+    {
+      "bytes": 22051,
+      "path": "automations/bug-ticket-workflow/module.json",
+      "sha256": "085fccbe17972dd6ed215e3c2b1cedaa166e03b29da17ce492b3753994248a12"
+    },
+    {
+      "bytes": 4216,
+      "path": "automations/bug-ticket-workflow/scripts/bug_regression_quality_profile.py",
+      "sha256": "8c9b65ee9546e38559a3b0f47849246ecfe652362c389f51f91a546dd454bbd0"
+    },
+    {
+      "bytes": 9040,
+      "path": "automations/bug-ticket-workflow/suites/workflow-evals.json",
+      "sha256": "91cdd97f68b44cee1a90611bdf55a8d4b5746867bff9d2b159dde6fe79f0fcbe"
+    },
+    {
+      "bytes": 2040,
+      "path": "automations/bug-ticket-workflow/templates/execution-log.md",
+      "sha256": "65d52fad1b9e87619687aa3bf1012d521b4be41c19b351694e9c6cb9ef37e4b6"
+    },
+    {
+      "bytes": 3894,
+      "path": "automations/bug-ticket-workflow/templates/lean-plan.md",
+      "sha256": "790b75a837711cfc1f27fbc20b296c08e898fe338a427cd192e232f94cc5cf8e"
+    },
+    {
+      "bytes": 8587,
+      "path": "automations/bug-ticket-workflow/templates/plan.md",
+      "sha256": "a285902c373270f54031e536b040d97fa46c181b65f1aba461afe11ab24a4397"
+    },
+    {
+      "bytes": 1492,
+      "path": "automations/bug-ticket-workflow/templates/pr-description.md",
+      "sha256": "6ebc83acb0f6eac1eeb228a1081e7a2362bfe0ff4e9f08a703bfc84ab7ec91ee"
+    },
+    {
+      "bytes": 686,
+      "path": "automations/bug-ticket-workflow/templates/ticket-info.md",
+      "sha256": "1f6b9da96692242bb92b4f65bac99d8a870615a0f80e0aedaa80a6e518bf7483"
+    },
+    {
+      "bytes": 1951,
+      "path": "automations/disciplined-change-workflow/WORKFLOW.md",
+      "sha256": "3326ff5f248f54aaa29bf20e8282957f9b5063f6bc06b6431e4d8bb274fa7f77"
+    },
+    {
+      "bytes": 229,
+      "path": "automations/disciplined-change-workflow/diagrams/workflow-connection-diagram.mmd",
+      "sha256": "99d0626bd38bbd01916ae40426eed9ea0c0c2fe03d9d1fa85d53bc6d5dcd825f"
+    },
+    {
+      "bytes": 15813,
+      "path": "automations/disciplined-change-workflow/diagrams/workflow-connection-diagram.svg",
+      "sha256": "b5e55f6cce77be841d5a72ecf8e8cebbfb46e84646873403120ad1dcf6b06c7f"
+    },
+    {
+      "bytes": 412,
+      "path": "automations/disciplined-change-workflow/diagrams/workflow-process-diagram.mmd",
+      "sha256": "cd23f87ab4d24166efe194237aee433125fb78a5663923f963c6dbb0a37d7df1"
+    },
+    {
+      "bytes": 20968,
+      "path": "automations/disciplined-change-workflow/diagrams/workflow-process-diagram.svg",
+      "sha256": "996bfd29fcef1fb53cfb5d7da79fe4f90d5f4fb786e33653e9fe92433ea9de0b"
+    },
+    {
+      "bytes": 3562,
+      "path": "automations/disciplined-change-workflow/instructions.md",
+      "sha256": "fc69b239acd7050093b0d41212b0dab48ae1cc9e43cc313ececaba73421852c2"
+    },
+    {
+      "bytes": 1445,
+      "path": "automations/disciplined-change-workflow/metadata/workflow-metadata.json",
+      "sha256": "101ee54f467ed3548932891d4909ad8cedf6cadb2071feb37cc820c6e4c97232"
+    },
+    {
+      "bytes": 21073,
+      "path": "automations/disciplined-change-workflow/module.json",
+      "sha256": "7f8f98cc383cfcff0cbca1cd08f6fd0f7e6dc68ac05fb9d6cb43948a9fa30e44"
+    },
+    {
+      "bytes": 2489,
+      "path": "automations/disciplined-change-workflow/suites/discipline-workflow-evals.json",
+      "sha256": "8afc5085c8cf3fd53e31c69b358ebff1328403da8cc31512e906f6ba0965cf8d"
+    },
+    {
+      "bytes": 3801,
+      "path": "automations/disciplined-change-workflow/suites/workflow-evals.json",
+      "sha256": "6ec6ffb73095dcfbcbcbb6d2dabc78eac9502115fdc4c9f17e8697408d3467d7"
+    },
+    {
+      "bytes": 3115,
+      "path": "automations/disciplined-change-workflow/templates/lean-plan.md",
+      "sha256": "4ce24bed47a9af50c075d2d9f947f6deb3bda0aecc957eb27c1c4ccf58e1c418"
+    },
+    {
+      "bytes": 4807,
+      "path": "automations/disciplined-change-workflow/templates/plan.md",
+      "sha256": "7cc3d1d1f9d7cb4a4807b0025d7018472969d30ecfd3363a7d9fdb11377cf0c0"
+    },
+    {
+      "bytes": 1547,
+      "path": "automations/navigation/WORKFLOW.md",
+      "sha256": "84e62b4442741bd44d5438b181e7b14bf8e02d0df4e3f8b9a18c735770375d6c"
+    },
+    {
+      "bytes": 366,
+      "path": "automations/navigation/diagrams/navigation-connection.mmd",
+      "sha256": "cedae127907852928208993fb7f0604f81b5ba612672a171c59847e9f313197b"
+    },
+    {
+      "bytes": 1882,
+      "path": "automations/navigation/diagrams/navigation-connection.svg",
+      "sha256": "494ffb511b91d8ab8b7fada1f3e239ed77c11fa40a163561e0f938caf3b6b241"
+    },
+    {
+      "bytes": 369,
+      "path": "automations/navigation/diagrams/navigation-process.mmd",
+      "sha256": "09eb547c9c7978e20598577f9855fcc05aaac06b1899fd4f18b8ec59f5a99e2b"
+    },
+    {
+      "bytes": 1940,
+      "path": "automations/navigation/diagrams/navigation-process.svg",
+      "sha256": "62e90d0a8a08ce138942dcd800bc90248fdd819aa11cdc4a6ef6ee78f4cb317b"
+    },
+    {
+      "bytes": 2517,
+      "path": "automations/navigation/instructions.md",
+      "sha256": "447cdea83374e9990a8f639841c8cbf7f4fefd6385be0ecd95ad92dd202ffb68"
+    },
+    {
+      "bytes": 30,
+      "path": "automations/navigation/metadata/workflow-metadata.json",
+      "sha256": "6e123aa124700fccc7b71605d1d45a6752fc33323c829a45197b0196e8ab4986"
+    },
+    {
+      "bytes": 11970,
+      "path": "automations/navigation/module.json",
+      "sha256": "b7b31cb8b667bef3b867082552b3049b396d77882481c1c876355aefe7a749dc"
+    },
+    {
+      "bytes": 780,
+      "path": "automations/navigation/scripts/module_command.py",
+      "sha256": "78651e46f64ff26c4d31ac095749106daa99c4a66188bed55360323875c20071"
+    },
+    {
+      "bytes": 66219,
+      "path": "automations/navigation/scripts/navigation_core.py",
+      "sha256": "4ee729ad6def69f1b4f97fa2640ca14c4e8084359ef850594a7034d7a756bfcc"
+    },
+    {
+      "bytes": 18225,
+      "path": "automations/navigation/scripts/project_context.py",
+      "sha256": "095eb66dc71792df0a9553988654e02f3b26aa114f4c086de3abb1515acc2e0f"
+    },
+    {
+      "bytes": 5040,
+      "path": "automations/navigation/scripts/update_navigation.py",
+      "sha256": "a1d2500e4654205e0c867fd47bd78495e27a4e281cdb23cfb876bb8bd6fcaacb"
+    },
+    {
+      "bytes": 2536,
+      "path": "automations/navigation/suites/workflow-evals.json",
+      "sha256": "4bc09a7b460c7cd1ace8f07b0b0b1c9f839c110b7cd7fb47a833060d4f3f1081"
+    },
+    {
+      "bytes": 2022,
+      "path": "automations/user-story-workflow/WORKFLOW.md",
+      "sha256": "35cac2915a27b11fc44f966ac7adf7daae949e77d1b4c9595aa2fbd1b6521f0e"
+    },
+    {
+      "bytes": 333,
+      "path": "automations/user-story-workflow/diagrams/workflow-connection-diagram.mmd",
+      "sha256": "e83e855c5bf1e62f5f27087500b6c5341474b54470ae4ae99786af3db5ff758f"
+    },
+    {
+      "bytes": 18780,
+      "path": "automations/user-story-workflow/diagrams/workflow-connection-diagram.svg",
+      "sha256": "2ad6604975371016357c7e19b07b3af966ed1fb92a1aaa3dc7549c0513544b2f"
+    },
+    {
+      "bytes": 624,
+      "path": "automations/user-story-workflow/diagrams/workflow-process-diagram.mmd",
+      "sha256": "69954bf30068929aa31d81c7c2b27324563a1bee629b31334932d8521502427b"
+    },
+    {
+      "bytes": 25952,
+      "path": "automations/user-story-workflow/diagrams/workflow-process-diagram.svg",
+      "sha256": "2a91d3d4aa06fd9e03c71fd602f0f789c1468241879cb6087136e606f67b0c03"
+    },
+    {
+      "bytes": 5322,
+      "path": "automations/user-story-workflow/instructions.md",
+      "sha256": "20f9e82735739aa5e9c565b43fc5e3e09a1113a5f37bcbf20417fbfa8b977943"
+    },
+    {
+      "bytes": 1367,
+      "path": "automations/user-story-workflow/metadata/workflow-metadata.json",
+      "sha256": "aa486bbe8775ebc9c790e9e3a7497c1b2e467ea12e2c56ca3382f0ab42259995"
+    },
+    {
+      "bytes": 21471,
+      "path": "automations/user-story-workflow/module.json",
+      "sha256": "907ba050e10146c8e35bf95918d4b1ae8a9ebae9271ad08da93ae8bb3ad51ea4"
+    },
+    {
+      "bytes": 4208,
+      "path": "automations/user-story-workflow/scripts/story_quality_profile.py",
+      "sha256": "579c1e47a7c0e7032a3b1b04412392898ca0e48308a7c40b2c40071a86714850"
+    },
+    {
+      "bytes": 10069,
+      "path": "automations/user-story-workflow/suites/workflow-evals.json",
+      "sha256": "a370f35d72adaf6d914bd1971c5ad66bc285d147f672ef0bc0f4f52df6d710db"
+    },
+    {
+      "bytes": 3386,
+      "path": "automations/user-story-workflow/templates/execution-log.md",
+      "sha256": "a6cefc73cddc01c25be5a3b8fcb287a7aa369581b58521bde8c54bcd013ec6d9"
+    },
+    {
+      "bytes": 4606,
+      "path": "automations/user-story-workflow/templates/lean-plan.md",
+      "sha256": "ccfcd9af0cae8b8398585bec584e88455722aaff27629063fac7a637b902623e"
+    },
+    {
+      "bytes": 9489,
+      "path": "automations/user-story-workflow/templates/plan.md",
+      "sha256": "a36ba1900299dea97c642ec01ecca6b60c6d107cefd25ba55217060425b03723"
+    },
+    {
+      "bytes": 2543,
+      "path": "automations/user-story-workflow/templates/pr-description.md",
+      "sha256": "4973f67c8bf14dab3b791a613c55ab445e5db1f7b396b4f020aa2a53bcd81f3e"
+    },
+    {
+      "bytes": 600,
+      "path": "automations/user-story-workflow/templates/ticket-info.md",
+      "sha256": "c5e039ac3bb4c94a51aa00a42779626e01e63d7411f5175974a62414cbdeccc1"
+    },
+    {
+      "bytes": 3091,
+      "path": "docs/agent-start.md",
+      "sha256": "ba7e833cf09973fd8e2ea199426876db2dacdf388e3d79595115bcc485525360"
+    },
+    {
+      "bytes": 19846,
+      "path": "docs/harness/copy-into-project.md",
+      "sha256": "4b94f341e862d9acb1d1167fc763691eea4109fd9274177b31371e3edc017f18"
+    },
+    {
+      "bytes": 499,
+      "path": "docs/harness/diagrams/reusable-ai-harness-folder-map.mmd",
+      "sha256": "892f81fe5ff6f14395564bcda078947c68b6e40aa182f04a139ef2d47f8726a6"
+    },
+    {
+      "bytes": 24686,
+      "path": "docs/harness/diagrams/reusable-ai-harness-folder-map.svg",
+      "sha256": "5a488bf457f5072e1239fad39b1c51682bc18e3d1da9e4e0d76126178f823c51"
+    },
+    {
+      "bytes": 495,
+      "path": "docs/harness/diagrams/reusable-ai-harness-operator-flow.mmd",
+      "sha256": "a8215da1edcf04f7157b83b131b24773adb129bc29e6fc53e783201d38ea16a9"
+    },
+    {
+      "bytes": 24238,
+      "path": "docs/harness/diagrams/reusable-ai-harness-operator-flow.svg",
+      "sha256": "7c5e09a07abdc816c9da781445e0a83ffeed128aaff262a40e2ade4d376f0323"
+    },
+    {
+      "bytes": 388,
+      "path": "docs/harness/diagrams/why-use-this-harness-what-it-improves.mmd",
+      "sha256": "05a8db1b4e827713faa884aa5de660189406a46756add7318370b419fba6f1b3"
+    },
+    {
+      "bytes": 21951,
+      "path": "docs/harness/diagrams/why-use-this-harness-what-it-improves.svg",
+      "sha256": "68d00ad1b96473563ed048c98ab01152f8ee9528d1afabeab20871512b50015f"
+    },
+    {
+      "bytes": 5902,
+      "path": "docs/harness/initialize-current-project.md",
+      "sha256": "1fd9ab37facd9bef362af20f1cb6c1ee8f8ce881a8967b8e602595e6bf1b132e"
+    },
+    {
+      "bytes": 6385,
+      "path": "docs/harness/no-python.md",
+      "sha256": "e07d94ab818fa6761d7e2f0778f69b33bdbbea8d693958d3cda584f50025c418"
+    },
+    {
+      "bytes": 9333,
+      "path": "docs/harness/policy-configuration.md",
+      "sha256": "66a7785af82d5b612cc99361a6361740b6e21e156fa0dc08f1a28972c4617d6b"
+    },
+    {
+      "bytes": 5071,
+      "path": "docs/harness/reusable-ai-harness.md",
+      "sha256": "7aa5bf6970756d9ec35c23937970aea42cfbf42b0f15c90b58c8ae864b51a032"
+    },
+    {
+      "bytes": 11104,
+      "path": "docs/harness/setup.md",
+      "sha256": "8afa14e7d09d2fe1456d771d868cf8cbd25f18109daff0c86628438958df578d"
+    },
+    {
+      "bytes": 3931,
+      "path": "docs/harness/why-use-this-harness.md",
+      "sha256": "da7f8cece7df6b93d1cdd9e8d1066c4bc9e25628dfab4ae533c7f4c6dcfe7e2c"
+    },
+    {
+      "bytes": 879,
+      "path": "docs/operations/after-failure.md",
+      "sha256": "1c45d7429c39b16f1a9840165145622c06268539f42e107775647ecfff35af6f"
+    },
+    {
+      "bytes": 4345,
+      "path": "docs/operations/daily-agent-path.md",
+      "sha256": "83890f2de3dd5a6e4e0d8552d63148d64d8191d978d8c6be78de44b9ab926688"
+    },
+    {
+      "bytes": 950,
+      "path": "docs/operations/daily-use.md",
+      "sha256": "fe137362fb30d2268b8773b8f0fa8af07abd325e9013d7ec2f52c4e06d962d2e"
+    },
+    {
+      "bytes": 2957,
+      "path": "docs/operations/repository-search.md",
+      "sha256": "a772a87d5ec1f37ac8f52aaec5093339c2d2912d8102dd6ee4fc1a5f840ac098"
+    },
+    {
+      "bytes": 3491,
+      "path": "docs/operations/token-savings.md",
+      "sha256": "fe82e5bc313548f0eadc398765a06bf6b55eefb512d7f07ded59ac5be3ffe885"
+    },
+    {
+      "bytes": 1404,
+      "path": "docs/operations/validation-evidence-and-parallelism.md",
+      "sha256": "d0539b12407edd78498ea2df9ef4be2bde83b414364dc76f14cf8a07a7b4a455"
+    },
+    {
+      "bytes": 2903,
+      "path": "docs/project/README.md",
+      "sha256": "b40db9f35ac871776b9feaa39329a8727629a9a46834901849d3c12f5e723b55"
+    },
+    {
+      "bytes": 3467,
+      "path": "docs/reference/actionable-backlog.md",
+      "sha256": "748ded358c6517881e410fde132aa9c0d4b09dd11027d666113d2164093d2eec"
+    },
+    {
+      "bytes": 18755,
+      "path": "docs/reference/commands.md",
+      "sha256": "3550926fb8e6fb370f733ddb66b21c06589936d30f6ef71f5340d533eeed3a74"
+    },
+    {
+      "bytes": 14764,
+      "path": "docs/reference/customization-guide.md",
+      "sha256": "74265578138168e566204a41fd75a6a273de4a9f8192363774dc55b4f111a6fe"
+    },
+    {
+      "bytes": 6061,
+      "path": "docs/reference/delegation-and-parallel-safety.md",
+      "sha256": "50636f15d601f157e314315cdb5453545901bb3d6cef47bbd2f96b08e45ffec8"
+    },
+    {
+      "bytes": 2010,
+      "path": "docs/reference/doc-metadata.md",
+      "sha256": "5c5729eb882773c1d2caa98c844d2d9e4d61989fed10b14036dafe29b7c50727"
+    },
+    {
+      "bytes": 6765,
+      "path": "docs/reference/documentation-map.md",
+      "sha256": "3ae0c7c4c81a7a52fb36dcb29d716a0cab29ffa1cbfbf0b1466698790d8aea1e"
+    },
+    {
+      "bytes": 638,
+      "path": "docs/reference/documents.md",
+      "sha256": "9212fb661a87f481958ce4c856fba9ca59a206385f6aa544841b62bdb4817211"
+    },
+    {
+      "bytes": 1712,
+      "path": "docs/reference/evidence-retention.md",
+      "sha256": "2ed83241357e75dd717a6ea75dce87eea2715e1710e1536ec082a19686dc6120"
+    },
+    {
+      "bytes": 2659,
+      "path": "docs/reference/import-review-summary.md",
+      "sha256": "e934f0e367f42b9037ce66546a3ec8a2bf3ae4291bce704ad7f75ba7b242badc"
+    },
+    {
+      "bytes": 1798,
+      "path": "docs/reference/maintenance-policy.md",
+      "sha256": "a80bbe808a029a243b99f3882f6d6896b02e473b3b83d5cd565541d612f3ddef"
+    },
+    {
+      "bytes": 19540,
+      "path": "docs/reference/model-compatibility-and-routing.md",
+      "sha256": "93deb3811f5d53b23650d38c51371f1df1b5495d1347c5735b8ae0b7c0e4c952"
+    },
+    {
+      "bytes": 2645,
+      "path": "docs/reference/project-context-generator-dogfood.md",
+      "sha256": "a16bf2de5caa89a5ec74fb4572b81a25ab6109bc781940c9c9f463ac65525b33"
+    },
+    {
+      "bytes": 1092,
+      "path": "docs/reference/release.md",
+      "sha256": "95bbe02bdadac05da07fe2dab0bd4ee89f7c43b840e0c85d9dc1a009fa2f2c3b"
+    },
+    {
+      "bytes": 21146,
+      "path": "docs/reference/tools-and-search.md",
+      "sha256": "1cf99157a143d40e3695d99291576a0530f6d6049e5f78787d8ad46db67e421d"
+    },
+    {
+      "bytes": 6664,
+      "path": "docs/start-here.md",
+      "sha256": "ca6e77bdf6a9b484dcf6326d3793654a32039e0dd797e3ee92e5d8e10da5be34"
+    },
+    {
+      "bytes": 458,
+      "path": "docs/workflow/diagrams/using-workflows-what-people-need-to-do.mmd",
+      "sha256": "7c987954c6fbc303d120ba16b218a3fd8af074f064c8021de51929a6a19819a7"
+    },
+    {
+      "bytes": 24562,
+      "path": "docs/workflow/diagrams/using-workflows-what-people-need-to-do.svg",
+      "sha256": "0e5c2d8d5d3ece3b622cdf32b7fcee0c27ed0fa47d07950c4c36f977bc69cddd"
+    },
+    {
+      "bytes": 492,
+      "path": "docs/workflow/diagrams/workflow-quickstart-map.mmd",
+      "sha256": "a02a7d47a445582803241804ed101ab63674469919fcf811396780c77af14ca3"
+    },
+    {
+      "bytes": 24841,
+      "path": "docs/workflow/diagrams/workflow-quickstart-map.svg",
+      "sha256": "efa32566fc27596ad359bd86b1ee2fbf1467c543aa9c4f5ebc99fb378842aa5b"
+    },
+    {
+      "bytes": 519,
+      "path": "docs/workflow/diagrams/workflows-automatic-evidence-flow.mmd",
+      "sha256": "c5cf1e417f8ee8b5bccb4afef36a21798c942497acee1f865a2af184ee1b2679"
+    },
+    {
+      "bytes": 24902,
+      "path": "docs/workflow/diagrams/workflows-automatic-evidence-flow.svg",
+      "sha256": "09e9a2daf8fb62a686e83e6a580da8b042a4101577f092ab4638d54a8a1ef633"
+    },
+    {
+      "bytes": 1112,
+      "path": "docs/workflow/quality-evidence-packets.md",
+      "sha256": "347aef88e4e1ed48d18138ca600c7420ffe3106445f8c298de15148194b8bb00"
+    },
+    {
+      "bytes": 6629,
+      "path": "docs/workflow/spec-driven-gates.md",
+      "sha256": "a05c904d929d35afb8f67b86e8ee69287485ea5a36ba2b8fecf763b5c28fe9d1"
+    },
+    {
+      "bytes": 7651,
+      "path": "docs/workflow/using-workflows.md",
+      "sha256": "8bdc63054797cc2a95816377da22e6504fcce97086e351149e4a8fdbd3307c53"
+    },
+    {
+      "bytes": 4450,
+      "path": "docs/workflow/workflow-quickstart.md",
+      "sha256": "c93b13907023b45cb11c1e2a27fef127da219f0f7c90913fea4ce530da442a9b"
+    },
+    {
+      "bytes": 14758,
+      "path": "docs/workflow/workflows.md",
+      "sha256": "6193faf106d4b6985794b3159802a56a46437e1ad77696a2373e0b74d543a044"
+    },
+    {
+      "bytes": 2551,
+      "path": "orchestration.md",
+      "sha256": "a5b64b9e9b2433c28f73a007e332758b31f54360a6b55994f0bcf571d6cbf820"
+    }
+  ],
+  "install": {
+    "features": [
+      "accepted-skills",
+      "bug-workflow",
+      "core",
+      "disciplined-change-workflow",
+      "reference-guides",
+      "story-workflow",
+      "workflow-integrations"
+    ],
+    "profile": "standard"
+  },
+  "payload_digest": "f406ba42e1fbee86279e1964ee6bdbfda98ba5a8ac410004e23765654e80301b",
+  "repository": "https://github.com/Belgian-Coder/skills",
+  "schema_version": 1,
+  "tag": "unreleased",
+  "tool": "harness-lock"
+}

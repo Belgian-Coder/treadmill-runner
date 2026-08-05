@@ -1,0 +1,11 @@
+graph TD;
+  user["User request"] --> start["Start workflow run"];
+  start --> context["Load project context"];
+  context --> evidence["Write deterministic context evidence"];
+  evidence --> plan["Generate plan"];
+  plan --> review{"User reviews plan"};
+  review -->|Revise| plan;
+  review -->|Stop| blocked["Record blocker"];
+  review -->|Approve| implement["Implement"];
+  implement --> validate["Validate"];
+  validate --> finish["Finish run"];

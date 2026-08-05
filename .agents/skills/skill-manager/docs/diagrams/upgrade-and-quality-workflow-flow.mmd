@@ -1,0 +1,7 @@
+graph TD;
+  request["Skill change request"] --> route["Read .agents/routing.md"];
+  route --> inspect["Inspect selected skill files"];
+  inspect --> facts["Gather facts"];
+  facts --> decision["override, merge, keep-staged, reject"];
+  decision --> edit["Apply scoped edits when approved"];
+  edit --> sync["sync and check"];

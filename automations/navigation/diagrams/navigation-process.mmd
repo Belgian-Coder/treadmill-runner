@@ -1,0 +1,6 @@
+graph TD;
+  start["Read project guidance"] --> scan["Scan files and manifests"];
+  scan["Scan files and manifests"] --> context["Check project context"];
+  context["Check project context"] --> maps["Write navigation maps"];
+  maps["Write navigation maps"] --> check["Compare freshness evidence"];
+  check["Compare freshness evidence"] --> handoff["Report map status"];

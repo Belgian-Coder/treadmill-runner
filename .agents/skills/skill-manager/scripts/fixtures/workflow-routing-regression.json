@@ -1,0 +1,270 @@
+{
+  "cases": [
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name user-story-workflow --summary --compact --format json",
+      "expected_owner": "user-story-workflow",
+      "id": "ado-story-implementation",
+      "query": "implement Azure DevOps user story 123"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name user-story-workflow --summary --compact --format json",
+      "expected_owner": "user-story-workflow",
+      "id": "feature-request",
+      "query": "implement a feature request"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name user-story-workflow --summary --compact --format json",
+      "expected_owner": "user-story-workflow",
+      "id": "new-api-endpoint",
+      "query": "build a new API endpoint"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name bug-ticket-workflow --summary --compact --format json",
+      "expected_owner": "bug-ticket-workflow",
+      "id": "bug-ticket-reproduction",
+      "query": "fix a bug ticket with reproduction and regression proof"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "import-only-attachments",
+      "query": "import Azure DevOps work item attachments"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "read-only-ranked-improvements",
+      "query": "Search the repo for cheaper maintenance improvements and report ranked ideas only; do not edit files."
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "read-only-workflow-status-diagnostics",
+      "query": "Do not edit files. Inspect deterministic workflow/status behavior around current low-context changes. Run read-only status and context-use-check commands, then inspect the finish plan and evidence contract. Look for contradictions, misleading next_command values, budget regressions, raw-map misuse, stale generated artifacts, or workflow template inheritance gaps. Report concrete issues with command/file references and suggested minimal fixes; if none, say no issues found with evidence."
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "read-only-next-feature-analysis",
+      "query": "What would the next best improvements or features be?"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "harness-roadmap-audit-abstention",
+      "query": "what are the best ways to improve onboarding, token usage, determinism and flexibility for the harness, workflows, skills, etc..."
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name navigation --summary --compact --format json",
+      "expected_owner": "navigation",
+      "id": "navigation-refresh-stale-maps",
+      "query": "refresh stale repository navigation maps and handoff evidence"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name reference-refresh --summary --compact --format json",
+      "expected_owner": "reference-refresh",
+      "id": "reference-refresh-no-fetch",
+      "query": "refresh local external references from pinned manifests and write evidence without network fetch"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"validate-automations\",\"--name\",\"reference-refresh\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "reference-refresh",
+      "id": "reference-refresh-strict-dogfood",
+      "query": "strict read-only no-temp no-network dogfood reference-refresh"
+    },
+    {
+      "expected_confidence": "medium",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"disciplined-change-workflow\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "disciplined-change-workflow",
+      "id": "read-only-lifecycle-dogfood",
+      "query": "read-only dogfood a workflow lifecycle run and explain how it works from a fresh maintainer perspective"
+    },
+    {
+      "expected_confidence": "medium",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/skills/workflow-manager/scripts/workflow_repo_manager.py\",\"validate-automations\",\"--root\",\".\",\"--name\",\"disciplined-change-workflow\",\"--strict-phase-quality\",\"--format\",\"json\"]",
+      "expected_owner": "disciplined-change-workflow",
+      "id": "strict-dogfood-fix-ambiguity",
+      "query": "fix strict read-only workflow dogfood next_command ambiguity"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"candidate-import-workflow\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "candidate-import-workflow",
+      "id": "candidate-import-dogfood",
+      "query": "read-only dogfood candidate import workflow"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name candidate-import-workflow --summary --compact --format json",
+      "expected_owner": "candidate-import-workflow",
+      "id": "candidate-import-temp-folder",
+      "query": "import candidate skills from a temporary folder, rewrite accepted behavior, validate, and clean reviewed candidates"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"diagram-review-workflow\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "diagram-review-workflow",
+      "id": "diagram-review-dogfood",
+      "query": "read-only dogfood diagram review workflow"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name diagram-review-workflow --summary --compact --format json",
+      "expected_owner": "diagram-review-workflow",
+      "id": "diagram-review-mermaid-evidence",
+      "query": "review Azure DevOps Mermaid diagrams and collect validation evidence"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name dotnet-framework-migration --summary --compact --format json",
+      "expected_owner": "dotnet-framework-migration",
+      "id": "dotnet-framework-binding-redirects",
+      "query": "migrate a .NET Framework app with binding redirects and validation evidence"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"dotnet-framework-migration\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "dotnet-framework-migration",
+      "id": "dotnet-framework-dogfood",
+      "query": "read-only dogfood dotnet framework migration workflow"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name dotnet-upgrade --summary --compact --format json",
+      "expected_owner": "dotnet-upgrade",
+      "id": "dotnet-upgrade-modern-target",
+      "query": "upgrade a .NET app from net6.0 to net8.0 with package resolution and validation evidence"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"dotnet-upgrade\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "dotnet-upgrade",
+      "id": "dotnet-upgrade-dogfood",
+      "query": "read-only dogfood dotnet upgrade workflow"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name feedback-improvement-workflow --summary --compact --format json",
+      "expected_owner": "feedback-improvement-workflow",
+      "id": "feedback-improvement-action-plan",
+      "query": "review local failure feedback and write an improvement action plan"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "[\"python\",\"-B\",\".agents/manage.py\",\"workflow\",\"smoke\",\"--name\",\"feedback-improvement-workflow\",\"--dry-run\",\"--summary\",\"--compact\",\"--format\",\"json\"]",
+      "expected_owner": "feedback-improvement-workflow",
+      "id": "feedback-improvement-dogfood",
+      "query": "read-only dogfood feedback improvement workflow"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name navigation --summary --compact --format json",
+      "expected_owner": "navigation",
+      "id": "navigation-separated-project-context",
+      "query": "refresh project context"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name bug-ticket-workflow --summary --compact --format json",
+      "expected_owner": "bug-ticket-workflow",
+      "id": "bug-separated-root-cause",
+      "query": "reproduce root cause"
+    },
+    {
+      "expected_confidence": "high",
+      "expected_next_command": "python -B .agents/manage.py workflow start --name feedback-improvement-workflow --summary --compact --format json",
+      "expected_owner": "feedback-improvement-workflow",
+      "id": "feedback-separated-action-plan",
+      "query": "review feedback action plan"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "candidate-import-no-subject",
+      "query": "delete a temporary folder after the test"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "reference-refresh-no-subject",
+      "query": "show repository commit history"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "diagram-review-no-subject",
+      "query": "render documentation evidence"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "dotnet-upgrade-no-subject",
+      "query": "package dependency compatibility"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "candidate-import-action-only",
+      "query": "rewrite the external source documentation"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "feedback-ledger-no-subject",
+      "query": "write a financial ledger summary"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "reference-manifest-no-subject",
+      "query": "refresh the package manifest"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "reference-clone-no-subject",
+      "query": "clone a repository"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "dotnet-runtime-no-subject",
+      "query": "runtime package compatibility"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "agent-benchmarking-action-only",
+      "query": "compare quality metrics"
+    },
+    {
+      "expected_confidence": "none",
+      "expected_next_command": "Open automations/routing.md.",
+      "expected_owner": "",
+      "id": "cross-cutting-harness-audit-abstention",
+      "query": "Audit the harness reliability roadmap for canonical Git-tree readiness, state-aware onboarding, Markdown-authoritative project context, metadata-first workflow routing with abstention, and generated registry/navigation synchronization"
+    }
+  ]
+}

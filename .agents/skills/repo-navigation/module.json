@@ -1,0 +1,325 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repo_navigation.py"
+      ],
+      "effects": [],
+      "id": "command-5c776f4eaae2",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/briefing/brief_repo.py"
+      ],
+      "effects": [],
+      "id": "command-2819e1685685",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/navigation/install_navigation_workflow.py"
+      ],
+      "effects": [
+        "repository_write",
+        "install"
+      ],
+      "id": "command-2eac811cd6a4",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/navigation/project_context.py"
+      ],
+      "effects": [],
+      "id": "command-eec72c85ba16",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/navigation/source_focus.py"
+      ],
+      "effects": [],
+      "id": "command-7be19a139bf9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/navigation/update_navigation.py"
+      ],
+      "effects": [],
+      "id": "command-cc422a9575cb",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-3df2d4f2bc02",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "deps",
+        "--target",
+        "<project-root>",
+        "--path",
+        "<repo-relative-file>",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "dependency-deps",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "rdeps",
+        "--target",
+        "<project-root>",
+        "--path",
+        "<repo-relative-file>",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "dependency-rdeps",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "impact",
+        "--target",
+        "<project-root>",
+        "--path",
+        "<repo-relative-file>",
+        "--depth",
+        "3",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "dependency-impact",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "brief",
+        "--target",
+        "<project-root>",
+        "--format",
+        "markdown",
+        "--budget",
+        "short"
+      ],
+      "effects": [],
+      "id": "command-15824a877055",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "focus",
+        "--target",
+        "<project-root>",
+        "--query",
+        "<task>",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "command-161e6576c4c2",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "check",
+        "--target",
+        "<project-root>",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "command-a1fd64c9ba71",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/repo-navigation/scripts/repo_navigation.py",
+        "project-context",
+        "--target",
+        "<project-root>",
+        "--check",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "command-5845b176c20d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs repository briefing, source-focus and dependency-impact summaries, map installation, refresh, staleness checks, and self-tests using the standard library only.",
+      "version": "3.12+"
+    }
+  ],
+  "determinism": {
+    "allowed_temporary_effects": [],
+    "environment_requirements": {
+      "executables": [
+        "git"
+      ],
+      "minimum_python": "3.12",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ]
+    },
+    "replay_commands": [
+      "command-3df2d4f2bc02"
+    ],
+    "volatile_json_pointers": []
+  },
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "repo-navigation",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "scripts/"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary"
+    ]
+  },
+  "name": "repo-navigation",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-05-25",
+    "license": "repository",
+    "source": "Consolidated from repo-navigation and repo-navigation.",
+    "updated": "2026-07-18"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/repo-navigation-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Runs migrated repository briefing, source-focus, project navigation, and strict owner-capsule self-tests."
+      }
+    ]
+  },
+  "related_modules": [
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-3df2d4f2bc02",
+    "command-15824a877055",
+    "command-161e6576c4c2",
+    "command-a1fd64c9ba71",
+    "command-5845b176c20d",
+    "dependency-deps",
+    "dependency-rdeps",
+    "dependency-impact"
+  ],
+  "summary": "Builds compact repository orientation briefs, query-focused source and dependency-impact summaries, project-context checks, and project-local navigation maps with responsibility summaries, technical context, deterministic conventions, and staleness checks.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/repo-navigation"
+  ],
+  "version": "1.0.0"
+}

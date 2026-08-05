@@ -1,0 +1,159 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-e5cdb7b72ac7",
+            "command-2bc14166004c",
+            "command-578c59987d28",
+            "command-6066588d4453",
+            "command-d19303d9c7ca"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "local-write"
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "docs/build-and-runtime.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/maintenance.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/testing-and-validation.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/ui-and-hosting.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/framework-patterns.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/framework-assessment.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/migration-playbook.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/legacy-ui.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET Framework",
+          "type": "description_contains"
+        },
+        {
+          "text": "maintain-in-place",
+          "type": "skill_contains"
+        },
+        {
+          "text": "approved modernization",
+          "type": "skill_contains"
+        },
+        {
+          "text": "packages.config",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "generated sync/adapters/artifact writes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "raw navigation JSON",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Run `scripts/run_self_tests.py` only after inspecting its help/source",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-capable",
+          "type": "skill_contains"
+        },
+        {
+          "text": "The module risk profile is `local-write` for real legacy maintenance and validation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Safe command shape",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Unsafe command shape",
+          "type": "skill_contains"
+        },
+        {
+          "text": "For strict read-only work, skip build/test/restore",
+          "type": "skill_contains"
+        },
+        {
+          "text": "SDK-style projects that still target .NET Framework",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Approved modernization means explicit user, ticket, or accepted workflow-plan scope",
+          "type": "skill_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 850
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "dotnet-legacy"
+}

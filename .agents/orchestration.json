@@ -1,0 +1,164 @@
+{
+  "$schema": ".agents/skills/workflow-manager/assets/schemas/orchestration.schema.json",
+  "schema_version": 1,
+  "default_task_set": "routine-engineering",
+  "chains": {
+    "balanced": {
+      "hosts": {
+        "codex": [
+          { "model": "gpt-5.6-terra", "reasoning": "high" },
+          { "model": "gpt-5.6-luna", "reasoning": "high" },
+          { "model": "gpt-5.6-sol", "reasoning": "medium" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "claude": [
+          { "model": "sonnet", "reasoning": "inherit" },
+          { "model": "opus", "reasoning": "inherit" },
+          { "model": "inherit", "reasoning": "inherit" }
+        ],
+        "github-copilot": [
+          { "model": "gpt-5.3-codex", "reasoning": "inherit" },
+          { "model": "claude-sonnet-4.6", "reasoning": "inherit" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "default": [
+          { "model": "active", "reasoning": "inherit" }
+        ]
+      }
+    },
+    "cost-first": {
+      "hosts": {
+        "codex": [
+          { "model": "gpt-5.6-luna", "reasoning": "high" },
+          { "model": "gpt-5.6-terra", "reasoning": "high" },
+          { "model": "gpt-5.6-sol", "reasoning": "medium" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "claude": [
+          { "model": "haiku", "reasoning": "inherit" },
+          { "model": "sonnet", "reasoning": "inherit" },
+          { "model": "inherit", "reasoning": "inherit" }
+        ],
+        "github-copilot": [
+          { "model": "claude-haiku-4.5", "reasoning": "inherit" },
+          { "model": "claude-sonnet-4.6", "reasoning": "inherit" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "default": [
+          { "model": "active", "reasoning": "inherit" }
+        ]
+      }
+    },
+    "safety-critical": {
+      "hosts": {
+        "codex": [
+          { "model": "gpt-5.6-sol", "reasoning": "high" },
+          { "model": "gpt-5.6-terra", "reasoning": "high" },
+          { "model": "gpt-5.6-luna", "reasoning": "high" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "claude": [
+          { "model": "opus", "reasoning": "inherit" },
+          { "model": "sonnet", "reasoning": "inherit" },
+          { "model": "inherit", "reasoning": "inherit" }
+        ],
+        "github-copilot": [
+          { "model": "claude-sonnet-4.6", "reasoning": "inherit" },
+          { "model": "gpt-5.3-codex", "reasoning": "inherit" },
+          { "model": "active", "reasoning": "inherit" }
+        ],
+        "default": [
+          { "model": "active", "reasoning": "inherit" }
+        ]
+      }
+    }
+  },
+  "task_sets": {
+    "deterministic-validation": {
+      "responsibility": "Run scripts, builds, tests, analyzers, and evidence checks without another model invocation.",
+      "execution": "deterministic"
+    },
+    "high-consequence": {
+      "responsibility": "Handle treadmill control, BLE protocol, HR automation, update rollback, and safety-boundary work.",
+      "execution": "orchestrator-decides",
+      "chain": "safety-critical"
+    },
+    "primary-integration": {
+      "responsibility": "Integrate slices, reconcile evidence, preserve project boundaries, and own final delivery.",
+      "execution": "primary",
+      "chain": "safety-critical"
+    },
+    "read-and-summarize": {
+      "responsibility": "Perform bounded repository exploration, documentation lookup, and evidence summarization.",
+      "execution": "orchestrator-decides",
+      "chain": "cost-first"
+    },
+    "routine-engineering": {
+      "responsibility": "Implement a bounded vertical slice with tests and appropriate documentation.",
+      "execution": "orchestrator-decides",
+      "chain": "balanced"
+    }
+  },
+  "tasks": {
+    "architecture-review": {
+      "responsibility": "Review vertical-slice boundaries, concurrency, persistence, and operational failure behavior.",
+      "task_set": "high-consequence"
+    },
+    "ble-control-implementation": {
+      "responsibility": "Implement only a hardware-evidenced, serialized, bounded, telemetry-confirmed BLE command path.",
+      "task_set": "high-consequence"
+    },
+    "context-discovery": {
+      "responsibility": "Locate the smallest authoritative TreadmillRunner context for the requested slice.",
+      "task_set": "read-and-summarize"
+    },
+    "documentation": {
+      "responsibility": "Update beginner, architecture, operations, decision, and evidence documentation for changed behavior.",
+      "task_set": "read-and-summarize"
+    },
+    "final-integration": {
+      "responsibility": "Integrate all accepted changes and own complete validation and handoff.",
+      "task_set": "primary-integration"
+    },
+    "gateway-implementation": {
+      "responsibility": "Implement a bounded ASP.NET Core gateway vertical slice with deterministic tests.",
+      "task_set": "routine-engineering"
+    },
+    "hr-control-implementation": {
+      "responsibility": "Implement conservative HR automation and every specified suspension/fault boundary.",
+      "task_set": "high-consequence"
+    },
+    "planning": {
+      "responsibility": "Convert an accepted story into minimal vertical slices, tests, and explicit safety gates.",
+      "task_set": "routine-engineering"
+    },
+    "playwright-validation": {
+      "responsibility": "Run deterministic viewport, interaction, accessibility, and screenshot checks.",
+      "task_set": "deterministic-validation"
+    },
+    "protocol-evidence": {
+      "responsibility": "Analyze sanitized independently captured fixtures and verify protocol claims without copying GPL code.",
+      "task_set": "high-consequence"
+    },
+    "repository-exploration": {
+      "responsibility": "Inspect repository structure and identify exact owners without editing product code.",
+      "task_set": "read-and-summarize"
+    },
+    "test-authoring": {
+      "responsibility": "Write focused unit, integration, contract, or browser tests before the minimal implementation.",
+      "task_set": "routine-engineering"
+    },
+    "update-recovery-implementation": {
+      "responsibility": "Implement signed update staging, journalled promotion, health checks, and database/binary rollback.",
+      "task_set": "high-consequence"
+    },
+    "validation": {
+      "responsibility": "Run deterministic project validation and report exact evidence and skips.",
+      "task_set": "deterministic-validation"
+    },
+    "web-ui-implementation": {
+      "responsibility": "Implement a responsive, touch-optimized Blazor slice and its browser acceptance tests.",
+      "task_set": "routine-engineering"
+    }
+  }
+}

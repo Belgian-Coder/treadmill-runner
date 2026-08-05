@@ -1,0 +1,267 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.3.0"
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "networked"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "codex-exec-measure-preferred-config",
+            "codex-exec-measure-self-test",
+            "command-0f6679ad290f",
+            "provider-host-matrix-v1",
+            "execution-harness-experiments-v1",
+            "web-evidence-efficiency-v1",
+            "repository-search-utility-v1",
+            "command-f73f2d6b70ad",
+            "command-b6978effdc1d",
+            "command-6066588d4453",
+            "command-8a6c566c2676",
+            "command-0c2a2909fbd3"
+          ]
+        },
+        {
+          "path": "determinism.replay_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "codex-exec-measure-preferred-config",
+            "codex-exec-measure-self-test",
+            "command-0f6679ad290f",
+            "execution-harness-experiments-v1",
+            "command-f73f2d6b70ad",
+            "command-b6978effdc1d",
+            "command-6066588d4453",
+            "command-8a6c566c2676",
+            "command-0c2a2909fbd3"
+          ]
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/prepare_benchmark_run.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/record_benchmark_result.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/capability_matrix.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/compare_benchmark_runs.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/lesson_promotion.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/routing_evidence_eval.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_packet.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/support/execution_prompt_marker.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/support/provider_evidence_adapters.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/support/token_measurement_v1.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/three_arm_full_run.py",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "benchmark",
+          "type": "description_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "text": "run.json",
+          "type": "skill_contains"
+        },
+        {
+          "text": "unsupported claims",
+          "type": "skill_contains"
+        },
+        {
+          "text": "new-contract validation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "capability matrix",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not a quality score",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict read-only/offline/no-profile/no-temp/no-write dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Normal validation only",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "three_arm_full_run.py",
+          "type": "skill_contains"
+        },
+        {
+          "text": "trial-index.json",
+          "type": "skill_contains"
+        },
+        {
+          "path": ".agents/skills/agent-benchmarking/module.json",
+          "text": "--trial-index",
+          "type": "repo_file_contains"
+        },
+        {
+          "path": ".agents/skills/agent-benchmarking/scripts/three_arm_full_run.py",
+          "text": "requested_model",
+          "type": "repo_file_contains"
+        },
+        {
+          "path": ".agents/skills/agent-benchmarking/scripts/three_arm_full_run.py",
+          "text": "gpt-5.6-sol",
+          "type": "repo_file_contains"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 900
+        }
+      ],
+      "id": "budget-and-trigger"
+    },
+    {
+      "assertions": [
+        {
+          "command": [
+            "inspect-skill",
+            "--skill",
+            "<skill>",
+            "--fast",
+            "--format",
+            "json"
+          ],
+          "text": "agent-benchmarking",
+          "type": "public_command_behavior"
+        },
+        {
+          "command": [
+            "benchmark",
+            "tool-call",
+            "--check",
+            "--json",
+            "--compact"
+          ],
+          "path": "ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "benchmark",
+            "tool-call",
+            "--check",
+            "--json",
+            "--compact"
+          ],
+          "path": "current_brokered.ok",
+          "type": "repo_command_json_field_equals",
+          "value": true
+        },
+        {
+          "command": [
+            "benchmark",
+            "tool-call",
+            "--check",
+            "--json",
+            "--compact"
+          ],
+          "path": "current_brokered.passed",
+          "type": "repo_command_json_field_equals",
+          "value": 3
+        },
+        {
+          "command": [
+            "benchmark",
+            "routing-eval",
+            "--help"
+          ],
+          "text": "--baseline",
+          "type": "repo_command_output_contains"
+        },
+        {
+          "command": [
+            "benchmark",
+            "capability-matrix",
+            "--help"
+          ],
+          "text": "--baseline-root",
+          "type": "repo_command_output_contains"
+        }
+      ],
+      "id": "public-command"
+    }
+  ],
+  "skill_name": "agent-benchmarking"
+}

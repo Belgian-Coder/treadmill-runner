@@ -1,0 +1,631 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/codex_exec_measure.py",
+        "preferred-config"
+      ],
+      "effects": [],
+      "id": "codex-exec-measure-preferred-config",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/codex_exec_measure.py",
+        "self-test"
+      ],
+      "effects": [],
+      "id": "codex-exec-measure-self-test",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/benchmark_common.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-683049c5e6a9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/benchmark_determinism.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-4561a4250dec",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/benchmark_feature_card.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-e9bad11ed65c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/benchmark_prompt_packet.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-3dd5d0d25b80",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/capability_matrix.py"
+      ],
+      "effects": [],
+      "id": "command-32e81624a40c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/provider_host_matrix.py",
+        "--suite",
+        "../../../automations/agent-benchmarking/suites/provider-host-serial-matrix.json",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "provider-host-matrix-v1",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/execution_harness_experiments.py",
+        "--suite",
+        "../../../automations/agent-benchmarking/suites/execution-harness-experiments-v1.json",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "execution-harness-experiments-v1",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/web_evidence_benchmark.py",
+        "--suite",
+        "../../../automations/agent-benchmarking/suites/web-evidence-efficiency-v1.json",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "web-evidence-efficiency-v1",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/repository_search_benchmark.py",
+        "--suite",
+        "../../../automations/agent-benchmarking/suites/repository-search-utility-v1.json",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "repository-search-utility-v1",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/anchored_edit_v1.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "anchored-edit-v1-help",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/clean_folder_control.py"
+      ],
+      "effects": [],
+      "id": "command-2b3d67ef2a64",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/codex_usage_ledger.py"
+      ],
+      "effects": [],
+      "id": "command-fbfc20fb3875",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/three_arm_full_run.py",
+        "prepare",
+        "--definition",
+        "<definition.json>",
+        "--output-root",
+        "<coordinator-artifacts>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "three-arm-full-run-prepare",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/three_arm_full_run.py",
+        "preflight",
+        "--protocol",
+        "<protocol.json>",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "three-arm-full-run-preflight",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/three_arm_full_run.py",
+        "aggregate",
+        "--protocol",
+        "<protocol.json>",
+        "--trial-index",
+        "<coordinator-artifacts>/trial-index.json",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "three-arm-full-run-aggregate",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/compare_benchmark_runs.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ae2779e4ce2d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/compare_prompt_packet_pair.py"
+      ],
+      "effects": [],
+      "id": "command-8b9989ad14a5",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/compare_three_arm_artifact_tokens.py"
+      ],
+      "effects": [],
+      "id": "command-698f3ae4d5d3",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/dotnet_feature_project_fixture.py"
+      ],
+      "effects": [],
+      "id": "command-201f7c66da91",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/lesson_promotion.py"
+      ],
+      "effects": [],
+      "id": "command-e3aadcab623c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/routing_evidence_eval.py"
+      ],
+      "effects": [],
+      "id": "command-3dc53b0a9a7d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_packet.py"
+      ],
+      "effects": [],
+      "id": "command-4567298bec26",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/support/navigation_benchmark_support.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-c5627aeb1ffd",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/structural_search_benchmark.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-220dcb15427c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/prepare_benchmark_run.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-af10c4da68f9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/record_benchmark_result.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-2aee1d632053",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/agent-benchmarking",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-0f6679ad290f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/agent-benchmarking",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-f73f2d6b70ad",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "agent-benchmarking",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-b6978effdc1d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "benchmark",
+        "routing-eval",
+        "--suite",
+        "automations/agent-benchmarking/suites/routing-evidence-real-use.json",
+        "--check-suite",
+        "--summary",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-8a6c566c2676",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/agent-benchmarking/scripts/lesson_promotion.py",
+        "--dry-run",
+        "--summary",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-0c2a2909fbd3",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs benchmark prep, capability matrices, result recording, comparisons, lesson promotion, routing evals, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "Node.js and npx",
+      "optional": true,
+      "purpose": "Runs the pinned standalone Codex CLI for explicitly authorized live receipt-backed measurements.",
+      "version": "current supported release"
+    },
+    {
+      "name": "tiktoken",
+      "optional": true,
+      "purpose": "Provides exact tokenizer-backed counts for benchmark token accounting when installed; scripts fall back to explicit chars/4 estimates when unavailable.",
+      "version": "0.13.0+"
+    },
+    {
+      "name": "ast-grep CLI",
+      "optional": true,
+      "purpose": "Runs syntax-aware structural-search filtering for the structural search benchmark through a local binary or explicit pinned npx fallback.",
+      "version": "0.43.0"
+    }
+  ],
+  "determinism": {
+    "allowed_temporary_effects": [],
+    "environment_requirements": {
+      "executables": [
+        "git"
+      ],
+      "minimum_python": "3.12",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ]
+    },
+    "replay_commands": [
+      "codex-exec-measure-preferred-config",
+      "codex-exec-measure-self-test",
+      "command-0f6679ad290f",
+      "execution-harness-experiments-v1",
+      "command-f73f2d6b70ad",
+      "command-b6978effdc1d",
+      "command-6066588d4453",
+      "command-8a6c566c2676",
+      "command-0c2a2909fbd3"
+    ],
+    "volatile_json_pointers": [
+      "/summary/duration_ms"
+    ]
+  },
+  "extensions": {
+    "skills-harness/token-budget": {
+      "direct_guidance": [
+        "docs/benchmark-methodology.md"
+      ]
+    }
+  },
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "Existing Codex CLI or ChatGPT authentication for explicitly authorized live runs; no credentials are written by the skill.",
+    "data_copied_locally": [],
+    "source_systems": [
+      "OpenAI Codex CLI"
+    ]
+  },
+  "id": "agent-benchmarking",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "Exact UTF-8 prompt files for live runs"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "inventory-summary",
+      "vision-pdf"
+    ]
+  },
+  "name": "agent-benchmarking",
+  "outputs": [
+    "Compact Codex CLI usage receipts and optional multi-stage aggregates"
+  ],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-05-12",
+    "license": "repository",
+    "reviewed_at": "2026-07-12",
+    "source": "repo-owned adaptation from the approved agent benchmarking and project navigation plan",
+    "updated": "2026-08-03"
+  },
+  "quality": {
+    "eval_suites": [
+      {
+        "path": "suites/agent-benchmarking-evals.json",
+        "purpose": "Deterministic assertions for manifest, trigger, commands, routing evidence, capability matrix, and budget."
+      }
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Normal validation fixtures for run prep, recording, matrices, grounding fields, packets, token/cost estimates, comparison, lessons, routing baselines, improvement-claim rules, and malformed results; creates temporary fixtures and is not strict no-temp/no-write safe."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": true,
+    "production_writes": false,
+    "profile": "networked",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "codex-exec-measure-preferred-config",
+    "codex-exec-measure-self-test",
+    "command-0f6679ad290f",
+    "provider-host-matrix-v1",
+    "execution-harness-experiments-v1",
+    "web-evidence-efficiency-v1",
+    "repository-search-utility-v1",
+    "command-f73f2d6b70ad",
+    "command-b6978effdc1d",
+    "command-6066588d4453",
+    "command-8a6c566c2676",
+    "command-0c2a2909fbd3"
+  ],
+  "summary": "Prepares local agent benchmark runs, optionally executes user-approved receipt-backed Codex CLI stages, records normalized results with exact cached and uncached token plus external wall-time evidence, validates repeated isolated three-arm full-run packets, captures telemetry-observed model and child-context evidence, compares quality, rework, provider usage, skipped checks, failures, workflow versions, trace-derived inefficiency signals, and scope growth, validates offline compact web-evidence packets against an all-blocks control, separates new-contract validation from objective improvement claims, and promotes recurring mistakes into deterministic eval candidates.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/agent-benchmarking",
+    "python -B .agents/skills/agent-benchmarking/scripts/codex_exec_measure.py self-test"
+  ],
+  "version": "1.3.0"
+}

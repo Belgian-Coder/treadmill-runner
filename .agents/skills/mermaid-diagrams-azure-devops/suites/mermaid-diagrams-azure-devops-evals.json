@@ -1,0 +1,185 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-9c413611fa06",
+            "command-2c9150257e0e",
+            "command-da9f3f962657",
+            "command-440b104a8e36",
+            "command-ca367cc0c668",
+            "command-4c909687df1f",
+            "command-6066588d4453"
+          ]
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/validate_mermaid.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/setup_vscode_mermaid_preview.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/mermaid-style-guide.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/diagram-selection-guide.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "assets/mermaid-templates/erDiagram.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "script-surface"
+    },
+    {
+      "assertions": [
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "networked"
+        },
+        {
+          "key": "network",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "installs",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1200
+        }
+      ],
+      "id": "risk-and-budget"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/mermaid_support/models.py",
+          "text": "MMDC_RENDER_FLAGS = [\"-t\", \"dark\", \"-b\", \"transparent\"]",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/materialize_diagrams.py",
+          "text": "SVG_VERTICAL_PADDING = 24.0",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/materialize_diagrams.py",
+          "text": "def normalize_svg_canvas",
+          "type": "file_contains"
+        },
+        {
+          "text": "intrinsic width",
+          "type": "skill_contains"
+        },
+        {
+          "text": "read-only/offline dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Strict read-only/offline excludes",
+          "type": "skill_contains"
+        },
+        {
+          "text": "strict no-temp/no-user-profile boundaries",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Repo-authored Azure-compatible docs must avoid",
+          "type": "skill_contains"
+        },
+        {
+          "text": "documented waiver before validation rules are relaxed",
+          "type": "skill_contains"
+        },
+        {
+          "text": "exit code 0 is not validation evidence",
+          "type": "skill_contains"
+        },
+        {
+          "text": "refuses to overwrite existing generated target paths",
+          "type": "skill_contains"
+        },
+        {
+          "text": "--render --no-auto-install-mmdc` disables setup only",
+          "type": "skill_contains"
+        },
+        {
+          "text": "not strict no-temp/no-profile",
+          "type": "skill_contains"
+        },
+        {
+          "path": "scripts/mermaid_support/validation_impl.py",
+          "text": "read-only/no-install evidence packet",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/doctor-evidence-packet.md",
+          "text": "May inspect user-level VS Code extension state",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/mermaid-style-guide.md",
+          "text": "exit code 0 only means the report was emitted",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/azure-devops-mermaid-limits.md",
+          "text": "Refresh this source check before changing supported type rules",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/materialize_diagrams.py",
+          "text": "Refusing to materialize Mermaid blocks because generated target files already exist",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/setup_vscode_mermaid_preview.py",
+          "text": "setup always reports evidence and exits 0",
+          "type": "file_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "output_contains": "Mermaid diagrams self-tests passed.",
+          "path": "scripts/run_self_tests.py",
+          "type": "python_script_succeeds"
+        }
+      ],
+      "id": "portable-svg-render-contract"
+    }
+  ],
+  "skill_name": "mermaid-diagrams-azure-devops"
+}

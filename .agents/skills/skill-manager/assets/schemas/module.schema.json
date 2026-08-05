@@ -1,0 +1,1521 @@
+{
+  "$comment": "Cross-field ModuleContractV3 rules use the required semantic vocabulary; use validate_schema_instance, not a structural-only JSON Schema validator.",
+  "$id": "https://example.invalid/skills-harness/module.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$vocabulary": {
+    "https://schemas.skills-harness.invalid/vocab/module-contract-semantics/v1": true
+  },
+  "additionalProperties": false,
+  "properties": {
+    "branch_policy": {
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern"
+      ],
+      "type": "object"
+    },
+    "commands": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "argv": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "effects": {
+            "items": {
+              "enum": [
+                "repository_write",
+                "temporary_write",
+                "network",
+                "credentials",
+                "install",
+                "upload",
+                "external_write"
+              ],
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "id": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "maximum": 3600,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "working_directory": {
+            "enum": [
+              "repository",
+              "module",
+              "temporary"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "argv",
+          "timeout_seconds",
+          "working_directory",
+          "effects"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "claude_code": {
+          "enum": [
+            "required",
+            "optional",
+            "unsupported"
+          ],
+          "type": "string"
+        },
+        "codex": {
+          "enum": [
+            "required",
+            "optional",
+            "unsupported"
+          ],
+          "type": "string"
+        },
+        "github_copilot": {
+          "enum": [
+            "required",
+            "optional",
+            "unsupported"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "budgets": {
+          "additionalProperties": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "sources": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "artifact_role": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "budget_ref": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "critical_category": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "load_policy": {
+                "enum": [
+                  "must_open",
+                  "handle_only"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "pattern": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "preserve_coordinates": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "artifact_role",
+              "load_policy",
+              "critical_category",
+              "budget_ref",
+              "preserve_coordinates"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "budgets",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "context_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "finish_queries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fallback_paths": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "question": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "scope": {
+                "enum": [
+                  "repo",
+                  "documents",
+                  "workflow-runs",
+                  "all"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "fallback_paths"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "resume_queries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fallback_paths": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "question": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "scope": {
+                "enum": [
+                  "repo",
+                  "documents",
+                  "workflow-runs",
+                  "all"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "fallback_paths"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "start_queries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fallback_paths": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "question": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "scope": {
+                "enum": [
+                  "repo",
+                  "documents",
+                  "workflow-runs",
+                  "all"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "fallback_paths"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "required",
+        "start_queries",
+        "resume_queries",
+        "finish_queries"
+      ],
+      "type": "object"
+    },
+    "dependencies": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "determinism": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_temporary_effects": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "operations": {
+                "items": {
+                  "enum": [
+                    "create",
+                    "modify",
+                    "delete"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "recursive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "recursive",
+              "operations"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "environment_requirements": {
+          "additionalProperties": false,
+          "properties": {
+            "executables": {
+              "items": {
+                "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._+-]*)(?![\\s\\S])",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "minimum_python": {
+              "pattern": "^(?:[0-9]+\\.[0-9]+)(?![\\s\\S])",
+              "type": "string"
+            },
+            "platforms": {
+              "items": {
+                "enum": [
+                  "windows",
+                  "linux",
+                  "macos"
+                ],
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "minimum_python",
+            "executables",
+            "platforms"
+          ],
+          "type": "object"
+        },
+        "replay_commands": {
+          "items": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "volatile_json_pointers": {
+          "items": {
+            "pattern": "^(?:/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)(?![\\s\\S])",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "replay_commands",
+        "allowed_temporary_effects",
+        "volatile_json_pointers",
+        "environment_requirements"
+      ],
+      "type": "object"
+    },
+    "extensions": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "properties": {},
+        "type": "object"
+      },
+      "properties": {},
+      "propertyNames": {
+        "pattern": "^(?:[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9._-]*)(?![\\s\\S])"
+      },
+      "type": "object"
+    },
+    "external_access": {
+      "additionalProperties": false,
+      "properties": {
+        "attachments_retrieved": {
+          "type": "boolean"
+        },
+        "credential_expectations": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "data_copied_locally": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_systems": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_systems",
+        "credential_expectations",
+        "data_copied_locally",
+        "attachments_retrieved"
+      ],
+      "type": "object"
+    },
+    "gates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "approval",
+              "clarification",
+              "quality",
+              "validation",
+              "human",
+              "policy"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "summary",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "hooks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "event": {
+            "enum": [
+              "phase-pre",
+              "phase-started",
+              "phase-between",
+              "phase-completed",
+              "phase-blocked",
+              "phase-post",
+              "phase-handoff",
+              "workflow-pre",
+              "workflow-post",
+              "run-started",
+              "run-finished"
+            ],
+            "type": "string"
+          },
+          "evidence_path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "maximum": 3600,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "event",
+          "command"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "properties": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "enum",
+                  "path",
+                  "list",
+                  "object"
+                ],
+                "type": "string"
+              },
+              "values": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9_]*)(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "required": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "properties",
+        "required"
+      ],
+      "type": "object"
+    },
+    "inputs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "integrations": {
+      "items": {
+        "oneOf": [
+          {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "descriptor": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "skill",
+        "workflow"
+      ],
+      "type": "string"
+    },
+    "local_ai": {
+      "additionalProperties": false,
+      "properties": {
+        "use_cases": {
+          "items": {
+            "oneOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "applies_when": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "command": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "evidence_input": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "guardrail": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "owner": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "command",
+                  "applies_when",
+                  "guardrail",
+                  "evidence_input",
+                  "owner"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "use_cases"
+      ],
+      "type": "object"
+    },
+    "metadata_path": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "outputs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "owners": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "parallel_safety": {
+      "additionalProperties": false,
+      "properties": {
+        "default_mode": {
+          "const": "serial",
+          "type": "string"
+        },
+        "phase_policies": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "cleanup_command_id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "max_workers": {
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "mode": {
+                "enum": [
+                  "serial",
+                  "parallel-read-only",
+                  "parallel-isolated"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "none",
+                  "external"
+                ],
+                "type": "string"
+              },
+              "provision_command_id": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "runtime": {
+                "additionalProperties": false,
+                "properties": {
+                  "environment": {
+                    "enum": [
+                      "none",
+                      "inherited-read-only",
+                      "per-worker"
+                    ],
+                    "type": "string"
+                  },
+                  "ports": {
+                    "enum": [
+                      "none",
+                      "per-worker"
+                    ],
+                    "type": "string"
+                  },
+                  "services": {
+                    "enum": [
+                      "none",
+                      "per-worker"
+                    ],
+                    "type": "string"
+                  },
+                  "state_stores": {
+                    "enum": [
+                      "none",
+                      "per-worker"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "environment",
+                  "ports",
+                  "state_stores",
+                  "services"
+                ],
+                "type": "object"
+              },
+              "write_scopes": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "mode",
+              "max_workers",
+              "write_scopes",
+              "runtime",
+              "provider"
+            ],
+            "type": "object"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "default_mode",
+        "phase_policies"
+      ],
+      "type": "object"
+    },
+    "phase_lifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_handoff_fields": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state_fields": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "events",
+        "state_fields",
+        "required_handoff_fields"
+      ],
+      "type": "object"
+    },
+    "phases": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "entry_checks": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "exit_checks": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "hooks": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "attestations": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "introduced": {
+          "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})(?![\\s\\S])",
+          "type": "string"
+        },
+        "license": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reviewed_at": {
+          "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})(?![\\s\\S])",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_hashes": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "properties": {},
+          "type": "object"
+        },
+        "updated": {
+          "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "quality": {
+      "additionalProperties": false,
+      "properties": {
+        "eval_gap_rationale": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "eval_suites": {
+          "items": {
+            "oneOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "self_tests": {
+          "items": {
+            "oneOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "related_modules": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "risk": {
+      "additionalProperties": false,
+      "properties": {
+        "credentials": {
+          "type": "boolean"
+        },
+        "destructive": {
+          "type": "boolean"
+        },
+        "generated_settings": {
+          "type": "boolean"
+        },
+        "installs": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "boolean"
+        },
+        "production_writes": {
+          "type": "boolean"
+        },
+        "profile": {
+          "enum": [
+            "read-only",
+            "local-write",
+            "local-destructive",
+            "networked",
+            "credentialed",
+            "production-write"
+          ],
+          "type": "string"
+        },
+        "uploads": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "credentials",
+        "destructive",
+        "generated_settings",
+        "installs",
+        "network",
+        "production_writes",
+        "uploads",
+        "profile"
+      ],
+      "type": "object"
+    },
+    "routing": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_terms": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "terms": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "threshold": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "winner_margin": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "terms",
+        "activation_terms",
+        "threshold",
+        "winner_margin"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 3,
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "accepted",
+        "staged",
+        "deprecated",
+        "retired"
+      ],
+      "type": "string"
+    },
+    "strict_read_only_commands": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "summary": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "tasks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "depends_on": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "phase": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "template_layers": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict_policy": {
+          "const": "error",
+          "type": "string"
+        },
+        "default_template": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "override_roots": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preset_roots": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "priorities": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "profiles": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "template": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "template_roots": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "template_roots"
+            ],
+            "type": "object"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "default_template",
+        "override_roots",
+        "preset_roots",
+        "profiles",
+        "priorities",
+        "conflict_policy"
+      ],
+      "type": "object"
+    },
+    "updated": {
+      "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})(?![\\s\\S])",
+      "type": "string"
+    },
+    "validation": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "version": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "worker_profiles": {
+      "additionalProperties": false,
+      "properties": {
+        "delegation": {
+          "additionalProperties": false,
+          "properties": {
+            "economics_gate_ref": {
+              "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+              "type": "string"
+            },
+            "eligible_task_classes": {
+              "items": {
+                "enum": [
+                  "independent-read-heavy"
+                ],
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "fallback": {
+              "const": "sequential",
+              "type": "string"
+            },
+            "max_depth": {
+              "const": 1,
+              "type": "integer"
+            },
+            "require_complete_thread_tree": {
+              "const": true,
+              "type": "boolean"
+            },
+            "require_model_attestation": {
+              "const": true,
+              "type": "boolean"
+            },
+            "schema_version": {
+              "const": 1,
+              "type": "integer"
+            },
+            "trigger": {
+              "const": "explicit-request-or-owner-instruction",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_version",
+            "trigger",
+            "max_depth",
+            "eligible_task_classes",
+            "require_model_attestation",
+            "require_complete_thread_tree",
+            "economics_gate_ref",
+            "fallback"
+          ],
+          "type": "object"
+        },
+        "extends": {
+          "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+          "type": "string"
+        },
+        "max_parallel_workers": {
+          "maximum": 4,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "advisory",
+            "auto-when-supported",
+            "manual"
+          ],
+          "type": "string"
+        },
+        "phase_assignments": {
+          "additionalProperties": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "profiles": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "context_budget": {
+                "enum": [
+                  "lean",
+                  "standard",
+                  "expanded"
+                ],
+                "type": "string"
+              },
+              "expected_output": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "prompt_adapter": {
+                "enum": [
+                  "evidence",
+                  "planning",
+                  "implementation",
+                  "test-authoring",
+                  "validation",
+                  "handoff",
+                  "general"
+                ],
+                "type": "string"
+              },
+              "purpose": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "route_set": {
+                "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+                "type": "string"
+              },
+              "tool_policy": {
+                "enum": [
+                  "read-only",
+                  "bounded-write",
+                  "deterministic-validation",
+                  "evidence-only",
+                  "handoff-only"
+                ],
+                "type": "string"
+              },
+              "validation_gate": {
+                "enum": [
+                  "record-evidence",
+                  "approval-required",
+                  "deterministic-checks",
+                  "fresh-validation",
+                  "handoff-contract"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "purpose",
+              "prompt_adapter",
+              "context_budget",
+              "tool_policy",
+              "expected_output",
+              "validation_gate",
+              "route_set"
+            ],
+            "type": "object"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "task_assignments": {
+          "additionalProperties": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])",
+            "type": "string"
+          },
+          "properties": {},
+          "propertyNames": {
+            "pattern": "^(?:[a-z][a-z0-9-]{0,63})(?![\\s\\S])"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "extends",
+        "mode",
+        "max_parallel_workers",
+        "phase_assignments",
+        "task_assignments",
+        "delegation"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "id",
+    "version",
+    "summary",
+    "owners",
+    "inputs",
+    "outputs",
+    "commands",
+    "related_modules",
+    "validation",
+    "risk",
+    "external_access",
+    "local_ai",
+    "strict_read_only_commands",
+    "extensions"
+  ],
+  "title": "Skills Harness ModuleContractV3",
+  "type": "object",
+  "x-moduleContractSemantics": {
+    "required": true,
+    "rules": [
+      "unique-command-ids",
+      "strict-read-only-command-ids",
+      "context-source-contract",
+      "determinism-command-contract",
+      "parallel-safety-contract"
+    ]
+  }
+}

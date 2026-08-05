@@ -1,0 +1,24 @@
+{
+  "integration": {
+    "description": "Exports SonarQube issues, coverage comparisons, and quality profile diagnostics as local workflow evidence.",
+    "id": "sonarqube-diagnostics",
+    "license": "repository",
+    "name": "SonarQube Diagnostics",
+    "owner": "engineering",
+    "version": "1.0.0"
+  },
+  "provides": {
+    "commands": [
+      "python -B .agents/manage.py credential-doctor --summary --compact --format json",
+      "python -B .agents/manage.py credential-doctor --configure --service sonarqube --name <profile>",
+      "python -B .agents/skills/sonarqube-diagnostics/scripts/export_issues.py --help",
+      "python -B .agents/skills/sonarqube-diagnostics/scripts/compare_coverage.py --help"
+    ],
+    "managed_files": [
+      "automations/*/runs/<run-id>/validation/sonarqube-*.json",
+      "automations/*/runs/<run-id>/validation/coverage-*.json"
+    ],
+    "tools": []
+  },
+  "schema_version": 1
+}

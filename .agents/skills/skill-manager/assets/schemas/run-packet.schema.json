@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skills-harness/run-packet.schema.json",
+  "title": "Skills Harness Workflow Run Packet",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "workflow",
+    "run_id",
+    "current_phase",
+    "status",
+    "decisions",
+    "checks",
+    "commands",
+    "evidence",
+    "skipped",
+    "blocked",
+    "failed",
+    "handoff",
+    "next_action"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "tool": {
+      "type": "string"
+    },
+    "workflow": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "current_phase": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "decisions": {
+      "type": "array"
+    },
+    "checks": {
+      "type": "object"
+    },
+    "commands": {
+      "type": "array"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "skipped": {
+      "type": "array"
+    },
+    "blocked": {
+      "type": "array"
+    },
+    "failed": {
+      "type": "array"
+    },
+    "handoff": {
+      "type": "object"
+    },
+    "next_action": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

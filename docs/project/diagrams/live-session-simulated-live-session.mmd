@@ -1,0 +1,17 @@
+sequenceDiagram
+  participant B as Browser
+  participant G as Gateway
+  participant T as Treadmill simulator
+  participant D as SQLite
+  B->>G: Acquire lease and arm
+  G->>D: Persist armed session
+  T->>G: Report physical belt movement
+  G->>D: Mark running
+  G-->>B: Publish snapshots at 4 Hz
+  G->>D: Persist samples at 1 Hz
+  B-->>G: Browser disconnects
+  Note over G,D: Workout continues locally
+  B->>G: Reload and reclaim control
+  T->>G: Report physical completion
+  G->>D: Persist summary and events
+  G-->>B: Show debrief

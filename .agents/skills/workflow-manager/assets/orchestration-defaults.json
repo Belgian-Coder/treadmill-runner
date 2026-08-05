@@ -1,0 +1,215 @@
+{
+  "$schema": ".agents/skills/workflow-manager/assets/schemas/orchestration.schema.json",
+  "schema_version": 1,
+  "default_task_set": "balanced-work",
+  "chains": {
+    "balanced": {
+      "hosts": {
+        "codex": [
+          {
+            "model": "gpt-5.6-terra",
+            "reasoning": "medium"
+          },
+          {
+            "model": "gpt-5.6-sol",
+            "reasoning": "medium"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "claude": [
+          {
+            "model": "sonnet",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "opus",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "inherit",
+            "reasoning": "inherit"
+          }
+        ],
+        "github-copilot": [
+          {
+            "model": "gpt-5.3-codex",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "claude-sonnet-4.6",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "default": [
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ]
+      }
+    },
+    "cost-first": {
+      "hosts": {
+        "codex": [
+          {
+            "model": "gpt-5.6-terra",
+            "reasoning": "low"
+          },
+          {
+            "model": "gpt-5.6-sol",
+            "reasoning": "medium"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "claude": [
+          {
+            "model": "haiku",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "sonnet",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "inherit",
+            "reasoning": "inherit"
+          }
+        ],
+        "github-copilot": [
+          {
+            "model": "claude-haiku-4.5",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "claude-sonnet-4.6",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "default": [
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ]
+      }
+    },
+    "deep-review": {
+      "hosts": {
+        "codex": [
+          {
+            "model": "gpt-5.6-sol",
+            "reasoning": "high"
+          },
+          {
+            "model": "gpt-5.6-terra",
+            "reasoning": "high"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "claude": [
+          {
+            "model": "opus",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "sonnet",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "inherit",
+            "reasoning": "inherit"
+          }
+        ],
+        "github-copilot": [
+          {
+            "model": "claude-sonnet-4.6",
+            "reasoning": "inherit"
+          },
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ],
+        "default": [
+          {
+            "model": "active",
+            "reasoning": "inherit"
+          }
+        ]
+      }
+    }
+  },
+  "task_sets": {
+    "balanced-work": {
+      "responsibility": "Bounded implementation and test work with normal engineering judgment.",
+      "execution": "orchestrator-decides",
+      "chain": "balanced"
+    },
+    "deep-review": {
+      "responsibility": "High-consequence architecture, safety, security, or recovery review.",
+      "execution": "orchestrator-decides",
+      "chain": "deep-review"
+    },
+    "deterministic": {
+      "responsibility": "Run deterministic tools and validators without spending a model invocation.",
+      "execution": "deterministic"
+    },
+    "fast-read": {
+      "responsibility": "Independent repository discovery, summarization, and low-risk research.",
+      "execution": "orchestrator-decides",
+      "chain": "cost-first"
+    },
+    "primary-integration": {
+      "responsibility": "Integrate results, resolve conflicts, and retain final accountability in the primary context.",
+      "execution": "primary",
+      "chain": "deep-review"
+    }
+  },
+  "tasks": {
+    "context-discovery": {
+      "responsibility": "Find the smallest authoritative context needed for the requested change.",
+      "task_set": "fast-read"
+    },
+    "final-integration": {
+      "responsibility": "Integrate changes, validate the complete result, and communicate the final outcome.",
+      "task_set": "primary-integration"
+    },
+    "implementation": {
+      "responsibility": "Implement one bounded slice with tests and documentation appropriate to its risk.",
+      "task_set": "balanced-work"
+    },
+    "planning": {
+      "responsibility": "Turn accepted requirements into a minimal executable sequence and acceptance gates.",
+      "task_set": "balanced-work"
+    },
+    "review": {
+      "responsibility": "Review correctness, risks, architecture boundaries, and missing validation.",
+      "task_set": "deep-review"
+    },
+    "test-authoring": {
+      "responsibility": "Create focused deterministic tests that prove the requested behavior.",
+      "task_set": "balanced-work"
+    },
+    "validation": {
+      "responsibility": "Run the declared deterministic checks and report evidence without model delegation.",
+      "task_set": "deterministic"
+    }
+  }
+}

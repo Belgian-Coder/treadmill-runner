@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "install_command_owner": "doctor --install-python-deps",
+  "install_target": ".agents/.deps/document-artifacts",
+  "normal_commands_install": false,
+  "python_packages": [
+    {
+      "import_name": "docx",
+      "install_spec": "python-docx==1.2.0",
+      "purpose": "Optional richer Word document operations; direct OOXML inspection remains the fallback."
+    }
+  ],
+  "external_tools": [
+    {
+      "name": "soffice",
+      "purpose": "Optional DOCX rendering to PDF."
+    },
+    {
+      "name": "libreoffice",
+      "purpose": "Optional DOCX rendering to PDF."
+    }
+  ]
+}

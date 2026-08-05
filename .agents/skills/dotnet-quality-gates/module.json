@@ -1,0 +1,266 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_coverage.py"
+      ],
+      "effects": [],
+      "id": "command-cc01d33aab6d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_line_endings.py"
+      ],
+      "effects": [],
+      "id": "command-71adb7c1590d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_local_quality.py"
+      ],
+      "effects": [],
+      "id": "command-d66aa14d3b2b",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/verify_static_analysis.py"
+      ],
+      "effects": [],
+      "id": "command-3b8b0507b363",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-quality-gates",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-7c8575e31751",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-quality-gates",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-4cbada40caf7",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-quality-gates",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-566ce03cf3e4",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-quality-gates/scripts/validate_line_endings.py",
+        ".agents/skills/dotnet-quality-gates",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-d66254b9d88b",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-quality-gates/scripts/validate_coverage.py",
+        "--project-root",
+        ".agents/skills/dotnet-quality-gates",
+        "--list-projects-only",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-40521ff6ce61",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-quality-gates/scripts/verify_static_analysis.py",
+        "--project-root",
+        ".agents/skills/dotnet-quality-gates",
+        "--plan-only"
+      ],
+      "effects": [],
+      "id": "command-da57d28ccffc",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs validation scripts and self-tests using the standard library.",
+      "version": "3.12+"
+    },
+    {
+      "name": ".NET SDK",
+      "purpose": "Optional for approved wrapper commands that run restore, build, test, or format; not used for read-only artifact parsing or plan-only checks.",
+      "version": "project-defined"
+    },
+    {
+      "name": "playwright-integration",
+      "optional": true,
+      "purpose": "Use the separate accepted skill for browser-test readiness instead of embedding Playwright setup in .NET gates."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none for read-only artifact parsing; project feeds, build credentials, local AI, or security scanner inputs only when explicitly approved",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "dotnet-quality-gates",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft"
+    ]
+  },
+  "name": "dotnet-quality-gates",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-quality-gates"
+    ],
+    "introduced": "2026-05-06",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-quality-gates-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Covers line endings, coverage, TRX/JUnit flaky candidates, mutation, BenchmarkDotNet baselines, snapshots, anti-slop scans across tests, async/EF, HTTP resilience, Semantic Kernel, caching, gRPC, source generation, packages/API metadata, logging/options, Minimal APIs, ASP.NET ordering, background services, DI, concurrency, LINQ, suppressions, delays, warning policy, central-package bypasses, and normalized evidence orchestration."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": false,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-destructive",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-7c8575e31751",
+    "command-4cbada40caf7",
+    "command-566ce03cf3e4",
+    "command-6066588d4453",
+    "command-d66254b9d88b",
+    "command-40521ff6ce61",
+    "command-da57d28ccffc"
+  ],
+  "summary": "Provides stdlib Python helpers for .NET local quality gates: line endings, coverage, TRX/JUnit flaky candidates, mutation, BenchmarkDotNet baselines, snapshots, static analysis wrappers, broad anti-slop scans, and normalized local-quality evidence orchestration.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-quality-gates"
+  ],
+  "version": "1.0.0"
+}

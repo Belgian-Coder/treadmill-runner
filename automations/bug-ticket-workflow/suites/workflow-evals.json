@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "workflow_name": "bug-ticket-workflow",
+  "evals": [
+    {
+      "id": "bug-workflow-validates",
+      "name": "Bug wiring validates",
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "type": "file_exists",
+          "path": "WORKFLOW.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "instructions.md"
+        },
+        {
+          "type": "file_exists",
+          "path": "scripts/bug_regression_quality_profile.py"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/ticket-info.md",
+          "text": "## Out Of Scope"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/plan.md",
+          "text": "## Out Of Scope"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/pr-description.md",
+          "text": "## Out Of Scope"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/execution-log.md",
+          "text": "## Plan Item Progress"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/plan.md",
+          "text": "## Bounded Work Packages"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/execution-log.md",
+          "text": "## Plan Variance"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/execution-log.md",
+          "text": "## Independent Review Evidence"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/pr-description.md",
+          "text": "## Validation Evidence Map"
+        },
+        {
+          "type": "repo_command_succeeds",
+          "command": [
+            "workflow",
+            "template",
+            "lint",
+            "--name",
+            "<workflow>",
+            "--format",
+            "json"
+          ]
+        },
+        {
+          "type": "repo_command_succeeds",
+          "command": [
+            "workflow",
+            "plan-check",
+            "--name",
+            "<workflow>",
+            "--template",
+            "--format",
+            "json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-execution-queue-proof-mapping",
+      "name": "Bug execution queue and proof mapping stay visible",
+      "assertions": [
+        {
+          "type": "file_contains",
+          "path": "templates/execution-log.md",
+          "text": "## Reusable Lessons"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/pr-description.md",
+          "text": "## Reusable Lessons"
+        },
+        {
+          "type": "file_contains",
+          "path": "templates/pr-description.md",
+          "text": "## Regression Proof"
+        }
+      ]
+    },
+    {
+      "id": "bug-contract-declares-evidence",
+      "name": "Bug contract declares evidence",
+      "assertions": [
+        {
+          "type": "start_contains",
+          "text": "module.json"
+        },
+        {
+          "type": "start_contains",
+          "text": "## Example Prompts"
+        },
+        {
+          "type": "start_contains",
+          "text": "Stop before implementation until the fix plan is complete"
+        },
+        {
+          "type": "start_contains",
+          "text": "Start scaffolds `ticket-info.md` and `plan.md`"
+        },
+        {
+          "type": "start_contains",
+          "text": "## Read-Only/Offline Dogfood"
+        },
+        {
+          "type": "start_contains",
+          "text": "For read-only/offline/no-profile/no-temp/no-write, skip Start"
+        },
+        {
+          "type": "start_contains",
+          "text": "do not start a run, even when `which-workflow` returns a lifecycle `workflow start` next command"
+        },
+        {
+          "type": "start_contains",
+          "text": "Strict read-only/offline excludes"
+        },
+        {
+          "type": "start_contains",
+          "text": "module.json.strict_read_only_commands"
+        },
+        {
+          "type": "start_contains",
+          "text": "Treat strict-check `next_command` output as advisory"
+        },
+        {
+          "type": "start_contains",
+          "text": "do not execute evals under strict dogfood"
+        },
+        {
+          "type": "start_contains",
+          "text": ".agents/local-ai/cache/**"
+        },
+        {
+          "type": "start_contains",
+          "text": "approval is recorded"
+        },
+        {
+          "type": "contract_contains",
+          "text": "strict_read_only_commands"
+        },
+        {
+          "type": "contract_contains",
+          "text": "workflow_repo_manager.py validate-automations --root . --name bug-ticket-workflow --strict-phase-quality"
+        },
+        {
+          "type": "contract_contains",
+          "text": "workflow hooks --name bug-ticket-workflow --check --summary --compact --format json"
+        },
+        {
+          "type": "contract_contains",
+          "text": "workflow branch-policy --branch feature/dogfood-readonly --format json"
+        },
+        {
+          "type": "contract_declares_related_module",
+          "module": "azure-devops-ticket-intake"
+        },
+        {
+          "type": "contract_declares_related_module",
+          "module": "repo-navigation"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/run.json"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/ticket-info.md"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/plan.md"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/execution-log.md"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/artifacts/project-context-check.json"
+        },
+        {
+          "type": "contract_declares_output",
+          "path": "runs/<run-id>/artifacts/context/context-packet.json"
+        },
+        {
+          "type": "contract_declares_command",
+          "command": "bug_regression_quality_profile.py"
+        },
+        {
+          "type": "contract_declares_command",
+          "command": "repo_navigation.py project-context"
+        },
+        {
+          "type": "contract_declares_command",
+          "command": "workflow context --name bug-ticket-workflow"
+        },
+        {
+          "type": "contract_declares_command",
+          "command": "workflow plan-check --name bug-ticket-workflow"
+        },
+        {
+          "type": "contract_contains",
+          "text": "workflow scorecard --name bug-ticket-workflow --no-lifecycle"
+        },
+        {
+          "type": "contract_contains",
+          "text": "workflow smoke --name bug-ticket-workflow --dry-run"
+        },
+        {
+          "type": "contract_declares_phase",
+          "phase": "regression-and-validation"
+        },
+        {
+          "type": "contract_local_ai_use_cases",
+          "use_cases": [
+            "validation-triage",
+            "changed-files-summary",
+            "failure-cluster",
+            "test-gap-summary",
+            "handoff-draft"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bug-phases-cover-regression",
+      "name": "Bug phases cover regression",
+      "assertions": [
+        {
+          "type": "instructions_contains",
+          "text": "## Phase: Reproduction Planning"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "## Phase: Regression And Validation"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Hard stop after planning"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Read-only/no-start dogfood overrides phase writes"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Continue to implementation only after explicit user approval is recorded"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Project context gate"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "During read-only/offline/no-profile dogfood, skip both credential summary and credential configuration"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "workflow plan-check --name bug-ticket-workflow"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "No reusable lesson: <reason>"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Decide whether the bug fix needs process, high-level connection, low-level connection, or ERD diagrams"
+        },
+        {
+          "type": "instructions_contains",
+          "text": "Validate changed Mermaid diagrams"
+        }
+      ]
+    },
+    {
+      "id": "bug-lifecycle-smoke",
+      "name": "Bug lifecycle smoke has evidence",
+      "assertions": [
+        {
+          "type": "workflow_lifecycle_smoke_ok"
+        }
+      ]
+    }
+  ]
+}

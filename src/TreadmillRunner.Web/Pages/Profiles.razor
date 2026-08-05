@@ -1,0 +1,625 @@
+@page "/profiles"
+@using TreadmillRunner.Core.Profiles
+@using System.Text.Json
+@inject HttpClient Http
+@inject ActiveProfileState ActiveProfile
+@inject NavigationManager Navigation
+
+<PageTitle>Profiles · TreadmillRunner</PageTitle>
+
+<div class="planning-page">
+    <header class="planning-hero">
+        <div>
+            <p class="eyebrow">Household</p>
+            <h1>Profiles</h1>
+            <p>Keep preferences and heart-rate limits separate for everyone who uses the treadmill.</p>
+        </div>
+        <button class="primary-action" type="button" @onclick="StartCreate">New profile</button>
+    </header>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="notice" role="status">@message</p>
+    }
+
+    <div class="planning-split">
+        <section class="planning-panel" aria-labelledby="profile-list-title">
+            <div class="panel-heading">
+                <h2 id="profile-list-title">People</h2>
+                <span>@profiles.Count profiles</span>
+            </div>
+            @if (loading)
+            {
+                <p class="empty-state">Loading profiles…</p>
+            }
+            else if (profiles.Count == 0)
+            {
+                <p class="empty-state">No profiles yet. Create the first household profile.</p>
+            }
+            else
+            {
+                <div class="profile-list">
+                    @foreach (ProfileView profile in profiles)
+                    {
+                        <article class="profile-row @(activeProfileId == profile.Id ? "profile-row--active" : null)">
+                            <button class="profile-select" type="button" @onclick="(MouseEventArgs _) => SelectAsync(profile)" aria-label="Use @profile.DisplayName as active profile" aria-pressed="@(activeProfileId == profile.Id)">
+                                <span class="profile-avatar" aria-hidden="true">@Initial(profile.DisplayName)</span>
+                                <span><strong>@profile.DisplayName</strong><small>@profile.UnitSystem · @profile.WeightKilograms.ToString("0.#") kg</small></span>
+                            </button>
+                            <button class="secondary-action compact-action" type="button" @onclick="() => StartEdit(profile)">Edit</button>
+                            @if (garminStatuses.GetValueOrDefault(profile.Id) is { } garmin)
+                            {
+                                <span class="integration-badge @(garmin.Connected ? "integration-badge--connected" : null)">
+                                    @(garmin.Connected ? "Garmin connected" : "Garmin not connected")
+                                </span>
+                            }
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        @if (isFormOpen)
+        {
+        <section class="planning-panel" aria-labelledby="profile-form-title">
+            <div class="panel-heading">
+                <h2 id="profile-form-title">@(editingId is null ? "Create profile" : "Edit profile")</h2>
+                @if (editingId is not null)
+                {
+                    <button class="text-action danger-action" type="button" @onclick="(MouseEventArgs _) => ArchiveAsync()">Archive</button>
+                }
+            </div>
+            <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="profile-form">
+                <div class="form-grid">
+                    <label class="field field--wide">Display name<input @bind="form.DisplayName" maxlength="100" required autocomplete="name" /></label>
+                    <label class="field">Units<select @bind="form.UnitSystem"><option value="Metric">Metric</option><option value="Imperial">Imperial</option></select></label>
+                    <label class="field">Weight (kg)<input @bind="form.WeightKilograms" type="number" min="20" max="350" step="0.1" required /></label>
+                    <label class="field">Maximum heart rate<input aria-label="Maximum heart rate" @bind="form.MaximumHeartRateBpm" @bind:after="MaximumHeartRateChanged" type="number" min="50" max="250" /><small>@ZoneSuggestionStatus</small></label>
+                    <label class="field">Maximum speed (km/h)<input @bind="form.MaximumSpeedKph" type="number" min="1" max="30" step="0.1" /></label>
+                </div>
+                <details class="advanced-settings">
+                <summary>Advanced heart-rate settings</summary>
+                <fieldset class="step-card">
+                    <legend>Heart-rate zones</legend>
+                    <div class="zone-suggestion-heading">
+                        <p>Suggested from maximum heart rate. Edit any value to customize it.</p>
+                        <button class="secondary-action compact-action" type="button" @onclick="UseSuggestedZones" disabled="@(!CanSuggestZones)">Reset to suggested zones</button>
+                    </div>
+                    @for (int index = 0; index < form.HeartRateZones.Count; index++)
+                    {
+                        int zoneIndex = index;
+                        ZoneForm zone = form.HeartRateZones[index];
+                        <div class="form-grid form-grid--steps">
+                            <label class="field">Zone<input @bind="zone.Number" @bind:after="MarkZonesCustomized" type="number" min="1" max="10" required /></label>
+                            <label class="field">Name<input @bind="zone.Name" @bind:after="MarkZonesCustomized" maxlength="60" required /></label>
+                            <label class="field">Minimum bpm<input @bind="zone.MinimumBpm" @bind:after="MarkZonesCustomized" type="number" min="1" max="250" required /></label>
+                            <label class="field">Maximum bpm<input @bind="zone.MaximumBpm" @bind:after="MarkZonesCustomized" type="number" min="1" max="250" required /></label>
+                        </div>
+                        <button class="text-action danger-action" type="button" @onclick="() => RemoveZone(zoneIndex)">Remove zone</button>
+                    }
+                    <button class="secondary-action" type="button" @onclick="AddZone">Add heart-rate zone</button>
+                </fieldset>
+                <fieldset class="step-card">
+                    <legend>Heart-rate speed controller</legend>
+                    <div class="form-grid form-grid--steps">
+                        <label class="field">Increase step (km/h)<input @bind="form.HeartRateIncreaseStepKph" type="number" min="0.1" max="0.5" step="0.1" required /></label>
+                        <label class="field">Increase cooldown (seconds)<input @bind="form.HeartRateIncreaseCooldownSeconds" type="number" min="15" max="180" step="1" required /></label>
+                        <label class="field">Decrease step (km/h)<input @bind="form.HeartRateDecreaseStepKph" type="number" min="0.1" max="1.0" step="0.1" required /></label>
+                        <label class="field">Decrease cooldown (seconds)<input @bind="form.HeartRateDecreaseCooldownSeconds" type="number" min="5" max="120" step="1" required /></label>
+                    </div>
+                    <p>Changes require 20 seconds below target or 10 seconds above target. Hardware increments and workout/profile limits are enforced again when a command executes.</p>
+                </fieldset>
+                </details>
+                <div class="form-actions">
+                    <button class="primary-action" type="submit" disabled="@saving">@(saving ? "Saving…" : editingId is null ? "Create profile" : "Save profile")</button>
+                    <button class="secondary-action" type="button" @onclick="ResetForm">Cancel</button>
+                </div>
+            </EditForm>
+
+            @if (editingId is { } profileId)
+            {
+                <section class="profile-integration" aria-labelledby="garmin-title">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">Training sync</p>
+                            <h3 id="garmin-title">Garmin Connect</h3>
+                        </div>
+                        @if (garminStatuses.GetValueOrDefault(profileId) is { Connected: true })
+                        {
+                            <span class="integration-badge integration-badge--connected">Connected</span>
+                        }
+                    </div>
+                    @if (garminUnavailable.Contains(profileId))
+                    {
+                        <p class="field-error" role="status">Garmin status is temporarily unavailable.</p>
+                        <button class="secondary-action" type="button" @onclick="() => ReloadGarminStatusAsync(profileId)" disabled="@garminBusy">Try again</button>
+                    }
+                    else if (!garminStatuses.TryGetValue(profileId, out GarminConnectionStatusView? garminStatus))
+                    {
+                        <p class="muted" role="status">Loading Garmin status…</p>
+                    }
+                    else if (!garminStatus.ProviderConfigured)
+                    {
+                        <p>@garminStatus.SetupMessage</p>
+                        <button class="secondary-action" type="button" disabled>Connect Garmin</button>
+                    }
+                    else if (!garminStatus.Connected)
+                    {
+                        <p>Connect this runner's own Garmin account. TreadmillRunner never receives the Garmin password.</p>
+                        <p class="integration-note">This sends workouts, training plans, and future calendar sessions. It does not upload the completed treadmill activity; record that run on your watch.</p>
+                        <button class="primary-action" type="button" @onclick="() => ConnectGarminAsync(profileId)" disabled="@garminBusy">@(garminBusy ? "Connecting…" : "Connect Garmin")</button>
+                    }
+                    else
+                    {
+                        <div class="integration-account">
+                            <strong>@garminStatus.AccountLabel</strong>
+                            <span>@GarminSyncSummary(garminStatus)</span>
+                            @if (garminStatus.LastSyncSuccessAtUtc is { } lastSuccess)
+                            {
+                                <small>Last synchronized @lastSuccess.ToLocalTime().ToString("g")</small>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(garminStatus.LastError))
+                            {
+                                <small class="field-error" role="status">@garminStatus.LastError</small>
+                            }
+                        </div>
+                        <div class="form-actions" aria-busy="@garminBusy">
+                            <button class="primary-action" type="button" @onclick="() => SyncGarminAsync(profileId)" disabled="@garminBusy">@(garminBusy ? "Synchronizing…" : "Sync now")</button>
+                            @if (disconnectGarminProfileId == profileId)
+                            {
+                                <p class="integration-note">Disconnect removes this runner's local Garmin credentials and pending queue. Content already sent to Garmin remains there; revoke access separately in Garmin if required.</p>
+                                <button class="danger-action" type="button" @onclick="() => DisconnectGarminAsync(profileId)" disabled="@garminBusy">Confirm disconnect</button>
+                                <button class="secondary-action" type="button" @onclick="() => disconnectGarminProfileId = null">Keep connected</button>
+                            }
+                            else
+                            {
+                                <button class="secondary-action" type="button" @onclick="() => disconnectGarminProfileId = profileId">Disconnect</button>
+                            }
+                        </div>
+                        <p class="integration-note">Workouts, training plans, and future calendar sessions synchronize automatically. Record the run on your watch for the completed activity to reach Garmin Connect.</p>
+                    }
+                </section>
+                <GarminActivityUploadPanel ProfileId="profileId" />
+            }
+        </section>
+        }
+    </div>
+</div>
+
+@code {
+    private readonly ProfileForm form = new();
+    private List<ProfileView> profiles = [];
+    private readonly Dictionary<Guid, GarminConnectionStatusView> garminStatuses = [];
+    private readonly HashSet<Guid> garminUnavailable = [];
+    private Guid? activeProfileId;
+    private Guid? editingId;
+    private int editingVersion;
+    private bool loading = true;
+    private bool saving;
+    private bool initialized;
+    private bool isFormOpen;
+    private bool zonesUseSuggestedDefaults = true;
+    private bool garminBusy;
+    private Guid? disconnectGarminProfileId;
+    private string? message;
+    private Guid pendingSaveOperationId = Guid.NewGuid();
+    private Guid pendingArchiveOperationId = Guid.NewGuid();
+
+    [SupplyParameterFromQuery(Name = "garmin")]
+    public string? GarminResult { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reason")]
+    public string? GarminReason { get; set; }
+
+    [SupplyParameterFromQuery(Name = "profileId")]
+    public Guid? GarminProfileId { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || initialized)
+        {
+            return;
+        }
+
+        initialized = true;
+        activeProfileId = await ActiveProfile.GetAsync();
+        await ReloadAsync();
+        if (string.Equals(GarminResult, "connected", StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Garmin account connected. Initial training sync is queued.";
+            if (GarminProfileId is { } profileId && profiles.FirstOrDefault(profile => profile.Id == profileId) is { } connectedProfile)
+            {
+                StartEdit(connectedProfile);
+            }
+        }
+        else if (string.Equals(GarminResult, "error", StringComparison.OrdinalIgnoreCase))
+        {
+            message = string.IsNullOrWhiteSpace(GarminReason) ? "Garmin account connection failed." : GarminReason;
+        }
+        StateHasChanged();
+    }
+
+    private async Task ReloadAsync()
+    {
+        loading = true;
+        try
+        {
+            profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
+            GarminConnectionStatusView?[] statuses = await Task.WhenAll(profiles.Select(async profile =>
+            {
+                try
+                {
+                    return await Http.GetFromJsonAsync<GarminConnectionStatusView>($"api/integrations/garmin/profiles/{profile.Id}/status");
+                }
+                catch (HttpRequestException)
+                {
+                    return null;
+                }
+            }));
+            garminStatuses.Clear();
+            garminUnavailable.Clear();
+            foreach (GarminConnectionStatusView status in statuses.OfType<GarminConnectionStatusView>()) garminStatuses[status.ProfileId] = status;
+            foreach (ProfileView profile in profiles.Where(profile => statuses.All(status => status?.ProfileId != profile.Id))) garminUnavailable.Add(profile.Id);
+        }
+        catch (HttpRequestException)
+        {
+            message = "Profiles are temporarily unavailable.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task SelectAsync(ProfileView profile)
+    {
+        await ActiveProfile.SetAsync(profile.Id);
+        activeProfileId = profile.Id;
+        message = $"{profile.DisplayName} is active in this browser.";
+    }
+
+    private void StartCreate()
+    {
+        ResetForm();
+        isFormOpen = true;
+        message = null;
+        disconnectGarminProfileId = null;
+    }
+
+    private async Task ConnectGarminAsync(Guid profileId)
+    {
+        garminBusy = true;
+        message = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/connect", content: null);
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "Garmin connection could not be started. Check the server setup.";
+                return;
+            }
+            GarminConnectStartView? start = await response.Content.ReadFromJsonAsync<GarminConnectStartView>();
+            if (start is null || !Uri.TryCreate(start.AuthorizationUrl, UriKind.Absolute, out _))
+            {
+                message = "Garmin returned an invalid authorization address.";
+                return;
+            }
+            Navigation.NavigateTo(start.AuthorizationUrl, forceLoad: true);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
+        {
+            message = "Garmin connection could not be started because the server is unavailable.";
+        }
+        finally
+        {
+            garminBusy = false;
+        }
+    }
+
+    private async Task SyncGarminAsync(Guid profileId)
+    {
+        garminBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/sync", content: null);
+            message = response.IsSuccessStatusCode ? "Garmin synchronization queued." : "Garmin synchronization could not be queued.";
+            await PollGarminStatusAsync(profileId);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
+        {
+            message = "Garmin synchronization status is temporarily unavailable.";
+            garminUnavailable.Add(profileId);
+        }
+        finally
+        {
+            garminBusy = false;
+        }
+    }
+
+    private async Task DisconnectGarminAsync(Guid profileId)
+    {
+        garminBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/disconnect", content: null);
+            message = response.IsSuccessStatusCode ? "Garmin account disconnected from this runner." : "Garmin account could not be disconnected.";
+            disconnectGarminProfileId = null;
+            await ReloadGarminStatusAsync(profileId);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
+        {
+            message = "Garmin account could not be disconnected because the server is unavailable.";
+            garminUnavailable.Add(profileId);
+        }
+        finally
+        {
+            garminBusy = false;
+        }
+    }
+
+    private async Task ReloadGarminStatusAsync(Guid profileId)
+    {
+        try
+        {
+            GarminConnectionStatusView? status = await Http.GetFromJsonAsync<GarminConnectionStatusView>($"api/integrations/garmin/profiles/{profileId}/status");
+            if (status is not null)
+            {
+                garminStatuses[profileId] = status;
+                garminUnavailable.Remove(profileId);
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
+        {
+            garminUnavailable.Add(profileId);
+        }
+    }
+
+    private async Task PollGarminStatusAsync(Guid profileId)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            await ReloadGarminStatusAsync(profileId);
+            if (!garminStatuses.TryGetValue(profileId, out GarminConnectionStatusView? status) || status.PendingItems == 0) return;
+            await Task.Delay(250);
+        }
+    }
+
+    private static string GarminSyncSummary(GarminConnectionStatusView status)
+    {
+        if (status.FailedItems > 0) return $"{status.FailedItems} need attention · {status.PendingItems} pending";
+        if (status.PendingItems > 0) return $"{status.PendingItems} pending · {status.SyncedItems} synchronized";
+        return status.SyncedItems > 0 ? $"{status.SyncedItems} synchronized" : "Ready for first sync";
+    }
+
+    private void StartEdit(ProfileView profile)
+    {
+        isFormOpen = true;
+        editingId = profile.Id;
+        pendingSaveOperationId = Guid.NewGuid();
+        pendingArchiveOperationId = Guid.NewGuid();
+        editingVersion = profile.Version;
+        form.DisplayName = profile.DisplayName;
+        form.UnitSystem = profile.UnitSystem;
+        form.WeightKilograms = profile.WeightKilograms;
+        form.MaximumHeartRateBpm = profile.MaximumHeartRateBpm;
+        form.MaximumSpeedKph = profile.MaximumSpeedKph;
+        form.HeartRateIncreaseStepKph = profile.HeartRateIncreaseStepKph;
+        form.HeartRateIncreaseCooldownSeconds = profile.HeartRateIncreaseCooldownSeconds;
+        form.HeartRateDecreaseStepKph = profile.HeartRateDecreaseStepKph;
+        form.HeartRateDecreaseCooldownSeconds = profile.HeartRateDecreaseCooldownSeconds;
+        form.HeartRateZones.Clear();
+        form.HeartRateZones.AddRange(profile.HeartRateZones.Select(static zone => new ZoneForm
+        {
+            Number = zone.Number,
+            Name = zone.Name,
+            MinimumBpm = zone.MinimumBpm,
+            MaximumBpm = zone.MaximumBpm,
+        }));
+        zonesUseSuggestedDefaults = profile.MaximumHeartRateBpm is >= 10 and <= 250 &&
+            profile.MaximumHeartRateBpm is { } maximum &&
+            ZonesMatchSuggestion(maximum, form.HeartRateZones);
+        if (profile.MaximumHeartRateBpm is >= 50 and <= 250 &&
+            profile.MaximumHeartRateBpm is { } existingMaximum &&
+            (form.HeartRateZones.Count == 0 || IsLegacyPlaceholderZone(form.HeartRateZones)))
+        {
+            ApplySuggestedZones(existingMaximum);
+        }
+        message = null;
+    }
+
+    private async Task SaveAsync(EditContext _)
+    {
+        saving = true;
+        message = null;
+        var request = new ProfileUpsertRequest(
+            pendingSaveOperationId,
+            form.DisplayName,
+            form.UnitSystem,
+            form.WeightKilograms,
+            form.MaximumHeartRateBpm,
+            form.MaximumSpeedKph,
+            form.HeartRateZones.Select(static zone => new HeartRateZoneView(
+                zone.Number,
+                zone.Name,
+                zone.MinimumBpm,
+                zone.MaximumBpm)).ToArray(),
+            editingId is null ? null : editingVersion,
+            form.HeartRateIncreaseStepKph,
+            form.HeartRateIncreaseCooldownSeconds,
+            form.HeartRateDecreaseStepKph,
+            form.HeartRateDecreaseCooldownSeconds);
+
+        HttpResponseMessage response = editingId is null
+            ? await Http.PostAsJsonAsync("api/planning/profiles", request)
+            : await Http.PutAsJsonAsync($"api/planning/profiles/{editingId}", request);
+        if (response.IsSuccessStatusCode)
+        {
+            ProfileView? saved = await response.Content.ReadFromJsonAsync<ProfileView>();
+            if (saved is not null && activeProfileId is null)
+            {
+                await SelectAsync(saved);
+            }
+
+            message = $"{saved?.DisplayName ?? form.DisplayName} saved.";
+            ResetForm();
+            await ReloadAsync();
+        }
+        else
+        {
+            message = "The profile could not be saved. Check each value and try again.";
+        }
+
+        saving = false;
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (editingId is null)
+        {
+            return;
+        }
+
+        var response = await Http.PostAsJsonAsync(
+            $"api/planning/profiles/{editingId}/archive",
+            new { operationId = pendingArchiveOperationId, expectedVersion = editingVersion });
+        if (response.IsSuccessStatusCode)
+        {
+            if (activeProfileId == editingId)
+            {
+                await ActiveProfile.ClearAsync();
+                activeProfileId = null;
+            }
+
+            message = "Profile archived.";
+            ResetForm();
+            await ReloadAsync();
+        }
+        else
+        {
+            message = "The profile could not be archived.";
+        }
+    }
+
+    private void ResetForm()
+    {
+        isFormOpen = false;
+        editingId = null;
+        pendingSaveOperationId = Guid.NewGuid();
+        pendingArchiveOperationId = Guid.NewGuid();
+        editingVersion = 0;
+        form.DisplayName = string.Empty;
+        form.UnitSystem = "Metric";
+        form.WeightKilograms = 70;
+        form.MaximumHeartRateBpm = null;
+        form.MaximumSpeedKph = null;
+        form.HeartRateIncreaseStepKph = 0.2;
+        form.HeartRateIncreaseCooldownSeconds = 30;
+        form.HeartRateDecreaseStepKph = 0.5;
+        form.HeartRateDecreaseCooldownSeconds = 15;
+        form.HeartRateZones.Clear();
+        zonesUseSuggestedDefaults = true;
+        disconnectGarminProfileId = null;
+    }
+
+    private void AddZone()
+    {
+        zonesUseSuggestedDefaults = false;
+        form.HeartRateZones.Add(new ZoneForm
+        {
+            Number = form.HeartRateZones.Count + 1,
+            Name = $"Zone {form.HeartRateZones.Count + 1}",
+            MinimumBpm = 100,
+            MaximumBpm = 120,
+        });
+    }
+
+    private bool CanSuggestZones => form.MaximumHeartRateBpm is >= 50 and <= 250;
+    private string ZoneSuggestionStatus => form.MaximumHeartRateBpm is null
+        ? "Enter your max HR to create Z1–Z5."
+        : zonesUseSuggestedDefaults
+            ? "Z1–Z5 update automatically."
+            : "Custom zones — reset anytime.";
+
+    private void MaximumHeartRateChanged()
+    {
+        if (!zonesUseSuggestedDefaults && form.HeartRateZones.Count > 0)
+        {
+            return;
+        }
+
+        if (form.MaximumHeartRateBpm is { } maximum && CanSuggestZones)
+        {
+            ApplySuggestedZones(maximum);
+        }
+        else if (zonesUseSuggestedDefaults)
+        {
+            form.HeartRateZones.Clear();
+        }
+    }
+
+    private void UseSuggestedZones()
+    {
+        if (form.MaximumHeartRateBpm is { } maximum && CanSuggestZones)
+        {
+            ApplySuggestedZones(maximum);
+        }
+    }
+
+    private void ApplySuggestedZones(ushort maximum)
+    {
+        form.HeartRateZones.Clear();
+        form.HeartRateZones.AddRange(SuggestedHeartRateZones.FromMaximum(maximum).Select(static zone => new ZoneForm
+        {
+            Number = zone.Number,
+            Name = zone.Name,
+            MinimumBpm = zone.MinimumBpm,
+            MaximumBpm = zone.MaximumBpm,
+        }));
+        zonesUseSuggestedDefaults = true;
+    }
+
+    private void MarkZonesCustomized() => zonesUseSuggestedDefaults = false;
+
+    private void RemoveZone(int index)
+    {
+        form.HeartRateZones.RemoveAt(index);
+        zonesUseSuggestedDefaults = false;
+    }
+
+    private static bool ZonesMatchSuggestion(ushort maximum, IReadOnlyList<ZoneForm> zones)
+    {
+        IReadOnlyList<HeartRateZone> suggested = SuggestedHeartRateZones.FromMaximum(maximum);
+        return zones.Count == suggested.Count && zones.Zip(suggested).All(static pair =>
+            pair.First.Number == pair.Second.Number &&
+            string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal) &&
+            pair.First.MinimumBpm == pair.Second.MinimumBpm &&
+            pair.First.MaximumBpm == pair.Second.MaximumBpm);
+    }
+
+    private static bool IsLegacyPlaceholderZone(IReadOnlyList<ZoneForm> zones) =>
+        zones is [{ Number: 1, Name: "Zone 1", MinimumBpm: 100, MaximumBpm: 120 }];
+
+    private static string Initial(string name) => string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[0].ToString().ToUpperInvariant();
+
+    private sealed class ProfileForm
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public string UnitSystem { get; set; } = "Metric";
+        public double WeightKilograms { get; set; } = 70;
+        public ushort? MaximumHeartRateBpm { get; set; }
+        public double? MaximumSpeedKph { get; set; }
+        public double HeartRateIncreaseStepKph { get; set; } = 0.2;
+        public int HeartRateIncreaseCooldownSeconds { get; set; } = 30;
+        public double HeartRateDecreaseStepKph { get; set; } = 0.5;
+        public int HeartRateDecreaseCooldownSeconds { get; set; } = 15;
+        public List<ZoneForm> HeartRateZones { get; } = [];
+    }
+
+    private sealed class ZoneForm
+    {
+        public int Number { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public ushort MinimumBpm { get; set; }
+        public ushort MaximumBpm { get; set; }
+    }
+}

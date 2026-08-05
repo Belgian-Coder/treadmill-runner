@@ -1,0 +1,102 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "status",
+          "type": "manifest_field_equals",
+          "value": "accepted"
+        }
+      ],
+      "id": "protocol-evidence-validates"
+    },
+    {
+      "assertions": [
+        {
+          "text": "independently authored",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Never copy, port, translate, transcribe, decompile, or structurally imitate GPL",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Do not retain raw unsanitized captures",
+          "type": "skill_contains"
+        },
+        {
+          "text": "golden fixture",
+          "type": "skill_contains"
+        },
+        {
+          "text": "CRC/checksum",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Stage 0",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Stage 3",
+          "type": "skill_contains"
+        },
+        {
+          "text": "This passive/non-motion evidence skill never authorizes remote belt `Start`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "explicit owner approval naming the device, stage, command class, observer, and time window",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Write only sanitized evidence beneath `docs/project/protocol-evidence/`",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Do not browse, fetch repositories, call cloud services, install tools, upload captures, use credentials",
+          "type": "skill_contains"
+        }
+      ],
+      "id": "protocol-evidence-safety-contract"
+    },
+    {
+      "assertions": [
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 1400
+        },
+        {
+          "key": "network",
+          "type": "risk_declared",
+          "value": false
+        },
+        {
+          "key": "credentials",
+          "type": "risk_declared",
+          "value": false
+        },
+        {
+          "key": "uploads",
+          "type": "risk_declared",
+          "value": false
+        }
+      ],
+      "id": "protocol-evidence-boundaries"
+    }
+  ],
+  "skill_name": "treadmillrunner-protocol-evidence"
+}

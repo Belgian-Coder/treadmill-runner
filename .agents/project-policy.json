@@ -1,0 +1,451 @@
+{
+  "$schema": "skills/skill-manager/assets/schemas/project-policy.schema.json",
+  "commands": {
+    "component_latency_ms": {
+      "startup-context": 1500
+    },
+    "latency_ms": {
+      "changed-context": 3000,
+      "changed-evidence": 3000,
+      "check-changed": 75000,
+      "command-budget-check": 180000,
+      "context-use-check": 40000,
+      "finish": 180000,
+      "next-action": 25000,
+      "review-autopilot": 180000,
+      "review-loop": 180000,
+      "review-next": 12000,
+      "smoke-workflows": 45000,
+      "startup-context": 2500,
+      "status-fast": 4000,
+      "status-full": 15000
+    },
+    "output_tokens": {
+      "changed-context": 1600,
+      "changed-evidence": 1400,
+      "check-changed": 2400,
+      "command-budget-check": 2200,
+      "context-use-check": 1200,
+      "finish": 1800,
+      "next-action": 1400,
+      "review-autopilot": 1400,
+      "review-loop": 1400,
+      "review-next": 900,
+      "smoke-workflows": 1800,
+      "startup-context": 1600,
+      "status-fast": 2000,
+      "status-full": 3500
+    }
+  },
+  "cost_policy": {
+    "budgets": {
+      "phases": {
+        "default_tokens": 6000,
+        "overrides": {
+          "evidence": 12000,
+          "handoff": 2500,
+          "implementation": 8000,
+          "planning": 6000,
+          "routing": 1500,
+          "test-authoring": 6000,
+          "validation": 3000
+        }
+      }
+    },
+    "context": {
+      "always_loaded": {
+        "budget_tokens": 3500,
+        "files": [
+          "AGENTS.md",
+          ".agents/routing.md",
+          "automations/routing.md"
+        ]
+      },
+      "beginner": {
+        "budget_tokens": 5000,
+        "files": [
+          "README.md",
+          "docs/start-here.md"
+        ]
+      }
+    },
+    "delegation": {
+      "gates": {
+        "delegation-balanced-v1": {
+          "maximum_median_provider_token_increase_percent": 25,
+          "maximum_seconds_per_trial": 600,
+          "maximum_tokens_per_trial": 80000,
+          "minimum_median_wall_time_improvement_percent": 20,
+          "minimum_trials_per_arm": 3
+        }
+      }
+    },
+    "guidance": {
+      "baseline": {
+        "files": [
+          "AGENTS.md",
+          ".agents/routing.md",
+          "automations/routing.md",
+          "README.md",
+          "docs/start-here.md",
+          "automations/navigation/artifacts/maps/HANDOFF.md",
+          "automations/navigation/artifacts/maps/NAVIGATION.md",
+          "automations/navigation/artifacts/maps/TECHNICAL_CONTEXT.md",
+          "automations/navigation/artifacts/maps/CONVENTIONS.md"
+        ]
+      },
+      "default": {
+        "budget_tokens": 5000,
+        "files": [
+          "AGENTS.md",
+          ".agents/routing.md",
+          "automations/routing.md",
+          "automations/navigation/artifacts/maps/HANDOFF.md"
+        ]
+      },
+      "minimum_saved_percent": 25,
+      "startup": {
+        "max_added_percent": 10,
+        "max_added_tokens": 250
+      }
+    },
+    "local_ai": {
+      "warm_batch": {
+        "min_items": 2,
+        "prefer_for_tasks": [
+          "changed-files-summary",
+          "failure-cluster",
+          "test-gap-summary",
+          "handoff-draft"
+        ]
+      }
+    },
+    "review": {
+      "loop": {
+        "max_elapsed_ms": 180000,
+        "max_estimated_tokens": 8000,
+        "max_hunks_per_batch": 12,
+        "max_units": 20
+      }
+    },
+    "routing": {
+      "default_paid_model_fallback": "explicit-after-local-ai-or-deterministic-summary",
+      "tasks": {
+        "context-discovery": {
+          "authoritative_evidence": "repo files and exact search output",
+          "fallback": "direct file reads from cited paths",
+          "local_ai_use_cases": [
+            "inventory-summary"
+          ],
+          "max_context_tokens": 4000,
+          "paid_model_fallback": "allowed-after-bounded-evidence",
+          "prefer": "exact-search-then-read"
+        },
+        "handoff": {
+          "authoritative_evidence": "run report, validation, and skipped checks",
+          "fallback": "orchestrator verifies local draft",
+          "local_ai_use_cases": [
+            "handoff-draft",
+            "changed-files-summary"
+          ],
+          "max_context_tokens": 2500,
+          "paid_model_fallback": "disabled-by-default",
+          "prefer": "local-ai"
+        },
+        "implementation": {
+          "authoritative_evidence": "source files and tests",
+          "fallback": "paid implementation model",
+          "local_ai_use_cases": [
+            "changed-files-summary"
+          ],
+          "max_context_tokens": 8000,
+          "paid_model_fallback": "allowed-for-code",
+          "prefer": "orchestrator"
+        },
+        "planning": {
+          "authoritative_evidence": "plan, project context, and deterministic checks",
+          "fallback": "paid planning model after local evidence packet",
+          "local_ai_use_cases": [
+            "inventory-summary",
+            "test-gap-summary"
+          ],
+          "max_context_tokens": 6000,
+          "paid_model_fallback": "allowed-for-decisions",
+          "prefer": "orchestrator-with-local-evidence"
+        },
+        "review": {
+          "authoritative_evidence": "git diff, changed files, and deterministic reports",
+          "fallback": "paid review model after diff summary",
+          "local_ai_use_cases": [
+            "changed-files-summary",
+            "duplicate-overlap-detection"
+          ],
+          "max_context_tokens": 5000,
+          "paid_model_fallback": "allowed-after-delta-summary",
+          "prefer": "delta-only"
+        },
+        "routing": {
+          "authoritative_evidence": "routing files and deterministic route scores",
+          "fallback": "deterministic-routing",
+          "local_ai_use_cases": [
+            "skill-routing",
+            "workflow-routing"
+          ],
+          "max_context_tokens": 1500,
+          "paid_model_fallback": "disabled-by-default",
+          "prefer": "local-ai"
+        },
+        "test-authoring": {
+          "authoritative_evidence": "test files, coverage, and acceptance criteria",
+          "fallback": "paid implementation or test-authoring model",
+          "local_ai_use_cases": [
+            "test-gap-summary"
+          ],
+          "max_context_tokens": 6000,
+          "paid_model_fallback": "allowed-for-tests",
+          "prefer": "orchestrator-with-local-gap-summary"
+        },
+        "validation": {
+          "authoritative_evidence": "command exit codes and raw validation output",
+          "fallback": "deterministic failed-output packet",
+          "local_ai_use_cases": [
+            "failure-cluster"
+          ],
+          "max_context_tokens": 3000,
+          "paid_model_fallback": "allowed-after-deterministic-evidence",
+          "prefer": "deterministic"
+        }
+      }
+    }
+  },
+  "limits": {
+    "agents": {
+      "fail_chars": 4000,
+      "warn_chars": 3500,
+      "warn_tokens": 1200
+    },
+    "compatibility": {
+      "skill_warn_lines": 180,
+      "skill_warn_words": 1000
+    },
+    "context": {
+      "validation_command_chars": 180
+    },
+    "dashboard": {
+      "path_chars": 160
+    },
+    "diagnostics": {
+      "callback_output_chars": 400
+    },
+    "documentation": {
+      "warn_words": 1800
+    },
+    "feedback": {
+      "actor_chars": 120,
+      "command_chars": 400,
+      "digest_chars": 80,
+      "fact_chars": 500,
+      "target_chars": 160,
+      "text_chars": 1200
+    },
+    "import": {
+      "large_file_warn_bytes": 5242880
+    },
+    "navigation": {
+      "map_warn_words": 1400,
+      "project_context_placeholder_chars": 120,
+      "relationship_evidence_chars": 160,
+      "relationship_max_entries": 6000,
+      "scan_warn_entries": 2500,
+      "source_snippet_chars": 180,
+      "warn_tokens": 1200
+    },
+    "optimization": {
+      "skill_detail_words": 2500
+    },
+    "organization": {
+      "review_direct_files": 10
+    },
+    "output": {
+      "capture_line_chars": 260,
+      "command_label_chars": 60,
+      "distilled_chars": 1600,
+      "evidence_snippet_chars": 240,
+      "failure_excerpt_chars": 500,
+      "finding_snippet_chars": 160
+    },
+    "review": {
+      "syntax_command_chars": 260,
+      "validation_command_chars": 360
+    },
+    "routing": {
+      "entry_summary_chars": 120,
+      "warn_chars": 10000,
+      "warn_rows": 75
+    },
+    "script": {
+      "public_command_warn_lines": 1200,
+      "warn_bytes": 70000,
+      "warn_functions": 40,
+      "warn_lines": 1200,
+      "warn_top_level_files": 16
+    },
+    "skill": {
+      "asset_max_bytes": 5242880,
+      "candidate_description_max_chars": 700,
+      "candidate_description_min_chars": 80,
+      "description_process_warn_actions": 5,
+      "description_process_warn_punctuation": 4,
+      "description_process_warn_terms": 2,
+      "description_process_warn_words": 28,
+      "duplicate_description_chars": 160,
+      "fail_words": 2000,
+      "name_max_chars": 63,
+      "name_max_terms": 5,
+      "name_min_terms": 2,
+      "warn_tokens": 2400,
+      "warn_words": 1200
+    },
+    "workflow": {
+      "aggregate_warn_words": 2200,
+      "context_packet_command_chars": 180,
+      "context_packet_command_limit": 3,
+      "context_packet_evidence_handle_limit": 8,
+      "context_packet_min_savings_percent": 60,
+      "context_packet_min_savings_raw_tokens": 3125,
+      "context_packet_raw_file_limit": 10,
+      "context_packet_token_limit": 2500,
+      "context_packet_validation_file_limit": 3,
+      "context_reason_chars": 240,
+      "contract_warn_words": 750,
+      "entry_warn_words": 260,
+      "instructions_warn_words": 1000,
+      "mermaid_warn_tokens": 700,
+      "profile_text_chars": 220,
+      "runtime_deliberation_chars": 80,
+      "runtime_evidence_path_chars": 500,
+      "runtime_identity_chars": 160,
+      "runtime_model_id_chars": 160,
+      "warn_tokens": 500
+    },
+    "workflow_module": {
+      "warn_tokens": 1700
+    }
+  },
+  "output_profiles": {
+    "compact_command": {
+      "max_chars": 1200,
+      "max_lines": 16
+    },
+    "diagnostic": {
+      "max_chars": 2000,
+      "max_lines": 40
+    },
+    "evidence": {
+      "max_chars": 4000,
+      "max_lines": 80
+    }
+  },
+  "owner_defaults": {
+    "repo_navigation": {
+      "briefing": {
+        "default_profile": "normal",
+        "profiles": {
+          "deep": {
+            "do_not_open_limit": 80,
+            "item_limit": 60,
+            "max_files": 5000,
+            "max_text_files": 800,
+            "read_order_limit": 80
+          },
+          "normal": {
+            "do_not_open_limit": 40,
+            "item_limit": 20,
+            "max_files": 5000,
+            "max_text_files": 250,
+            "read_order_limit": 30
+          },
+          "short": {
+            "do_not_open_limit": 12,
+            "item_limit": 8,
+            "max_files": 1200,
+            "max_text_files": 80,
+            "read_order_limit": 12
+          }
+        }
+      }
+    },
+    "skill_manager": {
+      "capability_audit": {
+        "fast_daily_target_ms": 4000,
+        "low_context_token_target": 5000
+      },
+      "claude_adapter": {
+        "context_window_tokens": 200000,
+        "name_only_saved_tokens": 3000,
+        "name_only_skill_count": 50
+      },
+      "optimization": {
+        "lesson_promotion_min_count": 2
+      },
+      "review_cost": {
+        "extra_output_tokens": 1200,
+        "output_price_multiplier": 4,
+        "visible_history_entries": 20
+      }
+    },
+    "workflow_manager": {
+      "context_evidence": {
+        "top_k": 5
+      }
+    }
+  },
+  "schema_version": 2,
+  "warnings": {
+    "compatibility": {
+      "skill": {
+        "lines": "warning",
+        "words": "warning"
+      }
+    },
+    "default_action": "warning",
+    "health": {
+      "agents": {
+        "characters": "warning",
+        "tokens": "warning"
+      },
+      "documentation": {
+        "words": "warning"
+      },
+      "navigation": {
+        "tokens": "warning"
+      },
+      "routing": {
+        "characters": "warning",
+        "rows": "warning"
+      },
+      "script": {
+        "bytes": "warning",
+        "functions": "warning",
+        "lines": "warning",
+        "top-level-files": "warning"
+      },
+      "skill": {
+        "tokens": "warning",
+        "words": "warning"
+      },
+      "workflow": {
+        "tokens": "warning"
+      },
+      "workflow-module": {
+        "tokens": "warning"
+      }
+    },
+    "navigation": {
+      "map-size": "warning"
+    },
+    "workflow": {
+      "context-budget": "warning"
+    }
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-2fb625b5a78f",
+            "command-2708a56c187a",
+            "command-56b998e3e634",
+            "command-6066588d4453"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "credentialed"
+        },
+        {
+          "path": "risk.network",
+          "type": "manifest_field_equals",
+          "value": true
+        },
+        {
+          "path": "risk.installs",
+          "type": "manifest_field_equals",
+          "value": true
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "docs/runtime-triage.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/dump-and-trace.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/reporting.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET",
+          "type": "description_contains"
+        },
+        {
+          "text": "flame graph",
+          "type": "skill_contains"
+        },
+        {
+          "text": "GC",
+          "type": "skill_contains"
+        },
+        {
+          "text": "thread pool",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-dump",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-trace",
+          "type": "skill_contains"
+        },
+        {
+          "text": "WinDbg",
+          "type": "skill_contains"
+        },
+        {
+          "text": "crash",
+          "type": "skill_contains"
+        },
+        {
+          "text": "hang",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-engineering",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "does not create temp files, subprocesses, network calls, or outputs",
+          "type": "skill_contains"
+        },
+        {
+          "text": "inspect-skill --fast",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Destructive risk is declared for runtime perturbation",
+          "type": "skill_contains"
+        },
+        {
+          "text": "collect counters/logs/dumps/traces",
+          "type": "skill_contains"
+        },
+        {
+          "text": "diagnostic configuration",
+          "type": "skill_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 850
+        }
+      ],
+      "id": "routing-and-scope"
+    }
+  ],
+  "skill_name": "dotnet-diagnostics"
+}

@@ -1,0 +1,132 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "WORKFLOW.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "instructions.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "templates/plan.md",
+          "text": "## Bounded Work Packages",
+          "type": "file_contains"
+        },
+        {
+          "text": "Plan Variance",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "independent evidence",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "## Example Prompts",
+          "type": "start_contains"
+        },
+        {
+          "text": "## Process Diagram",
+          "type": "start_contains"
+        },
+        {
+          "text": "## Connection Diagram",
+          "type": "start_contains"
+        },
+        {
+          "text": "This section overrides Start and `instructions.md` write steps",
+          "type": "start_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "start_contains"
+        },
+        {
+          "text": "do not start a run, even at medium confidence",
+          "type": "start_contains"
+        },
+        {
+          "text": "Treat strict-check `next_command` output as advisory",
+          "type": "start_contains"
+        },
+        {
+          "text": "do not execute evals under strict dogfood",
+          "type": "start_contains"
+        },
+        {
+          "text": ".agents/local-ai/cache/**",
+          "type": "start_contains"
+        },
+        {
+          "text": "Strict read-only/offline/no-profile/no-temp/no-write dogfood does not update `run.json`, `REPORT.md`, `discipline-log.md`, or `implementation-packet.md`",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "no phase is active",
+          "type": "instructions_contains"
+        },
+        {
+          "text": "workflow_repo_manager.py validate-automations --root . --name disciplined-change-workflow --strict-phase-quality",
+          "type": "contract_contains"
+        },
+        {
+          "text": "strict_read_only_commands",
+          "type": "contract_contains"
+        },
+        {
+          "text": "workflow smoke --name disciplined-change-workflow --dry-run",
+          "type": "contract_contains"
+        },
+        {
+          "text": "workflow branch-policy --branch feature/dogfood-readonly --format json",
+          "type": "contract_contains"
+        }
+      ],
+      "id": "disciplined-change-validates",
+      "name": "Disciplined change workflow validates and keeps required entry files."
+    },
+    {
+      "assertions": [
+        {
+          "phase": "implementation-planning",
+          "type": "contract_declares_phase"
+        },
+        {
+          "phase": "finish-with-fresh-evidence",
+          "type": "contract_declares_phase"
+        },
+        {
+          "module": "skill-manager",
+          "type": "contract_declares_related_module"
+        },
+        {
+          "module": "workflow-manager",
+          "type": "contract_declares_related_module"
+        },
+        {
+          "path": "runs/<run-id>/run.json",
+          "type": "contract_declares_output"
+        },
+        {
+          "type": "contract_local_ai_use_cases",
+          "use_cases": [
+            "validation-triage",
+            "changed-files-summary",
+            "failure-cluster",
+            "test-gap-summary",
+            "handoff-draft"
+          ]
+        }
+      ],
+      "id": "disciplined-change-contract",
+      "name": "Disciplined change declares planning, evidence, validation, and related owners."
+    }
+  ],
+  "schema_version": 1,
+  "workflow_name": "disciplined-change-workflow"
+}

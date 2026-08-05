@@ -1,0 +1,11 @@
+graph TD;
+  root["Repository root"] --> agents[".agents"];
+  root --> automations["automations"];
+  root --> docs["docs"];
+  agents --> routing["routing and registry"];
+  agents --> skills["skills by name"];
+  skills --> skillEntry["SKILL and module"];
+  automations --> workflowRouting["workflow routing and registry"];
+  automations --> workflowModule["workflow modules"];
+  workflowModule --> workflowEntry["WORKFLOW and module"];
+  workflowModule --> runs["runs for local evidence"];

@@ -1,0 +1,243 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-f09e1b03a68d",
+            "command-4839bc082309",
+            "command-72dab519b10a",
+            "command-6066588d4453",
+            "command-c0aef6d8975f",
+            "formats-discovery",
+            "command-86cbaffd9f1c",
+            "command-0759d14d8956",
+            "command-172418692313",
+            "command-d04e721feffa"
+          ]
+        },
+        {
+          "key": "destructive",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "installs",
+          "type": "risk_declared",
+          "value": true
+        },
+        {
+          "key": "network",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "scripts/document_artifacts.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/run_self_tests.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/excel/excel_tools.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/word/word_tools.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/powerpoint/powerpoint_tools.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/pdf/pdf_tools.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/excel-evidence-usage.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/word-evidence-usage.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/powerpoint-evidence-usage.md",
+          "type": "file_exists"
+        },
+        {
+          "path": "docs/pdf-evidence-usage.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": "Excel",
+          "type": "description_contains"
+        },
+        {
+          "text": "PDF",
+          "type": "description_contains"
+        },
+        {
+          "text": "--write",
+          "type": "skill_contains"
+        },
+        {
+          "text": "doctor",
+          "type": "skill_contains"
+        },
+        {
+          "text": "render",
+          "type": "skill_contains"
+        },
+        {
+          "text": "without local AI",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Do not add artifact-processing commands that need user files",
+          "type": "skill_contains"
+        },
+        {
+          "text": "to-markdown --output",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Self-tests and evals can create temp fixtures",
+          "type": "skill_contains"
+        },
+        {
+          "text": "formats --json",
+          "type": "skill_contains"
+        },
+        {
+          "text": "markdown scan",
+          "type": "skill_contains"
+        },
+        {
+          "text": "--include-content",
+          "type": "skill_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "Matched secret-like values are never included in the report",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "REFERENCE_LINK_DESTINATION",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "normalized_link_destination",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "markdown_link_destinations",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "MAX_LINK_NESTING",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "LINK_SCAN_WORK_MULTIPLIER",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "MARKDOWN_LINK_SCAN_LIMIT",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "reference_context_work",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "html_scan_work",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "code_scan_work",
+          "type": "file_contains"
+        },
+        {
+          "path": "scripts/markdown/markdown_tools.py",
+          "text": "HIDDEN_FORMAT_CHARACTERS",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/excel-evidence-usage.md",
+          "text": "For strict dogfood, copy only the command shape and keep stdout JSON",
+          "type": "file_contains"
+        },
+        {
+          "path": "docs/pdf-evidence-usage.md",
+          "text": "strict dogfood skips it because asset extraction is adjacent to output generation",
+          "type": "file_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 900
+        }
+      ],
+      "id": "contract"
+    }
+  ],
+  "skill_name": "document-artifacts"
+}

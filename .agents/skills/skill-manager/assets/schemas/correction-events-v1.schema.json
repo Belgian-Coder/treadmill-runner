@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-harness.invalid/correction-events-v1.schema.json",
+  "title": "Reviewed correction events",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "review_state",
+    "reviewed",
+    "reviewed_by",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "tool": {
+      "const": "skill-manager.corrections"
+    },
+    "review_state": {
+      "enum": [
+        "review-input",
+        "reviewed"
+      ]
+    },
+    "reviewed": {
+      "const": true
+    },
+    "reviewed_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": ".*\\S.*"
+    },
+    "reviewed_events_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "target_kind",
+          "target",
+          "task_class",
+          "host_surface",
+          "model_provider",
+          "semantic_profile",
+          "prompt",
+          "correct_behavior",
+          "acceptance_criteria",
+          "source_refs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,79}$"
+          },
+          "target_kind": {
+            "enum": [
+              "skill",
+              "workflow",
+              "repo"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": ".*\\S.*"
+          },
+          "task_class": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": ".*\\S.*"
+          },
+          "host_surface": {
+            "enum": [
+              "codex",
+              "github-copilot",
+              "claude-code",
+              "openai-responses-api",
+              "anthropic-messages-api",
+              "local-ai",
+              "unknown"
+            ]
+          },
+          "model_provider": {
+            "enum": [
+              "openai",
+              "anthropic",
+              "local",
+              "other",
+              "unknown"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 1200,
+            "pattern": "^$|.*\\S.*"
+          },
+          "semantic_profile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": ".*\\S.*"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200,
+            "pattern": ".*\\S.*"
+          },
+          "incorrect_behavior": {
+            "type": "string",
+            "maxLength": 1200,
+            "pattern": "^$|.*\\S.*"
+          },
+          "correct_behavior": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200,
+            "pattern": ".*\\S.*"
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": ".*\\S.*"
+            }
+          },
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": ".*\\S.*"
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_state": {
+            "const": "reviewed"
+          }
+        },
+        "required": [
+          "review_state"
+        ]
+      },
+      "then": {
+        "required": [
+          "reviewed_events_sha256"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_state": {
+            "const": "review-input"
+          }
+        },
+        "required": [
+          "review_state"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "reviewed_events_sha256"
+          ]
+        }
+      }
+    }
+  ]
+}

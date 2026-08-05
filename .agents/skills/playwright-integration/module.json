@@ -1,0 +1,338 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/check_playwright_readiness.py"
+      ],
+      "effects": [],
+      "id": "command-d4b6f4063eaf",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/detect_playwright_project.py"
+      ],
+      "effects": [],
+      "id": "command-7486da5df64d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/diagnose_flaky_playwright.py"
+      ],
+      "effects": [],
+      "id": "command-c02622b04ca4",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/lint_playwright_tests.py"
+      ],
+      "effects": [],
+      "id": "command-cbf34c4fec74",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/parse_playwright_results.py"
+      ],
+      "effects": [],
+      "id": "command-99ca40e29231",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/playwright_project_support.py"
+      ],
+      "effects": [],
+      "id": "command-998d3efaf76e",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_playwright_screenshots.py"
+      ],
+      "effects": [],
+      "id": "command-303d271b60ff",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/playwright-integration",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-61703550f6f8",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/playwright-integration",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-32464c9b8359",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "playwright-integration",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-8d83283fdff4",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/check_playwright_readiness.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-82ed6c9a5ead",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/detect_playwright_project.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-b9b48d020bb9",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/lint_playwright_tests.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-619d5fc9c209",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/parse_playwright_results.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-1b74ea3a53d0",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/diagnose_flaky_playwright.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-6e6719c4cb6c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/playwright-integration/scripts/validate_playwright_screenshots.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-f1e23ffaaf8c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs readiness checks and self-tests using the standard library.",
+      "version": "3.12+"
+    },
+    {
+      "name": "Node.js and npm",
+      "optional": true,
+      "purpose": "Required for Node.js Playwright setup, runtime probes, or screenshot capture through a project-local Playwright npm package."
+    },
+    {
+      "name": "Python Playwright package",
+      "optional": true,
+      "purpose": "Required only when running Python Playwright setup or screenshot capture for Python-backed validation."
+    },
+    {
+      "name": ".NET SDK",
+      "optional": true,
+      "purpose": "Required only when the target project's .NET Playwright setup or documented Playwright commands run dotnet build or dotnet test."
+    },
+    {
+      "name": "Playwright",
+      "optional": true,
+      "purpose": "Detected from package.json dependencies, scripts, config files, or .NET project PackageReference entries."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "playwright-integration",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "vision-describe",
+      "code-review",
+      "patch-draft"
+    ]
+  },
+  "name": "playwright-integration",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-05-16",
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/playwright-integration-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Covers Node.js, Python, and .NET Playwright detection, readiness, auto-install preflight planning, screenshot validation packets, accepted screenshot outputs, linting, result parsing, flaky diagnosis, blocked install behavior, and no-install fallback."
+      }
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": false,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": true,
+    "network": true,
+    "production_writes": false,
+    "profile": "networked",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-61703550f6f8",
+    "command-32464c9b8359",
+    "command-8d83283fdff4",
+    "command-82ed6c9a5ead",
+    "command-b9b48d020bb9",
+    "command-619d5fc9c209",
+    "command-1b74ea3a53d0",
+    "command-6e6719c4cb6c",
+    "command-f1e23ffaaf8c",
+    "command-6066588d4453"
+  ],
+  "summary": "Provides deterministic Node.js, Python, and .NET Playwright readiness checks, explicitly approved setup commands, desktop/mobile screenshot validation evidence, and optional accepted screenshot outputs.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/playwright-integration",
+    "python -B .agents/skills/playwright-integration/scripts/run_self_tests.py"
+  ],
+  "version": "1.0.0"
+}

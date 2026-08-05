@@ -1,0 +1,9 @@
+graph TD;
+  request["User request"] --> route["Route to owner"];
+  route --> context["Load project context"];
+  context --> plan["Plan with evidence"];
+  plan --> decision{"Human approves?"};
+  decision -->|No| stop["Stop or revise"];
+  decision -->|Yes| work["Implement with checks"];
+  work --> validate["Validate locally"];
+  validate --> report["Report evidence and risks"];

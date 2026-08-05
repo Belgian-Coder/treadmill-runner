@@ -1,0 +1,11 @@
+graph TD;
+  request["User asks for workflow work"] --> route["Route to workflow"];
+  route --> metadata["Inspect metadata contract"];
+  metadata --> start["workflow start"];
+  start --> startEvidence["Start context-evidence packet"];
+  startEvidence --> preHook["Run required pre-hook"];
+  preHook --> template["Resolve default or lean template"];
+  template --> plan["Generate plan"];
+  plan --> gate{"Plan valid?"};
+  gate -->|No| stop["Stop with blockers"];
+  gate -->|Yes| approve["Ready for approval"];

@@ -1,0 +1,60 @@
+﻿@inherits LayoutComponentBase
+
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<header id="site-header" class="site-header" data-scroll-state="shown">
+    <a class="site-brand" href="/" aria-label="TreadmillRunner run dashboard">
+        <span aria-hidden="true">TR</span>
+        <strong>TreadmillRunner</strong>
+    </a>
+    <nav class="primary-nav primary-nav--desktop" aria-label="Primary navigation">
+        <RunNavLink />
+        <NavLink href="/workouts">Workouts</NavLink>
+        <NavLink href="/calendar">Calendar</NavLink>
+        <NavLink href="/history">History</NavLink>
+        <NavLink href="/devices">Devices</NavLink>
+        <NavLink href="/profiles">Profiles</NavLink>
+        <NavLink href="/operations">Operations</NavLink>
+    </nav>
+    <nav class="primary-nav primary-nav--mobile" aria-label="Primary navigation">
+        <RunNavLink />
+        <NavLink href="/workouts">Plan</NavLink>
+        <NavLink href="/history">History</NavLink>
+        <details class="nav-more">
+            <summary>More</summary>
+            <div class="nav-more__menu">
+                <NavLink href="/calendar">Calendar</NavLink>
+                <NavLink href="/devices">Devices</NavLink>
+                <NavLink href="/profiles">Profiles</NavLink>
+                <NavLink href="/workouts/import">Import</NavLink>
+                <NavLink href="/operations">Operations</NavLink>
+            </div>
+        </details>
+    </nav>
+</header>
+
+<main id="main-content" class="app-shell" tabindex="-1">
+    @Body
+</main>
+
+<div id="blazor-error-ui" role="alert" aria-live="assertive" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <button class="dismiss" type="button" aria-label="Dismiss error">&#x2715;</button>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("treadmillRunnerView.initializeAutoHideHeader", "site-header");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeAutoHideHeader"); }
+        catch (JSDisconnectedException) { }
+    }
+}

@@ -1,0 +1,176 @@
+using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Core.Workouts;
+
+namespace TreadmillRunner.Core.Tests;
+
+public sealed class WorkoutProgramTests
+{
+  private static readonly DateTimeOffset EndedAt = DateTimeOffset.Parse("2026-08-04T08:30:00Z");
+
+  [Fact]
+  public void Revision_normalizes_metadata_and_orders_contiguous_items()
+  {
+    Guid programId = Guid.NewGuid();
+    Guid revisionId = Guid.NewGuid();
+    var second = new WorkoutProgramItem(Guid.NewGuid(), Guid.NewGuid(), 2);
+    var first = new WorkoutProgramItem(Guid.NewGuid(), Guid.NewGuid(), 1);
+
+    var revision = new WorkoutProgramRevision(
+      programId,
+      revisionId,
+      1,
+      "  First 5K  ",
+      "  Build safely.  ",
+      "  5K  ",
+      [second, first]);
+
+    Assert.Equal("First 5K", revision.Name);
+    Assert.Equal("Build safely.", revision.Description);
+    Assert.Equal("5K", revision.Category);
+    Assert.Equal([first.Id, second.Id], revision.Items.Select(item => item.Id));
+  }
+
+  [Fact]
+  public void Revision_rejects_duplicate_items_and_non_contiguous_positions()
+  {
+    Guid duplicateId = Guid.NewGuid();
+
+    Assert.Throws<ArgumentException>(() => Revision(
+      new WorkoutProgramItem(duplicateId, Guid.NewGuid(), 1),
+      new WorkoutProgramItem(duplicateId, Guid.NewGuid(), 2)));
+    Assert.Throws<ArgumentException>(() => Revision(
+      new WorkoutProgramItem(Guid.NewGuid(), Guid.NewGuid(), 1),
+      new WorkoutProgramItem(Guid.NewGuid(), Guid.NewGuid(), 3)));
+  }
+
+  [Fact]
+  public void Progress_counts_only_consecutive_completed_items()
+  {
+    WorkoutProgramRevision revision = Revision(
+      Item(1),
+      Item(2),
+      Item(3));
+
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(
+      revision,
+      [
+        Result(revision.Items[0], SessionState.Completed),
+        Result(revision.Items[2], SessionState.Completed),
+      ]);
+
+    Assert.Equal(1, progress.CompletedItemCount);
+    Assert.Equal(revision.Items[1].Id, progress.NextItem?.Id);
+    Assert.False(progress.IsComplete);
+  }
+
+  [Theory]
+  [InlineData(SessionState.Stopped)]
+  [InlineData(SessionState.Interrupted)]
+  [InlineData(SessionState.Faulted)]
+  public void Non_completed_terminal_sessions_do_not_advance(SessionState state)
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2));
+
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(
+      revision,
+      [Result(revision.Items[0], state)]);
+
+    Assert.Equal(0, progress.CompletedItemCount);
+    Assert.Equal(revision.Items[0].Id, progress.NextItem?.Id);
+    Assert.False(progress.IsComplete);
+  }
+
+  [Fact]
+  public void All_completed_items_finish_the_program()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2));
+
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(
+      revision,
+      revision.Items.Select(item => Result(item, SessionState.Completed)).ToArray());
+
+    Assert.Equal(2, progress.CompletedItemCount);
+    Assert.Null(progress.NextItem);
+    Assert.True(progress.IsComplete);
+  }
+
+  [Fact]
+  public void Single_calendar_workout_takes_priority_over_active_program()
+  {
+    Guid calendarRevisionId = Guid.NewGuid();
+    WorkoutProgramRevision revision = Revision(Item(1));
+    WorkoutProgramRun run = ActiveRun(revision);
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(revision, []);
+
+    WorkoutRecommendation recommendation = WorkoutRecommendationResolver.Resolve(
+      [calendarRevisionId],
+      run,
+      progress);
+
+    Assert.Equal(WorkoutRecommendationKind.Calendar, recommendation.Kind);
+    Assert.Equal(calendarRevisionId, recommendation.WorkoutRevisionId);
+    Assert.Null(recommendation.ProgramRunId);
+    Assert.Null(recommendation.ProgramItemId);
+  }
+
+  [Fact]
+  public void Multiple_calendar_workouts_require_an_explicit_choice()
+  {
+    WorkoutRecommendation recommendation = WorkoutRecommendationResolver.Resolve(
+      [Guid.NewGuid(), Guid.NewGuid()],
+      null,
+      null);
+
+    Assert.Equal(WorkoutRecommendationKind.CalendarChoiceRequired, recommendation.Kind);
+    Assert.Null(recommendation.WorkoutRevisionId);
+  }
+
+  [Fact]
+  public void Active_program_recommends_its_exact_next_pinned_revision()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2));
+    WorkoutProgramRun run = ActiveRun(revision);
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(
+      revision,
+      [Result(revision.Items[0], SessionState.Completed)]);
+
+    WorkoutRecommendation recommendation = WorkoutRecommendationResolver.Resolve([], run, progress);
+
+    Assert.Equal(WorkoutRecommendationKind.Program, recommendation.Kind);
+    Assert.Equal(revision.Items[1].WorkoutRevisionId, recommendation.WorkoutRevisionId);
+    Assert.Equal(run.Id, recommendation.ProgramRunId);
+    Assert.Equal(revision.Items[1].Id, recommendation.ProgramItemId);
+  }
+
+  [Fact]
+  public void No_calendar_or_active_program_falls_back_to_manual()
+  {
+    WorkoutRecommendation recommendation = WorkoutRecommendationResolver.Resolve([], null, null);
+
+    Assert.Equal(WorkoutRecommendationKind.Manual, recommendation.Kind);
+    Assert.Null(recommendation.WorkoutRevisionId);
+  }
+
+  private static WorkoutProgramRevision Revision(params WorkoutProgramItem[] items) => new(
+    Guid.NewGuid(),
+    Guid.NewGuid(),
+    1,
+    "First 5K",
+    "Build safely.",
+    "5K",
+    items);
+
+  private static WorkoutProgramItem Item(int position) => new(Guid.NewGuid(), Guid.NewGuid(), position);
+
+  private static WorkoutProgramSessionResult Result(WorkoutProgramItem item, SessionState state) =>
+    new(item.Id, state, EndedAt);
+
+  private static WorkoutProgramRun ActiveRun(WorkoutProgramRevision revision) => new(
+    Guid.NewGuid(),
+    Guid.NewGuid(),
+    revision.RevisionId,
+    WorkoutProgramRunStatus.Active,
+    EndedAt.AddHours(-1),
+    null,
+    1);
+}

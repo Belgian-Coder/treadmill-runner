@@ -1,0 +1,266 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/dotnet_repo_inspector.py"
+      ],
+      "effects": [],
+      "id": "command-4786de75f75c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/dotnet-engineering",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-daeed7be9152",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/dotnet-engineering",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-9e17b242d506",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "dotnet-engineering",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-a9e90d0fbffe",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-engineering/scripts/dotnet_repo_inspector.py",
+        "inventory",
+        "--target",
+        ".",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-de995b53ad03",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/dotnet-engineering/scripts/dotnet_repo_inspector.py",
+        "all",
+        "--target",
+        ".",
+        "--target-version",
+        "net10.0",
+        "--format",
+        "markdown"
+      ],
+      "effects": [],
+      "id": "command-0f79aafa22d1",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": ".NET SDK",
+      "optional": true,
+      "purpose": "Project-defined build, test, format, restore, and analyzer commands when approved; may write bin/obj, caches, test results, or formatted source.",
+      "version": "project-defined"
+    },
+    {
+      "name": "dotnet-quality-gates",
+      "optional": true,
+      "purpose": "Optional normalized validation evidence."
+    },
+    {
+      "name": "local-ai-helper",
+      "optional": true,
+      "purpose": "Optional repo-local model, runtime, cache, embedding benchmark, and vision setup."
+    },
+    {
+      "name": "dotnet-security-review",
+      "optional": true,
+      "purpose": "Optional AI/security review for prompts, data, authorization, and model-callable actions."
+    },
+    {
+      "name": "mermaid-diagrams-azure-devops",
+      "optional": true,
+      "purpose": "Optional Azure DevOps Mermaid validation."
+    },
+    {
+      "name": "Python 3.12+ stdlib",
+      "optional": false,
+      "purpose": "Runs self-tests and the deterministic .NET repository inspector.",
+      "version": "3.12+"
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none for read-only use; current official docs lookup only when network access is approved by the current run",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "dotnet-engineering",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/csharp-runtime.md",
+    "docs/runtime-tooling.md",
+    "docs/csharp-foundations.md",
+    "docs/architecture.md",
+    "docs/aspnet-backend.md",
+    "docs/data-and-integration.md",
+    "docs/api-contracts.md",
+    "docs/testing.md",
+    "docs/test-strategy.md",
+    "docs/ui.md",
+    "docs/ui-frameworks.md",
+    "docs/openxml-and-pdf.md",
+    "docs/delivery.md",
+    "docs/documentation.md"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary",
+      "changed-files-summary",
+      "failure-cluster",
+      "test-gap-summary"
+    ]
+  },
+  "name": "dotnet-engineering",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "attestations": [
+      "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-engineering",
+      "python -B .agents/skills/dotnet-engineering/scripts/run_self_tests.py"
+    ],
+    "introduced": "2026-05-25",
+    "license": "repository plus reviewed MIT source concepts",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-owned rewrite from reviewed dotnet-artisan references",
+    "updated": "2026-07-01"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/dotnet-engineering-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Normal validation for skill contracts, routing metadata, inspector fixtures, and referenced docs; writes temporary fixture projects and is not strict no-temp/no-write safe."
+      }
+    ]
+  },
+  "related_modules": [
+    "dotnet-project-context",
+    "dotnet-diagnostics",
+    "dotnet-quality-gates",
+    "dotnet-legacy",
+    "dotnet-security-review",
+    "local-ai-helper",
+    "mermaid-diagrams-azure-devops",
+    "playwright-integration",
+    "document-artifacts"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": false,
+    "network": false,
+    "production_writes": false,
+    "profile": "local-write",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-daeed7be9152",
+    "command-9e17b242d506",
+    "command-a9e90d0fbffe",
+    "command-6066588d4453",
+    "command-de995b53ad03",
+    "command-0f79aafa22d1"
+  ],
+  "summary": "Guides modern .NET/C# architecture, implementation, review, UI selection, AI integration, tests, document generation, delivery, and upgrade inventory while routing kickoff/setup/project-context inventory to dotnet-project-context, diagnostics to dotnet-diagnostics, .NET Framework to dotnet-legacy, security to dotnet-security-review, local models to local-ai-helper, and validation to dotnet-quality-gates.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/dotnet-engineering"
+  ],
+  "version": "1.0.0"
+}

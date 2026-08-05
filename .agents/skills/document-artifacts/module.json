@@ -1,0 +1,334 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/document_artifacts.py"
+      ],
+      "effects": [],
+      "id": "command-cd45b2289372",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/excel/excel_tools.py"
+      ],
+      "effects": [],
+      "id": "command-5ec618a3e2f4",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/word/word_tools.py"
+      ],
+      "effects": [],
+      "id": "command-9143b2dfd5ed",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/powerpoint/powerpoint_tools.py"
+      ],
+      "effects": [],
+      "id": "command-d64d7301c67c",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/pdf/pdf_tools.py"
+      ],
+      "effects": [],
+      "id": "command-a7554da00dc9",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/document-artifacts",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-f09e1b03a68d",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/document-artifacts",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-4839bc082309",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "document-artifacts",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-72dab519b10a",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-c0aef6d8975f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "formats",
+        "--json"
+      ],
+      "effects": [],
+      "id": "formats-discovery",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "excel",
+        "doctor",
+        "--json"
+      ],
+      "effects": [],
+      "id": "command-86cbaffd9f1c",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "word",
+        "doctor",
+        "--json"
+      ],
+      "effects": [],
+      "id": "command-0759d14d8956",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "powerpoint",
+        "doctor",
+        "--json"
+      ],
+      "effects": [],
+      "id": "command-172418692313",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/document-artifacts/scripts/document_artifacts.py",
+        "pdf",
+        "doctor",
+        "--json"
+      ],
+      "effects": [],
+      "id": "command-d04e721feffa",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs artifact inspection, conversion, validation, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "LibreOffice soffice",
+      "optional": true,
+      "purpose": "Optional rendering or recalculation for Office artifacts."
+    },
+    {
+      "name": "openpyxl",
+      "optional": true,
+      "purpose": "Optional XLSX cell writes.",
+      "version": "3.1.5"
+    },
+    {
+      "name": "python-docx",
+      "optional": true,
+      "purpose": "Optional richer DOCX operations.",
+      "version": "1.2.0"
+    },
+    {
+      "name": "pypdf, pdfplumber, reportlab, pdftoppm",
+      "optional": true,
+      "purpose": "Optional richer PDF inspection, fixture creation, and page rendering."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none; no document upload or service credentials are used",
+    "data_copied_locally": [
+      "artifact content may be copied into explicit output/evidence paths when output or write flags are used"
+    ],
+    "source_systems": [
+      "Python package index only when doctor --install-python-deps is explicitly requested"
+    ]
+  },
+  "id": "document-artifacts",
+  "inputs": [
+    "SKILL.md",
+    "module.json",
+    "docs/",
+    "scripts/",
+    "assets/"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "inventory-summary",
+      "vision-pdf"
+    ]
+  },
+  "name": "document-artifacts",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "introduced": "2026-05-25",
+    "license": "repository",
+    "source": "Consolidated from document-artifacts, document-artifacts, document-artifacts, and document-artifacts.",
+    "updated": "2026-07-17"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/document-artifacts-evals.json"
+    ],
+    "self_tests": [
+      {
+        "path": "scripts/run_self_tests.py",
+        "purpose": "Runs the XLSX, DOCX, PPTX, PDF, dispatcher-discovery, and Markdown-security deterministic self-tests; creates temporary fixtures and is not strict no-temp/no-write safe."
+      }
+    ]
+  },
+  "related_modules": [
+    "local-ai-helper"
+  ],
+  "risk": {
+    "credentials": false,
+    "destructive": true,
+    "generated_settings": false,
+    "installs": true,
+    "network": true,
+    "production_writes": false,
+    "profile": "networked",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-f09e1b03a68d",
+    "command-4839bc082309",
+    "command-72dab519b10a",
+    "command-6066588d4453",
+    "command-c0aef6d8975f",
+    "formats-discovery",
+    "command-86cbaffd9f1c",
+    "command-0759d14d8956",
+    "command-172418692313",
+    "command-d04e721feffa"
+  ],
+  "summary": "Provides portable format discovery, deterministic inspection, extraction, rendering, validation, Markdown security scanning, evidence bundling, and guarded write workflows for XLSX, DOCX, PPTX, and PDF artifacts.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/document-artifacts"
+  ],
+  "version": "1.0.0"
+}

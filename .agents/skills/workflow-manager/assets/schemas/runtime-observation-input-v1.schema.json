@@ -1,0 +1,304 @@
+{
+  "$id": "https://schemas.skills-harness.invalid/runtime-observation-input-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workflow Runtime Observation Input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "tool": {
+      "const": "workflow-manager.runtime-observation",
+      "type": "string"
+    },
+    "workflow": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "type": "string"
+    },
+    "run_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "type": "string"
+    },
+    "phase": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": ".*\\S.*",
+      "type": "string"
+    },
+    "host": {
+      "$ref": "#/$defs/hostObservation"
+    },
+    "model": {
+      "$ref": "#/$defs/modelObservation"
+    },
+    "evidence_path": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tool",
+    "workflow",
+    "run_id",
+    "phase"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "host"
+      ]
+    },
+    {
+      "required": [
+        "model"
+      ]
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "host": {
+            "properties": {
+              "surface": {
+                "const": "openai-responses-api"
+              }
+            },
+            "required": [
+              "surface"
+            ]
+          }
+        },
+        "required": [
+          "host",
+          "model"
+        ]
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "properties": {
+              "provider": {
+                "const": "openai"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "host": {
+            "properties": {
+              "surface": {
+                "const": "anthropic-messages-api"
+              }
+            },
+            "required": [
+              "surface"
+            ]
+          }
+        },
+        "required": [
+          "host",
+          "model"
+        ]
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "properties": {
+              "provider": {
+                "const": "anthropic"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "host": {
+            "properties": {
+              "surface": {
+                "const": "local-ai"
+              }
+            },
+            "required": [
+              "surface"
+            ]
+          }
+        },
+        "required": [
+          "host",
+          "model"
+        ]
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "properties": {
+              "provider": {
+                "const": "local"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "capability": {
+      "enum": [
+        "model-selection",
+        "deliberation-control",
+        "complete-usage-telemetry",
+        "per-call-usage",
+        "complete-thread-tree",
+        "isolated-worker-runtime",
+        "context-inheritance-control",
+        "native-subagents",
+        "deterministic-hooks",
+        "session-resume",
+        "prompt-cache-control",
+        "prompt-cache-telemetry",
+        "reasoning-continuation",
+        "hosted-program-orchestration"
+      ],
+      "type": "string"
+    },
+    "hostObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attested": {
+          "const": true,
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "host-runtime",
+            "provider-response"
+          ],
+          "type": "string"
+        },
+        "surface": {
+          "enum": [
+            "codex",
+            "github-copilot",
+            "claude-code",
+            "openai-responses-api",
+            "anthropic-messages-api",
+            "local-ai",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "attested",
+        "source",
+        "surface"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "provider-response"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "surface": {
+                "enum": [
+                  "openai-responses-api",
+                  "anthropic-messages-api",
+                  "local-ai"
+                ]
+              },
+              "capabilities": {
+                "items": {
+                  "enum": [
+                    "model-selection",
+                    "deliberation-control",
+                    "complete-usage-telemetry",
+                    "per-call-usage",
+                    "prompt-cache-control",
+                    "prompt-cache-telemetry",
+                    "reasoning-continuation",
+                    "hosted-program-orchestration"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "modelObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attested": {
+          "const": true,
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "host-runtime",
+            "provider-response"
+          ],
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "openai",
+            "anthropic",
+            "local",
+            "other",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": ".*\\S.*",
+          "type": "string"
+        },
+        "observed_deliberation": {
+          "maxLength": 80,
+          "type": "string"
+        }
+      },
+      "required": [
+        "attested",
+        "source",
+        "provider",
+        "model"
+      ]
+    }
+  }
+}

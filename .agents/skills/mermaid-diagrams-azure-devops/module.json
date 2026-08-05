@@ -1,0 +1,250 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/materialize_diagrams.py"
+      ],
+      "effects": [],
+      "id": "command-929631fbfb4a",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/run_self_tests.py"
+      ],
+      "effects": [
+        "temporary_write"
+      ],
+      "id": "command-ed75e34e9661",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/setup_vscode_mermaid_preview.py"
+      ],
+      "effects": [
+        "repository_write",
+        "install"
+      ],
+      "id": "command-dac95dba7472",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/validate_mermaid.py"
+      ],
+      "effects": [],
+      "id": "command-a5f4f2f44e2d",
+      "timeout_seconds": 300,
+      "working_directory": "module"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/skill-manager/scripts/validate_skill.py",
+        ".agents/skills/mermaid-diagrams-azure-devops",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-9c413611fa06",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "inspect-skill",
+        "--skill",
+        ".agents/skills/mermaid-diagrams-azure-devops",
+        "--fast",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-2c9150257e0e",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "measure-skill-budget",
+        "--skill",
+        "mermaid-diagrams-azure-devops",
+        "--summary",
+        "--compact",
+        "--format",
+        "json"
+      ],
+      "effects": [],
+      "id": "command-da9f3f962657",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/mermaid-diagrams-azure-devops/scripts/validate_mermaid.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-440b104a8e36",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/mermaid-diagrams-azure-devops/scripts/materialize_diagrams.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-ca367cc0c668",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/skills/mermaid-diagrams-azure-devops/scripts/setup_vscode_mermaid_preview.py",
+        "--help"
+      ],
+      "effects": [],
+      "id": "command-4c909687df1f",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    },
+    {
+      "argv": [
+        "python",
+        "-B",
+        ".agents/manage.py",
+        "sync-skill-routing",
+        "--check"
+      ],
+      "effects": [],
+      "id": "command-6066588d4453",
+      "timeout_seconds": 300,
+      "working_directory": "repository"
+    }
+  ],
+  "compatibility": {
+    "claude_code": "required",
+    "codex": "required",
+    "github_copilot": "required"
+  },
+  "dependencies": [
+    {
+      "name": "Python",
+      "purpose": "Runs local Mermaid extraction, validation, and self-tests.",
+      "version": "3.12+"
+    },
+    {
+      "name": "Mermaid CLI",
+      "optional": true,
+      "purpose": "Optional local render validation through mmdc; validator setup is explicit and prerequisite-gated."
+    },
+    {
+      "name": "Node.js and npm",
+      "optional": true,
+      "purpose": "Required only for Mermaid CLI setup during render validation."
+    },
+    {
+      "name": "VS Code CLI",
+      "optional": true,
+      "purpose": "Used only for best-effort preview extension detection/setup."
+    },
+    {
+      "name": "Markdown Preview Mermaid Support",
+      "optional": true,
+      "purpose": "Recommended VS Code preview renderer for Azure Mermaid colon blocks."
+    }
+  ],
+  "extensions": {},
+  "external_access": {
+    "attachments_retrieved": false,
+    "credential_expectations": "none beyond declared risk fields",
+    "data_copied_locally": [],
+    "source_systems": []
+  },
+  "id": "mermaid-diagrams-azure-devops",
+  "inputs": [
+    "SKILL.md",
+    "module.json"
+  ],
+  "kind": "skill",
+  "local_ai": {
+    "use_cases": [
+      "validation-triage",
+      "code-review",
+      "patch-draft",
+      "vision-pdf"
+    ]
+  },
+  "name": "mermaid-diagrams-azure-devops",
+  "outputs": [],
+  "owners": [
+    "engineering"
+  ],
+  "provenance": {
+    "license": "repository",
+    "reviewed_at": "2026-07-01",
+    "source": "repo-authored"
+  },
+  "quality": {
+    "eval_suites": [
+      "suites/mermaid-diagrams-azure-devops-evals.json"
+    ]
+  },
+  "related_modules": [],
+  "risk": {
+    "credentials": false,
+    "destructive": false,
+    "generated_settings": false,
+    "installs": true,
+    "network": true,
+    "production_writes": false,
+    "profile": "networked",
+    "uploads": false
+  },
+  "schema_version": 3,
+  "status": "accepted",
+  "strict_read_only_commands": [
+    "command-9c413611fa06",
+    "command-2c9150257e0e",
+    "command-da9f3f962657",
+    "command-440b104a8e36",
+    "command-ca367cc0c668",
+    "command-4c909687df1f",
+    "command-6066588d4453"
+  ],
+  "summary": "Create, select, normalize, and validate Azure DevOps-compatible Mermaid diagrams.",
+  "validation": [
+    "python -B .agents/skills/skill-manager/scripts/validate_skill.py .agents/skills/mermaid-diagrams-azure-devops"
+  ],
+  "version": "1.0.0"
+}

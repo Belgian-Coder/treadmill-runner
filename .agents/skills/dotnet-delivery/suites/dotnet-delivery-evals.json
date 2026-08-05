@@ -1,0 +1,188 @@
+{
+  "evals": [
+    {
+      "assertions": [
+        {
+          "type": "validation_ok"
+        },
+        {
+          "path": "version",
+          "type": "manifest_field_equals",
+          "value": "1.0.0"
+        },
+        {
+          "path": "strict_read_only_commands",
+          "type": "manifest_field_equals",
+          "value": [
+            "command-adf7203b8f20",
+            "command-6ded4ecd089d",
+            "command-36f76c98994c",
+            "command-6066588d4453"
+          ]
+        },
+        {
+          "path": "risk.profile",
+          "type": "manifest_field_equals",
+          "value": "networked"
+        },
+        {
+          "path": "risk.uploads",
+          "type": "manifest_field_equals",
+          "value": true
+        },
+        {
+          "key": "network",
+          "type": "risk_declared",
+          "value": true
+        }
+      ],
+      "id": "validates"
+    },
+    {
+      "assertions": [
+        {
+          "path": "docs/ci-packaging-release.md",
+          "type": "file_exists"
+        }
+      ],
+      "id": "files"
+    },
+    {
+      "assertions": [
+        {
+          "text": ".NET",
+          "type": "description_contains"
+        },
+        {
+          "text": "GitHub Actions",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Azure DevOps",
+          "type": "skill_contains"
+        },
+        {
+          "text": "setup-dotnet",
+          "type": "skill_contains"
+        },
+        {
+          "text": "DotNetCoreCLI",
+          "type": "skill_contains"
+        },
+        {
+          "text": "NuGet cache",
+          "type": "skill_contains"
+        },
+        {
+          "text": "multi-stage Dockerfiles",
+          "type": "skill_contains"
+        },
+        {
+          "text": "rootless",
+          "type": "skill_contains"
+        },
+        {
+          "text": "SBOM",
+          "type": "skill_contains"
+        },
+        {
+          "text": "NuGet authoring",
+          "type": "skill_contains"
+        },
+        {
+          "text": "MSIX",
+          "type": "skill_contains"
+        },
+        {
+          "text": "SemVer",
+          "type": "skill_contains"
+        },
+        {
+          "text": "NBGV",
+          "type": "skill_contains"
+        },
+        {
+          "text": "OpenTelemetry",
+          "type": "skill_contains"
+        },
+        {
+          "text": "health checks",
+          "type": "skill_contains"
+        },
+        {
+          "text": "structured logging",
+          "type": "skill_contains"
+        },
+        {
+          "text": "PII",
+          "type": "skill_contains"
+        },
+        {
+          "text": "environment approvals",
+          "type": "skill_contains"
+        },
+        {
+          "text": "service connections",
+          "type": "skill_contains"
+        },
+        {
+          "text": "dotnet-quality-gates",
+          "type": "skill_contains"
+        },
+        {
+          "text": "Read-Only Dogfood",
+          "type": "skill_contains"
+        },
+        {
+          "text": "module.json.strict_read_only_commands",
+          "type": "skill_contains"
+        },
+        {
+          "text": "does not create temp files, subprocesses, network calls, or outputs",
+          "type": "skill_contains"
+        },
+        {
+          "text": "inspect-skill --fast",
+          "type": "skill_contains"
+        },
+        {
+          "text": "read-only self-test exception",
+          "type": "skill_contains"
+        },
+        {
+          "text": "existing-evidence parsing without output flags",
+          "type": "skill_contains"
+        },
+        {
+          "text": "cloud CLIs/APIs",
+          "type": "skill_contains"
+        },
+        {
+          "text": "write-capable",
+          "type": "skill_contains"
+        },
+        {
+          "type": "trigger_quality"
+        },
+        {
+          "type": "completion_contract_terms"
+        },
+        {
+          "type": "stop_or_fallback_terms"
+        },
+        {
+          "type": "compatibility_required"
+        },
+        {
+          "type": "risk_profile_covers_flags"
+        },
+        {
+          "type": "budget_skill_words_at_most",
+          "value": 850
+        }
+      ],
+      "id": "routing-and-scope"
+    }
+  ],
+  "skill_name": "dotnet-delivery"
+}

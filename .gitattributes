@@ -1,0 +1,43 @@
+* text=auto
+
+.editorconfig text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.swift text eol=lf
+*.svg text eol=lf
+*.txt text eol=lf
+*.ps1 text eol=lf
+*.html text eol=lf
+
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.pptx binary
+*.docx binary
+*.xlsx binary
+*.zip binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.gguf binary
+*.pdb binary
+
+# Candidate imports are raw upstream/source material. Preserve them as staged
+# inputs instead of normalizing or diff-checking them like maintained files.
+_candidate-imports/** -text -diff
+
+# Local AI license/model-card snapshots and raw benchmark outputs are preserved
+# as downloaded/generated evidence.
+.agents/local-ai/bundle/licenses/** -whitespace
+automations/agent-benchmarking/runs/**/raw/** -whitespace
