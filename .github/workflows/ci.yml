@@ -5,6 +5,11 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to validate
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -39,7 +44,8 @@ jobs:
       - name: Validate offline release contents
         shell: pwsh
         run: |
-          $version = if ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}'.TrimStart('v') } else { '0.0.0' }
+          $version = if ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}'.TrimStart('v') } else { '${{ inputs.version }}' }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Release versions must use MAJOR.MINOR.PATCH.' }
           ./eng/publish-release.ps1 -Version $version
       - name: Browser acceptance
         shell: pwsh
