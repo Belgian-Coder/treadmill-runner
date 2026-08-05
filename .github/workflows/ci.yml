@@ -35,9 +35,14 @@ jobs:
           if ('${{ github.ref_name }}' -notmatch '^v\d+\.\d+\.\d+$') {
             throw 'Release tags must use vMAJOR.MINOR.PATCH.'
           }
-      - name: Restore locked dependencies
+      - name: Restore and verify dependency graph
         shell: pwsh
-        run: dotnet restore TreadmillRunner.slnx --locked-mode
+        run: |
+          dotnet restore TreadmillRunner.slnx --force-evaluate
+          & git diff --ignore-space-at-eol --exit-code -- '**/packages.lock.json'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Restore changed a packages.lock.json file. Regenerate and commit the dependency graph.'
+          }
       - name: Validate release
         shell: pwsh
         run: ./eng/validate.ps1 -Configuration Release
