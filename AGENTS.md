@@ -39,8 +39,8 @@ First-time: `docs/start-here.md`; consumers: `install-harness`. Run `python -B .
 
 ## Release Policy
 
-- Ordinary pushes and pull requests must not start GitHub Actions. `.github/workflows/ci.yml` runs only for `vMAJOR.MINOR.PATCH` tags or an explicit manual dispatch.
+- GitHub Actions is disabled for this repository. Commits, pull requests, and tags must never start hosted builds; all validation, building, signing, and packaging runs on the release workstation.
 - Never create, move, or push a release tag by hand. From a clean `main` that exactly matches `origin/main`, use `eng/create-github-release.ps1 -Version <MAJOR.MINOR.PATCH> -ReleaseNotes '<notes>'`.
 - Signing stays on the release workstation with the non-exportable certificate. Never place its private key, a PFX, or a signing password in GitHub secrets or repository files.
-- The script owns local validation, signed packaging, annotated tag creation, draft asset verification, and publication. If interrupted, rerun the exact version and exact release notes; it may resume only the matching tag and draft and never force-moves a tag.
+- The script owns local validation, signed packaging, annotated tag creation, draft asset verification, and publication. It uploads the locally produced assets directly to GitHub Releases without a hosted workflow. If interrupted, rerun the exact version and exact release notes; it may resume only the matching tag and draft and never force-moves a tag.
 - Do not create a tag or release during unrelated work or without an explicit version/release request. The canonical procedure and recovery rules are in `docs/project/release-operations.md`.

@@ -21,3 +21,4 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-016 — Tag-driven GitHub releases](tr-016-tag-driven-github-releases.md)
 - [TR-017 — Local daily-use reliability and workout reuse](tr-017-local-daily-use-reliability.md)
 - [TR-018 — Garmin activity-upload readiness and offline runtime](tr-018-garmin-activity-upload-readiness.md)
+- [TR-019 — Local-only release publishing](tr-019-local-only-release-publishing.md)

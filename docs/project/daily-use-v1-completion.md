@@ -53,7 +53,7 @@ No remote Start, Stop, Pause, speed, or incline command may be sent merely to co
 
 FTMS is the only hardware-accepted control mode. The independently authored Omega vendor encoder remains fixture-tested research, but the product does not expose vendor motion writes because the exact S3.02/V10.23.17 write characteristic/response/duplicate-command behavior has not been accepted. There is no automatic FTMS/vendor fallback or mixed-mode write path.
 
-The repository has a Git baseline and tag-driven release governance. Working-tree changes still require intentional review and commit before a release tag is created.
+The repository has a Git baseline and local-only tagged release governance. Working-tree changes still require intentional review and commit before the release workstation validates, builds, signs, packages, tags, and uploads a release. GitHub Actions is disabled.
 
 ## Release operator path
 

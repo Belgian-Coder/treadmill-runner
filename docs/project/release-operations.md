@@ -84,16 +84,13 @@ Use the actually installed version for `-Version`; repair mode leaves that immut
 
 Use a version higher than the currently installed version. Release output is immutable and commands refuse to overwrite an existing version.
 
-### GitHub Actions cost and trigger policy
+### Local-only build and GitHub cost policy
 
-Ordinary commits and pull requests do **not** start GitHub Actions. The single repository workflow runs only in either of these cases:
+GitHub Actions is disabled completely. The repository has no workflow under `.github/workflows`, so commits, pull requests, manual dispatches, and tags cannot start a hosted build or consume hosted minutes.
 
-- an annotated tag matching `vMAJOR.MINOR.PATCH` is pushed; or
-- a maintainer deliberately selects **Actions → TreadmillRunner release validation → Run workflow**.
+The release workstation is authoritative for deterministic Release validation, browser acceptance, the offline Garmin runtime probe, building, signing, packaging, checksums, and publication. GitHub receives only committed source, the immutable annotated tag, the public signing certificate, and the finished release assets. The private signing key never leaves the workstation.
 
-The tag run performs one Windows job containing locked restore, deterministic Release validation, and browser acceptance. Keeping those checks in one job avoids duplicating checkout/runtime setup. GitHub validates tagged source but never receives the signing private key. The local release command below remains authoritative for signing and publishing.
-
-Because `publish-release.ps1` is the only release-content entry point, the same adapter bundle/probe is used by tag-driven GitHub releases and protected local-feed releases. Ordinary commits still trigger no workflow and build no runtime bundle.
+Because `publish-release.ps1` is the only release-content entry point, the same locally verified adapter bundle/probe is used by GitHub Release assets and protected local-feed releases.
 
 Do not create or push release tags manually. A tag is the immutable identity of one published version and must identify the exact `main` commit whose assets were built. The release script creates the annotated tag only after local validation, publishing, signing, and checksum generation have succeeded.
 
@@ -123,7 +120,7 @@ The local signer is deliberately non-exportable and must not be placed in GitHub
   -ReleaseNotes 'Describe the user-visible changes in this version.'
 ```
 
-The script requires `main` to exactly match `origin/main`, runs Release and browser validation, publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated `v<version>` tag, creates a draft, uploads and verifies every expected asset, then publishes it as latest. Pushing the tag is the only automatic Actions trigger. The script never accepts a token, PFX, private-key path, or signing password.
+The script requires `main` to exactly match `origin/main`, runs Release and browser validation locally, publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated `v<version>` tag, creates a draft, uploads and verifies every expected asset, then publishes it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
 
 #### Interrupted release recovery
 
@@ -131,15 +128,16 @@ The script requires `main` to exactly match `origin/main`, runs Release and brow
 - A local tag is reused only when it resolves to the current `main` commit. A conflicting local or remote tag is rejected and never overwritten.
 - An existing GitHub Release is resumed only while it is still a draft. Expected assets are replaced from the locally verified set, checked again by name, and only then published.
 - If the release is already published, its tag and assets are immutable. Fixes require a higher version; never delete or move a published tag to reuse its version.
-- If the tag-triggered GitHub validation fails, investigate that exact tagged commit. Do not force-move the tag. Correct the source and publish a higher patch version.
+- If local validation or packaging fails, do not create or move a tag. Correct the source, rerun locally, and publish only after all required checks pass.
 
-To run validation deliberately without creating a release, use the GitHub Actions UI or:
+To run validation deliberately without creating a release, use the local scripts:
 
 ```powershell
-gh workflow run ci.yml --repo belgian-coder/treadmill-runner --ref main
+./eng/validate.ps1 -Configuration Release
+./eng/playwright.ps1 -Configuration Release
 ```
 
-This manual run does not create a tag, package, signature, or GitHub Release.
+These commands do not create a tag, package, signature, or GitHub Release. `create-github-release.ps1` runs them automatically unless `-SkipValidation` is explicitly used to resume an already validated interrupted release with identical immutable inputs.
 
 Release assets are `stable.manifest.json`, `treadmillrunner-<version>-win-x64.zip`, `treadmillrunner-<version>-offline-update.zip`, `TreadmillRunner-<version>-Windows-x64.zip`, the public `.cer`, and `SHA256SUMS.txt`.
 

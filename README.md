@@ -104,7 +104,7 @@ The sibling `../qdomyos-zwift` checkout is research evidence only and is not par
 
 ## Maintainer releases
 
-GitHub Actions does not build ordinary commits or pull requests. A release is built and validated automatically on GitHub only when the local release command pushes an annotated `vMAJOR.MINOR.PATCH` tag; validation can also be started manually. Signing and asset publication remain local because the private key is non-exportable:
+GitHub Actions is disabled: commits, pull requests, and tags never start a hosted build. Releases are validated, built, signed, packaged, tagged, and uploaded from the release workstation because the signing key is non-exportable and hosted minutes are intentionally not used:
 
 ```powershell
 .\eng\create-github-release.ps1 `
