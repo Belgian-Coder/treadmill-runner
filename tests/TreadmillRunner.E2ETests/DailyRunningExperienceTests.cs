@@ -217,6 +217,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "Performance")]
   public async Task Loopback_telemetry_visibility_p95_is_below_500_milliseconds()
   {
     SeededPlan plan = await SeedPlanAsync("latency", heartRateTarget: false, openSpeed: true);
@@ -502,15 +503,11 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
   private async Task<ChartTimelineReading> ReadAndValidateTimelineAsync()
   {
     ILocator cursor = Page.Locator(".chart-cursor");
-    double elapsedSeconds = double.Parse(
-      await cursor.GetAttributeAsync("data-elapsed-seconds") ?? "0",
-      CultureInfo.InvariantCulture);
-    double durationSeconds = double.Parse(
-      await cursor.GetAttributeAsync("data-duration-seconds") ?? "0",
-      CultureInfo.InvariantCulture);
-    double cursorX = double.Parse(
-      await cursor.GetAttributeAsync("x1") ?? "0",
-      CultureInfo.InvariantCulture);
+    JsonElement timeline = await cursor.EvaluateAsync<JsonElement>(
+      "element => ({ elapsedSeconds: Number(element.dataset.elapsedSeconds), durationSeconds: Number(element.dataset.durationSeconds), cursorX: Number(element.getAttribute('x1')) })");
+    double elapsedSeconds = timeline.GetProperty("elapsedSeconds").GetDouble();
+    double durationSeconds = timeline.GetProperty("durationSeconds").GetDouble();
+    double cursorX = timeline.GetProperty("cursorX").GetDouble();
     double expectedX = 10 + (Math.Clamp(elapsedSeconds / Math.Max(1, durationSeconds), 0, 1) * 700);
     Assert.InRange(Math.Abs(cursorX - expectedX), 0, 0.01);
 
