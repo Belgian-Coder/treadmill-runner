@@ -158,7 +158,10 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.Locator(".action-status")).ToContainTextAsync("Controller access restored");
+    ILocator motionControls = Page.GetByRole(
+      AriaRole.Region,
+      new() { Name = "Treadmill motion controls", Exact = true });
+    await Expect(motionControls.GetByRole(AriaRole.Status)).ToContainTextAsync("Controller access restored");
     await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new System.Text.RegularExpressions.Regex("^M.+L"));
     await ScreenshotAsync("tr004-live-browser-reconnect-desktop-full-hd.png");

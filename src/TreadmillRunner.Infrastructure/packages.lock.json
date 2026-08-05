@@ -370,13 +370,6 @@
         "resolved": "21.205.0",
         "contentHash": "jjpY3rO4M9/jduX6k5LSO7ACK/A5Yi0Mwh6m7wnksNkE2WEuc8puzNCT6l/2qScz17daR8eNdN7IFoseFMIqVQ=="
       }
-    },
-    "net10.0-windows10.0.22621/win-x64": {
-      "SQLitePCLRaw.lib.e_sqlite3": {
-        "type": "Transitive",
-        "resolved": "2.1.12",
-        "contentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w=="
-      }
     }
   }
 }

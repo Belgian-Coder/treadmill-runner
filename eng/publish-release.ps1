@@ -28,7 +28,7 @@ New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
 
 Push-Location $projectRoot
 try {
-    dotnet restore TreadmillRunner.slnx --locked-mode --force-evaluate
+    dotnet restore TreadmillRunner.slnx --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
     dotnet publish src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj `
         -c Release --no-restore `
