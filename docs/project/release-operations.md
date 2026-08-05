@@ -86,7 +86,7 @@ Use a version higher than the currently installed version. Release output is imm
 
 ### Local-only build and GitHub cost policy
 
-GitHub Actions is disabled completely. The repository has no workflow under `.github/workflows`, so commits, pull requests, manual dispatches, and tags cannot start a hosted build or consume hosted minutes.
+GitHub Actions is disabled completely in repository settings. The repository has no workflow under `.github/workflows` and no `.github/dependabot.yml`, so commits, pull requests, manual dispatches, Dependabot updates, and tags cannot start a hosted build or consume hosted minutes. Re-enabling Actions or adding either configuration requires a new owner decision.
 
 The release workstation is authoritative for deterministic Release validation, browser acceptance, the offline Garmin runtime probe, building, signing, packaging, checksums, and publication. GitHub receives only committed source, the immutable annotated tag, the public signing certificate, and the finished release assets. The private signing key never leaves the workstation.
 

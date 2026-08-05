@@ -104,7 +104,7 @@ The sibling `../qdomyos-zwift` checkout is research evidence only and is not par
 
 ## Maintainer releases
 
-GitHub Actions is disabled: commits, pull requests, and tags never start a hosted build. Releases are validated, built, signed, packaged, tagged, and uploaded from the release workstation because the signing key is non-exportable and hosted minutes are intentionally not used:
+GitHub Actions is disabled in repository settings, and no workflow or Dependabot update configuration is committed: commits, pull requests, and tags never start a hosted build. Releases are validated, built, signed, packaged, tagged, and uploaded from the release workstation because the signing key is non-exportable and hosted minutes are intentionally not used:
 
 ```powershell
 .\eng\create-github-release.ps1 `
