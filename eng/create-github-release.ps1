@@ -100,7 +100,7 @@ try {
     & git show-ref --verify --quiet "refs/tags/$tag"
     if ($LASTEXITCODE -ne 0) {
         # Recover a tag pushed by an interrupted run or another clean checkout.
-        & git fetch origin "refs/tags/$tag:refs/tags/$tag" --quiet 2> $null
+        & git fetch origin "refs/tags/${tag}:refs/tags/${tag}" --quiet 2> $null
         & git show-ref --verify --quiet "refs/tags/$tag"
     }
     if ($LASTEXITCODE -eq 0) {
@@ -113,7 +113,7 @@ try {
         & git tag -a $tag -m "TreadmillRunner $Version"
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the annotated release tag.' }
     }
-    & git push origin "refs/tags/$tag:refs/tags/$tag"
+    & git push origin "refs/tags/${tag}:refs/tags/${tag}"
     if ($LASTEXITCODE -ne 0) { throw 'Could not push the release tag; a conflicting remote tag is never overwritten.' }
 
     if ($existingDraft) {
