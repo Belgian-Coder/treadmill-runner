@@ -7,10 +7,26 @@ namespace TreadmillRunner.Gateway.Garmin;
 public sealed class GarminActivityAdapterOptions
 {
   public const string SectionName = "GarminActivityUpload";
-  public string PythonExecutable { get; set; } = "python";
+  public string PythonExecutable { get; set; } = "tools/garmin/runtime/python.exe";
   public string AdapterScriptPath { get; set; } = "tools/garmin/garmin_activity_adapter.py";
   public string? PythonPath { get; set; }
   public int TimeoutSeconds { get; set; } = 45;
+}
+
+public static class GarminAdapterReadinessStates
+{
+  public const string Ready = "Ready";
+  public const string RuntimeMissing = "RuntimeMissing";
+  public const string DependencyMissing = "DependencyMissing";
+  public const string AdapterInvalid = "AdapterInvalid";
+  public const string Unavailable = "Unavailable";
+}
+
+public sealed record GarminAdapterReadiness(string State, string Message, bool CanConnect);
+
+public interface IGarminActivityAdapterReadiness
+{
+  Task<GarminAdapterReadiness> CheckAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record GarminAdapterMessage(
@@ -53,7 +69,11 @@ public sealed class GarminAdapterConnectProcess : IGarminAdapterConnectProcess
   }
   public async ValueTask DisposeAsync()
   {
-    try { _process.StandardInput.Close(); } catch (InvalidOperationException) { }
+    try { _process.StandardInput.Close(); }
+    catch (InvalidOperationException)
+    {
+      // The adapter may have already closed stdin while it was completing or failing.
+    }
     if (!_process.HasExited) { _process.Kill(entireProcessTree: true); await _process.WaitForExitAsync(); }
     _process.Dispose();
   }
@@ -100,8 +120,65 @@ public sealed class GarminAdapterConnectProcess : IGarminAdapterConnectProcess
 
 public sealed class PythonGarminActivityAdapter(
   IOptionsMonitor<GarminActivityAdapterOptions> options,
-  IHostEnvironment environment) : IGarminActivityAdapter
+  IHostEnvironment environment) : IGarminActivityAdapter, IGarminActivityAdapterReadiness
 {
+  public async Task<GarminAdapterReadiness> CheckAsync(CancellationToken cancellationToken = default)
+  {
+    GarminActivityAdapterOptions current = options.CurrentValue;
+    string script;
+    string executable;
+    try
+    {
+      script = ResolveContentPath(current.AdapterScriptPath, nameof(current.AdapterScriptPath));
+      executable = ResolveExecutable(current.PythonExecutable);
+    }
+    catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+    {
+      return Invalid("The Garmin activity adapter configuration is invalid.");
+    }
+
+    if (!File.Exists(script))
+      return Invalid("The Garmin activity adapter is missing from this release.");
+    if (IsPathLike(executable) && !File.Exists(executable))
+      return new(GarminAdapterReadinessStates.RuntimeMissing, "The bundled Garmin adapter runtime is missing. Install or repair the current signed release.", false);
+
+    Process? process = null;
+    try
+    {
+      process = Start(current, script, executable);
+      await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { operation = "probe" }).AsMemory(), cancellationToken);
+      await process.StandardInput.FlushAsync(cancellationToken);
+      process.StandardInput.Close();
+      GarminAdapterMessage response = await GarminAdapterConnectProcess.ReadMessageAsync(process, Timeout(current), cancellationToken);
+      await process.WaitForExitAsync(cancellationToken).WaitAsync(Timeout(current), cancellationToken);
+      if (string.Equals(response.State, "ready", StringComparison.OrdinalIgnoreCase) && process.ExitCode == 0)
+        return new(GarminAdapterReadinessStates.Ready, "Garmin activity upload is ready to connect.", true);
+      if (string.Equals(response.Kind, "provider-unavailable", StringComparison.OrdinalIgnoreCase))
+        return new(GarminAdapterReadinessStates.DependencyMissing, "The Garmin adapter dependency is missing. Install or repair the current signed release.", false);
+      return Invalid("The Garmin activity adapter failed its local readiness check.");
+    }
+    catch (GarminAdapterAmbiguousResultException)
+    {
+      return Invalid("The Garmin activity adapter returned an invalid readiness response.");
+    }
+    catch (TimeoutException)
+    {
+      return new(GarminAdapterReadinessStates.Unavailable, "The Garmin activity adapter did not finish its readiness check. Try again or repair the signed release.", false);
+    }
+    catch (GarminAdapterUnavailableException)
+    {
+      return new(GarminAdapterReadinessStates.RuntimeMissing, "The Garmin adapter runtime could not be started. Install or repair the current signed release.", false);
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+    {
+      return new(GarminAdapterReadinessStates.Unavailable, "The Garmin activity adapter is unavailable. Try again or repair the signed release.", false);
+    }
+    finally
+    {
+      if (process is not null) await StopAsync(process);
+    }
+  }
+
   public async Task<IGarminAdapterConnectProcess> BeginConnectAsync(string email, string password, CancellationToken cancellationToken)
   {
     GarminActivityAdapterOptions current = options.CurrentValue;
@@ -144,13 +221,17 @@ public sealed class PythonGarminActivityAdapter(
 
   private Process Start(GarminActivityAdapterOptions current)
   {
-    string script = Path.IsPathRooted(current.AdapterScriptPath)
-      ? current.AdapterScriptPath
-      : Path.GetFullPath(current.AdapterScriptPath, environment.ContentRootPath);
+    string script = ResolveContentPath(current.AdapterScriptPath, nameof(current.AdapterScriptPath));
     if (!File.Exists(script)) throw new GarminAdapterUnavailableException("The unsupported Garmin activity adapter is not installed.");
+    string executable = ResolveExecutable(current.PythonExecutable);
+    return Start(current, script, executable);
+  }
+
+  private Process Start(GarminActivityAdapterOptions current, string script, string executable)
+  {
     var start = new ProcessStartInfo
     {
-      FileName = current.PythonExecutable,
+      FileName = executable,
       RedirectStandardInput = true,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
@@ -160,7 +241,7 @@ public sealed class PythonGarminActivityAdapter(
     };
     start.ArgumentList.Add("-B");
     start.ArgumentList.Add(script);
-    if (!string.IsNullOrWhiteSpace(current.PythonPath)) start.Environment["PYTHONPATH"] = current.PythonPath;
+    if (!string.IsNullOrWhiteSpace(current.PythonPath)) start.Environment["PYTHONPATH"] = ResolvePythonPath(current.PythonPath);
     try
     {
       return Process.Start(start) ?? throw new GarminAdapterUnavailableException("The Garmin adapter process could not start.");
@@ -171,6 +252,36 @@ public sealed class PythonGarminActivityAdapter(
       throw new GarminAdapterUnavailableException("The unsupported Garmin adapter runtime is unavailable.", exception);
     }
   }
+
+  private string ResolveContentPath(string configuredPath, string optionName)
+  {
+    if (string.IsNullOrWhiteSpace(configuredPath)) throw new ArgumentException("A configured path is required.", optionName);
+    if (Path.IsPathRooted(configuredPath)) return Path.GetFullPath(configuredPath);
+    string contentRoot = Path.GetFullPath(environment.ContentRootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    string resolved = Path.GetFullPath(configuredPath, environment.ContentRootPath);
+    if (!resolved.StartsWith(contentRoot, StringComparison.OrdinalIgnoreCase))
+      throw new ArgumentException("A relative adapter path must remain under the application content root.", optionName);
+    return resolved;
+  }
+
+  private string ResolveExecutable(string configuredExecutable)
+  {
+    if (string.IsNullOrWhiteSpace(configuredExecutable)) throw new ArgumentException("A configured executable is required.", nameof(configuredExecutable));
+    return IsPathLike(configuredExecutable)
+      ? ResolveContentPath(configuredExecutable, nameof(configuredExecutable))
+      : configuredExecutable;
+  }
+
+  private string ResolvePythonPath(string configuredPythonPath) => string.Join(
+    Path.PathSeparator,
+    configuredPythonPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .Select(path => ResolveContentPath(path, nameof(configuredPythonPath))));
+
+  private static bool IsPathLike(string value) => Path.IsPathRooted(value) ||
+    value.Contains(Path.DirectorySeparatorChar) || value.Contains(Path.AltDirectorySeparatorChar);
+
+  private static GarminAdapterReadiness Invalid(string message) =>
+    new(GarminAdapterReadinessStates.AdapterInvalid, message, false);
 
   private static TimeSpan Timeout(GarminActivityAdapterOptions current) => TimeSpan.FromSeconds(Math.Clamp(current.TimeoutSeconds, 10, 90));
 

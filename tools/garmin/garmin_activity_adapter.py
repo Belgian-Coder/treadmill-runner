@@ -33,7 +33,7 @@ def read_message() -> dict[str, Any]:
 def classify_error(error: Exception, *, upload_started: bool) -> dict[str, Any]:
     name = type(error).__name__
     message = str(error)
-    if isinstance(error, ModuleNotFoundError) and error.name == "garminconnect":
+    if isinstance(error, ModuleNotFoundError):
         return {"state": "failed", "kind": "provider-unavailable", "message": "The unsupported Garmin adapter dependency is not installed."}
     if "Authentication" in name or "MFA" in name or "401" in message or "403" in message:
         return {"state": "failed", "kind": "authentication", "message": "Garmin authentication was rejected or expired."}
@@ -117,11 +117,22 @@ def upload(request: dict[str, Any]) -> None:
         emit(classify_error(error, upload_started=upload_started))
 
 
+def probe() -> None:
+    """Import the pinned provider without contacting Garmin or reading secrets."""
+    from garminconnect import Garmin
+
+    if Garmin is None:  # pragma: no cover - defensive import contract check
+        raise RuntimeError("The Garmin adapter dependency is invalid.")
+    emit({"state": "ready"})
+
+
 def main() -> int:
     try:
         request = read_message()
         operation = request.get("operation")
-        if operation == "connect":
+        if operation == "probe":
+            probe()
+        elif operation == "connect":
             connect(request)
         elif operation == "upload":
             upload(request)

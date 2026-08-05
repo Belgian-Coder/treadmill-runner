@@ -27,7 +27,9 @@ public sealed record DeviceTelemetrySnapshot(
   HeartRateDeviceKind? SelectedHeartRateDeviceKind = null,
   HeartRateDeviceFamily? SelectedHeartRateDeviceFamily = null,
   long HeartRateSelectionGeneration = 0,
-  string? HeartRateSelectionReason = null)
+  string? HeartRateSelectionReason = null,
+  byte? SelectedHeartRateBatteryPercent = null,
+  DateTimeOffset? SelectedHeartRateBatteryObservedAt = null)
 {
   public TimeSpan? TreadmillAge => TreadmillTelemetry is null
     ? null

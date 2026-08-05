@@ -75,17 +75,30 @@ builder.Services.AddSingleton<Microsoft.EntityFrameworkCore.IDbContextFactory<Tr
 
   return TreadmillRunnerDatabase.CreateFactory(databasePath);
 });
+builder.Services.AddSingleton<IDatabaseIntegrityChecker, DatabaseIntegrityChecker>();
+builder.Services.AddSingleton<IVerifiedDatabaseBackupService, VerifiedDatabaseBackupService>();
+builder.Services.AddSingleton<IDatabaseIntegrityStatusStore, DatabaseIntegrityStatusStore>();
+builder.Services.AddSingleton<IDatabaseMaintenanceLeaseProvider, LiveSessionDatabaseMaintenanceLeaseProvider>();
+builder.Services.AddSingleton<DatabaseIntegrityCoordinator>();
+builder.Services.AddSingleton<IDatabaseIntegrityCoordinator>(static services =>
+  services.GetRequiredService<DatabaseIntegrityCoordinator>());
+// This startup pass intentionally runs before any background worker that writes the database.
+builder.Services.AddHostedService(static services => services.GetRequiredService<DatabaseIntegrityCoordinator>());
 builder.Services.AddScoped<IProfileStore, ProfileStore>();
 builder.Services.AddScoped<IWorkoutStore, WorkoutStore>();
+builder.Services.AddScoped<IWorkoutSetImportStore, WorkoutSetImportStore>();
 builder.Services.AddScoped<ICalendarStore, CalendarStore>();
 builder.Services.AddScoped<IWorkoutProgramStore, WorkoutProgramStore>();
 builder.Services.AddScoped<IOperationReceiptStore, OperationReceiptStore>();
 builder.Services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+builder.Services.AddScoped<IBleReliabilityStore, BleReliabilityStore>();
 builder.Services.AddSingleton<IGarminStore, GarminStore>();
 builder.Services.AddSingleton<IGarminWatchBindingStore, GarminWatchBindingStore>();
 builder.Services.AddSingleton<IGarminActivityUploadStore, GarminActivityUploadStore>();
 builder.Services.Configure<GarminActivityAdapterOptions>(builder.Configuration.GetSection(GarminActivityAdapterOptions.SectionName));
-builder.Services.AddSingleton<IGarminActivityAdapter, PythonGarminActivityAdapter>();
+builder.Services.AddSingleton<PythonGarminActivityAdapter>();
+builder.Services.AddSingleton<IGarminActivityAdapter>(static services => services.GetRequiredService<PythonGarminActivityAdapter>());
+builder.Services.AddSingleton<IGarminActivityAdapterReadiness>(static services => services.GetRequiredService<PythonGarminActivityAdapter>());
 builder.Services.AddSingleton<GarminActivityConnectionService>();
 builder.Services.AddSingleton<GarminActivityUploadWorker>();
 builder.Services.AddHostedService(static services => services.GetRequiredService<GarminActivityUploadWorker>());
@@ -124,6 +137,8 @@ builder.Services.AddHttpClient("TreadmillRunnerUpdates", client =>
 });
 builder.Services.AddHostedService<UpdateCheckWorker>();
 builder.Services.AddSingleton<IWorkoutImportPreviewStore, WorkoutImportPreviewStore>();
+builder.Services.AddSingleton<WorkoutSetImportPreviewStore>();
+builder.Services.AddSingleton<TreadmillWorkoutBundleImporter>();
 builder.Services.AddSingleton<IWorkoutImporter, NativeWorkoutJsonImporter>();
 builder.Services.AddSingleton<IWorkoutImporter, QDomyosWorkoutXmlImporter>();
 builder.Services.AddSingleton<IWorkoutImporter, GarminFitWorkoutImporter>();
@@ -160,7 +175,8 @@ app.Use(async (context, next) =>
     !HttpMethods.IsHead(context.Request.Method) &&
     !HttpMethods.IsOptions(context.Request.Method);
   bool maintenanceRequest = context.Request.Path.Equals("/api/operations/restore/confirm", StringComparison.OrdinalIgnoreCase) ||
-    context.Request.Path.Equals("/api/updates/activate", StringComparison.OrdinalIgnoreCase);
+    context.Request.Path.Equals("/api/updates/activate", StringComparison.OrdinalIgnoreCase) ||
+    context.Request.Path.Equals("/api/operations/database/check", StringComparison.OrdinalIgnoreCase);
   if (mutation && maintenanceRequest)
   {
     if (maintenance.IsActive)
@@ -229,10 +245,12 @@ app.MapBleDiagnostics();
 app.MapDeviceEnrollments();
 app.MapProfilePlanning();
 app.MapWorkoutPlanning();
+app.MapWorkoutSetPlanning();
 app.MapCalendarPlanning();
 app.MapWorkoutPrograms();
 app.MapLiveSessions(includeSimulatorRoutes: app.Environment.IsDevelopment());
 app.MapDataRecovery();
+app.MapDatabaseIntegrity();
 app.MapUpdates();
 app.MapGarmin();
 app.MapGarminWatch();

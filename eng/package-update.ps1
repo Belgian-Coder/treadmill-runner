@@ -39,6 +39,8 @@ foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migratio
         throw "The publish input is missing $required."
     }
 }
+& (Join-Path $PSScriptRoot 'test-garmin-adapter-runtime.ps1') -PublishPath $resolvedPublish
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Garmin adapter validation failed.' }
 $gatewayVersion = [System.Reflection.AssemblyName]::GetAssemblyName(
     (Join-Path $resolvedPublish 'TreadmillRunner.Gateway.dll')).Version
 if ($gatewayVersion.Major -ne ([Version]$Version).Major -or

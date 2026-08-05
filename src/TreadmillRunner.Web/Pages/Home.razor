@@ -278,6 +278,24 @@
                             <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(recommended)">Select</button>
                         }
                     </section>
+
+                    @if (RecentReusableRuns.Count > 0)
+                    {
+                        <section class="quick-reuse" aria-label="Reuse a recent workout">
+                            <div class="workout-picker__heading"><strong>Run again</strong><span>Recent completed workouts</span></div>
+                            <div class="quick-reuse__list">
+                                @foreach (WorkoutReuseView recent in RecentReusableRuns.Take(3))
+                                {
+                                    <button class="quick-reuse__button" type="button"
+                                        aria-pressed="@(selectedRevisionId == recent.WorkoutRevisionId ? "true" : "false")"
+                                        @onclick="() => SelectRecentWorkoutAsync(recent)">
+                                        <span><strong>@recent.Name</strong><small>@recent.LastCompletedAtUtc.ToLocalTime().ToString("d MMM")</small></span>
+                                        <small>@recent.LastActualDuration.ToString(@"h\:mm\:ss") · completed @recent.CompletionCount×</small>
+                                    </button>
+                                }
+                            </div>
+                        </section>
+                    }
                 }
 
                 <section class="workout-picker" aria-label="Choose workout">
@@ -407,6 +425,7 @@
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
     private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
     private IReadOnlyList<CalendarSeriesView> calendarSeries = Array.Empty<CalendarSeriesView>();
+    private IReadOnlyList<WorkoutReuseView> reusableWorkouts = Array.Empty<WorkoutReuseView>();
     private CalendarRangeView? planningCalendar;
     private Guid? selectedProfileId;
     private Guid? selectedRevisionId;
@@ -473,6 +492,7 @@
             (program.Description?.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
         .OrderBy(static program => program.Name, StringComparer.CurrentCultureIgnoreCase)
         .ToArray();
+    private IReadOnlyList<WorkoutReuseView> RecentReusableRuns => reusableWorkouts;
     private IReadOnlyList<CalendarOptionView> TodayCalendarOptions => planningCalendar?.Days
         .FirstOrDefault(day => day.Date == DateOnly.FromDateTime(DateTime.Today))?.Options ?? [];
     private bool CalendarNeedsChoice => TodayCalendarOptions.Count > 1 && TodayCalendarOptions.All(static option => !option.IsSelected);
@@ -490,6 +510,7 @@
             if (CalendarNeedsChoice) return null;
             WorkoutProgramView? active = programs.FirstOrDefault(static program => program.Run is not null && !program.IsComplete && program.NextItemId is not null);
             if (active is not null) return ProgramChoice(active);
+            if (RecentReusableRuns.FirstOrDefault() is { } recent) return ChoiceFromReuse(recent);
             return ManualWorkout is { } manual ? ChoiceFromSummary(manual) with { Context = "Manual fallback", SelectionSource = "Manual" } : null;
         }
     }
@@ -638,6 +659,27 @@
         await RefreshPreflightAsync();
     }
 
+    private async Task SelectRecentWorkoutAsync(WorkoutReuseView reusable)
+    {
+        await SelectWorkoutAsync(ChoiceFromReuse(reusable));
+        actionStatus = $"{reusable.Name} selected again.";
+    }
+
+    private static WorkoutChoice ChoiceFromReuse(WorkoutReuseView reusable)
+    {
+        string stats = reusable.PlannedDurationMinutes is { } minutes
+            ? $"{minutes:0.#} min · {reusable.ExpandedStepCount} steps"
+            : $"Mixed goals · {reusable.ExpandedStepCount} steps";
+        return new WorkoutChoice(
+            reusable.WorkoutRevisionId,
+            reusable.Name,
+            reusable.Description,
+            $"Last completed {reusable.LastCompletedAtUtc.ToLocalTime():d MMM}",
+            stats,
+            DateOnly.FromDateTime(reusable.LastCompletedAtUtc.LocalDateTime),
+            "Library");
+    }
+
     private async Task SelectManualRunAsync()
     {
         WorkoutSummaryView? manual = ManualWorkout;
@@ -682,6 +724,7 @@
             planningCalendar = null;
             calendarSeries = Array.Empty<CalendarSeriesView>();
             programs = Array.Empty<WorkoutProgramView>();
+            reusableWorkouts = Array.Empty<WorkoutReuseView>();
             return;
         }
 
@@ -693,6 +736,8 @@
             $"api/planning/calendar/series?profileId={profileId}") ?? Array.Empty<CalendarSeriesView>();
         programs = await Http.GetFromJsonAsync<WorkoutProgramView[]>(
             $"api/planning/programs?profileId={profileId}") ?? Array.Empty<WorkoutProgramView>();
+        reusableWorkouts = await Http.GetFromJsonAsync<WorkoutReuseView[]>(
+            $"api/planning/workouts/reuse?profileId={profileId}&take=3") ?? Array.Empty<WorkoutReuseView>();
     }
 
     private async Task ApplyRecommendationAsync()

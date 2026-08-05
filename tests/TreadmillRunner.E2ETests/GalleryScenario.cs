@@ -111,7 +111,42 @@ public sealed record GalleryScenario(
   {
     await page.RouteAsync("**/api/devices/enrollments", route => FulfillJsonAsync(route, DeviceEnrollments()));
     await page.RouteAsync("**/api/devices/status*", route => FulfillJsonAsync(route, DeviceStatus()));
+    await page.RouteAsync("**/api/devices/reliability*", route => FulfillJsonAsync(route, DeviceReliability()));
+    await page.RouteAsync("**/api/planning/workouts/reuse*", route => FulfillJsonAsync(route, WorkoutReuse()));
+    await page.RouteAsync("**/api/planning/workout-sets/import/preview", route => FulfillJsonAsync(route, WorkoutSetPreview()));
     await page.RouteAsync("**/api/updates/status", route => FulfillJsonAsync(route, UpdateStatus()));
+    await page.RouteAsync("**/api/operations/database/status", route => FulfillJsonAsync(route, DatabaseIntegrityStatus()));
+    await page.RouteAsync("**/api/operations/access**", async route =>
+    {
+      string path = new Uri(route.Request.Url).AbsolutePath;
+      if (path.Contains("/qr/", StringComparison.Ordinal))
+      {
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 200,
+          ContentType = "image/svg+xml",
+          Body = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'><rect width='21' height='21' fill='white'/><g fill='#071f27'><path d='M1 1h7v7H1zm12 0h7v7h-7zM1 13h7v7H1z'/><path d='M10 2h2v2h-2zm0 4h2v3h-2zm3 4h2v2h-2zm3-1h3v2h-3zm-6 4h3v2h-3zm5 1h2v3h-2zm3-2h2v2h-2zm-9 5h2v3H9zm3 0h2v2h-2zm5 1h3v2h-3z'/></g><g fill='white'><path d='M3 3h3v3H3zm12 0h3v3h-3zM3 15h3v3H3z'/></g></svg>",
+        });
+        return;
+      }
+
+      await FulfillJsonAsync(route, new
+      {
+        available = true,
+        preferredCandidateId = "gallery-lan",
+        candidates = new[]
+        {
+          new
+          {
+            id = "gallery-lan",
+            label = "Private Wi-Fi · 192.168.1.20",
+            url = "http://192.168.1.20:5180/",
+            isSecure = false,
+          },
+        },
+        message = "Scan from a device on the same private Wi-Fi network.",
+      });
+    });
     await page.RouteAsync("**/api/integrations/garmin/profiles/*/status", route =>
       FulfillJsonAsync(route, GarminStatus(new Uri(route.Request.Url).AbsolutePath)));
     await page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/status", route =>
@@ -129,6 +164,9 @@ public sealed record GalleryScenario(
         lastSuccessAtUtc = DateTimeOffset.Parse("2026-08-04T07:02:00Z"),
         lastError = "One upload outcome needs review before dismissal.",
         version = 3,
+        adapterState = "Ready",
+        adapterMessage = "Garmin activity upload is ready to connect.",
+        canConnect = true,
       }));
     await page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/jobs", route =>
       FulfillJsonAsync(route, new[]
@@ -210,6 +248,13 @@ public sealed record GalleryScenario(
       """
       {"schemaVersion":1,"title":"Imported 5K tempo preview","description":"A deterministic gallery import preview.","blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":3600000000},"speed":{"kind":"fixed","kilometersPerHour":5.0},"incline":{"kind":"fixed","percent":0.5},"cue":"Warm up","notes":null},{"kind":"step","goal":{"kind":"time","durationTicks":6000000000},"speed":{"kind":"fixed","kilometersPerHour":7.5},"incline":{"kind":"fixed","percent":1.0},"cue":"Tempo","notes":null},{"kind":"step","goal":{"kind":"time","durationTicks":3000000000},"speed":{"kind":"fixed","kilometersPerHour":4.5},"incline":{"kind":"fixed","percent":0.5},"cue":"Cool down","notes":null}]}
       """),
+  };
+
+  public static FilePayload GeneratedSetFile() => new()
+  {
+    Name = "first-5k-treadmill-workout-v4.zip",
+    MimeType = "application/zip",
+    Buffer = "deterministic intercepted gallery bundle"u8.ToArray(),
   };
 
   private static async Task<JsonElement> CreateProfileAsync(
@@ -437,7 +482,7 @@ public sealed record GalleryScenario(
       reportedCapabilities = (object?)null,
       heartRateSources = new object[]
       {
-        new { enrollmentId = polarId, displayName = "Polar H10 A1B2C3D4", kind = 0, family = 0, state = 6, connectionGeneration = 7, beatsPerMinute = 143, observedAt = now.AddMilliseconds(-120), fault = (string?)null },
+        new { enrollmentId = polarId, displayName = "Polar H10 A1B2C3D4", kind = 0, family = 0, state = 6, connectionGeneration = 7, beatsPerMinute = 143, observedAt = now.AddMilliseconds(-120), fault = (string?)null, batteryPercent = 86, batteryObservedAt = now.AddMinutes(-2) },
         new { enrollmentId = garminId, displayName = "Garmin Fenix 8 HR Broadcast", kind = 1, family = 1, state = 6, connectionGeneration = 5, beatsPerMinute = 141, observedAt = now.AddMilliseconds(-350), fault = (string?)null },
       },
       selectedHeartRateEnrollmentId = polarId,
@@ -445,8 +490,70 @@ public sealed record GalleryScenario(
       selectedHeartRateDeviceFamily = 0,
       heartRateSelectionGeneration = 3,
       heartRateSelectionReason = "Polar H10 is the preferred fresh sensor for Marc.",
+      selectedHeartRateBatteryPercent = 86,
+      selectedHeartRateBatteryObservedAt = now.AddMinutes(-2),
     };
   }
+
+  private object DeviceReliability()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    return new
+    {
+      capturedAtUtc = now,
+      windowStartedAtUtc = now.AddDays(-7),
+      windowDays = 7,
+      devices = new object[]
+      {
+        new { enrollmentId = Guid.Parse("9d8764d1-0113-4728-8e5a-b18a8064f836"), displayName = "Horizon Omega Z", role = "Treadmill", currentState = "Ready", connectionGeneration = 4, lastTelemetryAtUtc = now.AddMilliseconds(-180), incidentCount = 1, recoveredIncidentCount = 1, currentOutageStartedAtUtc = (DateTimeOffset?)null, currentFailedAttemptCount = 0, lastRecoverySeconds = 4.2, longestRecoverySeconds = 4.2, lastFailureKind = "NativeDisconnected", lastSanitizedFault = "Bluetooth connection ended.", batteryPercent = (byte?)null, batteryObservedAtUtc = (DateTimeOffset?)null },
+        new { enrollmentId = Guid.Parse("a0db1f20-1d27-435a-901b-4610f60481f4"), displayName = "Polar H10 A1B2C3D4", role = "HeartRate", currentState = "Ready", connectionGeneration = 7, lastTelemetryAtUtc = now.AddMilliseconds(-120), incidentCount = 2, recoveredIncidentCount = 2, currentOutageStartedAtUtc = (DateTimeOffset?)null, currentFailedAttemptCount = 0, lastRecoverySeconds = 2.1, longestRecoverySeconds = 5.8, lastFailureKind = "TelemetrySilent", lastSanitizedFault = "Heart-rate telemetry became silent.", batteryPercent = (byte?)86, batteryObservedAtUtc = now.AddMinutes(-2) },
+      },
+    };
+  }
+
+  private object[] WorkoutReuse() =>
+  [
+    new { workoutId = FeaturedWorkoutId, workoutRevisionId = FeaturedWorkoutRevisionId, name = FeaturedWorkoutName, description = "A progressive five-step run.", expandedStepCount = 5, plannedDurationMinutes = 25.0, lastCompletedAtUtc = DateTimeOffset.UtcNow.AddDays(-1), lastActualDuration = "00:34:12", completionCount = 3 },
+    new { workoutId = Guid.Parse("5d4d90d9-a6e9-4372-93a5-a40bf0ba5d81"), workoutRevisionId = Guid.Parse("ed8ecbb4-4dab-4ccd-8275-596a8f9a9f99"), name = "Recovery walk", description = "An easy local recovery.", expandedStepCount = 1, plannedDurationMinutes = 20.0, lastCompletedAtUtc = DateTimeOffset.UtcNow.AddDays(-5), lastActualDuration = "00:18:05", completionCount = 2 },
+  ];
+
+  private static object WorkoutSetPreview() => new
+  {
+    previewId = Guid.Parse("67062a9a-380a-431a-a795-3e92fae31fcf"),
+    sourceSha256 = new string('d', 64),
+    fileName = "first-5k-treadmill-workout-v4.zip",
+    planName = "First 5K · six-week builder",
+    category = "5K",
+    toolVersion = "4.2.0",
+    slotCount = 18,
+    variantCount = 54,
+    expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(15),
+    warnings = Array.Empty<string>(),
+    strategies = new[] { new { name = "Default", substitutions = 0 }, new { name = "PreferHeartRate", substitutions = 12 }, new { name = "PreferFixed", substitutions = 18 } },
+    slots = new[]
+    {
+      new { canonicalSlot = "W01-S01", week = 1, session = 1, variants = new[] { new { sessionId = "w01s01-primary", variant = "primary", title = "Easy foundation", controlMode = "adaptive", selectionRule = "default" }, new { sessionId = "w01s01-hr", variant = "hr-alternative", title = "Easy foundation · HR", controlMode = "heart-rate", selectionRule = "prefer-heart-rate" } } },
+      new { canonicalSlot = "W01-S02", week = 1, session = 2, variants = new[] { new { sessionId = "w01s02-primary", variant = "primary", title = "Short intervals", controlMode = "adaptive", selectionRule = "default" }, new { sessionId = "w01s02-fixed", variant = "fixed-fallback", title = "Short intervals · fixed", controlMode = "fixed", selectionRule = "prefer-fixed" } } },
+      new { canonicalSlot = "W01-S03", week = 1, session = 3, variants = new[] { new { sessionId = "w01s03-primary", variant = "primary", title = "Long easy run", controlMode = "adaptive", selectionRule = "default" } } },
+    },
+  };
+
+  private static object DatabaseIntegrityStatus() => new
+  {
+    state = "Healthy",
+    message = "The database passed quick and full validation, and a verified last-known-good backup was retained.",
+    updatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+    lastQuickCheckAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+    lastFullCheckAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+    lastHealthyAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+    lastMaintenanceAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2),
+    lastBackupAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1),
+    lastBackupFileName = "integrity-verified.trb",
+    lastBackupSha256 = new string('a', 64),
+    nextCheckAtUtc = DateTimeOffset.UtcNow.AddHours(23),
+    recoveryRequired = false,
+    issues = Array.Empty<string>(),
+  };
 
   private static object UpdateStatus() => new
   {

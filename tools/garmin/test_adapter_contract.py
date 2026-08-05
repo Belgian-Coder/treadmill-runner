@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import sys
+from types import SimpleNamespace
 
-from garmin_activity_adapter import classify_error, interpret_import_result
+from unittest.mock import patch
+
+from garmin_activity_adapter import classify_error, interpret_import_result, probe
 
 
 class ImportDispositionTests(unittest.TestCase):
@@ -34,6 +38,14 @@ class ImportDispositionTests(unittest.TestCase):
         error = ModuleNotFoundError("No module named garminconnect", name="garminconnect")
         result = classify_error(error, upload_started=False)
         self.assertEqual("provider-unavailable", result["kind"])
+        transitive = classify_error(ModuleNotFoundError("No module named curl_cffi", name="curl_cffi"), upload_started=False)
+        self.assertEqual("provider-unavailable", transitive["kind"])
+
+    @patch("garmin_activity_adapter.emit")
+    def test_probe_imports_dependency_without_contacting_provider(self, emit) -> None:
+        with patch.dict(sys.modules, {"garminconnect": SimpleNamespace(Garmin=object)}):
+            probe()
+        emit.assert_called_once_with({"state": "ready"})
 
 
 if __name__ == "__main__":

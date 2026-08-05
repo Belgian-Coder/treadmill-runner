@@ -1,4 +1,5 @@
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Protocols.Exports;
 
@@ -10,6 +11,7 @@ public sealed class GarminActivityUploadWorker(
   IGarminActivityAdapter adapter,
   GarminActivityConnectionService connections,
   TimeProvider timeProvider,
+  IApplicationMaintenanceState maintenanceState,
   ILogger<GarminActivityUploadWorker> logger) : BackgroundService
 {
   private readonly SemaphoreSlim _wake = new(0, 1);
@@ -17,14 +19,24 @@ public sealed class GarminActivityUploadWorker(
   public void Wake()
   {
     try { _wake.Release(); }
-    catch (SemaphoreFullException) { }
+    catch (SemaphoreFullException)
+    {
+      // One pending wake signal is sufficient; the durable queue is reconciled every pass.
+    }
   }
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
     while (!stoppingToken.IsCancellationRequested)
     {
-      try { await DrainAsync(stoppingToken); }
+      try
+      {
+        if (maintenanceState.TryBeginMutation())
+        {
+          try { await DrainAsync(stoppingToken); }
+          finally { maintenanceState.EndMutation(); }
+        }
+      }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
       catch (Exception exception) { logger.LogError(exception, "The unsupported Garmin activity upload worker pass failed."); }
       try { await _wake.WaitAsync(TimeSpan.FromMinutes(1), stoppingToken); }

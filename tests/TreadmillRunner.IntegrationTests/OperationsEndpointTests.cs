@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using TreadmillRunner.Gateway.Operations;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -20,13 +22,22 @@ public sealed class OperationsEndpointTests(PlanningGatewayFactory factory) :
     Assert.True(backup.Length > 16);
     Assert.Equal("SQLite format 3\0"u8.ToArray(), backup[..16]);
 
-    byte[] diagnostics = await client.GetByteArrayAsync("/api/operations/diagnostics");
+    using HttpResponseMessage diagnosticResponse = await client.GetAsync("/api/operations/diagnostics");
+    Assert.Contains("no-store", diagnosticResponse.Headers.CacheControl?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    byte[] diagnostics = await diagnosticResponse.Content.ReadAsByteArrayAsync();
     Assert.InRange(diagnostics.Length, 1, 5 * 1024 * 1024);
     using var archive = new ZipArchive(new MemoryStream(diagnostics), ZipArchiveMode.Read);
     ZipArchiveEntry entry = Assert.Single(archive.Entries);
     Assert.Equal("diagnostics.json", entry.FullName);
     using JsonDocument payload = await JsonDocument.ParseAsync(entry.Open());
-    Assert.Equal(1, payload.RootElement.GetProperty("schemaVersion").GetInt32());
+    Assert.Equal(2, payload.RootElement.GetProperty("schemaVersion").GetInt32());
+
+    using HttpResponseMessage verifiedBackupResponse = await client.GetAsync("/api/operations/database/verified-backup");
+    Assert.Equal(HttpStatusCode.OK, verifiedBackupResponse.StatusCode);
+    Assert.Contains("no-store", verifiedBackupResponse.Headers.CacheControl?.ToString() ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    byte[] verifiedBackup = await verifiedBackupResponse.Content.ReadAsByteArrayAsync();
+    Assert.True(verifiedBackup.Length > 16);
+    Assert.Equal("SQLite format 3\0"u8.ToArray(), verifiedBackup[..16]);
 
     using HttpResponseMessage status = await client.GetAsync("/api/updates/status");
     Assert.Equal(HttpStatusCode.OK, status.StatusCode);
@@ -56,11 +67,31 @@ public sealed class OperationsEndpointTests(PlanningGatewayFactory factory) :
       new { token, confirmation = "restore" });
     Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
 
+    IApplicationMaintenanceState maintenance = factory.Services.GetRequiredService<IApplicationMaintenanceState>();
+    Assert.True(maintenance.TryBeginMutation());
+    try
+    {
+      using HttpResponseMessage busy = await client.PostAsJsonAsync(
+        "/api/operations/restore/confirm",
+        new { token, confirmation = "RESTORE" });
+      Assert.Equal(HttpStatusCode.Conflict, busy.StatusCode);
+    }
+    finally
+    {
+      maintenance.EndMutation();
+    }
+
     using HttpResponseMessage restored = await client.PostAsJsonAsync(
       "/api/operations/restore/confirm",
       new { token, confirmation = "RESTORE" });
-    Assert.Equal(HttpStatusCode.OK, restored.StatusCode);
-    Assert.True((await restored.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("restored").GetBoolean());
+    Assert.True(
+      restored.StatusCode == HttpStatusCode.OK,
+      $"Restore failed with {restored.StatusCode}: {await restored.Content.ReadAsStringAsync()}");
+    JsonElement restoredPayload = await restored.Content.ReadFromJsonAsync<JsonElement>();
+    Assert.True(restoredPayload.GetProperty("restored").GetBoolean());
+    Assert.Contains(
+      restoredPayload.GetProperty("databaseIntegrity").GetProperty("state").GetString(),
+      new[] { "Healthy", "HealthyWithBackupWarning" });
 
     using HttpResponseMessage replay = await client.PostAsJsonAsync(
       "/api/operations/restore/confirm",

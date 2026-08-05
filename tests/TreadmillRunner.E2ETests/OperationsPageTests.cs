@@ -9,6 +9,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
   [Trait("Category", "Browser")]
   public async Task Operations_page_progresses_available_stage_and_two_step_activation()
   {
+    await InstallAccessRoutesAsync();
     string state = "Available";
     await Page.RouteAsync("**/api/updates/**", async route =>
     {
@@ -58,6 +59,14 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
   public async Task Operations_page_exposes_bounded_recovery_and_fail_closed_update_controls()
   {
     await Page.SetViewportSizeAsync(440, 956);
+    await Page.AddInitScriptAsync("""
+      window.__copiedAppAddress = null;
+      Object.defineProperty(Navigator.prototype, 'clipboard', {
+        configurable: true,
+        get: () => ({ writeText: async value => window.__copiedAppAddress = value })
+      });
+      """);
+    await InstallAccessRoutesAsync();
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions
     {
       WaitUntil = WaitUntilState.NetworkIdle,
@@ -65,6 +74,16 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operations", Exact = true }))
       .ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Open on another device", Exact = true }))
+      .ToBeVisibleAsync();
+    await Expect(Page.Locator(".app-access-qr")).ToHaveAttributeAsync("src", new System.Text.RegularExpressions.Regex("phone-secure$"));
+    await Expect(Page.Locator(".app-access-url")).ToHaveTextAsync("https://treadmillrunner.home/");
+    await Page.GetByLabel("Shared app address", new() { Exact = true }).SelectOptionAsync("phone-http");
+    await Expect(Page.Locator(".app-access-qr")).ToHaveAttributeAsync("src", new System.Text.RegularExpressions.Regex("phone-http$"));
+    await Expect(Page.Locator(".app-access-url")).ToHaveTextAsync("http://192.168.1.20:5180/");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Copy address", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Address copied.", new() { Exact = true })).ToBeVisibleAsync();
+    Assert.Equal("http://192.168.1.20:5180/", await Page.EvaluateAsync<string>("window.__copiedAppAddress"));
     await Page.GetByText("Backup and diagnostics", new() { Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Download full backup" }))
       .ToHaveAttributeAsync("href", "/api/operations/backup");
@@ -76,17 +95,14 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     await Expect(Page.GetByLabel("Signed update bundle (.zip)"))
       .ToHaveAttributeAsync("accept", ".zip,application/vnd.treadmillrunner.update+zip");
 
-    ILocator check = Page.GetByRole(AriaRole.Button, new() { Name = "Check now", Exact = true });
+    ILocator check = Page.GetByRole(AriaRole.Heading, new() { Name = "Signed updates", Exact = true })
+      .Locator("xpath=..").GetByRole(AriaRole.Button, new() { Name = "Check now", Exact = true });
     await check.ClickAsync();
     await Expect(Page.GetByText("The update feed is unavailable or its configuration could not be validated.", new() { Exact = true }))
       .ToBeVisibleAsync();
-    foreach (string label in new[] { "Check now" })
-    {
-      LocatorBoundingBoxResult? box = await Page.GetByRole(AriaRole.Button, new() { Name = label, Exact = true })
-        .BoundingBoxAsync();
-      Assert.NotNull(box);
-      Assert.True(box.Width >= 44 && box.Height >= 44, $"{label} is smaller than the 44px touch target.");
-    }
+    LocatorBoundingBoxResult? checkBox = await check.BoundingBoxAsync();
+    Assert.NotNull(checkBox);
+    Assert.True(checkBox.Width >= 44 && checkBox.Height >= 44, "Update check is smaller than the 44px touch target.");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Verify and stage", Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Activate staged update", Exact = true })).ToHaveCountAsync(0);
     await Page.GetByText("Restore from backup", new() { Exact = true }).ClickAsync();
@@ -102,6 +118,41 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     {
       Path = Path.Combine(screenshotDirectory, "operations-iphone17-pro-max.png"),
       FullPage = true,
+    });
+  }
+
+  private async Task InstallAccessRoutesAsync()
+  {
+    await Page.RouteAsync("**/api/operations/access**", async route =>
+    {
+      string path = new Uri(route.Request.Url).AbsolutePath;
+      if (path.Contains("/qr/", StringComparison.Ordinal))
+      {
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 200,
+          ContentType = "image/svg+xml",
+          Body = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'><rect width='21' height='21' fill='white'/><g fill='#071f27'><path d='M1 1h7v7H1zm12 0h7v7h-7zM1 13h7v7H1z'/><path d='M10 2h2v2h-2zm0 4h2v3h-2zm3 4h2v2h-2zm3-1h3v2h-3zm-6 4h3v2h-3zm5 1h2v3h-2zm3-2h2v2h-2zm-9 5h2v3H9zm3 0h2v2h-2zm5 1h3v2h-3z'/></g><g fill='white'><path d='M3 3h3v3H3zm12 0h3v3h-3zM3 15h3v3H3z'/></g></svg>",
+        });
+        return;
+      }
+
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = System.Text.Json.JsonSerializer.Serialize(new
+        {
+          available = true,
+          preferredCandidateId = "phone-secure",
+          candidates = new[]
+          {
+            new { id = "phone-secure", label = "Server name · treadmillrunner.home", url = "https://treadmillrunner.home/", isSecure = true },
+            new { id = "phone-http", label = "Private Wi-Fi · 192.168.1.20", url = "http://192.168.1.20:5180/", isSecure = false },
+          },
+          message = "Scan from a device on the same private Wi-Fi network.",
+        }),
+      });
     });
   }
 }

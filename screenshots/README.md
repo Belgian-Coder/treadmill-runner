@@ -10,4 +10,8 @@ The browser suite refreshes a stable `1180×820` desktop PNG and a `440×956` iP
 
 Gallery data is test-only. Planning data is written to the browser fixture's disposable SQLite database through the normal local APIs, and the active dashboard uses Development simulator endpoints. Device status, historical totals, session detail, and available-update status are fulfilled only inside the Playwright page so gallery generation never scans or connects Bluetooth, sends treadmill commands, stages a package, activates an update, or touches the installed Windows service.
 
+TR-017 fixtures also populate exact-revision **Run again** choices, an optional Polar battery value, sanitized recovered BLE incidents, a healthy verified database-backup state, local QR access, and a generated six-week 5K bundle preview. The latter is captured as `workout-set-import-iphone17-pro-max.png`; the ordinary `workout-import*` images continue to show a single-workout preview.
+
+TR-018 keeps `profiles-garmin-tablet.png` and `profiles-garmin-iphone17-pro-max.png` populated with safe account/job/watch fixtures while a focused browser regression separately proves that a disconnected account with empty jobs and HTTP 204 unpaired-watch state shows the sign-in form. No fixture or image contains a Garmin password, MFA value, token, or internal runtime path.
+
 Do not edit the PNG files manually; update the page or browser fixture and rerun Playwright. A fresh public clone contains this README and creates the gallery on its first browser run.

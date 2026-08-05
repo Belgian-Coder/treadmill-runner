@@ -292,6 +292,102 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(Page.GetByRole(AriaRole.Note)).ToHaveCountAsync(2);
   }
 
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Garmin_activity_setup_remains_visible_when_optional_resources_are_empty_or_fail()
+  {
+    Guid profileId = await CreateProfileAsync($"Garmin readiness {Guid.NewGuid():N}");
+    int jobsStatus = 200;
+    int watchStatus = 204;
+    await Page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/status", route =>
+      route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          profileId,
+          connected = false,
+          enabled = false,
+          accountLabel = (string?)null,
+          state = "Disconnected",
+          pending = 0,
+          confirmed = 0,
+          failed = 0,
+          unknown = 0,
+          lastSuccessAtUtc = (DateTimeOffset?)null,
+          lastError = (string?)null,
+          version = 0,
+          adapterState = "Ready",
+          adapterMessage = "Garmin activity upload is ready to connect.",
+          canConnect = true,
+        }),
+      }));
+    await Page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/jobs", route =>
+      route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = jobsStatus,
+        ContentType = "application/json",
+        Body = jobsStatus == 200 ? "[]" : "{\"error\":\"temporary\"}",
+      }));
+    await Page.RouteAsync("**/api/integrations/garmin/watch/profiles/*", route =>
+      route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = watchStatus,
+        ContentType = "application/json",
+        Body = watchStatus == 204 ? string.Empty : "{\"error\":\"temporary\"}",
+      }));
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/profiles?garmin=connected&profileId={profileId:D}").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator panel = Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true });
+    await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(panel.GetByLabel("Garmin password", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(panel).Not.ToContainTextAsync("Activity-upload status is unavailable.");
+
+    jobsStatus = 503;
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Recent Garmin upload jobs are temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
+
+    jobsStatus = 200;
+    watchStatus = 503;
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Watch pairing status is temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
+  }
+
+  private async Task<Guid> CreateProfileAsync(string name)
+  {
+    using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/profiles", new
+    {
+      operationId = Guid.NewGuid(),
+      displayName = name,
+      unitSystem = "Metric",
+      weightKilograms = 70,
+      maximumHeartRateBpm = 190,
+      maximumSpeedKph = 10,
+      heartRateZones = new[]
+      {
+        new { number = 1, name = "Warm up", minimumBpm = 95, maximumBpm = 113 },
+        new { number = 2, name = "Easy", minimumBpm = 114, maximumBpm = 132 },
+        new { number = 3, name = "Aerobic", minimumBpm = 133, maximumBpm = 151 },
+        new { number = 4, name = "Threshold", minimumBpm = 152, maximumBpm = 170 },
+        new { number = 5, name = "Maximum", minimumBpm = 171, maximumBpm = 190 },
+      },
+      expectedVersion = (int?)null,
+      heartRateIncreaseStepKph = 0.2,
+      heartRateIncreaseCooldownSeconds = 30,
+      heartRateDecreaseStepKph = 0.5,
+      heartRateDecreaseCooldownSeconds = 15,
+    });
+    response.EnsureSuccessStatusCode();
+    JsonElement profile = await response.Content.ReadFromJsonAsync<JsonElement>();
+    return profile.GetProperty("id").GetGuid();
+  }
+
   private async Task AssertNoOverflowAsync()
   {
     bool overflow = await Page.EvaluateAsync<bool>(

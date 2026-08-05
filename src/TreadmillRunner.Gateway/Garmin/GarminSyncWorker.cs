@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Garmin;
@@ -8,6 +9,7 @@ public sealed class GarminSyncWorker(
   IGarminStore store,
   IGarminProvider provider,
   TimeProvider timeProvider,
+  IApplicationMaintenanceState maintenanceState,
   ILogger<GarminSyncWorker> logger) : BackgroundService
 {
   internal static readonly TimeSpan ReconcileInterval = TimeSpan.FromMinutes(1);
@@ -28,8 +30,18 @@ public sealed class GarminSyncWorker(
     {
       try
       {
-        await ReconcileAsync(stoppingToken);
-        await ProcessAvailableAsync(stoppingToken);
+        if (maintenanceState.TryBeginMutation())
+        {
+          try
+          {
+            await ReconcileAsync(stoppingToken);
+            await ProcessAvailableAsync(stoppingToken);
+          }
+          finally
+          {
+            maintenanceState.EndMutation();
+          }
+        }
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {

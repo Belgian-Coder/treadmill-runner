@@ -29,7 +29,9 @@ public sealed record HeartRateSourceSnapshot(
   long ConnectionGeneration,
   ushort? BeatsPerMinute,
   DateTimeOffset? ObservedAt,
-  string? Fault)
+  string? Fault,
+  byte? BatteryPercent = null,
+  DateTimeOffset? BatteryObservedAt = null)
 {
   public bool IsFresh(DateTimeOffset now, TimeSpan freshnessLimit) =>
     State == DeviceConnectionState.Ready &&

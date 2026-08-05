@@ -18,3 +18,6 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-006H — Household heart-rate sensors](tr-006h-household-heart-rate-sensors.md)
 - [TR-008A — Domyos Run 500](tr-008a-domyos-run-500.md)
 - [TR-008B — Domyos Challenge Run](tr-008b-domyos-challenge-run.md)
+- [TR-016 — Tag-driven GitHub releases](tr-016-tag-driven-github-releases.md)
+- [TR-017 — Local daily-use reliability and workout reuse](tr-017-local-daily-use-reliability.md)
+- [TR-018 — Garmin activity-upload readiness and offline runtime](tr-018-garmin-activity-upload-readiness.md)

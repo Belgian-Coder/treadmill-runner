@@ -1603,7 +1603,9 @@ public sealed class LiveSessionCoordinator(
         CanStartRemotely: true,
         SpeedRange: active.SpeedRange,
         InclineRange: active.InclineRange),
-      active.HardwareMode ? devices.Treadmill.ConnectionGeneration : 1);
+      active.HardwareMode ? devices.Treadmill.ConnectionGeneration : 1,
+      active.HardwareMode ? devices.SelectedHeartRateBatteryPercent : null,
+      active.HardwareMode ? devices.SelectedHeartRateBatteryObservedAt : null);
     Volatile.Write(ref _current, live);
     active.Snapshot = new ActiveSessionSnapshot(
       active.Definition.SessionId,
@@ -1854,7 +1856,9 @@ public sealed class LiveSessionCoordinator(
         devices.Treadmill.FirmwareRevision,
         devices.Treadmill.Evidence,
         devices.Treadmill.Capabilities,
-        devices.Treadmill.ConnectionGeneration)
+        devices.Treadmill.ConnectionGeneration,
+        devices.SelectedHeartRateBatteryPercent,
+        devices.SelectedHeartRateBatteryObservedAt)
       : SimulatorIdleSnapshot(now);
   }
 

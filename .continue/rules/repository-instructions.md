@@ -45,3 +45,11 @@ Before finalizing, report low-context files used/skipped, changed paths, command
 ## Commands
 
 First-time: `docs/start-here.md`; consumers: `install-harness`. Run `python -B .agents/manage.py setup --check` first time; normal: `next-action`, `status --fast`, `sync`, `python -B .agents/manage.py finish`; deep: `python -B .agents/manage.py finish --deep` for impacted integration checks; exhaustive release: `python -B .agents/manage.py finish --release-full`.
+
+## Release Policy
+
+- Ordinary pushes and pull requests must not start GitHub Actions. `.github/workflows/ci.yml` runs only for `vMAJOR.MINOR.PATCH` tags or an explicit manual dispatch.
+- Never create, move, or push a release tag by hand. From a clean `main` that exactly matches `origin/main`, use `eng/create-github-release.ps1 -Version <MAJOR.MINOR.PATCH> -ReleaseNotes '<notes>'`.
+- Signing stays on the release workstation with the non-exportable certificate. Never place its private key, a PFX, or a signing password in GitHub secrets or repository files.
+- The script owns local validation, signed packaging, annotated tag creation, draft asset verification, and publication. If interrupted, rerun the exact version and exact release notes; it may resume only the matching tag and draft and never force-moves a tag.
+- Do not create a tag or release during unrelated work or without an explicit version/release request. The canonical procedure and recovery rules are in `docs/project/release-operations.md`.

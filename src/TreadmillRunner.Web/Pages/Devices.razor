@@ -58,6 +58,7 @@
                 <dl class="device-facts">
                     <div><dt>Connection</dt><dd>@(source?.State.ToString() ?? "Waiting")</dd></div>
                     <div><dt>Current pulse</dt><dd>@(source?.BeatsPerMinute is ushort bpm ? $"{bpm} bpm" : "No reading")</dd></div>
+                    <div><dt>Battery</dt><dd>@FormatBattery(source)</dd></div>
                 </dl>
                 <details class="advanced-settings"><summary>Manage sensor</summary>
                 <dl class="device-facts">
@@ -99,6 +100,48 @@
             <article class="panel-card device-card"><p class="eyebrow">Heart-rate sensors</p><h2>None added</h2><p>Scan below while a Polar strap or Garmin HR Broadcast is advertising.</p></article>
         }
     </section>
+
+    <details class="panel-card advanced-settings">
+        <summary>Bluetooth reliability report</summary>
+        <p class="field-hint">A local, sanitized record of connection outages and recoveries. Raw Windows Bluetooth identifiers and identity fingerprints are never included.</p>
+        <div class="controls-card reliability-window-picker" aria-label="Reliability reporting period">
+            @foreach (int days in new[] { 1, 7, 30, 90 })
+            {
+                <button class="secondary-action" type="button" aria-pressed="@(reliabilityDays == days)"
+                        @onclick="() => LoadReliabilityAsync(days)">@days day@(days == 1 ? string.Empty : "s")</button>
+            }
+        </div>
+        @if (reliabilityLoading)
+        {
+            <p role="status">Loading connection history…</p>
+        }
+        else if (reliability?.Devices.Count > 0)
+        {
+            <div class="device-list">
+                @foreach (BleDeviceReliabilityView device in reliability.Devices)
+                {
+                    <article class="device-candidate">
+                        <div>
+                            <h3>@device.DisplayName</h3>
+                            <p>@device.CurrentState · @device.IncidentCount outage@(device.IncidentCount == 1 ? string.Empty : "s") · @device.RecoveredIncidentCount recovered</p>
+                            @if (device.CurrentOutageStartedAtUtc is { } outage)
+                            {
+                                <p class="device-fault" role="status">Disconnected since @FormatTimestamp(outage); @device.CurrentFailedAttemptCount reconnect attempt@(device.CurrentFailedAttemptCount == 1 ? string.Empty : "s").</p>
+                            }
+                            else if (device.LastRecoverySeconds is { } recovery)
+                            {
+                                <p>Last recovery: @FormatDuration(recovery) · longest: @FormatDuration(device.LongestRecoverySeconds)</p>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="empty-state">No Bluetooth outages were recorded in this period.</p>
+        }
+    </details>
 
     <section class="panel-card device-discovery" aria-labelledby="discovery-title">
         <div class="section-heading">
@@ -186,12 +229,33 @@
     private IReadOnlyList<ScanCandidate> candidates = Array.Empty<ScanCandidate>();
     private readonly HashSet<Guid> newSensorProfiles = [];
     private DeviceTelemetrySnapshot? status;
+    private BleReliabilityReportView? reliability;
+    private int reliabilityDays = 7;
+    private bool reliabilityLoading;
     private string telemetryMode = "Ftms";
     private string scanMessage = "Run a scan while the Omega Z and Polar H10 are powered and advertising.";
     private string actionStatus = "Enrollment changes are available only while no workout is active.";
     private bool isScanning;
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    protected override async Task OnInitializedAsync() => await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7));
+
+    private async Task LoadReliabilityAsync(int days)
+    {
+        reliabilityDays = days;
+        reliabilityLoading = true;
+        try
+        {
+            reliability = await Http.GetFromJsonAsync<BleReliabilityReportView>($"api/devices/reliability?days={days}");
+        }
+        catch (HttpRequestException)
+        {
+            reliability = null;
+        }
+        finally
+        {
+            reliabilityLoading = false;
+        }
+    }
 
     private async Task RefreshAsync()
     {
@@ -357,6 +421,14 @@
     private static string FormatTimestamp(DateTimeOffset? value) =>
         value?.ToLocalTime().ToString("g") ?? "Not yet verified";
 
+    private static string FormatBattery(HeartRateSourceSnapshot? source) => source?.BatteryPercent is byte battery
+        ? $"{battery}% · {FormatTimestamp(source.BatteryObservedAt)}"
+        : "Not reported";
+
+    private static string FormatDuration(double? seconds) => seconds is null
+        ? "—"
+        : seconds < 60 ? $"{seconds:0.#} s" : $"{TimeSpan.FromSeconds(seconds.Value):m\\:ss}";
+
     private string FormatFreshness(DateTimeOffset? value) => value is null || status is null
         ? "No sample"
         : $"{Math.Max(0, (status.CapturedAt - value.Value).TotalSeconds):0.0} s";
@@ -395,6 +467,30 @@
         bool AutoConnect,
         bool IsPreferred,
         int Version);
+
+    private sealed record BleReliabilityReportView(
+        DateTimeOffset CapturedAtUtc,
+        DateTimeOffset WindowStartedAtUtc,
+        int WindowDays,
+        IReadOnlyList<BleDeviceReliabilityView> Devices);
+
+    private sealed record BleDeviceReliabilityView(
+        Guid EnrollmentId,
+        string DisplayName,
+        string Role,
+        string CurrentState,
+        long ConnectionGeneration,
+        DateTimeOffset? LastTelemetryAtUtc,
+        int IncidentCount,
+        int RecoveredIncidentCount,
+        DateTimeOffset? CurrentOutageStartedAtUtc,
+        int CurrentFailedAttemptCount,
+        double? LastRecoverySeconds,
+        double? LongestRecoverySeconds,
+        string? LastFailureKind,
+        string? LastSanitizedFault,
+        byte? BatteryPercent,
+        DateTimeOffset? BatteryObservedAtUtc);
 
     private sealed class ProfileSummary
     {

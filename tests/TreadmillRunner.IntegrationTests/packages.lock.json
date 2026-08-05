@@ -836,6 +836,7 @@
         "dependencies": {
           "Microsoft.AspNetCore.Components.WebAssembly.Server": "[10.0.10, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.10, )",
+          "Net.Codecrete.QrCodeGenerator": "[3.1.0, )",
           "TreadmillRunner.Core": "[1.0.0, )",
           "TreadmillRunner.Infrastructure": "[1.0.0, )",
           "TreadmillRunner.Protocols": "[1.0.0, )",
@@ -916,6 +917,12 @@
           "Microsoft.Extensions.Logging.EventLog": "10.0.10",
           "System.ServiceProcess.ServiceController": "10.0.10"
         }
+      },
+      "Net.Codecrete.QrCodeGenerator": {
+        "type": "CentralTransitive",
+        "requested": "[3.1.0, )",
+        "resolved": "3.1.0",
+        "contentHash": "2b9mz9C5vNdpwFT1o4j/1DijuNAzP0wHZo3EqJe7zIQDO3/e38NNJuQ3+kJ22oJakJtieRI0wYCwbBVUbesVTg=="
       },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "CentralTransitive",

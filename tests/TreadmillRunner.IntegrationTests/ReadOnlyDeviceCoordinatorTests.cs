@@ -102,7 +102,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     try
     {
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-      while (coordinator.Current is not { TreadmillTelemetry: not null, HeartRateBpm: not null })
+      while (coordinator.Current is not
+        { TreadmillTelemetry: not null, HeartRateBpm: not null, SelectedHeartRateBatteryPercent: 86 })
       {
         await Task.Delay(25, timeout.Token);
       }
@@ -113,6 +114,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       Assert.Equal(6.0, snapshot.TreadmillTelemetry!.SpeedKph);
       Assert.Equal(1.0, snapshot.TreadmillTelemetry.InclinePercent);
       Assert.Equal((ushort)142, snapshot.HeartRateBpm);
+      Assert.Equal((byte)86, snapshot.SelectedHeartRateBatteryPercent);
+      Assert.NotNull(snapshot.SelectedHeartRateBatteryObservedAt);
       Assert.True(snapshot.Treadmill.ConnectionGeneration > 0);
       Assert.True(snapshot.HeartRate.ConnectionGeneration > 0);
       Assert.NotNull(snapshot.ReportedCapabilities!.SpeedRange);
@@ -193,6 +196,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private static readonly Guid ControlPoint = Expand(0x2AD9);
     private static readonly Guid HeartRateService = Expand(0x180D);
     private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
+    private static readonly Guid BatteryService = Expand(0x180F);
+    private static readonly Guid BatteryLevel = Expand(0x2A19);
 
     public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
       [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -224,8 +229,13 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
             new BleCharacteristic(Ftms, ControlPoint, false, true, true),
             new BleCharacteristic(Ftms, TreadmillData, false, false, true),
           ])]
-          : [new BleService(HeartRateService,
-          [new BleCharacteristic(HeartRateService, HeartRateMeasurement, false, false, true)])];
+          :
+          [
+            new BleService(HeartRateService,
+              [new BleCharacteristic(HeartRateService, HeartRateMeasurement, false, false, true)]),
+            new BleService(BatteryService,
+              [new BleCharacteristic(BatteryService, BatteryLevel, true, false, true)]),
+          ];
         return ValueTask.FromResult(result);
       }
 
@@ -234,7 +244,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         Guid characteristicUuid,
         CancellationToken cancellationToken = default)
       {
-        byte[] value = characteristicUuid == Feature
+        byte[] value = characteristicUuid == BatteryLevel
+          ? [87]
+          : characteristicUuid == Feature
           ? [0, 0, 0, 0, 3, 0, 0, 0]
           : characteristicUuid == SpeedRange
             ? [0, 0, 0xD0, 0x07, 10, 0]
@@ -248,7 +260,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
       {
         await Task.Yield();
-        byte[] value = characteristicUuid == TreadmillData
+        byte[] value = characteristicUuid == BatteryLevel
+          ? [86]
+          : characteristicUuid == TreadmillData
           ? [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00]
           : [0x00, DeviceId.Contains("GARMIN", StringComparison.Ordinal) ? (byte)135 : (byte)142];
         yield return new BleNotification(serviceUuid, characteristicUuid, value, DateTimeOffset.UtcNow);

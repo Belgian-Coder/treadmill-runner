@@ -7,6 +7,13 @@ namespace TreadmillRunner.Infrastructure.Persistence;
 
 public sealed record StoredWorkout(Guid Id, string Name, WorkoutKind Kind, bool IsArchived, int LatestRevisionNumber, Guid LatestRevisionId, string LatestDefinitionJson, string LatestContentSha256, DateTimeOffset LatestCreatedAtUtc);
 public sealed record StoredWorkoutRevision(Guid Id, Guid WorkoutId, int RevisionNumber, string DefinitionJson, string ContentSha256, DateTimeOffset CreatedAtUtc);
+public sealed record StoredWorkoutReuse(
+  Guid WorkoutId,
+  Guid WorkoutRevisionId,
+  string DefinitionJson,
+  DateTimeOffset LastCompletedAtUtc,
+  TimeSpan LastActualDuration,
+  int CompletionCount);
 public sealed record WorkoutRevisionReceipt(Guid Id, Guid WorkoutId, int RevisionNumber, string DefinitionJson, string ContentSha256, DateTimeOffset CreatedAtUtc)
 {
   public static WorkoutRevisionReceipt Parse(string json) =>
@@ -32,6 +39,7 @@ public sealed record ImportConfirmationOutcome(StoredWorkoutRevision Revision, I
 public interface IWorkoutStore
 {
   Task<IReadOnlyList<StoredWorkout>> ListAsync(CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<StoredWorkoutReuse>> ListReusableAsync(Guid userProfileId, int take = 4, CancellationToken cancellationToken = default);
   Task<StoredWorkoutRevision> CreateAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default, WorkoutKind kind = WorkoutKind.Structured);
   Task<StoredWorkoutRevision> AppendRevisionAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<StoredWorkoutRevision?> FindRevisionAsync(Guid revisionId, CancellationToken cancellationToken = default);
@@ -67,6 +75,63 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
         item.Latest.ContentSha256,
         item.Latest.CreatedAtUtc))
       .ToListAsync(cancellationToken);
+  }
+
+  public async Task<IReadOnlyList<StoredWorkoutReuse>> ListReusableAsync(
+    Guid userProfileId,
+    int take = 4,
+    CancellationToken cancellationToken = default)
+  {
+    if (userProfileId == Guid.Empty) throw new ArgumentException("Profile ID is required.", nameof(userProfileId));
+    if (take is < 1 or > 12) throw new ArgumentOutOfRangeException(nameof(take), "Reuse take must be between 1 and 12.");
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    IQueryable<WorkoutSessionEntity> recentCompleted = context.WorkoutSessions
+      .FromSqlInterpolated($"""
+        SELECT * FROM "WorkoutSessions"
+        WHERE "UserProfileId" = {userProfileId}
+          AND "State" = 'Completed'
+          AND "EndedAtUtc" IS NOT NULL
+        ORDER BY "EndedAtUtc" DESC
+        LIMIT 1000
+        """)
+      .AsNoTracking();
+    var rows = await recentCompleted
+      .Join(
+        context.WorkoutRevisions.AsNoTracking(),
+        session => session.WorkoutRevisionId,
+        revision => revision.Id,
+        (session, revision) => new { Session = session, Revision = revision })
+      .Join(
+        context.Workouts.AsNoTracking().Where(workout => !workout.IsArchived && workout.Kind == "Structured"),
+        item => item.Revision.WorkoutId,
+        workout => workout.Id,
+        (item, workout) => new { item.Session, item.Revision, Workout = workout })
+      .Select(item => new
+      {
+        WorkoutId = item.Workout.Id,
+        WorkoutRevisionId = item.Revision.Id,
+        item.Revision.DefinitionJson,
+        item.Session.EndedAtUtc,
+        item.Session.DurationSeconds,
+      })
+      .ToArrayAsync(cancellationToken);
+    return rows
+      .Where(static item => item.EndedAtUtc is not null)
+      .GroupBy(item => new { item.WorkoutId, item.WorkoutRevisionId, item.DefinitionJson })
+      .Select(group =>
+      {
+        var latest = group.MaxBy(static item => item.EndedAtUtc)!;
+        return new StoredWorkoutReuse(
+          group.Key.WorkoutId,
+          group.Key.WorkoutRevisionId,
+          group.Key.DefinitionJson,
+          latest.EndedAtUtc!.Value,
+          TimeSpan.FromSeconds(latest.DurationSeconds),
+          group.Count());
+      })
+      .OrderByDescending(static item => item.LastCompletedAtUtc)
+      .Take(take)
+      .ToArray();
   }
 
   public async Task<StoredWorkoutRevision> CreateAsync(

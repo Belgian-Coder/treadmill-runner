@@ -16,6 +16,7 @@ public static class WorkoutPlanningEndpoints
   {
     RouteGroupBuilder group = endpoints.MapGroup("/api/planning/workouts");
     group.MapGet("/", ListAsync);
+    group.MapGet("/reuse", ListReuseAsync);
     group.MapGet("/{id:guid}/revisions", ListRevisionsAsync);
     group.MapPost("/", CreateAsync);
     group.MapPost("/{id:guid}/revisions", AppendRevisionAsync);
@@ -32,6 +33,37 @@ public static class WorkoutPlanningEndpoints
       .Where(static workout => !workout.IsArchived)
       .Select(ToSummary)
       .ToArray());
+  }
+
+  private static async Task<IResult> ListReuseAsync(
+    Guid profileId,
+    IWorkoutStore store,
+    CancellationToken cancellationToken,
+    int take = 4)
+  {
+    try
+    {
+      IReadOnlyList<StoredWorkoutReuse> reusable = await store.ListReusableAsync(profileId, take, cancellationToken);
+      return TypedResults.Ok(reusable.Select(item =>
+      {
+        WorkoutStoredJsonSummary summary = ReadStoredSummary(item.DefinitionJson);
+        using JsonDocument document = JsonDocument.Parse(item.DefinitionJson);
+        return new WorkoutReuseDto(
+          item.WorkoutId,
+          item.WorkoutRevisionId,
+          document.RootElement.GetProperty("title").GetString() ?? "Saved workout",
+          summary.Description,
+          summary.ExpandedStepCount,
+          summary.DurationMinutes,
+          item.LastCompletedAtUtc,
+          item.LastActualDuration,
+          item.CompletionCount);
+      }).ToArray());
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.BadRequest(new { message = exception.Message });
+    }
   }
 
   private static async Task<IResult> ListRevisionsAsync(

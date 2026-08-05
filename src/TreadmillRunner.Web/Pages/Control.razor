@@ -16,6 +16,17 @@
         <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
         <div class="control-header-actions">
             <HeartRateStatus Compact="true" />
+            <span class="wake-lock-indicator @WakeLockIndicatorClass" role="status" aria-live="polite" aria-label="@WakeLockAccessibleLabel" title="@WakeLockAccessibleLabel">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="4" y="4" width="16" height="12" rx="2" />
+                    <path d="M9 20h6M12 16v4" />
+                    @if (wakeLockStatus?.Active != true)
+                    {
+                        <path class="wake-lock-indicator__slash" d="M3 3l18 18" />
+                    }
+                </svg>
+                <span class="visually-hidden">@WakeLockAccessibleLabel</span>
+            </span>
             <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" title="Full screen"><span aria-hidden="true">⛶</span></button>
         </div>
     </header>
@@ -227,6 +238,7 @@
     private CancellationTokenSource? heartbeatCancellation;
     private CancellationTokenSource? startHoldCancellation;
     private Task? heartbeatTask;
+    private DotNetObjectReference<Control>? wakeLockReference;
     private ActiveSessionSnapshot? session;
     private ControlLease? lease;
     private string holderId = string.Empty;
@@ -239,6 +251,7 @@
     private bool isChartFocused;
     private bool stopRequestedDuringCommand;
     private bool hasRendered;
+    private WakeLockStatusView? wakeLockStatus;
     private int? startHoldSecondsRemaining;
     private double speedChartMaximum = 10;
     private double inclineChartMaximum = 10;
@@ -310,6 +323,16 @@
             : session?.Live.SessionState != SessionState.Running
                 ? "Speed and incline changes are available while the session is running."
                 : "Targets are bounded by the active profile and verified treadmill ranges.";
+    private string WakeLockIndicatorClass => wakeLockStatus?.Active == true
+      ? "wake-lock-indicator--active"
+      : wakeLockStatus?.State == "PausedInBackground"
+        ? "wake-lock-indicator--paused"
+        : "wake-lock-indicator--unavailable";
+    private string WakeLockAccessibleLabel => wakeLockStatus is null
+      ? "Checking screen stay-awake"
+      : wakeLockStatus.Active
+        ? "Screen stay-awake active"
+        : $"Screen stay-awake unavailable. {wakeLockStatus.Reason}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -337,6 +360,7 @@
     {
         if (!firstRender) return;
         hasRendered = true;
+        wakeLockReference = DotNetObjectReference.Create(this);
         await UpdateWakeLockAsync();
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
@@ -660,7 +684,29 @@
             SessionState.ArmedWaitingForPhysicalStart or
             SessionState.Running or
             SessionState.PausedWaitingForPhysicalResume;
-        await JS.InvokeVoidAsync("treadmillRunnerView.setRunWakeLock", wanted);
+        try
+        {
+            wakeLockStatus = await JS.InvokeAsync<WakeLockStatusView>(
+                "treadmillRunnerView.setRunWakeLock",
+                wanted,
+                wakeLockReference);
+        }
+        catch (JSException)
+        {
+            wakeLockStatus = new WakeLockStatusView(
+                "Unavailable",
+                false,
+                false,
+                false,
+                "Screen stay-awake status could not be read from this browser.");
+        }
+    }
+
+    [JSInvokable]
+    public Task WakeLockStatusChanged(WakeLockStatusView status)
+    {
+        wakeLockStatus = status;
+        return InvokeAsync(StateHasChanged);
     }
 
     private void AppendChartPoint(ActiveSessionSnapshot snapshot)
@@ -952,6 +998,8 @@
             try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeRunWakeLock"); }
             catch (JSDisconnectedException) { }
         }
+        wakeLockReference?.Dispose();
+        wakeLockReference = null;
         startHoldCancellation?.Cancel();
         heartbeatCancellation?.Cancel();
         if (heartbeatTask is not null) await heartbeatTask;
@@ -974,6 +1022,13 @@
         double? PlannedInclinePercent,
         double RequestedInclinePercent,
         double MeasuredInclinePercent);
+
+    public sealed record WakeLockStatusView(
+        string State,
+        bool Supported,
+        bool Active,
+        bool SecureContext,
+        string Reason);
 
     private sealed record ChartTimeTick(TimeSpan Elapsed, double PositionPercent);
 }

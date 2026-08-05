@@ -38,6 +38,22 @@ internal sealed class HeartRateDeviceAssignmentEntity
   public DeviceEnrollmentEntity DeviceEnrollment { get; set; } = null!;
 }
 
+internal sealed class BleReliabilityIncidentEntity
+{
+  public Guid Id { get; set; }
+  public Guid DeviceEnrollmentId { get; set; }
+  public string Role { get; set; } = string.Empty;
+  public string DeviceDisplayName { get; set; } = string.Empty;
+  public long StartedAtUnixMilliseconds { get; set; }
+  public long? RecoveredAtUnixMilliseconds { get; set; }
+  public long FirstConnectionGeneration { get; set; }
+  public long? RecoveredConnectionGeneration { get; set; }
+  public int FailedAttemptCount { get; set; }
+  public string FailureKind { get; set; } = string.Empty;
+  public string LastSanitizedFault { get; set; } = string.Empty;
+  public double MaximumReconnectDelaySeconds { get; set; }
+}
+
 internal sealed class UserProfileEntity
 {
   public Guid Id { get; set; }

@@ -7,6 +7,7 @@ public sealed class TreadmillRunnerDbContext(
 {
   internal DbSet<DeviceEnrollmentEntity> DeviceEnrollments => Set<DeviceEnrollmentEntity>();
   internal DbSet<HeartRateDeviceAssignmentEntity> HeartRateDeviceAssignments => Set<HeartRateDeviceAssignmentEntity>();
+  internal DbSet<BleReliabilityIncidentEntity> BleReliabilityIncidents => Set<BleReliabilityIncidentEntity>();
   internal DbSet<UserProfileEntity> UserProfiles => Set<UserProfileEntity>();
   internal DbSet<HeartRateZoneEntity> HeartRateZones => Set<HeartRateZoneEntity>();
   internal DbSet<WorkoutEntity> Workouts => Set<WorkoutEntity>();
@@ -50,6 +51,7 @@ public sealed class TreadmillRunnerDbContext(
   {
     ConfigureDeviceEnrollments(modelBuilder);
     ConfigureHeartRateDeviceAssignments(modelBuilder);
+    ConfigureBleReliability(modelBuilder);
     ConfigureProfiles(modelBuilder);
     ConfigureWorkouts(modelBuilder);
     ConfigureImports(modelBuilder);
@@ -58,6 +60,39 @@ public sealed class TreadmillRunnerDbContext(
     ConfigureSessions(modelBuilder);
     ConfigureGarmin(modelBuilder);
     ConfigureOperationReceipts(modelBuilder);
+  }
+
+  private static void ConfigureBleReliability(ModelBuilder modelBuilder)
+  {
+    var incident = modelBuilder.Entity<BleReliabilityIncidentEntity>();
+    incident.ToTable("BleReliabilityIncidents", table =>
+    {
+      table.HasCheckConstraint(
+        "CK_BleReliabilityIncidents_Role",
+        "\"Role\" IN ('Treadmill', 'HeartRate')");
+      table.HasCheckConstraint("CK_BleReliabilityIncidents_DisplayName", "length(\"DeviceDisplayName\") > 0");
+      table.HasCheckConstraint(
+        "CK_BleReliabilityIncidents_FailureKind",
+        "\"FailureKind\" IN ('NativeDisconnected', 'TelemetrySilent', 'NotificationEnded', 'GattTimeout', 'InvalidTelemetry', 'RequiredCharacteristicMissing', 'AdapterUnavailable')");
+      table.HasCheckConstraint("CK_BleReliabilityIncidents_Fault", "length(\"LastSanitizedFault\") > 0");
+      table.HasCheckConstraint("CK_BleReliabilityIncidents_Attempts", "\"FailedAttemptCount\" > 0");
+      table.HasCheckConstraint("CK_BleReliabilityIncidents_Delay", "\"MaximumReconnectDelaySeconds\" >= 0");
+      table.HasCheckConstraint("CK_BleReliabilityIncidents_StartedAt", "\"StartedAtUnixMilliseconds\" >= 0");
+      table.HasCheckConstraint(
+        "CK_BleReliabilityIncidents_RecoveryTime",
+        "\"RecoveredAtUnixMilliseconds\" IS NULL OR \"RecoveredAtUnixMilliseconds\" >= \"StartedAtUnixMilliseconds\"");
+    });
+    incident.HasKey(entity => entity.Id);
+    incident.Property(entity => entity.Role).HasMaxLength(20);
+    incident.Property(entity => entity.DeviceDisplayName).HasMaxLength(100);
+    incident.Property(entity => entity.FailureKind).HasMaxLength(50);
+    incident.Property(entity => entity.LastSanitizedFault).HasMaxLength(256);
+    incident.HasIndex(entity => entity.DeviceEnrollmentId)
+      .HasDatabaseName("UX_BleReliabilityIncidents_OneOpenPerDevice")
+      .IsUnique()
+      .HasFilter("\"RecoveredAtUnixMilliseconds\" IS NULL");
+    incident.HasIndex(entity => new { entity.DeviceEnrollmentId, entity.RecoveredAtUnixMilliseconds });
+    incident.HasIndex(entity => entity.StartedAtUnixMilliseconds);
   }
 
   private static void ConfigureGarmin(ModelBuilder modelBuilder)

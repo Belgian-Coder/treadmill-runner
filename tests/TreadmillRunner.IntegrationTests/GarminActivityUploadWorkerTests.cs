@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -46,7 +47,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       .BuildServiceProvider();
     var worker = new GarminActivityUploadWorker(
       services.GetRequiredService<IServiceScopeFactory>(), store, adapter, connections,
-      TimeProvider.System, NullLogger<GarminActivityUploadWorker>.Instance);
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
     await worker.ProcessOneAsync(leased, default);
 
     GarminActivityUploadStatus status = await store.GetStatusAsync(profileId);

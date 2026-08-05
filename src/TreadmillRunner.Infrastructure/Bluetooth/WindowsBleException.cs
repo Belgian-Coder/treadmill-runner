@@ -58,6 +58,14 @@ public sealed class WindowsBleResponseTimeoutException : TimeoutException
   public Guid CharacteristicUuid { get; }
 }
 
+public sealed class WindowsBleDisconnectedException : IOException
+{
+  public WindowsBleDisconnectedException()
+    : base("The Windows BLE device disconnected while telemetry was subscribed.")
+  {
+  }
+}
+
 internal static class WindowsBleStatus
 {
   public static void ThrowIfFailed(

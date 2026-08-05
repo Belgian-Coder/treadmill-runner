@@ -36,6 +36,11 @@ jobs:
       - name: Validate release
         shell: pwsh
         run: ./eng/validate.ps1 -Configuration Release
+      - name: Validate offline release contents
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.event_name }}' -eq 'push') { '${{ github.ref_name }}'.TrimStart('v') } else { '0.0.0' }
+          ./eng/publish-release.ps1 -Version $version
       - name: Browser acceptance
         shell: pwsh
         run: ./eng/playwright.ps1 -Configuration Release -InstallBrowsers -Filter 'Category=Browser&Category!=Performance'

@@ -58,6 +58,17 @@ public sealed record WorkoutSummaryView(
   double? DurationMinutes,
   DateTimeOffset UpdatedAtUtc);
 
+public sealed record WorkoutReuseView(
+  Guid WorkoutId,
+  Guid WorkoutRevisionId,
+  string Name,
+  string? Description,
+  int ExpandedStepCount,
+  double? PlannedDurationMinutes,
+  DateTimeOffset LastCompletedAtUtc,
+  TimeSpan LastActualDuration,
+  int CompletionCount);
+
 public sealed record WorkoutBlockInput(
   string Kind,
   int Repetitions,
@@ -167,6 +178,38 @@ public sealed record ImportConfirmRequest(
   string SourceSha256,
   Guid? ProfileId,
   string? QDomyosUnits);
+
+public sealed record WorkoutSetStrategyView(string Name, int Substitutions);
+public sealed record WorkoutSetVariantView(
+  string SessionId,
+  string Variant,
+  string Title,
+  string ControlMode,
+  string SelectionRule);
+public sealed record WorkoutSetSlotView(
+  string CanonicalSlot,
+  int Week,
+  int Session,
+  IReadOnlyList<WorkoutSetVariantView> Variants);
+public sealed record WorkoutSetImportPreviewView(
+  Guid PreviewId,
+  string SourceSha256,
+  string FileName,
+  string PlanName,
+  string Category,
+  string ToolVersion,
+  int SlotCount,
+  int VariantCount,
+  DateTimeOffset ExpiresAtUtc,
+  IReadOnlyList<string> Warnings,
+  IReadOnlyList<WorkoutSetStrategyView> Strategies,
+  IReadOnlyList<WorkoutSetSlotView> Slots);
+public sealed record WorkoutSetImportConfirmRequest(
+  Guid OperationId,
+  Guid PreviewId,
+  string SourceSha256,
+  Guid? ProfileId,
+  string SelectionStrategy);
 
 public sealed record CalendarOptionView(
   Guid SeriesId,

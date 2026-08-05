@@ -31,7 +31,7 @@ public static class GarminWatchEndpoints
     CancellationToken cancellationToken)
   {
     GarminWatchBinding? binding = await store.FindForProfileAsync(profileId, cancellationToken);
-    return TypedResults.Ok(binding);
+    return binding is null ? TypedResults.NoContent() : TypedResults.Ok(binding);
   }
 
   private static async Task<IResult> PairAsync(

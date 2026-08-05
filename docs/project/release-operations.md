@@ -13,7 +13,7 @@ This runbook explains how software releases move from source code to the **Opera
 
 ## The release chain
 
-1. `eng/publish-release.ps1` builds an immutable versioned Windows release.
+1. `eng/publish-release.ps1` builds an immutable versioned Windows release, adds the hash-verified offline Garmin adapter runtime, and proves its credential-free import probe.
 2. `eng/package-update.ps1` creates a deterministic package ZIP, hashes it, writes and signs the stable manifest, and creates a two-entry signed offline bundle containing that manifest and package.
 3. The elevated service installer pins the public certificate at `%ProgramFiles%\TreadmillRunner\updater\signing.cer`. GitHub Releases is the default discovery transport and the protected ProgramData local folder remains the fallback. Neither source can replace the trust anchor.
 4. **Operations → Check now** obtains one origin-bound release candidate and validates version, channel, schema range, and signature. Its package can only be opened from that same origin.
@@ -23,6 +23,8 @@ This runbook explains how software releases move from source code to the **Opera
 8. Success records `Activated`. Any migration, executable, version, or health failure restores the previous executable path and database and records `RolledBack`.
 
 The browser may briefly disconnect during step 7. Reload after the service is ready; no session or command is resumed after an update or rollback.
+
+The Garmin adapter is release content, not machine state. `eng/new-garmin-portable-runtime.ps1` verifies the pinned official CPython archive, installs only the hash-locked Windows wheels into the publish folder, retains third-party notices/license metadata, and runs `eng/test-garmin-adapter-runtime.ps1`. Both update and installer packaging repeat that offline probe and fail closed. Normal installation never invokes system Python, `pip`, or a package download.
 
 ## Install for the first time
 
@@ -90,6 +92,8 @@ Ordinary commits and pull requests do **not** start GitHub Actions. The single r
 - a maintainer deliberately selects **Actions → TreadmillRunner release validation → Run workflow**.
 
 The tag run performs one Windows job containing locked restore, deterministic Release validation, and browser acceptance. Keeping those checks in one job avoids duplicating checkout/runtime setup. GitHub validates tagged source but never receives the signing private key. The local release command below remains authoritative for signing and publishing.
+
+Because `publish-release.ps1` is the only release-content entry point, the same adapter bundle/probe is used by tag-driven GitHub releases and protected local-feed releases. Ordinary commits still trigger no workflow and build no runtime bundle.
 
 Do not create or push release tags manually. A tag is the immutable identity of one published version and must identify the exact `main` commit whose assets were built. The release script creates the annotated tag only after local validation, publishing, signing, and checksum generation have succeeded.
 

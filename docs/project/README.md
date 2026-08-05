@@ -21,6 +21,8 @@ Operators publishing or installing application updates should use the [release o
 
 Garmin's supported Training API path, unsupported per-profile completed-activity upload, credential/retry boundaries, duplicate prevention, and removal are documented in [Garmin integrations](garmin-connect.md). The watch source, pairing protocol, SDK validation, physical acceptance, and complete IQ Store submission package are documented in [Connect IQ companion setup and store release](connect-iq-companion.md).
 
+One-tap reuse, Screen Wake Lock behavior, local QR access, generated workout-set import, BLE reliability/battery reporting, and database integrity maintenance are documented in [Local reliability, access, and generated workout sets](local-daily-use-reliability.md).
+
 Use `python -B .agents/manage.py project-context-review --target . --write-review` to create `docs/project/review/project-context-review.md` and `.json` when facts need answers. Those files are intermediate review artifacts; they help collect answers but do not replace the canonical `project-context.md`. After answers are approved in the JSON artifact, run `python -B .agents/manage.py project-context-apply-review --target .` to preview the managed canonical section, then add `--apply` to write it.
 
 For .NET projects, `python -B .agents/manage.py dotnet-context --target . --write-evidence` can write `docs/project/dotnet-context/dotnet-context.json` and `.md` with read-only SDK/runtime, build-policy, CI, config-key, persistence, and NuGet/feed facts. Treat those files as project-local evidence or baselines for drift review; they are not promotable harness source by default.

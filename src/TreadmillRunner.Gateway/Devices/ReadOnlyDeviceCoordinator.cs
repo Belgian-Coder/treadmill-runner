@@ -6,7 +6,10 @@ using TreadmillRunner.Protocols.HeartRate;
 using TreadmillRunner.Protocols.Omega;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using TreadmillRunner.Gateway.Operations;
+using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.Gateway.Devices;
 
@@ -26,7 +29,10 @@ public sealed class ReadOnlyDeviceCoordinator(
   ILogger<ReadOnlyDeviceCoordinator> logger) : BackgroundService, IReadOnlyDeviceCoordinator
 {
   private static readonly TimeSpan EnrollmentRefreshInterval = TimeSpan.FromSeconds(2);
-  private static readonly TimeSpan MaximumReconnectDelay = TimeSpan.FromSeconds(30);
+  private static readonly TimeSpan GattOperationTimeout = TimeSpan.FromSeconds(15);
+  private static readonly TimeSpan InitialNotificationTimeout = TimeSpan.FromSeconds(15);
+  private static readonly TimeSpan TelemetrySilenceTimeout = TimeSpan.FromSeconds(30);
+  private static readonly TimeSpan ReliabilityRetention = TimeSpan.FromDays(90);
   private static readonly TimeSpan HeartRateFreshnessLimit = TimeSpan.FromSeconds(5);
   private const int MaximumHeartRateWorkers = 8;
   private readonly object _sync = new();
@@ -34,6 +40,14 @@ public sealed class ReadOnlyDeviceCoordinator(
   private readonly Dictionary<Guid, DeviceWorker> _workers = [];
   private readonly Dictionary<Guid, HeartRateRuntime> _heartRateSources = [];
   private readonly Dictionary<Guid, SelectionRuntime> _profileSelections = [];
+  private readonly Dictionary<Guid, ReliabilityIncidentRuntime> _reliabilityIncidents = [];
+  private readonly BleReconnectPolicy _reconnectPolicy = new();
+  private readonly Channel<ReliabilityWrite> _reliabilityWrites = Channel.CreateUnbounded<ReliabilityWrite>(
+    new UnboundedChannelOptions
+    {
+      SingleReader = true,
+      SingleWriter = false,
+    });
   private IReadOnlyList<HeartRateDeviceAssignment> _assignments = [];
   private long _nextGeneration;
   private bool _hasTreadmillEnrollment;
@@ -71,6 +85,7 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
+    Task reliabilityWriter = RunReliabilityWriterAsync(CancellationToken.None);
     try
     {
       while (!stoppingToken.IsCancellationRequested)
@@ -91,6 +106,14 @@ public sealed class ReadOnlyDeviceCoordinator(
       foreach (DeviceWorker worker in workers) worker.Cancellation.Cancel();
       await Task.WhenAll(workers.Select(static worker => worker.Task));
       foreach (DeviceWorker worker in workers) worker.Cancellation.Dispose();
+      _reliabilityWrites.Writer.TryComplete();
+      try
+      {
+        await reliabilityWriter;
+      }
+      catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+      {
+      }
     }
   }
 
@@ -151,7 +174,15 @@ public sealed class ReadOnlyDeviceCoordinator(
             _workers.Remove(enrollmentId);
             worker.Cancellation.Cancel();
             removed.Add(worker);
-            SetDisconnected(worker.EnrollmentId, worker.Role);
+            if (!desired.ContainsKey(enrollmentId) && worker.Role == DeviceRole.HeartRate)
+            {
+              _heartRateSources.Remove(enrollmentId);
+              _reliabilityIncidents.Remove(enrollmentId);
+            }
+            else
+            {
+              SetDisconnected(worker.EnrollmentId, worker.Role);
+            }
           }
           else if (!Equals(worker.Enrollment, enrollment))
           {
@@ -198,10 +229,11 @@ public sealed class ReadOnlyDeviceCoordinator(
     CancellationToken cancellationToken)
   {
     DeviceEnrollment enrollment = stored.Enrollment;
-    var reconnectDelay = TimeSpan.FromSeconds(1);
+    var consecutiveFailureCount = 0;
     while (!cancellationToken.IsCancellationRequested)
     {
       long generation = Interlocked.Increment(ref _nextGeneration);
+      var attempt = new ConnectionAttemptRuntime();
       try
       {
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
@@ -209,16 +241,32 @@ public sealed class ReadOnlyDeviceCoordinator(
           enrollment.DeviceId,
           cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.DiscoveringServices, generation, fault: null);
-        IReadOnlyList<BleService> services = await connection.DiscoverServicesAsync(cancellationToken);
+        IReadOnlyList<BleService> services = await connection.DiscoverServicesAsync(cancellationToken)
+          .AsTask()
+          .WaitAsync(GattOperationTimeout, timeProvider, cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.Subscribing, generation, fault: null);
 
         if (enrollment.Role == DeviceRole.Treadmill)
         {
-          await RunTreadmillAsync(connection, enrollment, stored.Version, services, generation, cancellationToken);
+          await RunTreadmillAsync(
+            connection,
+            enrollment,
+            stored.Version,
+            services,
+            generation,
+            observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            cancellationToken);
         }
         else
         {
-          await RunHeartRateAsync(connection, enrollment, stored.Version, services, generation, cancellationToken);
+          await RunHeartRateAsync(
+            connection,
+            enrollment,
+            stored.Version,
+            services,
+            generation,
+            observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            cancellationToken);
         }
 
         throw new IOException("The BLE notification stream ended unexpectedly.");
@@ -229,6 +277,14 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
       catch (Exception exception)
       {
+        DateTimeOffset failedAt = timeProvider.GetUtcNow();
+        if (attempt.IsStableAt(failedAt))
+        {
+          consecutiveFailureCount = 0;
+        }
+        consecutiveFailureCount++;
+        TimeSpan reconnectDelay = _reconnectPolicy.GetDelay(enrollment.Id, consecutiveFailureCount);
+        string sanitizedFault = SanitizeFault(exception);
         logger.LogWarning(
           exception,
           "Read-only {DeviceRole} connection failed; reconnecting without issuing a treadmill command.",
@@ -237,20 +293,23 @@ public sealed class ReadOnlyDeviceCoordinator(
           enrollment,
           DeviceConnectionState.Faulted,
           generation,
-          SanitizeFault(exception));
-      }
-
-      try
-      {
+          sanitizedFault);
+        RecordReliabilityFailure(
+          enrollment,
+          generation,
+          ClassifyFailure(exception),
+          sanitizedFault,
+          reconnectDelay,
+          failedAt);
         UpdateConnection(enrollment, DeviceConnectionState.Reconnecting, generation, fault: null);
-        await Task.Delay(reconnectDelay, timeProvider, cancellationToken);
-        reconnectDelay = TimeSpan.FromSeconds(Math.Min(
-          MaximumReconnectDelay.TotalSeconds,
-          reconnectDelay.TotalSeconds * 2));
-      }
-      catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-      {
-        break;
+        try
+        {
+          await Task.Delay(reconnectDelay, timeProvider, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+          break;
+        }
       }
     }
 
@@ -294,6 +353,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     int enrollmentVersion,
     IReadOnlyList<BleService> services,
     long generation,
+    Action<DateTimeOffset> primaryTelemetryObserved,
     CancellationToken cancellationToken)
   {
     if (enrollment.TelemetryMode == TreadmillTelemetryMode.Ftms)
@@ -304,7 +364,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       UpdateCapabilities(reported);
       UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
       var evidencePersisted = false;
-      await foreach (BleNotification notification in connection.SubscribeAsync(
+      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+        connection,
         Uuids.FtmsService,
         Uuids.TreadmillData,
         cancellationToken))
@@ -316,6 +377,7 @@ public sealed class ReadOnlyDeviceCoordinator(
         }
 
         UpdateTreadmillTelemetry(data, notification.ObservedAt, generation);
+        primaryTelemetryObserved(notification.ObservedAt);
         if (!evidencePersisted)
         {
           evidencePersisted = true;
@@ -341,7 +403,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       cancellationToken);
     var vendorEvidencePersisted = false;
     UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
-    await foreach (BleNotification notification in connection.SubscribeAsync(
+    await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+      connection,
       Uuids.VendorService,
       Uuids.VendorStatus,
       cancellationToken))
@@ -354,6 +417,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             new FtmsTreadmillData(0, status.SpeedKph, status.InclinePercent, null),
             notification.ObservedAt,
             generation);
+          primaryTelemetryObserved(notification.ObservedAt);
           if (!vendorEvidencePersisted)
           {
             vendorEvidencePersisted = true;
@@ -377,43 +441,199 @@ public sealed class ReadOnlyDeviceCoordinator(
     int enrollmentVersion,
     IReadOnlyList<BleService> services,
     long generation,
+    Action<DateTimeOffset> primaryTelemetryObserved,
     CancellationToken cancellationToken)
   {
     RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
     UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
     (string? model, string? firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
     var evidencePersisted = false;
-    await foreach (BleNotification notification in connection.SubscribeAsync(
-      Uuids.HeartRateService,
-      Uuids.HeartRateMeasurement,
-      cancellationToken))
+    using var batteryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    Task batteryTask = RunOptionalBatteryAsync(
+      connection,
+      enrollment,
+      services,
+      generation,
+      batteryCancellation.Token);
+    try
     {
-      HeartRateMeasurement measurement = HeartRateMeasurementParser.Parse(notification.Value.Span);
-      lock (_sync)
+      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+        connection,
+        Uuids.HeartRateService,
+        Uuids.HeartRateMeasurement,
+        cancellationToken))
       {
-        if (!_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime) ||
-            runtime.Connection.ConnectionGeneration != generation) continue;
-        _heartRateSources[enrollment.Id] = runtime with
+        HeartRateMeasurement measurement = HeartRateMeasurementParser.Parse(notification.Value.Span);
+        lock (_sync)
         {
-          BeatsPerMinute = measurement.BeatsPerMinute,
-          ObservedAt = notification.ObservedAt,
-          Connection = runtime.Connection with { LastObservedAt = notification.ObservedAt, Fault = null },
-        };
+          if (!_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime) ||
+              runtime.Connection.ConnectionGeneration != generation) continue;
+          _heartRateSources[enrollment.Id] = runtime with
+          {
+            BeatsPerMinute = measurement.BeatsPerMinute,
+            ObservedAt = notification.ObservedAt,
+            Connection = runtime.Connection with { LastObservedAt = notification.ObservedAt, Fault = null },
+          };
+        }
+        primaryTelemetryObserved(notification.ObservedAt);
+        if (!evidencePersisted)
+        {
+          evidencePersisted = true;
+          await TryPersistEvidenceAsync(
+            enrollment,
+            enrollmentVersion,
+            model,
+            firmware,
+            null,
+            notification.ObservedAt,
+            cancellationToken);
+        }
       }
-      if (!evidencePersisted)
+    }
+    finally
+    {
+      batteryCancellation.Cancel();
+      try
       {
-        evidencePersisted = true;
-        await TryPersistEvidenceAsync(
-          enrollment,
-          enrollmentVersion,
-          model,
-          firmware,
-          null,
-          notification.ObservedAt,
-          cancellationToken);
+        await batteryTask;
+      }
+      catch (OperationCanceledException) when (batteryCancellation.IsCancellationRequested)
+      {
       }
     }
   }
+
+  private async Task RunOptionalBatteryAsync(
+    IBleConnection connection,
+    DeviceEnrollment enrollment,
+    IReadOnlyList<BleService> services,
+    long generation,
+    CancellationToken cancellationToken)
+  {
+    BleCharacteristic? battery = FindCharacteristic(services, Uuids.BatteryService, Uuids.BatteryLevel);
+    if (battery is null || (!battery.CanRead && !battery.CanNotify)) return;
+
+    if (battery.CanRead)
+    {
+      try
+      {
+        ReadOnlyMemory<byte> value = await ReadBoundedAsync(
+          connection,
+          Uuids.BatteryService,
+          Uuids.BatteryLevel,
+          cancellationToken);
+        if (BatteryLevelParser.TryParse(value.Span, out byte percent))
+        {
+          UpdateHeartRateBattery(enrollment.Id, generation, percent, timeProvider.GetUtcNow());
+        }
+      }
+      catch (Exception exception) when (exception is not OperationCanceledException)
+      {
+        logger.LogDebug(exception, "Optional heart-rate battery read was unavailable.");
+      }
+    }
+
+    if (!battery.CanNotify || cancellationToken.IsCancellationRequested) return;
+    try
+    {
+      await foreach (BleNotification notification in connection.SubscribeAsync(
+        Uuids.BatteryService,
+        Uuids.BatteryLevel,
+        cancellationToken))
+      {
+        if (BatteryLevelParser.TryParse(notification.Value.Span, out byte percent))
+        {
+          UpdateHeartRateBattery(enrollment.Id, generation, percent, notification.ObservedAt);
+        }
+        else
+        {
+          logger.LogDebug("Optional heart-rate battery notification was malformed.");
+        }
+      }
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+    }
+    catch (Exception exception)
+    {
+      logger.LogDebug(exception, "Optional heart-rate battery notifications ended.");
+    }
+  }
+
+  private void UpdateHeartRateBattery(
+    Guid enrollmentId,
+    long generation,
+    byte percent,
+    DateTimeOffset observedAt)
+  {
+    lock (_sync)
+    {
+      if (!_heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime) ||
+          runtime.Connection.ConnectionGeneration != generation) return;
+      _heartRateSources[enrollmentId] = runtime with
+      {
+        BatteryPercent = percent,
+        BatteryObservedAt = observedAt,
+      };
+    }
+  }
+
+  private async IAsyncEnumerable<BleNotification> SubscribeWithWatchdogAsync(
+    IBleConnection connection,
+    Guid serviceUuid,
+    Guid characteristicUuid,
+    [EnumeratorCancellation] CancellationToken cancellationToken)
+  {
+    using var subscriptionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    IAsyncEnumerator<BleNotification> enumerator = connection.SubscribeAsync(
+      serviceUuid,
+      characteristicUuid,
+      subscriptionCancellation.Token).GetAsyncEnumerator(subscriptionCancellation.Token);
+    var first = true;
+    try
+    {
+      while (true)
+      {
+        bool hasNotification;
+        try
+        {
+          hasNotification = await enumerator.MoveNextAsync().AsTask().WaitAsync(
+            first ? InitialNotificationTimeout : TelemetrySilenceTimeout,
+            timeProvider,
+            cancellationToken);
+        }
+        catch (TimeoutException exception)
+        {
+          subscriptionCancellation.Cancel();
+          throw new BleTelemetrySilenceException(first, exception);
+        }
+
+        if (!hasNotification) yield break;
+        first = false;
+        yield return enumerator.Current;
+      }
+    }
+    finally
+    {
+      subscriptionCancellation.Cancel();
+      try
+      {
+        await enumerator.DisposeAsync();
+      }
+      catch (OperationCanceledException) when (subscriptionCancellation.IsCancellationRequested)
+      {
+      }
+    }
+  }
+
+  private async Task<ReadOnlyMemory<byte>> ReadBoundedAsync(
+    IBleConnection connection,
+    Guid serviceUuid,
+    Guid characteristicUuid,
+    CancellationToken cancellationToken) => await connection.ReadAsync(
+      serviceUuid,
+      characteristicUuid,
+      cancellationToken).AsTask().WaitAsync(GattOperationTimeout, timeProvider, cancellationToken);
 
   private async Task<(string? Model, string? Firmware)> ReadDeviceInformationAsync(
     IBleConnection connection,
@@ -425,7 +645,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     return (model, firmware);
   }
 
-  private static async Task<string?> TryReadStringAsync(
+  private async Task<string?> TryReadStringAsync(
     IBleConnection connection,
     IReadOnlyList<BleService> services,
     Guid characteristicUuid,
@@ -436,7 +656,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       Uuids.DeviceInformationService,
       characteristicUuid);
     if (characteristic?.CanRead != true) return null;
-    ReadOnlyMemory<byte> value = await connection.ReadAsync(
+    ReadOnlyMemory<byte> value = await ReadBoundedAsync(
+      connection,
       Uuids.DeviceInformationService,
       characteristicUuid,
       cancellationToken);
@@ -510,7 +731,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     BleCharacteristic? feature = FindCharacteristic(services, Uuids.FtmsService, Uuids.FitnessMachineFeature);
     if (feature?.CanRead == true)
     {
-      ReadOnlyMemory<byte> value = await connection.ReadAsync(
+      ReadOnlyMemory<byte> value = await ReadBoundedAsync(
+        connection,
         Uuids.FtmsService,
         Uuids.FitnessMachineFeature,
         cancellationToken);
@@ -548,7 +770,8 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     BleCharacteristic? characteristic = FindCharacteristic(services, Uuids.FtmsService, characteristicUuid);
     if (characteristic?.CanRead != true) return null;
-    ReadOnlyMemory<byte> value = await connection.ReadAsync(
+    ReadOnlyMemory<byte> value = await ReadBoundedAsync(
+      connection,
       Uuids.FtmsService,
       characteristicUuid,
       cancellationToken);
@@ -584,6 +807,134 @@ public sealed class ReadOnlyDeviceCoordinator(
     lock (_sync)
     {
       _snapshot = _snapshot with { ReportedCapabilities = capabilities };
+    }
+  }
+
+  private void OnPrimaryTelemetry(
+    DeviceEnrollment enrollment,
+    long generation,
+    DateTimeOffset observedAt,
+    ConnectionAttemptRuntime attempt)
+  {
+    attempt.ObserveTelemetry(observedAt);
+    ReliabilityIncidentRuntime? incident;
+    lock (_sync)
+    {
+      if (!_reliabilityIncidents.Remove(enrollment.Id, out incident)) return;
+    }
+
+    EnqueueReliabilityWrite(new ResolveReliabilityWrite(
+      enrollment.Id,
+      generation,
+      0,
+      incident.MaximumReconnectDelay,
+      observedAt));
+  }
+
+  private void RecordReliabilityFailure(
+    DeviceEnrollment enrollment,
+    long generation,
+    BleReliabilityFailureKind failureKind,
+    string sanitizedFault,
+    TimeSpan reconnectDelay,
+    DateTimeOffset occurredAtUtc)
+  {
+    lock (_sync)
+    {
+      if (_reliabilityIncidents.TryGetValue(enrollment.Id, out ReliabilityIncidentRuntime? incident))
+      {
+        _reliabilityIncidents[enrollment.Id] = incident with
+        {
+          FailedAttemptCount = incident.FailedAttemptCount + 1,
+          MaximumReconnectDelay = reconnectDelay > incident.MaximumReconnectDelay
+            ? reconnectDelay
+            : incident.MaximumReconnectDelay,
+        };
+      }
+      else
+      {
+        _reliabilityIncidents[enrollment.Id] = new ReliabilityIncidentRuntime(1, reconnectDelay);
+      }
+    }
+
+    EnqueueReliabilityWrite(new BeginReliabilityWrite(
+      enrollment.Id,
+      enrollment.Role,
+      enrollment.DisplayName,
+      generation,
+      failureKind,
+      sanitizedFault,
+      reconnectDelay,
+      occurredAtUtc));
+  }
+
+  private void EnqueueReliabilityWrite(ReliabilityWrite write)
+  {
+    if (!_reliabilityWrites.Writer.TryWrite(write))
+    {
+      logger.LogWarning("The bounded BLE reliability recorder dropped an event while persistence was unavailable.");
+    }
+  }
+
+  private async Task RunReliabilityWriterAsync(CancellationToken cancellationToken)
+  {
+    await foreach (ReliabilityWrite write in _reliabilityWrites.Reader.ReadAllAsync(cancellationToken))
+    {
+      for (var attempt = 1; attempt <= 3; attempt++)
+      {
+        try
+        {
+          while (!maintenanceState.TryBeginMutation())
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+          try
+          {
+            using IServiceScope scope = scopeFactory.CreateScope();
+            IBleReliabilityStore store = scope.ServiceProvider.GetRequiredService<IBleReliabilityStore>();
+            DateTimeOffset referenceTime;
+            if (write is BeginReliabilityWrite begin)
+            {
+              await store.BeginOrContinueIncidentAsync(
+                begin.EnrollmentId,
+                begin.Role,
+                begin.DisplayName,
+                begin.ConnectionGeneration,
+                begin.FailureKind,
+                begin.SanitizedFault,
+                begin.ReconnectDelay,
+                begin.OccurredAtUtc,
+                cancellationToken);
+              referenceTime = begin.OccurredAtUtc;
+            }
+            else if (write is ResolveReliabilityWrite resolve)
+            {
+              await store.ResolveIncidentAsync(
+                resolve.EnrollmentId,
+                resolve.ConnectionGeneration,
+                resolve.AdditionalFailedAttempts,
+                resolve.MaximumReconnectDelay,
+                resolve.RecoveredAtUtc,
+                cancellationToken);
+              referenceTime = resolve.RecoveredAtUtc;
+            }
+            else continue;
+            await store.PruneRecoveredBeforeAsync(referenceTime - ReliabilityRetention, cancellationToken);
+          }
+          finally
+          {
+            maintenanceState.EndMutation();
+          }
+          break;
+        }
+        catch (Exception exception) when (attempt < 3)
+        {
+          logger.LogWarning(exception, "A sanitized BLE reliability write failed; retrying bounded persistence attempt {Attempt}.", attempt);
+          await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), cancellationToken);
+        }
+        catch (Exception exception)
+        {
+          logger.LogWarning(exception, "A sanitized BLE reliability incident could not be persisted after bounded retries.");
+        }
+      }
     }
   }
 
@@ -670,7 +1021,9 @@ public sealed class ReadOnlyDeviceCoordinator(
         runtime.Connection.ConnectionGeneration,
         runtime.BeatsPerMinute,
         runtime.ObservedAt,
-        runtime.Connection.Fault))
+        runtime.Connection.Fault,
+        runtime.BatteryPercent,
+        runtime.BatteryObservedAt))
       .OrderBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase)
       .ToArray();
     HeartRateSourceSnapshot? selected = HeartRateSourceSelector.Select(
@@ -715,6 +1068,8 @@ public sealed class ReadOnlyDeviceCoordinator(
         : displayed is not null
           ? "Sensor is enrolled but a fresh pulse sample is not available yet."
           : "No automatic heart-rate sensor is assigned to this runner.",
+      SelectedHeartRateBatteryPercent = displayed?.BatteryPercent,
+      SelectedHeartRateBatteryObservedAt = displayed?.BatteryObservedAt,
     };
   }
 
@@ -763,10 +1118,24 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   private static string SanitizeFault(Exception exception) => exception switch
   {
+    WindowsBleDisconnectedException => "The BLE device disconnected.",
+    BleTelemetrySilenceException => "BLE telemetry stopped arriving.",
     InvalidDataException => exception.Message,
     FormatException => "The device sent invalid telemetry.",
     TimeoutException => "The BLE operation timed out.",
     _ => "The BLE device is unavailable.",
+  };
+
+  private static BleReliabilityFailureKind ClassifyFailure(Exception exception) => exception switch
+  {
+    WindowsBleDisconnectedException => BleReliabilityFailureKind.NativeDisconnected,
+    BleTelemetrySilenceException => BleReliabilityFailureKind.TelemetrySilent,
+    TimeoutException => BleReliabilityFailureKind.GattTimeout,
+    InvalidDataException invalid when invalid.Message.StartsWith("Required BLE characteristic", StringComparison.Ordinal) =>
+      BleReliabilityFailureKind.RequiredCharacteristicMissing,
+    InvalidDataException or FormatException => BleReliabilityFailureKind.InvalidTelemetry,
+    IOException => BleReliabilityFailureKind.NotificationEnded,
+    _ => BleReliabilityFailureKind.AdapterUnavailable,
   };
 
   private static DeviceTelemetrySnapshot EmptySnapshot(DateTimeOffset now) => new(
@@ -801,7 +1170,53 @@ public sealed class ReadOnlyDeviceCoordinator(
     DeviceEnrollment Enrollment,
     DeviceConnectionSnapshot Connection,
     ushort? BeatsPerMinute,
-    DateTimeOffset? ObservedAt);
+    DateTimeOffset? ObservedAt,
+    byte? BatteryPercent = null,
+    DateTimeOffset? BatteryObservedAt = null);
+
+  private sealed class ConnectionAttemptRuntime
+  {
+    public DateTimeOffset? FirstTelemetryAtUtc { get; private set; }
+    public DateTimeOffset? LastTelemetryAtUtc { get; private set; }
+    public int TelemetrySampleCount { get; private set; }
+
+    public void ObserveTelemetry(DateTimeOffset observedAt)
+    {
+      FirstTelemetryAtUtc ??= observedAt;
+      LastTelemetryAtUtc = observedAt;
+      TelemetrySampleCount++;
+    }
+
+    public bool IsStableAt(DateTimeOffset now) =>
+      FirstTelemetryAtUtc is { } first &&
+      LastTelemetryAtUtc is { } last &&
+      TelemetrySampleCount >= 2 &&
+      now - first >= BleReconnectPolicy.StableConnectionThreshold &&
+      now - last <= HeartRateFreshnessLimit;
+  }
+
+  private sealed record ReliabilityIncidentRuntime(
+    int FailedAttemptCount,
+    TimeSpan MaximumReconnectDelay);
+
+  private abstract record ReliabilityWrite;
+
+  private sealed record BeginReliabilityWrite(
+    Guid EnrollmentId,
+    DeviceRole Role,
+    string DisplayName,
+    long ConnectionGeneration,
+    BleReliabilityFailureKind FailureKind,
+    string SanitizedFault,
+    TimeSpan ReconnectDelay,
+    DateTimeOffset OccurredAtUtc) : ReliabilityWrite;
+
+  private sealed record ResolveReliabilityWrite(
+    Guid EnrollmentId,
+    long ConnectionGeneration,
+    int AdditionalFailedAttempts,
+    TimeSpan MaximumReconnectDelay,
+    DateTimeOffset RecoveredAtUtc) : ReliabilityWrite;
 
   private sealed record SelectionRuntime(Guid? EnrollmentId, long Generation);
 
@@ -817,6 +1232,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     public static readonly Guid FitnessMachineControlPoint = Expand(0x2AD9);
     public static readonly Guid HeartRateService = Expand(0x180D);
     public static readonly Guid HeartRateMeasurement = Expand(0x2A37);
+    public static readonly Guid BatteryService = Expand(0x180F);
+    public static readonly Guid BatteryLevel = Expand(0x2A19);
     public static readonly Guid DeviceInformationService = Expand(0x180A);
     public static readonly Guid ModelNumber = Expand(0x2A24);
     public static readonly Guid FirmwareRevision = Expand(0x2A26);
@@ -826,4 +1243,11 @@ public sealed class ReadOnlyDeviceCoordinator(
     private static Guid Expand(ushort value) =>
       Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
   }
+
+  private sealed class BleTelemetrySilenceException(bool initial, Exception innerException)
+    : TimeoutException(
+      initial
+        ? "The BLE subscription did not publish its initial telemetry in time."
+        : "The BLE telemetry stream became silent.",
+      innerException);
 }

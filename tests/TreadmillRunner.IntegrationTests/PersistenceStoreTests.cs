@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Calendar;
 using TreadmillRunner.Core.Profiles;
+using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Infrastructure.Persistence;
 
@@ -154,6 +155,43 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
     var parsed = WorkoutRevisionReceipt.Parse(firstReceipt!.OutcomeJson);
     Assert.Contains(revisions, revision => revision.Id == parsed.Id);
     Assert.Equal(firstReceipt.StatusCode, firstOperation.StatusCode);
+  }
+
+  [Fact]
+  public async Task Workout_reuse_returns_distinct_completed_structured_revisions_for_profile()
+  {
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T08:00:00Z");
+    UserProfile profile = Profile(Guid.NewGuid(), "Reuse Runner");
+    await new ProfileStore(_factory).CreateAsync(profile, now, Op("profile.create", now));
+    var workouts = new WorkoutStore(_factory);
+    StoredWorkoutRevision structured = await workouts.CreateAsync(
+      Guid.NewGuid(), Definition("Easy repeat", 6.5), now, Op("workout.create", now));
+    StoredWorkoutRevision manual = await workouts.CreateAsync(
+      Guid.NewGuid(), Definition("Manual run", 0.8), now, Op("workout.create", now), kind: WorkoutKind.ManualTemplate);
+    var sessions = new SessionStore(_factory);
+
+    async Task Complete(Guid revisionId, string title, DateTimeOffset endedAt)
+    {
+      Guid sessionId = Guid.NewGuid();
+      DateTimeOffset startedAt = endedAt.AddMinutes(-20);
+      await sessions.CreateAsync(new NewWorkoutSession(
+        sessionId, profile.Id, profile.DisplayName, revisionId, title,
+        startedAt.AddSeconds(-2), "{}", SessionMetricAlgorithms.EstimatedCaloriesV1));
+      await sessions.MarkRunningAsync(sessionId, startedAt);
+      await sessions.FinalizeAsync(new SessionSummary(
+        sessionId, profile.Id, profile.DisplayName, revisionId, title,
+        SessionState.Completed, startedAt, endedAt, TimeSpan.FromMinutes(20),
+        2, 120, null, null, 6, 1));
+    }
+
+    await Complete(structured.Id, "Easy repeat", now.AddHours(1));
+    await Complete(structured.Id, "Easy repeat", now.AddHours(2));
+    await Complete(manual.Id, "Manual run", now.AddHours(3));
+
+    StoredWorkoutReuse reusable = Assert.Single(await workouts.ListReusableAsync(profile.Id));
+    Assert.Equal(structured.Id, reusable.WorkoutRevisionId);
+    Assert.Equal(2, reusable.CompletionCount);
+    Assert.Equal(now.AddHours(2), reusable.LastCompletedAtUtc);
   }
 
   [Fact]

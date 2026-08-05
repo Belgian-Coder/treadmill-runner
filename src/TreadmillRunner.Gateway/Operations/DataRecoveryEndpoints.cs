@@ -62,6 +62,7 @@ public static class DataRecoveryEndpoints
   public static IEndpointRouteBuilder MapDataRecovery(this IEndpointRouteBuilder endpoints)
   {
     RouteGroupBuilder group = endpoints.MapGroup("/api/operations");
+    group.MapAppAccess();
     group.MapGet("/backup", DownloadBackupAsync);
     group.MapPost("/restore/preview", PreviewRestoreAsync).DisableAntiforgery();
     group.MapPost("/restore/confirm", ConfirmRestoreAsync);
@@ -69,11 +70,19 @@ public static class DataRecoveryEndpoints
     return endpoints;
   }
 
-  private static IResult DownloadDiagnosticsAsync(
+  private static async Task<IResult> DownloadDiagnosticsAsync(
+    HttpContext httpContext,
     ILiveSessionCoordinator live,
     IReadOnlyDeviceCoordinator devices,
-    TimeProvider timeProvider)
+    IBleReliabilityStore reliability,
+    IDatabaseIntegrityCoordinator databaseIntegrity,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
   {
+    httpContext.Response.Headers.CacheControl = "no-store";
+    DateTimeOffset capturedAt = timeProvider.GetUtcNow();
+    IReadOnlyList<TreadmillRunner.Core.Devices.BleReliabilityIncident> incidents =
+      await reliability.ListSinceAsync(capturedAt.AddDays(-7), maximumCount: 1000, cancellationToken);
     using var output = new MemoryStream();
     using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
     {
@@ -81,8 +90,8 @@ public static class DataRecoveryEndpoints
       using Stream stream = entry.Open();
       JsonSerializer.Serialize(stream, new
       {
-        SchemaVersion = 1,
-        CapturedAtUtc = timeProvider.GetUtcNow(),
+        SchemaVersion = 2,
+        CapturedAtUtc = capturedAt,
         Version = typeof(DataRecoveryEndpoints).Assembly.GetName().Version?.ToString(),
         Treadmill = new
         {
@@ -100,6 +109,26 @@ public static class DataRecoveryEndpoints
           devices.Current.HeartRate.State,
           devices.Current.HeartRate.ConnectionGeneration,
           TelemetryAgeMilliseconds = devices.Current.HeartRateAge?.TotalMilliseconds,
+          devices.Current.SelectedHeartRateBatteryPercent,
+          devices.Current.SelectedHeartRateBatteryObservedAt,
+        },
+        DatabaseIntegrity = databaseIntegrity.Current,
+        BluetoothReliability = new
+        {
+          WindowDays = 7,
+          IncidentCount = incidents.Count,
+          OpenIncidentCount = incidents.Count(incident => incident.RecoveredAtUtc is null),
+          Incidents = incidents.Select(incident => new
+          {
+            Role = incident.Role.ToString(),
+            incident.DeviceDisplayName,
+            incident.StartedAtUtc,
+            incident.RecoveredAtUtc,
+            incident.FailedAttemptCount,
+            FailureKind = incident.FailureKind.ToString(),
+            incident.LastSanitizedFault,
+            incident.MaximumReconnectDelaySeconds,
+          }),
         },
         Session = live.CurrentSession is { } session
           ? new
@@ -218,6 +247,7 @@ public static class DataRecoveryEndpoints
     IReadOnlyDeviceCoordinator devices,
     RestorePreviewStore previews,
     SqliteRestoreService restore,
+    IDatabaseIntegrityCoordinator databaseIntegrity,
     CancellationToken cancellationToken)
   {
     if (!string.Equals(request.Confirmation, "RESTORE", StringComparison.Ordinal))
@@ -237,18 +267,28 @@ public static class DataRecoveryEndpoints
       return Results.NotFound(new { error = exception.Message });
     }
 
+    bool restored = false;
     try
     {
       await restore.RestoreAsync(preview.Path, cancellationToken);
+      restored = true;
       await devices.RefreshAsync(CancellationToken.None);
       await live.ResetAsync(CancellationToken.None);
-      return Results.Ok(new { restored = true, preview = preview.Preview, stateReloaded = true });
     }
     finally
     {
       if (File.Exists(preview.Path)) File.Delete(preview.Path);
       await live.CancelMaintenanceAsync(CancellationToken.None);
     }
+
+    DatabaseIntegrityStatus integrity = await databaseIntegrity.CheckNowAsync(cancellationToken);
+    return Results.Ok(new
+    {
+      restored,
+      preview = preview.Preview,
+      stateReloaded = true,
+      databaseIntegrity = integrity,
+    });
   }
 
   private static bool IsIdle(ActiveSessionSnapshot? session) => session is null || session.Live.SessionState is

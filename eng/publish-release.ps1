@@ -44,11 +44,17 @@ try {
         --output $migrationPath --force --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Reviewed EF Core migration bundle publish failed.' }
 
+    & (Join-Path $PSScriptRoot 'new-garmin-portable-runtime.ps1') -PublishPath $publishPath
+    if ($LASTEXITCODE -ne 0) { throw 'Portable Garmin adapter runtime staging failed.' }
+
     foreach ($required in @(
         'TreadmillRunner.Gateway.exe',
         'TreadmillRunner.Gateway.dll',
         'TreadmillRunner.Migrations.exe',
         'Updates\update-helper.ps1',
+        'tools\garmin\runtime\python.exe',
+        'tools\garmin\runtime\LICENSE.txt',
+        'tools\garmin\THIRD-PARTY-NOTICES.md',
         'wwwroot\app.css',
         'wwwroot\_framework\blazor.webassembly.js')) {
         if (-not (Test-Path -LiteralPath (Join-Path $publishPath $required) -PathType Leaf)) {

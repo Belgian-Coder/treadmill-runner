@@ -17,8 +17,16 @@
     }
     else if (status is null)
     {
-        <p class="field-error" role="status">Activity-upload status is unavailable.</p>
-        <button class="secondary-action" type="button" @onclick="LoadAsync">Try again</button>
+        <p class="field-error" role="status">Garmin account status is temporarily unavailable. Watch pairing and prior job history are loaded separately.</p>
+        <button class="secondary-action" type="button" @onclick="LoadStatusAsync">Retry account status</button>
+    }
+    else if (!status.Connected && !status.CanConnect)
+    {
+        <div class="integration-account integration-account--warning" role="status">
+            <strong>Adapter setup required</strong>
+            <span>@status.AdapterMessage</span>
+        </div>
+        <button class="secondary-action" type="button" @onclick="LoadStatusAsync">Check again</button>
     }
     else if (!status.Connected)
     {
@@ -70,6 +78,7 @@
             </details>
         }
     }
+    @if (!string.IsNullOrWhiteSpace(jobsLoadError)) { <p class="integration-note field-error" role="status">@jobsLoadError</p> }
     @if (challengeId is not null)
     {
         <div class="inline-confirmation" role="status">
@@ -83,7 +92,16 @@
 <section class="profile-integration garmin-watch-binding" aria-labelledby="garmin-watch-title">
     <div class="panel-heading"><div><p class="eyebrow">Watch companion</p><h3 id="garmin-watch-title">Connect IQ watch app</h3></div></div>
     <p class="integration-note">The watch app records a treadmill activity only after you press Select on the watch. Pairing lets it show this runner and the current TreadmillRunner session; it never starts the treadmill.</p>
-    @if (watchBinding is null)
+    @if (watchLoading)
+    {
+        <p role="status">Loading watch pairing…</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(watchLoadError))
+    {
+        <p class="field-error" role="status">@watchLoadError</p>
+        <button class="secondary-action" type="button" @onclick="LoadWatchAsync">Try watch pairing again</button>
+    }
+    else if (watchBinding is null)
     {
         <label class="field">Watch label<input maxlength="100" @bind="watchLabel" /></label>
         <button class="primary-action" type="button" @onclick="PairWatchAsync" disabled="@(busy || string.IsNullOrWhiteSpace(watchLabel))">Create watch pairing</button>
@@ -105,8 +123,9 @@
     private GarminActivityStatusView? status;
     private GarminWatchBindingView? watchBinding;
     private List<GarminActivityJobView> jobs = [];
-    private bool loading = true, busy, enableAfterConnect, confirmDisconnect;
+    private bool loading = true, watchLoading = true, busy, enableAfterConnect, confirmDisconnect;
     private string email = string.Empty, password = string.Empty, mfaCode = string.Empty, watchLabel = "Garmin watch", message = string.Empty, watchMessage = string.Empty, oneTimeWatchToken = string.Empty;
+    private string jobsLoadError = string.Empty, watchLoadError = string.Empty;
     private Guid? challengeId;
     private Guid loadedProfileId;
 
@@ -116,23 +135,57 @@
         status = null; watchBinding = null; jobs = []; challengeId = null;
         email = string.Empty; password = string.Empty; mfaCode = string.Empty;
         message = string.Empty; watchMessage = string.Empty; oneTimeWatchToken = string.Empty;
+        jobsLoadError = string.Empty; watchLoadError = string.Empty;
         loadedProfileId = ProfileId;
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        loading = true;
+        loading = true; watchLoading = true;
         status = null; watchBinding = null; jobs = [];
+        jobsLoadError = string.Empty; watchLoadError = string.Empty;
+        await Task.WhenAll(LoadStatusAsync(), LoadJobsAsync(), LoadWatchAsync());
+    }
+
+    private async Task LoadStatusAsync()
+    {
+        loading = true;
         try
         {
             status = await Http.GetFromJsonAsync<GarminActivityStatusView>($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/status");
-            jobs = await Http.GetFromJsonAsync<List<GarminActivityJobView>>($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs") ?? [];
-            using HttpResponseMessage watch = await Http.GetAsync($"api/integrations/garmin/watch/profiles/{ProfileId}");
-            watchBinding = watch.IsSuccessStatusCode ? await watch.Content.ReadFromJsonAsync<GarminWatchBindingView>() : null;
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or NotSupportedException) { status = null; }
         finally { loading = false; }
+    }
+
+    private async Task LoadJobsAsync()
+    {
+        jobsLoadError = string.Empty;
+        try { jobs = await Http.GetFromJsonAsync<List<GarminActivityJobView>>($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs") ?? []; }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or NotSupportedException)
+        {
+            jobs = [];
+            jobsLoadError = "Recent Garmin upload jobs are temporarily unavailable. Account status and setup remain usable.";
+        }
+    }
+
+    private async Task LoadWatchAsync()
+    {
+        watchLoading = true; watchLoadError = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync($"api/integrations/garmin/watch/profiles/{ProfileId}");
+            if (response.StatusCode == HttpStatusCode.NoContent) watchBinding = null;
+            else if (response.IsSuccessStatusCode) watchBinding = await response.Content.ReadFromJsonAsync<GarminWatchBindingView>();
+            else throw new HttpRequestException("Watch pairing status request failed.", null, response.StatusCode);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or NotSupportedException)
+        {
+            watchBinding = null;
+            watchLoadError = "Watch pairing status is temporarily unavailable. Garmin activity upload remains usable.";
+        }
+        finally { watchLoading = false; }
     }
 
     private async Task ConnectAsync()
@@ -143,6 +196,13 @@
             using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/connect", new { email, password, enabled = enableAfterConnect });
             password = string.Empty;
             if (response.StatusCode == HttpStatusCode.UpgradeRequired) { message = "For credential safety, open this page on the NUC itself or configure HTTPS first."; return; }
+            if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            {
+                GarminActivityErrorView? error = await response.Content.ReadFromJsonAsync<GarminActivityErrorView>();
+                message = error?.Error ?? "The Garmin activity adapter is unavailable. Repair the signed release and try again.";
+                await LoadStatusAsync();
+                return;
+            }
             GarminActivityConnectResultView? result = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<GarminActivityConnectResultView>() : null;
             if (result is null) { message = "Garmin authentication could not be started."; return; }
             challengeId = result.ChallengeId; message = result.Message;
@@ -225,9 +285,10 @@
         finally { busy = false; }
     }
 
-    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? AccountLabel, string State, int Pending, int Confirmed, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version);
+    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? AccountLabel, string State, int Pending, int Confirmed, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
     private static string FormatDuration(double? seconds) => seconds is null ? "duration unavailable" : TimeSpan.FromSeconds(seconds.Value).ToString(@"h\:mm\:ss");
     private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc);
     private sealed record GarminActivityConnectResultView(string State, Guid? ChallengeId, string? AccountLabel, string Message);
+    private sealed record GarminActivityErrorView(string Error, string? AdapterState);
     private sealed record GarminWatchBindingView(Guid Id, Guid UserProfileId, string RunnerName, string DeviceLabel, DateTimeOffset CreatedAtUtc, DateTimeOffset? LastSeenAtUtc, int Version);
 }

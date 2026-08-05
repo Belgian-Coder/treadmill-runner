@@ -2,6 +2,7 @@
 @using System.Net.Http.Headers
 @using System.Text.Json
 @inject HttpClient Http
+@inject IJSRuntime JS
 
 <PageTitle>Operations · TreadmillRunner</PageTitle>
 
@@ -13,10 +14,90 @@
 
     @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
 
+    <section class="panel-card app-access-card" aria-labelledby="app-access-title">
+        <div class="panel-heading">
+            <div><p class="eyebrow">Private Wi-Fi</p><h2 id="app-access-title">Open on another device</h2></div>
+            <span>Local only</span>
+        </div>
+        @if (accessLoading)
+        {
+            <p class="muted-copy" role="status">Finding the server address…</p>
+        }
+        else if (access?.Available == true && access.Candidates.Count > 0 && SelectedAccessCandidate is { } candidate)
+        {
+            <div class="app-access-layout">
+                <img class="app-access-qr" src="@AccessQrUrl" alt="QR code for @candidate.Url" @key="candidate.Id" />
+                <div class="app-access-copy">
+                    <p>@access.Message</p>
+                    @if (access.Candidates.Count > 1)
+                    {
+                        <label class="field">Address
+                            <select aria-label="Shared app address" @bind="selectedAccessCandidateId">
+                                @foreach (AppAccessCandidateModel option in access.Candidates)
+                                {
+                                    <option value="@option.Id">@option.Label</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                    <code class="app-access-url">@candidate.Url</code>
+                    <button class="secondary-action" type="button" @onclick="CopyAccessUrlAsync">Copy address</button>
+                    @if (!candidate.IsSecure)
+                    {
+                        <p class="field-help">This private address uses HTTP. Screen stay-awake on iPhone can require HTTPS; configure <code>Gateway:PublicUrl</code> with a trusted local HTTPS address to make that address selectable here.</p>
+                    }
+                    <span class="action-status" role="status">@accessMessage</span>
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="notice" role="status">@(access?.Message ?? "The private-LAN address is unavailable.")</p>
+        }
+    </section>
+
+    <section class="panel-card" aria-labelledby="database-health-title">
+        <div class="panel-heading">
+            <div><p class="eyebrow">Local data</p><h2 id="database-health-title">Database health</h2></div>
+            <span class="sensor-badge">@(databaseStatus?.State ?? "Loading")</span>
+        </div>
+        <p role="status">@(databaseStatus?.Message ?? "Loading the latest integrity result…")</p>
+        @if (databaseStatus is { } database)
+        {
+            <dl class="zone-list" aria-label="Database integrity status">
+                <div><dt>Last full check</dt><dd>@FormatTimestamp(database.LastFullCheckAtUtc)</dd></div>
+                <div><dt>Last safe maintenance</dt><dd>@FormatTimestamp(database.LastMaintenanceAtUtc)</dd></div>
+                <div><dt>Verified backup</dt><dd>@FormatTimestamp(database.LastBackupAtUtc)</dd></div>
+                <div><dt>Next automatic check</dt><dd>@FormatTimestamp(database.NextCheckAtUtc)</dd></div>
+            </dl>
+            @if (database.RecoveryRequired)
+            {
+                <p class="notice" role="alert">Recovery is required. Download diagnostics and restore a reviewed backup; the app never deletes rows or replaces the database automatically.</p>
+            }
+            @if (database.Issues.Count > 0)
+            {
+                <details class="advanced-settings"><summary>Check details</summary>
+                    <ul>@foreach (string issue in database.Issues) { <li>@issue</li> }</ul>
+                </details>
+            }
+            <details class="advanced-settings"><summary>Automatic maintenance actions</summary>
+                <p class="field-hint">Passive WAL checkpoint, SQLite optimization, stale integrity-temp cleanup, full validation, and verified backup rotation. Destructive recovery is never automatic.</p>
+            </details>
+        }
+        <button class="secondary-action" type="button" @onclick="CheckDatabaseAsync" disabled="@databaseBusy">
+            @(databaseBusy ? "Checking…" : "Check now")
+        </button>
+        <p class="field-hint">Runs only while idle. Safe maintenance is limited to integrity checks, a passive WAL checkpoint, optimization, stale temporary-file cleanup, and a verified last-known-good backup.</p>
+    </section>
+
     <details class="panel-card advanced-settings">
         <summary>Backup and diagnostics</summary>
         <div class="controls-card">
             <a class="secondary-action" href="/api/operations/backup" download>Download full backup</a>
+            @if (!string.IsNullOrWhiteSpace(databaseStatus?.LastBackupFileName))
+            {
+                <a class="secondary-action" href="/api/operations/database/verified-backup" download>Download verified recovery backup</a>
+            }
             <a class="secondary-action" href="/api/operations/diagnostics" download>Download diagnostics</a>
         </div>
     </details>
@@ -88,14 +169,95 @@
 
 @code {
     private const long MaximumRestoreBytes = 256L * 1024 * 1024;
+    private AppAccessModel? access;
+    private bool accessLoading = true;
+    private string? selectedAccessCandidateId;
+    private string? accessMessage;
     private JsonElement? restorePreview;
     private string? message;
     private UpdateStatusModel updateStatus = UpdateStatusModel.Empty;
     private bool updateBusy;
     private bool activationConfirming;
     private string? activationVersion;
+    private DatabaseIntegrityStatusModel? databaseStatus;
+    private bool databaseBusy;
 
-    protected override async Task OnInitializedAsync() => await LoadUpdateStatusAsync();
+    private AppAccessCandidateModel? SelectedAccessCandidate => access?.Candidates
+        .FirstOrDefault(candidate => candidate.Id == selectedAccessCandidateId) ?? access?.Candidates.FirstOrDefault();
+    private string AccessQrUrl => SelectedAccessCandidate is { } candidate
+        ? $"/api/operations/access/qr/{Uri.EscapeDataString(candidate.Id)}"
+        : string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync());
+    }
+
+    private async Task LoadDatabaseStatusAsync()
+    {
+        try
+        {
+            databaseStatus = await Http.GetFromJsonAsync<DatabaseIntegrityStatusModel>("api/operations/database/status");
+        }
+        catch (HttpRequestException)
+        {
+            databaseStatus = null;
+        }
+    }
+
+    private async Task CheckDatabaseAsync()
+    {
+        if (databaseBusy) return;
+        databaseBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/operations/database/check", new { });
+            databaseStatus = await response.Content.ReadFromJsonAsync<DatabaseIntegrityStatusModel>() ?? databaseStatus;
+            message = response.IsSuccessStatusCode
+                ? "Database validation and safe maintenance completed."
+                : "Database checking is waiting until the application is idle.";
+        }
+        catch (HttpRequestException)
+        {
+            message = "Database health could not be checked.";
+        }
+        finally
+        {
+            databaseBusy = false;
+        }
+    }
+
+    private async Task LoadAccessAsync()
+    {
+        accessLoading = true;
+        try
+        {
+            access = await Http.GetFromJsonAsync<AppAccessModel>("api/operations/access");
+            selectedAccessCandidateId = access?.PreferredCandidateId ?? access?.Candidates.FirstOrDefault()?.Id;
+        }
+        catch (HttpRequestException)
+        {
+            access = new AppAccessModel(false, null, [], "The private-LAN address could not be loaded.");
+        }
+        finally
+        {
+            accessLoading = false;
+        }
+    }
+
+    private async Task CopyAccessUrlAsync()
+    {
+        if (SelectedAccessCandidate is not { } candidate) return;
+        try
+        {
+            bool copied = await JS.InvokeAsync<bool>("treadmillRunnerView.copyText", candidate.Url);
+            accessMessage = copied ? "Address copied." : "Copy was blocked. Select and copy the address shown above.";
+        }
+        catch (JSException)
+        {
+            accessMessage = "Copy was blocked. Select and copy the address shown above.";
+        }
+    }
 
     private async Task PreviewRestoreAsync(InputFileChangeEventArgs args)
     {
@@ -241,6 +403,29 @@
         public static UpdateStatusModel Empty { get; } = new(
             "NotChecked", "Unknown", null, null, null, null, "No update check has completed yet.", null);
     }
+
+    private sealed record AppAccessCandidateModel(string Id, string Label, string Url, bool IsSecure);
+
+    private sealed record AppAccessModel(
+        bool Available,
+        string? PreferredCandidateId,
+        IReadOnlyList<AppAccessCandidateModel> Candidates,
+        string Message);
+
+    private sealed record DatabaseIntegrityStatusModel(
+        string State,
+        string Message,
+        DateTimeOffset UpdatedAtUtc,
+        DateTimeOffset? LastQuickCheckAtUtc,
+        DateTimeOffset? LastFullCheckAtUtc,
+        DateTimeOffset? LastHealthyAtUtc,
+        DateTimeOffset? LastMaintenanceAtUtc,
+        DateTimeOffset? LastBackupAtUtc,
+        string? LastBackupFileName,
+        string? LastBackupSha256,
+        DateTimeOffset? NextCheckAtUtc,
+        bool RecoveryRequired,
+        IReadOnlyList<string> Issues);
 
     private const long UpdateManagerMaximumBundleBytes = (1024L * 1024 * 1024) + (2L * 1024 * 1024);
 }

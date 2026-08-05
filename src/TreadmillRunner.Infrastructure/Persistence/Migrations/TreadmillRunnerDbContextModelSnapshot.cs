@@ -17,6 +17,84 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.BleReliabilityIncidentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DeviceEnrollmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FailedAttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FailureKind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FirstConnectionGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastSanitizedFault")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("MaximumReconnectDelaySeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<long?>("RecoveredAtUnixMilliseconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RecoveredConnectionGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StartedAtUnixMilliseconds")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAtUnixMilliseconds");
+
+                    b.HasIndex("DeviceEnrollmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_BleReliabilityIncidents_OneOpenPerDevice")
+                        .HasFilter("\"RecoveredAtUnixMilliseconds\" IS NULL");
+
+                    b.HasIndex("DeviceEnrollmentId", "RecoveredAtUnixMilliseconds");
+
+                    b.ToTable("BleReliabilityIncidents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_Attempts", "\"FailedAttemptCount\" > 0");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_Delay", "\"MaximumReconnectDelaySeconds\" >= 0");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_DisplayName", "length(\"DeviceDisplayName\") > 0");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_FailureKind", "\"FailureKind\" IN ('NativeDisconnected', 'TelemetrySilent', 'NotificationEnded', 'GattTimeout', 'InvalidTelemetry', 'RequiredCharacteristicMissing', 'AdapterUnavailable')");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_Fault", "length(\"LastSanitizedFault\") > 0");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_RecoveryTime", "\"RecoveredAtUnixMilliseconds\" IS NULL OR \"RecoveredAtUnixMilliseconds\" >= \"StartedAtUnixMilliseconds\"");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_Role", "\"Role\" IN ('Treadmill', 'HeartRate')");
+
+                            t.HasCheckConstraint("CK_BleReliabilityIncidents_StartedAt", "\"StartedAtUnixMilliseconds\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.CalendarExceptionEntity", b =>
                 {
                     b.Property<Guid>("Id")

@@ -25,6 +25,8 @@ foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migratio
         throw "PublishPath is missing $required."
     }
 }
+& (Join-Path $PSScriptRoot 'test-garmin-adapter-runtime.ps1') -PublishPath $resolvedPublish
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Garmin adapter validation failed.' }
 
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) "TreadmillRunner-installer-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null

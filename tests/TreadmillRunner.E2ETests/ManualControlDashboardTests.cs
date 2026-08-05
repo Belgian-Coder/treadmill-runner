@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Playwright;
@@ -23,16 +24,26 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     int width,
     int height)
   {
+    var browserErrors = new ConcurrentQueue<string>();
+    Page.PageError += (_, error) => browserErrors.Enqueue(error);
+    Page.Console += (_, message) =>
+    {
+      if (message.Type == "error") browserErrors.Enqueue(message.Text);
+    };
     await Page.SetViewportSizeAsync(width, height);
     await Page.AddInitScriptAsync("""
         window.__wakeLockRequests = 0;
         window.__wakeLockReleases = 0;
+        window.__wakeLockReleaseCallback = null;
         Object.defineProperty(Navigator.prototype, 'wakeLock', { configurable: true, get: () => ({
           request: async () => {
             window.__wakeLockRequests++;
             const listeners = {};
             return {
-              addEventListener: (name, callback) => listeners[name] = callback,
+              addEventListener: (name, callback) => {
+                listeners[name] = callback;
+                if (name === 'release') window.__wakeLockReleaseCallback = callback;
+              },
               release: async () => { window.__wakeLockReleases++; if (listeners.release) listeners.release(); }
             };
           }
@@ -52,6 +63,10 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Page.WaitForFunctionAsync("window.__wakeLockRequests >= 1", null, new PageWaitForFunctionOptions { Timeout = 5_000 });
     Assert.True(await Page.EvaluateAsync<int>("window.__wakeLockRequests") >= 1,
       "Control must request a screen wake lock while a run is armed.");
+    await Expect(Page.GetByLabel("Screen stay-awake active", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.EvaluateAsync("window.__wakeLockReleaseCallback && window.__wakeLockReleaseCallback()");
+    await Page.WaitForFunctionAsync("window.__wakeLockRequests >= 2", null, new PageWaitForFunctionOptions { Timeout = 5_000 });
+    await Expect(Page.GetByLabel("Screen stay-awake active", new() { Exact = true })).ToBeVisibleAsync();
     await SetPhysicalMotionAsync(1.2, 0.5);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToContainTextAsync("4.5");
@@ -209,6 +224,16 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       await fullscreenButton.ClickAsync();
       await Expect(Page.Locator("#control-dashboard:fullscreen")).ToBeVisibleAsync();
       Assert.Equal("control-dashboard", await Page.EvaluateAsync<string?>("document.fullscreenElement?.id"));
+      LocatorBoundingBoxResult? fullscreenStopBox = await Page
+        .GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })
+        .BoundingBoxAsync();
+      Assert.NotNull(fullscreenStopBox);
+      double fullscreenViewportHeight = await Page.EvaluateAsync<double>("window.innerHeight");
+      Assert.True(
+        fullscreenStopBox.Y >= 0 && fullscreenStopBox.Y + fullscreenStopBox.Height <= fullscreenViewportHeight + 1,
+        $"Stop must remain entirely visible after native full screen; viewport height {fullscreenViewportHeight}, bounds {fullscreenStopBox}.");
+      Assert.True(fullscreenStopBox.Width >= 44 && fullscreenStopBox.Height >= 44,
+        $"Stop must retain a 44px touch target after native full screen: {fullscreenStopBox}.");
       await Page.ScreenshotAsync(new PageScreenshotOptions
       {
         Path = Path.Combine(galleryDirectory, $"control-active-fullscreen-{viewport}.png"),
@@ -229,6 +254,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       });
       await fullscreenButton.ClickAsync();
       await Expect(Page.Locator("#control-dashboard.control-page--immersive")).ToHaveCountAsync(0);
+      Assert.True(await Page.Locator("#blazor-error-ui").IsHiddenAsync(),
+        $"Full-screen entry/exit must not fault the Blazor control page: {string.Join(" | ", browserErrors)}");
     }
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
@@ -237,6 +264,64 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       .ToBeVisibleAsync();
     Assert.True(await Page.EvaluateAsync<int>("window.__wakeLockReleases") >= 1,
       "Control must release the wake lock when the run ends or navigation leaves the dashboard.");
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Delayed_wake_lock_is_released_on_disposal_and_can_be_reacquired()
+  {
+    await ResetSimulatorAsync();
+    await Page.AddInitScriptAsync("""
+      window.__wakeLockRequests = 0;
+      window.__wakeLockReleases = 0;
+      window.__pendingWakeLocks = [];
+      Object.defineProperty(Navigator.prototype, 'wakeLock', { configurable: true, get: () => ({
+        request: () => {
+          window.__wakeLockRequests++;
+          const listeners = {};
+          let resolveRequest;
+          const sentinel = {
+            released: false,
+            addEventListener: (name, callback) => listeners[name] = callback,
+            release: async () => {
+              if (sentinel.released) return;
+              sentinel.released = true;
+              window.__wakeLockReleases++;
+              if (listeners.release) await listeners.release();
+            }
+          };
+          const promise = new Promise(resolve => resolveRequest = () => resolve(sentinel));
+          window.__pendingWakeLocks.push({ sentinel, resolve: resolveRequest });
+          return promise;
+        }
+      })});
+      """);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    await Page.EvaluateAsync("() => { window.__firstWakeResult = window.treadmillRunnerView.setRunWakeLock(true); }");
+    await Page.WaitForFunctionAsync("window.__wakeLockRequests === 1");
+    await Page.EvaluateAsync("window.treadmillRunnerView.disposeRunWakeLock()");
+    await Page.EvaluateAsync("window.__pendingWakeLocks[0].resolve()");
+    await Page.EvaluateAsync("window.__firstWakeResult");
+
+    Assert.Equal(1, await Page.EvaluateAsync<int>("window.__wakeLockReleases"));
+    Assert.False(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLockWanted"));
+    Assert.True(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLock === null"));
+    Assert.True(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLockRequest === null"));
+
+    await Page.EvaluateAsync("() => { window.__secondWakeResult = window.treadmillRunnerView.setRunWakeLock(true); }");
+    await Page.WaitForFunctionAsync("window.__wakeLockRequests === 2");
+    await Page.EvaluateAsync("window.__pendingWakeLocks[1].resolve()");
+    string secondState = await Page.EvaluateAsync<string>("window.__secondWakeResult.then(result => result.state)");
+
+    Assert.Equal("Active", secondState);
+    Assert.True(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLockWanted"));
+    Assert.True(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLock === window.__pendingWakeLocks[1].sentinel"));
+
+    await Page.EvaluateAsync("window.treadmillRunnerView.disposeRunWakeLock()");
+    Assert.Equal(2, await Page.EvaluateAsync<int>("window.__wakeLockReleases"));
+    Assert.False(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLockWanted"));
+    Assert.True(await Page.EvaluateAsync<bool>("window.treadmillRunnerView.wakeLock === null"));
   }
 
   [Fact]

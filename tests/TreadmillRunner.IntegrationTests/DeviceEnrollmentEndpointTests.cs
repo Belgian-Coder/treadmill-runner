@@ -220,6 +220,25 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
     Assert.Equal(HttpStatusCode.NoContent, forgotten.StatusCode);
   }
 
+  [Fact]
+  public async Task Reliability_report_is_bounded_and_does_not_expose_ble_device_identifiers()
+  {
+    using HttpClient client = factory.CreateClient();
+
+    using HttpResponseMessage response = await client.GetAsync("/api/devices/reliability?days=7");
+    response.EnsureSuccessStatusCode();
+    string json = await response.Content.ReadAsStringAsync();
+    using JsonDocument document = JsonDocument.Parse(json);
+
+    Assert.Equal(7, document.RootElement.GetProperty("windowDays").GetInt32());
+    Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+    Assert.DoesNotContain("\"deviceId\"", json, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("identityFingerprint", json, StringComparison.OrdinalIgnoreCase);
+
+    using HttpResponseMessage invalid = await client.GetAsync("/api/devices/reliability?days=0");
+    Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+  }
+
   private sealed class AdvertisementOnlyTransport(IReadOnlyList<BleAdvertisement> advertisements) :
     IBleCentralTransport
   {

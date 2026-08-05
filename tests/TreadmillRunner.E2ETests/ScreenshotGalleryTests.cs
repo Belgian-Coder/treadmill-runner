@@ -231,6 +231,24 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
           FullPage = true,
         });
       }
+      else if (fileName == "workout-import")
+      {
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Generated set", Exact = true }).ClickAsync();
+        await Page.GetByLabel("Generated treadmill-workout v4 bundle", new() { Exact = true })
+          .SetInputFilesAsync(GalleryScenario.GeneratedSetFile());
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "First 5K · six-week builder", Exact = true }))
+          .ToBeVisibleAsync();
+        await Expect(Page.GetByText("v4.2.0", new() { Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.Locator("body")).Not.ToContainTextAsync("@setPreview");
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Import 18 workouts and create plan", Exact = true }))
+          .ToBeEnabledAsync();
+        await AssertNoHorizontalOverflowAsync(fileName, "generated set iPhone");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "workout-set-import-iphone17-pro-max.png"),
+          FullPage = true,
+        });
+      }
       else if (fileName == "history")
       {
         await Page.GetByLabel("Search history", new() { Exact = true }).FillAsync("Recovery");
@@ -378,6 +396,10 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Page.GetByText("Session events", new() { Exact = true }).ClickAsync();
         await Page.GetByText("Runner debrief", new() { Exact = true }).ClickAsync();
         break;
+      case "devices":
+        await Page.GetByText("Bluetooth reliability report", new() { Exact = true }).ClickAsync();
+        await Expect(Page.GetByText("2 outages", new() { Exact = false })).ToBeVisibleAsync();
+        break;
     }
   }
 
@@ -404,7 +426,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     ILocator runner = Page.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true });
     await runner.ClickAsync();
     await Expect(runner).ToHaveAttributeAsync("aria-checked", "true");
-    await Page.GetByRole(AriaRole.Button, new() { Name = GalleryScenario.FeaturedWorkoutName, Exact = false }).ClickAsync();
+    await Page.Locator(".workout-choice-card")
+      .Filter(new() { HasText = GalleryScenario.FeaturedWorkoutName }).First.ClickAsync();
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
     await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
       .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
@@ -419,6 +442,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
           .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
         await Expect(Page.Locator(".readiness-list li")).Not.ToHaveCountAsync(0);
+        await Expect(Page.GetByText("Run again", new() { Exact = true }).First).ToBeVisibleAsync();
         break;
       case "control":
         await Expect(Page.GetByLabel("Heart rate")).ToContainTextAsync("132");
@@ -480,11 +504,13 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await AssertTimeAxisLabelsDoNotOverlapAsync("history detail desktop");
         break;
       case "devices":
-        await Expect(Page.GetByText("Horizon Omega Z", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Polar H10 A1B2C3D4", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Garmin Fenix 8 HR Broadcast", new() { Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.Locator(".device-card h2").Filter(new() { HasText = "Horizon Omega Z" })).ToBeVisibleAsync();
+        await Expect(Page.Locator(".device-card h2").Filter(new() { HasText = "Polar H10 A1B2C3D4" })).ToBeVisibleAsync();
+        await Expect(Page.Locator(".device-card h2").Filter(new() { HasText = "Garmin Fenix 8 HR Broadcast" })).ToBeVisibleAsync();
         await Expect(Page.GetByText("143 bpm", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Preferred", new() { Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("86%", new() { Exact = false }).First).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Bluetooth reliability report", new() { Exact = true })).ToBeVisibleAsync();
         break;
       case "profiles":
         Assert.Equal(2, await Page.Locator(".profile-row").CountAsync());
@@ -495,9 +521,14 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToContainTextAsync("never starts the treadmill");
         break;
       case "operations":
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Open on another device", Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.Locator(".app-access-qr")).ToBeVisibleAsync();
         await Expect(Page.GetByLabel("Update status", new() { Exact = true })).ToContainTextAsync("Available");
         await Expect(Page.GetByLabel("Update status", new() { Exact = true })).ToContainTextAsync("1.5.5");
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Verify and stage", Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Database health", Exact = true })).ToBeVisibleAsync();
+        ILocator databasePanel = Page.GetByRole(AriaRole.Region, new() { Name = "Database health", Exact = true });
+        await Expect(databasePanel.GetByRole(AriaRole.Status)).ToContainTextAsync("verified last-known-good backup");
         break;
       default:
         throw new ArgumentOutOfRangeException(nameof(fileName), fileName, "Unknown gallery screen.");

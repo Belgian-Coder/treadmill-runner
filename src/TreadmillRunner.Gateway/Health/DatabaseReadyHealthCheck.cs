@@ -1,11 +1,10 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Health;
 
 public sealed class DatabaseReadyHealthCheck(
-  IDbContextFactory<TreadmillRunnerDbContext> contextFactory,
+  IDatabaseIntegrityChecker integrity,
   IHostEnvironment environment) : IHealthCheck
 {
   public async Task<HealthCheckResult> CheckHealthAsync(
@@ -14,21 +13,19 @@ public sealed class DatabaseReadyHealthCheck(
   {
     try
     {
-      await using TreadmillRunnerDbContext database = await contextFactory.CreateDbContextAsync(cancellationToken);
-      if (!await database.Database.CanConnectAsync(cancellationToken))
-        return HealthCheckResult.Unhealthy("The application database cannot be opened.");
+      DatabaseIntegrityCheckResult result = await integrity.CheckAsync(
+        DatabaseIntegrityCheckLevel.Quick,
+        cancellationToken);
+      if (result.IsHealthy)
+      {
+        return HealthCheckResult.Healthy("The database is current and passed SQLite quick_check.");
+      }
 
-      IEnumerable<string> pending = await database.Database.GetPendingMigrationsAsync(cancellationToken);
-      if (environment.IsProduction() && pending.Any())
-        return HealthCheckResult.Unhealthy("The application database has pending reviewed migrations.");
-
-      await database.Database.OpenConnectionAsync(cancellationToken);
-      await using var command = database.Database.GetDbConnection().CreateCommand();
-      command.CommandText = "PRAGMA quick_check;";
-      object? result = await command.ExecuteScalarAsync(cancellationToken);
-      return string.Equals(Convert.ToString(result), "ok", StringComparison.OrdinalIgnoreCase)
-        ? HealthCheckResult.Healthy("The database is current and passed SQLite quick_check.")
-        : HealthCheckResult.Unhealthy("The application database failed SQLite quick_check.");
+      string description = result.Issues.FirstOrDefault()
+        ?? "The application database failed SQLite quick_check.";
+      return environment.IsProduction()
+        ? HealthCheckResult.Unhealthy(description)
+        : HealthCheckResult.Degraded(description);
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
     {

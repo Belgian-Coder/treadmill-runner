@@ -10,6 +10,22 @@ public sealed record GarminActivityConnectRequest(string Email, string Password,
 public sealed record GarminActivityMfaRequest(Guid ChallengeId, string Code);
 public sealed record GarminActivityEnabledRequest(bool Enabled, int ExpectedVersion);
 public sealed record GarminActivityDisconnectRequest(int ExpectedVersion);
+public sealed record GarminActivityUploadStatusResponse(
+  Guid ProfileId,
+  bool Connected,
+  bool Enabled,
+  string? AccountLabel,
+  string State,
+  int Pending,
+  int Confirmed,
+  int Failed,
+  int Unknown,
+  DateTimeOffset? LastSuccessAtUtc,
+  string? LastError,
+  int? Version,
+  string AdapterState,
+  string AdapterMessage,
+  bool CanConnect);
 
 public static class GarminActivityUploadEndpoints
 {
@@ -27,8 +43,12 @@ public static class GarminActivityUploadEndpoints
     return endpoints;
   }
 
-  private static async Task<IResult> GetStatusAsync(Guid profileId, IGarminActivityUploadStore store, CancellationToken cancellationToken) =>
-    TypedResults.Ok(await store.GetStatusAsync(profileId, cancellationToken));
+  private static async Task<IResult> GetStatusAsync(
+    Guid profileId,
+    IGarminActivityUploadStore store,
+    IGarminActivityAdapterReadiness readiness,
+    CancellationToken cancellationToken) =>
+    TypedResults.Ok(await StatusAsync(profileId, store, readiness, cancellationToken));
 
   private static async Task<IResult> GetJobsAsync(Guid profileId, IGarminActivityUploadStore store, CancellationToken cancellationToken) =>
     TypedResults.Ok(await store.ListJobsAsync(profileId, cancellationToken));
@@ -38,12 +58,16 @@ public static class GarminActivityUploadEndpoints
     GarminActivityConnectRequest request,
     HttpContext context,
     ILiveSessionCoordinator sessions,
+    IGarminActivityAdapterReadiness readiness,
     GarminActivityConnectionService service,
     CancellationToken cancellationToken)
   {
     if (!IsProtectedCredentialRequest(context))
       return Results.Json(new { error = "Enter Garmin credentials only over HTTPS or from a browser on the NUC itself." }, statusCode: StatusCodes.Status426UpgradeRequired);
     if (HasActiveRun(sessions)) return TypedResults.Conflict(new { error = "Connect Garmin activity upload only while no run is active." });
+    GarminAdapterReadiness adapter = await readiness.CheckAsync(cancellationToken);
+    if (!adapter.CanConnect)
+      return Results.Json(new { error = adapter.Message, adapterState = adapter.State }, statusCode: StatusCodes.Status503ServiceUnavailable);
     if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 || string.IsNullOrEmpty(request.Password) || request.Password.Length > 512)
       return TypedResults.BadRequest(new { error = "A bounded Garmin email and password are required for this one-time login." });
     try { return TypedResults.Ok(await service.BeginAsync(profileId, request.Email.Trim(), request.Password, request.Enabled, cancellationToken)); }
@@ -67,14 +91,14 @@ public static class GarminActivityUploadEndpoints
     catch (Exception) { return TypedResults.Conflict(new { error = "Garmin verification failed. Start the connection again." }); }
   }
 
-  private static async Task<IResult> SetEnabledAsync(Guid profileId, GarminActivityEnabledRequest request, ILiveSessionCoordinator sessions, IGarminActivityUploadStore store, GarminActivityUploadWorker worker, TimeProvider timeProvider, CancellationToken cancellationToken)
+  private static async Task<IResult> SetEnabledAsync(Guid profileId, GarminActivityEnabledRequest request, ILiveSessionCoordinator sessions, IGarminActivityUploadStore store, IGarminActivityAdapterReadiness readiness, GarminActivityUploadWorker worker, TimeProvider timeProvider, CancellationToken cancellationToken)
   {
     if (HasActiveRun(sessions)) return TypedResults.Conflict(new { error = "Change Garmin upload settings only while no run is active." });
     try
     {
       GarminActivityUploadAccount account = await store.SetEnabledAsync(profileId, request.Enabled, request.ExpectedVersion, timeProvider.GetUtcNow(), cancellationToken);
       if (account.Enabled) worker.Wake();
-      return TypedResults.Ok(await store.GetStatusAsync(profileId, cancellationToken));
+      return TypedResults.Ok(await StatusAsync(profileId, store, readiness, cancellationToken));
     }
     catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
     catch (DbUpdateConcurrencyException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
@@ -103,4 +127,30 @@ public static class GarminActivityUploadEndpoints
 
   private static bool IsProtectedCredentialRequest(HttpContext context) => context.Request.IsHttps ||
     (context.Connection.RemoteIpAddress is { } address && IPAddress.IsLoopback(address));
+
+  private static async Task<GarminActivityUploadStatusResponse> StatusAsync(
+    Guid profileId,
+    IGarminActivityUploadStore store,
+    IGarminActivityAdapterReadiness readiness,
+    CancellationToken cancellationToken)
+  {
+    GarminActivityUploadStatus status = await store.GetStatusAsync(profileId, cancellationToken);
+    GarminAdapterReadiness adapter = await readiness.CheckAsync(cancellationToken);
+    return new(
+      status.ProfileId,
+      status.Connected,
+      status.Enabled,
+      status.AccountLabel,
+      status.State,
+      status.Pending,
+      status.Confirmed,
+      status.Failed,
+      status.Unknown,
+      status.LastSuccessAtUtc,
+      status.LastError,
+      status.Version,
+      adapter.State,
+      adapter.Message,
+      adapter.CanConnect);
+  }
 }

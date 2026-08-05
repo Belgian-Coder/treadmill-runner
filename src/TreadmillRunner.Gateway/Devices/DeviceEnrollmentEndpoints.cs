@@ -39,6 +39,30 @@ public sealed record HeartRateAssignmentDto(
   bool IsPreferred,
   int Version);
 
+public sealed record BleDeviceReliabilityDto(
+  Guid EnrollmentId,
+  string DisplayName,
+  string Role,
+  string CurrentState,
+  long ConnectionGeneration,
+  DateTimeOffset? LastTelemetryAtUtc,
+  int IncidentCount,
+  int RecoveredIncidentCount,
+  DateTimeOffset? CurrentOutageStartedAtUtc,
+  int CurrentFailedAttemptCount,
+  double? LastRecoverySeconds,
+  double? LongestRecoverySeconds,
+  string? LastFailureKind,
+  string? LastSanitizedFault,
+  byte? BatteryPercent,
+  DateTimeOffset? BatteryObservedAtUtc);
+
+public sealed record BleReliabilityReportDto(
+  DateTimeOffset CapturedAtUtc,
+  DateTimeOffset WindowStartedAtUtc,
+  int WindowDays,
+  IReadOnlyList<BleDeviceReliabilityDto> Devices);
+
 public sealed record DeviceEnrollmentDto(
   Guid Id,
   string Role,
@@ -68,6 +92,7 @@ public static class DeviceEnrollmentEndpoints
     devices.MapGet("/scan", ScanAsync);
     devices.MapGet("/status", static (Guid? profileId, IReadOnlyDeviceCoordinator coordinator) =>
       TypedResults.Ok(coordinator.CurrentForProfile(profileId)));
+    devices.MapGet("/reliability", ReliabilityAsync);
     RouteGroupBuilder group = devices.MapGroup("/enrollments");
     group.MapGet("/", ListAsync);
     group.MapPost("/", EnrollAsync);
@@ -75,6 +100,77 @@ public static class DeviceEnrollmentEndpoints
     group.MapDelete("/{id:guid}", ForgetByIdAsync);
     group.MapDelete("/{role}", ForgetAsync);
     return endpoints;
+  }
+
+  private static async Task<IResult> ReliabilityAsync(
+    int? days,
+    IDeviceEnrollmentStore enrollmentStore,
+    [FromServices] IBleReliabilityStore reliabilityStore,
+    IReadOnlyDeviceCoordinator coordinator,
+    TimeProvider timeProvider,
+    HttpContext httpContext,
+    CancellationToken cancellationToken)
+  {
+    int windowDays = days ?? 7;
+    if (windowDays is < 1 or > 90)
+    {
+      return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+      {
+        ["days"] = ["Use a reporting window between 1 and 90 days."],
+      });
+    }
+
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    DateTimeOffset since = now.AddDays(-windowDays);
+    IReadOnlyList<VersionedDeviceEnrollment> enrollments = await enrollmentStore.ListActiveAsync(cancellationToken);
+    IReadOnlyList<BleReliabilityIncident> incidents = await reliabilityStore.ListSinceAsync(
+      since,
+      maximumCount: 1000,
+      cancellationToken);
+    DeviceTelemetrySnapshot status = coordinator.Current;
+    BleDeviceReliabilityDto[] devices = enrollments.Select(enrollment =>
+    {
+      DeviceEnrollment device = enrollment.Enrollment;
+      BleReliabilityIncident[] deviceIncidents = incidents
+        .Where(incident => incident.DeviceEnrollmentId == device.Id)
+        .OrderByDescending(incident => incident.StartedAtUtc)
+        .ToArray();
+      BleReliabilityIncident? currentOutage = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is null);
+      BleReliabilityIncident? lastRecovered = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is not null);
+      double? longestRecovery = deviceIncidents
+        .Where(incident => incident.RecoveryDuration is not null)
+        .Select(incident => (double?)incident.RecoveryDuration!.Value.TotalSeconds)
+        .Max();
+      HeartRateSourceSnapshot? heartRate = device.Role == DeviceRole.HeartRate
+        ? status.HeartRateSources?.FirstOrDefault(source => source.EnrollmentId == device.Id)
+        : null;
+      DeviceConnectionSnapshot connection = device.Role == DeviceRole.Treadmill
+        ? status.Treadmill
+        : heartRate is null
+          ? new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Disconnected, 0, device.DisplayName, device.ProtocolId, null, null, null)
+          : new DeviceConnectionSnapshot(DeviceRole.HeartRate, heartRate.State, heartRate.ConnectionGeneration, heartRate.DisplayName, device.ProtocolId, null, heartRate.ObservedAt, heartRate.Fault);
+      BleReliabilityIncident? latest = deviceIncidents.FirstOrDefault();
+      return new BleDeviceReliabilityDto(
+        device.Id,
+        device.DisplayName,
+        device.Role.ToString(),
+        connection.State.ToString(),
+        connection.ConnectionGeneration,
+        connection.LastObservedAt,
+        deviceIncidents.Length,
+        deviceIncidents.Count(incident => incident.RecoveredAtUtc is not null),
+        currentOutage?.StartedAtUtc,
+        currentOutage?.FailedAttemptCount ?? 0,
+        lastRecovered?.RecoveryDuration?.TotalSeconds,
+        longestRecovery,
+        latest?.FailureKind.ToString(),
+        latest?.LastSanitizedFault,
+        heartRate?.BatteryPercent,
+        heartRate?.BatteryObservedAt);
+    }).ToArray();
+
+    httpContext.Response.Headers.CacheControl = "no-store";
+    return TypedResults.Ok(new BleReliabilityReportDto(now, since, windowDays, devices));
   }
 
   private static async Task<IResult> ScanAsync(

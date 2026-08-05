@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using TreadmillRunner.Gateway.Garmin;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -203,6 +206,12 @@ public sealed class GarminGatewayFactory : WebApplicationFactory<TreadmillRunner
       ["Persistence:DataProtectionKeyPath"] = Path.Combine(directory, "keys"),
       ["GarminConnect:Provider"] = "Mock",
     }));
+    builder.ConfigureServices(services =>
+    {
+      services.RemoveAll<IGarminActivityAdapterReadiness>();
+      services.AddSingleton<IGarminActivityAdapterReadiness>(new FixedGarminAdapterReadiness(
+        new(GarminAdapterReadinessStates.Ready, "Garmin activity upload is ready to connect.", true)));
+    });
   }
 
   public async Task<TreadmillRunnerDbContext> CreateContextAsync()
@@ -216,5 +225,10 @@ public sealed class GarminGatewayFactory : WebApplicationFactory<TreadmillRunner
     base.Dispose(disposing);
     Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
     if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+  }
+
+  public sealed class FixedGarminAdapterReadiness(GarminAdapterReadiness readiness) : IGarminActivityAdapterReadiness
+  {
+    public Task<GarminAdapterReadiness> CheckAsync(CancellationToken cancellationToken = default) => Task.FromResult(readiness);
   }
 }

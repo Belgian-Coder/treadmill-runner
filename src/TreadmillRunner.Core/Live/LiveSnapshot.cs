@@ -29,4 +29,6 @@ public sealed record LiveSnapshot(
     string? TreadmillFirmwareRevision = null,
     TreadmillCapabilityEvidence TreadmillEvidence = TreadmillCapabilityEvidence.Unknown,
     TreadmillCapabilities? TreadmillCapabilities = null,
-    long TreadmillConnectionGeneration = 0);
+    long TreadmillConnectionGeneration = 0,
+    byte? HeartRateBatteryPercent = null,
+    DateTimeOffset? HeartRateBatteryObservedAt = null);

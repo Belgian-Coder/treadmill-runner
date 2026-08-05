@@ -83,6 +83,17 @@ public sealed record WorkoutSummaryDto(
   double? DurationMinutes,
   DateTimeOffset UpdatedAtUtc);
 
+public sealed record WorkoutReuseDto(
+  Guid WorkoutId,
+  Guid WorkoutRevisionId,
+  string Name,
+  string? Description,
+  int ExpandedStepCount,
+  double? PlannedDurationMinutes,
+  DateTimeOffset LastCompletedAtUtc,
+  TimeSpan LastActualDuration,
+  int CompletionCount);
+
 public sealed record WorkoutProgramItemRequest(Guid WorkoutRevisionId);
 
 public sealed record WorkoutProgramSaveRequest(

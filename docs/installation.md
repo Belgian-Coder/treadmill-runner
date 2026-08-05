@@ -18,7 +18,7 @@ TreadmillRunner runs as a Windows service on a Windows 11 x64 NUC or VM and open
 - [Microsoft ASP.NET Core Runtime 10 for Windows x64](https://dotnet.microsoft.com/download/dotnet/10.0). The installer checks this and stops with a clear link if it is missing.
 - Administrator access for the one-time Windows service, firewall, and update-helper setup.
 
-The .NET SDK, Git, GitHub CLI, and Python are not required for normal use. Python 3.12 is optional and used only by the separately labelled unsupported Garmin completed-activity uploader.
+The .NET SDK, Git, GitHub CLI, Python, and `pip` are not required for normal use. Signed releases include the pinned offline Python 3.12 runtime used by the separately labelled unsupported Garmin completed-activity uploader; it remains disabled per profile until a runner explicitly connects and enables it.
 
 ## Install in four steps
 
@@ -28,6 +28,8 @@ The .NET SDK, Git, GitHub CLI, and Python are not required for normal use. Pytho
 4. Wait until the installer reports that the gateway is ready. It opens `http://localhost:5180`; household devices use `http://<NUC-hostname>:5180`.
 
 The installer checks the runtime and private-network profile, installs the immutable application release and database migrations, pins the public update-signing certificate, creates the least-privilege Windows service and update task, restricts the firewall rule to the private local subnet, and verifies `/health/ready` before opening the dashboard.
+
+After installation, open **Operations → Open on another device** to scan a locally generated QR code from an iPhone on the same private Wi-Fi. For a stable name, set `Gateway__PublicUrl` to the household HTTP(S) address. The gateway never sends the URL to a QR service. iPhone Screen Wake Lock may require a trusted local HTTPS origin; private HTTP remains usable but the browser can dim the display.
 
 ## First run
 
@@ -68,6 +70,7 @@ Administrators may keep using the protected `%ProgramData%\TreadmillRunner\updat
 - **Update unavailable:** confirm Internet/DNS access or import the signed offline ZIP. A local-feed recovery procedure is in the [release operations runbook](project/release-operations.md).
 - **Update rolls back:** keep using the restored version and download diagnostics from Operations. Do not retry the rejected version; publish or install a higher corrected release.
 - **Bluetooth unavailable:** confirm Windows sees the adapter and the service is running; never treat Bluetooth disconnect as a Stop mechanism.
+- **Garmin upload says adapter setup required:** install or repair the latest signed release. Normal installation contains the runtime and dependencies and does not use system Python or download packages. Open the profile again and select **Check again**. Developer-only external Python overrides are documented in the Garmin runbook.
 
 Application data is stored under `%ProgramData%\TreadmillRunner`. Removing the Windows service or application files does not automatically delete profiles/history. Make a full backup from Operations before deliberate data removal.
 

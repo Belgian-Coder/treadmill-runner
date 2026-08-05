@@ -172,7 +172,16 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
       }
     };
 
+    TypedEventHandler<BluetoothLEDevice, object> connectionHandler = (device, _) =>
+    {
+      if (device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+      {
+        channel.Writer.TryComplete(new WindowsBleDisconnectedException());
+      }
+    };
+
     handle.Characteristic.ValueChanged += handler;
+    handle.Device.ConnectionStatusChanged += connectionHandler;
     try
     {
       GattCommunicationStatus status = await handle.Characteristic
@@ -180,6 +189,10 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
         .AsTask(operationCancellation)
         .ConfigureAwait(false);
       WindowsBleStatus.ThrowIfFailed(status, null, $"subscribe characteristic {characteristicUuid:D}");
+      if (handle.Device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+      {
+        throw new WindowsBleDisconnectedException();
+      }
 
       await foreach (BleNotification notification in channel.Reader
         .ReadAllAsync(operationCancellation)
@@ -191,6 +204,7 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
     finally
     {
       handle.Characteristic.ValueChanged -= handler;
+      handle.Device.ConnectionStatusChanged -= connectionHandler;
       channel.Writer.TryComplete();
       try
       {
@@ -315,11 +329,12 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
     GattCharacteristic characteristic) : IDisposable
   {
     public GattCharacteristic Characteristic { get; } = characteristic;
+    public BluetoothLEDevice Device { get; } = device;
 
     public void Dispose()
     {
       service.Dispose();
-      device.Dispose();
+      Device.Dispose();
     }
   }
 }

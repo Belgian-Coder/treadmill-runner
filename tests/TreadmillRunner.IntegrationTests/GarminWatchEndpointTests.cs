@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using TreadmillRunner.Gateway.Garmin;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -23,9 +24,14 @@ public sealed class GarminWatchEndpointTests(GarminGatewayFactory factory) : ICl
       AllowAutoRedirect = false,
       BaseAddress = new Uri("https://localhost"),
     });
+    using HttpResponseMessage noWatch = await client.GetAsync($"/api/integrations/garmin/watch/profiles/{factory.ProfileId}");
+    Assert.Equal(HttpStatusCode.NoContent, noWatch.StatusCode);
+    Assert.Equal(0, noWatch.Content.Headers.ContentLength ?? 0);
     JsonElement uploadStatus = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/activity-upload/profiles/{factory.ProfileId}/status");
     Assert.False(uploadStatus.GetProperty("connected").GetBoolean());
     Assert.Equal("Disconnected", uploadStatus.GetProperty("state").GetString());
+    Assert.Equal(GarminAdapterReadinessStates.Ready, uploadStatus.GetProperty("adapterState").GetString());
+    Assert.True(uploadStatus.GetProperty("canConnect").GetBoolean());
     JsonElement uploadJobs = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/activity-upload/profiles/{factory.ProfileId}/jobs");
     Assert.Equal(JsonValueKind.Array, uploadJobs.ValueKind);
     Assert.Equal(0, uploadJobs.GetArrayLength());

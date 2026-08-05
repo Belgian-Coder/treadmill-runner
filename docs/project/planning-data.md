@@ -48,6 +48,8 @@ Run recommendation priority is deterministic:
 
 TR-005 adds `DeviceEnrollments` as a separate local operational aggregate. It stores at most one active row per `Treadmill` or `HeartRate` role using a filtered unique index. A row contains the Windows device identifier, protocol ID, SHA-256 identity fingerprint, display/model/firmware labels, explicit treadmill telemetry mode, serialized reported capabilities, evidence level and verification time, optimistic version, and archive metadata. Forgetting archives rather than deletes the row. The raw Windows identifier stays local and must be redacted from shared evidence and diagnostic bundles.
 
+TR-017 adds `BleReliabilityIncidents`, keyed to the local device enrollment and indexed for open-incident and time-window queries. One row represents an outage episode across multiple failed reconnect attempts and is closed only after valid telemetry returns. It persists display label, role, generation/timing, bounded attempt count, failure category, sanitized fault, and maximum delay; raw BLE identifiers and fingerprints are deliberately absent. Recovered rows are retained for 90 days.
+
 ## Preview and confirm
 
 [![Preview and confirm diagram](diagrams/planning-data-preview-and-confirm.svg)](diagrams/planning-data-preview-and-confirm.svg)
@@ -55,3 +57,5 @@ TR-005 adds `DeviceEnrollments` as a separate local operational aggregate. It st
 Source: [Mermaid](diagrams/planning-data-preview-and-confirm.mmd)
 
 Previewing writes nothing to SQLite. Confirmation reparses the bounded original bytes, so a client cannot replace the normalized definition between preview and commit.
+
+Generated treadmill-workout v4 bundle confirmation follows the same preview/reparse rule and atomically creates immutable workout revisions, one ordered workout-program revision, its exact-revision items, audit evidence, and operation receipt. A failure rolls back the entire set. The external skill itself is not copied, executed, or persisted.

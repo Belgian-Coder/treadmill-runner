@@ -29,7 +29,7 @@ Do not enable completed-activity upload for a run that was also recorded on a Ga
 
 ### Profile setup
 
-1. Install the pinned Python adapter on the NUC as described below.
+1. Install a current signed TreadmillRunner release. The pinned adapter runtime is included and checked offline during packaging.
 2. Open TreadmillRunner over trusted HTTPS, or open it locally on the NUC. Plain remote HTTP is rejected for credential entry.
 3. Open **Profiles**, edit the runner, and find **Garmin activity upload — Unsupported**.
 4. Enter that runner's Garmin email and password. The password is streamed once to an isolated Python process and is never persisted.
@@ -58,26 +58,25 @@ Each household profile has an independent protected account envelope, enable swi
 - Upload account changes are idle-only. Credential requests are accepted only via HTTPS or from a loopback browser on the NUC.
 - Provider behavior is not guaranteed. Garmin may change or block the private consumer interface at any time.
 
-### Install or refresh the adapter
+### Runtime, installation, and readiness
 
-The external reference is pinned to `garminconnect==0.3.8` and reviewed against repository commit `091cad8f8caeb1dbaa0b7d62679c725c12dee458`. Provenance is recorded in `automations/reference-refresh/artifacts/references/cards/python-garminconnect.md`. `requirements.lock.txt` fixes every transitive Windows x64/CPython 3.12 wheel and SHA-256; installation enforces `--require-hashes --only-binary=:all:`.
+The external reference is pinned to `garminconnect==0.3.8` and reviewed against repository commit `091cad8f8caeb1dbaa0b7d62679c725c12dee458`. Provenance is recorded in `automations/reference-refresh/artifacts/references/cards/python-garminconnect.md`. `requirements.lock.txt` fixes every transitive Windows x64/CPython 3.12 wheel and SHA-256. Release creation downloads the pinned official CPython 3.12.10 embeddable archive, verifies its fixed SHA-256, installs only hash-locked binary dependencies into the immutable release, retains license metadata, and runs a credential-free `probe` using that exact bundled runtime.
 
-From a trusted PowerShell session on the NUC:
+Normal installation performs no Python, `pip`, or package download step. The service runs `tools\garmin\runtime\python.exe` and `tools\garmin\garmin_activity_adapter.py` from the current immutable release. Every update package and end-user installer is rejected during creation if the offline probe does not report `ready`.
 
-```powershell
-./eng/install-garmin-adapter.ps1 -TargetDirectory C:\ProgramData\TreadmillRunner\garmin-python
-```
+The profile status reports one of these safe states:
 
-Configure the Windows service with release-independent paths:
+| Adapter state | Meaning | Operator action |
+|---|---|---|
+| `Ready` | Bundled runtime, adapter, and dependency import passed | The local/HTTPS sign-in form is available |
+| `RuntimeMissing` | Python executable is absent or cannot start | Install or repair the current signed release |
+| `DependencyMissing` | The pinned adapter dependency cannot import | Install or repair the current signed release |
+| `AdapterInvalid` | Script/configuration or probe response is invalid | Restore signed defaults or repair the release |
+| `Unavailable` | A bounded local probe failed or timed out | Retry once, then repair the signed release |
 
-```text
-GarminActivityUpload__PythonExecutable=C:\Program Files\Python312\python.exe
-GarminActivityUpload__AdapterScriptPath=<installed-release>\tools\garmin\garmin_activity_adapter.py
-GarminActivityUpload__PythonPath=C:\ProgramData\TreadmillRunner\garmin-python
-GarminActivityUpload__TimeoutSeconds=45
-```
+Readiness never contacts Garmin and never includes credentials, protected tokens, internal command lines, or sensitive paths. Connection returns HTTP 503 with only the safe state/message when readiness is not `Ready`.
 
-The Python executable path must be absolute, readable by the Windows Service identity, and point to Python 3.12. A per-user `python` on `PATH` commonly works interactively but is not visible to LocalSystem. Validate both the executable and `PYTHONPATH` while running as the actual service identity before enabling upload. The update package includes the adapter script and exact requirements file, not the third-party Python environment. Keeping dependencies under ProgramData avoids modifying an immutable release during install and lets an operator validate/replace them independently. Re-run the installer only after reviewing a changed pin/license and validating against fake accounts first.
+Developers may still override `GarminActivityUpload__PythonExecutable`, `GarminActivityUpload__AdapterScriptPath`, and `GarminActivityUpload__PythonPath` with absolute paths. This is a local-development fallback only. A relative configured path is constrained to the application content root; do not use a per-user `python` for the Windows service. The legacy `eng/install-garmin-adapter.ps1` remains a developer aid and is not part of normal installation.
 
 ### Status and recovery
 
@@ -89,7 +88,7 @@ The Python executable path must be absolute, readable by the Windows Service ide
 | Confirmed | Garmin returned a successful import result | Verify activity in that runner's Garmin Connect history |
 | Failed | Known provider/authentication error | Correct network/authentication; reconnect for auth errors or select retry for a known provider failure |
 | Unknown | Request may have reached Garmin, but confirmation was lost | Check Garmin Connect; do not retry blindly; dismiss after review |
-| Provider unavailable | Python/script/dependency missing or incompatible response | Reinstall the pinned adapter, leave upload disabled until tests pass |
+| Adapter setup required | Bundled runtime/script/dependency missing, invalid, or unavailable | Install or repair the current signed release, select **Check again**, and leave upload disabled until `Ready` |
 
 Backups contain encrypted token ciphertext and queue state. A restore under a different Windows DPAPI identity may make the token unreadable; disconnect/reconnect that runner. Never copy a database or Data Protection key ring to an untrusted host.
 
