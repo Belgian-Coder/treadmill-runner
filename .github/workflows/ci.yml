@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
       - name: Restore and lock
         shell: pwsh
-        run: ./eng/bootstrap.ps1
+        run: dotnet restore TreadmillRunner.slnx --use-lock-file --force-evaluate
       - name: Validate
         shell: pwsh
         run: ./eng/validate.ps1 -Configuration Release
@@ -42,7 +42,7 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
       - name: Restore and lock
         shell: pwsh
-        run: ./eng/bootstrap.ps1
+        run: dotnet restore TreadmillRunner.slnx --use-lock-file --force-evaluate
       - name: Browser acceptance
         shell: pwsh
         run: ./eng/playwright.ps1 -Configuration Release -InstallBrowsers
