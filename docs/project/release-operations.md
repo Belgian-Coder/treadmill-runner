@@ -178,6 +178,12 @@ Both failures retained healthy `1.5.1` service operation and produced rollback-j
 
 Release `1.5.8` was subsequently signed and packaged under `artifacts/releases/1.5.8/stable-feed` after the Daily-use V1 deterministic completion gate. Its RSA signature, SHA-256 package hash, assembly version, required activation assets, Release build, migrations, 38 browser scenarios, screenshots, and local-quality packet were verified. On 2026-08-04 it was installed into the protected stable feed with `install-stable-update-feed.ps1`; the running 1.5.6 service then reported state `Available`, current `1.5.6`, available `1.5.8`, and message `The release manifest is valid.` The remaining operator path is **Verify and stage** followed by **Activate staged update** in Operations.
 
+## 2026-08-06 operator UI acceptance boundary
+
+Release `1.5.13` proved GitHub discovery, signature and hash verification, staging, backup, promotion, service restart, migration, readiness, and retained profile/history access. Its check, stage, and activation endpoints were invoked directly, however, so that run is backend update evidence and **not** Operations-page acceptance evidence.
+
+Release `1.5.14` is reserved for the owner-operated UI acceptance run. After publishing it, automation must not call `/api/updates/check`, `/api/updates/stage`, or `/api/updates/activate` on the household service. The owner performs **Check now**, reviews the source and notes, selects **Verify and stage**, selects **Activate staged update**, confirms activation, observes browser reconnect/stale-client recovery, and verifies the reported current version. Record the outcome here only after those visible steps have been completed.
+
 From an elevated PowerShell window, install the already verified package into the protected feed:
 
 ```powershell
