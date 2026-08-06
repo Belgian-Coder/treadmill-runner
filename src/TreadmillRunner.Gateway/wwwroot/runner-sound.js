@@ -35,13 +35,29 @@ window.treadmillRunnerRuntime = {
     document.addEventListener("visibilitychange", this.visibilityHandler);
   },
   reload: function (fingerprint) {
-    const key = `treadmillrunner.reload.${fingerprint}`;
-    if (sessionStorage.getItem(key) === "attempted") return false;
-    sessionStorage.setItem(key, "attempted");
     const url = new URL(window.location.href);
+    if (url.searchParams.get("build") === fingerprint) return false;
+
+    const key = `treadmillrunner.reload.${fingerprint}`;
+    try {
+      if (sessionStorage.getItem(key) === "attempted") return false;
+      sessionStorage.setItem(key, "attempted");
+    } catch {
+      // Privacy modes can disable session storage. The build query remains a
+      // one-attempt guard if a stale entry document is returned after reload.
+    }
+
     url.searchParams.set("build", fingerprint);
+    url.hash = "signed-updates";
     window.location.replace(url.toString());
     return true;
+  },
+  reloadNow: function (fingerprint) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("build", fingerprint);
+    url.searchParams.set("reload", Date.now().toString());
+    url.hash = "signed-updates";
+    window.location.replace(url.toString());
   },
   dispose: function () {
     if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);

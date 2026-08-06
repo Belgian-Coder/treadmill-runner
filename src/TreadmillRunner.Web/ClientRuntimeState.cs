@@ -24,6 +24,10 @@ public sealed class ClientRuntimeState
       ServerFingerprint = version?.BuildFingerprint;
       UpdateRequired = !string.Equals(ServerFingerprint, ExpectedFingerprint, StringComparison.Ordinal);
     }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      return;
+    }
     catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
     {
       IsConnected = false;

@@ -153,6 +153,8 @@ Release assets are `stable.manifest.json`, `treadmillrunner-<version>-win-x64.zi
 6. Wait for the browser to reconnect and confirm the reported current version is the new version. The lifecycle state is **Activated** until a later check reports no newer release.
 7. Confirm `http://127.0.0.1:5180/health/ready` returns HTTP 200 and profiles/history are still present.
 
+After activation is accepted—or if its response is interrupted while the service restarts—the Operations page checks the gateway read-only and never resends activation. A promoted build reloads the page once, returns to the Signed updates card, and remains loop-safe even when browser session storage is unavailable. A rollback returning on the previous build updates the terminal state without reloading. If recovery reaches its hard three-minute deadline, the page cancels outstanding checks and tells the operator to use **Check now** after the gateway reconnects. The explicit update-banner **Reload** action can always perform one user-requested cache-busting reload even after the automatic guard was spent.
+
 ### Update from a signed file
 
 While idle, expand **Install from a signed file** in Operations and choose the versioned offline-update ZIP. The gateway bounds the upload, rejects extra, duplicate, or path-bearing outer entries, validates the signed manifest with the installed certificate, verifies the nested package hash and safe archive, and atomically stages it. Review the resulting source/version and use the normal two-step activation. The uploaded file is never extracted directly and never supplies its own trust key.

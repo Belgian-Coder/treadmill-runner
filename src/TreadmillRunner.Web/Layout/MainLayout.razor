@@ -93,7 +93,7 @@
     }
 
     private void RuntimeChanged() => _ = InvokeAsync(StateHasChanged);
-    private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reload", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
+    private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reloadNow", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
 
     public async ValueTask DisposeAsync()
     {

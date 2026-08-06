@@ -1,8 +1,10 @@
 @page "/operations"
+@implements IDisposable
 @using System.Net.Http.Headers
 @using System.Text.Json
 @inject HttpClient Http
 @inject IJSRuntime JS
+@inject TreadmillRunner.Web.ClientRuntimeState Runtime
 
 <PageTitle>Operations · TreadmillRunner</PageTitle>
 
@@ -121,7 +123,7 @@
         }
     </details>
 
-    <section class="panel-card">
+    <section class="panel-card" id="signed-updates" tabindex="-1">
         <h2>Signed updates</h2>
         <p role="status" aria-live="polite">@updateStatus.Message</p>
         <dl class="zone-list" aria-label="Update status">
@@ -180,6 +182,8 @@
     private bool updateBusy;
     private bool activationConfirming;
     private string? activationVersion;
+    private CancellationTokenSource? activationRecoveryCancellation;
+    private bool disposed;
     private DatabaseIntegrityStatusModel? databaseStatus;
     private bool databaseBusy;
 
@@ -329,17 +333,33 @@
 
     private async Task ActivateUpdateAsync()
     {
-        await RunUpdateActionAsync(() => Http.PostAsJsonAsync(
+        UpdateActionDisposition disposition = await RunUpdateActionAsync(() => Http.PostAsJsonAsync(
             "api/updates/activate", new { confirmation = "ACTIVATE", expectedVersion = activationVersion }),
             "Activation was not accepted.");
         activationConfirming = false;
+        if (disposition is UpdateActionDisposition.Accepted or UpdateActionDisposition.Unknown)
+        {
+            if (updateStatus.State == "Unavailable" || disposition == UpdateActionDisposition.Unknown)
+            {
+                updateStatus = updateStatus with
+                {
+                    State = "Activating",
+                    Message = disposition == UpdateActionDisposition.Unknown
+                        ? "The activation response was interrupted. Checking only for promotion or rollback; the activation command will not be sent again."
+                        : "The signed update is activating. The service will reconnect after promotion or rollback."
+                };
+            }
+            StartActivationRecovery();
+        }
     }
 
-    private async Task LoadUpdateStatusAsync()
+    private async Task LoadUpdateStatusAsync(
+        CancellationToken cancellationToken = default,
+        bool preserveActivatingOnFailure = false)
     {
         try
         {
-            updateStatus = await Http.GetFromJsonAsync<UpdateStatusModel>("api/updates/status")
+            updateStatus = await Http.GetFromJsonAsync<UpdateStatusModel>("api/updates/status", cancellationToken)
                 ?? UpdateStatusModel.Empty;
             if (updateStatus.State != "Staged" || activationVersion != updateStatus.StagedVersion)
             {
@@ -349,7 +369,98 @@
         }
         catch (HttpRequestException)
         {
-            updateStatus = UpdateStatusModel.Empty with { State = "Unavailable", Message = "Update status is unavailable." };
+            if (!preserveActivatingOnFailure)
+                updateStatus = UpdateStatusModel.Empty with { State = "Unavailable", Message = "Update status is unavailable." };
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            if (!preserveActivatingOnFailure)
+                updateStatus = UpdateStatusModel.Empty with { State = "Unavailable", Message = "Update status is unavailable." };
+        }
+    }
+
+    private void StartActivationRecovery()
+    {
+        activationRecoveryCancellation?.Cancel();
+        activationRecoveryCancellation?.Dispose();
+        activationRecoveryCancellation = new CancellationTokenSource();
+        _ = MonitorActivationRecoveryAsync(activationRecoveryCancellation);
+    }
+
+    private async Task MonitorActivationRecoveryAsync(CancellationTokenSource recovery)
+    {
+        using CancellationTokenSource deadlineCancellation = CancellationTokenSource.CreateLinkedTokenSource(recovery.Token);
+        deadlineCancellation.CancelAfter(TimeSpan.FromMinutes(3));
+        CancellationToken cancellationToken = deadlineCancellation.Token;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                await Runtime.CheckAsync(Http, cancellationToken);
+                if (Runtime.UpdateRequired)
+                {
+                    updateStatus = updateStatus with { Message = "The update is installed. Reloading the application…" };
+                    await InvokeAsync(StateHasChanged);
+                    bool reloadStarted = await JS.InvokeAsync<bool>(
+                        "treadmillRunnerRuntime.reload",
+                        cancellationToken,
+                        Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
+                    if (!reloadStarted)
+                    {
+                        updateStatus = updateStatus with
+                        {
+                            Message = "The update is installed. Select Reload in the update banner to finish refreshing this browser."
+                        };
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    return;
+                }
+
+                if (!Runtime.IsConnected) continue;
+                await LoadUpdateStatusAsync(cancellationToken, preserveActivatingOnFailure: true);
+                await InvokeAsync(StateHasChanged);
+                if (updateStatus.State is not "Activating" and not "Unavailable") return;
+            }
+
+            if (deadlineCancellation.IsCancellationRequested &&
+                !recovery.IsCancellationRequested &&
+                !disposed &&
+                ReferenceEquals(activationRecoveryCancellation, recovery))
+            {
+                updateStatus = updateStatus with
+                {
+                    Message = "The update is taking longer than expected. It may still be promoting or rolling back; use Check now after the gateway reconnects."
+                };
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (recovery.IsCancellationRequested)
+        {
+            // The operator navigated away or a newer activation recovery superseded this monitor.
+        }
+        catch (OperationCanceledException) when (deadlineCancellation.IsCancellationRequested)
+        {
+            if (!disposed && ReferenceEquals(activationRecoveryCancellation, recovery))
+            {
+                updateStatus = updateStatus with
+                {
+                    Message = "The update is taking longer than expected. It may still be promoting or rolling back; use Check now after the gateway reconnects."
+                };
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigation started or the browser disconnected while the promoted build was loading.
+        }
+        catch (JSException)
+        {
+            updateStatus = updateStatus with
+            {
+                Message = "The update is installed, but this browser could not reload automatically. Select Reload in the update banner."
+            };
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -359,11 +470,11 @@
         activationConfirming = !string.IsNullOrWhiteSpace(activationVersion);
     }
 
-    private async Task RunUpdateActionAsync(
+    private async Task<UpdateActionDisposition> RunUpdateActionAsync(
         Func<Task<HttpResponseMessage>> action,
         string failureMessage)
     {
-        if (updateBusy) return;
+        if (updateBusy) return UpdateActionDisposition.Rejected;
         updateBusy = true;
         try
         {
@@ -371,20 +482,30 @@
             if (response.IsSuccessStatusCode)
             {
                 await LoadUpdateStatusAsync();
+                return UpdateActionDisposition.Accepted;
             }
             else
             {
                 updateStatus = updateStatus with { Message = failureMessage };
             }
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
             updateStatus = updateStatus with { State = "Unavailable", Message = failureMessage };
+            return UpdateActionDisposition.Unknown;
         }
         finally
         {
             updateBusy = false;
         }
+        return UpdateActionDisposition.Rejected;
+    }
+
+    private enum UpdateActionDisposition
+    {
+        Accepted,
+        Rejected,
+        Unknown
     }
 
     private static string FormatTimestamp(DateTimeOffset? value) => value is null
@@ -429,4 +550,11 @@
         IReadOnlyList<string> Issues);
 
     private const long UpdateManagerMaximumBundleBytes = (1024L * 1024 * 1024) + (2L * 1024 * 1024);
+
+    public void Dispose()
+    {
+        disposed = true;
+        activationRecoveryCancellation?.Cancel();
+        activationRecoveryCancellation?.Dispose();
+    }
 }
