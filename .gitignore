@@ -17,6 +17,7 @@ desktop.ini
 .claude/settings.local.json
 .github/copilot/settings.local.json
 CLAUDE.local.md
+.public-evidence-denylist
 
 # Python
 __pycache__/
@@ -87,6 +88,11 @@ screenshots/**/*.png
 screenshots/**/*.jpg
 screenshots/**/*.jpeg
 screenshots/**/*.webp
+!screenshots/showcase/
+!screenshots/showcase/**/*.png
+!screenshots/showcase/**/*.jpg
+!screenshots/showcase/**/*.jpeg
+!screenshots/showcase/**/*.webp
 
 # Workflow runs contain machine-local evidence and owner conversation context.
 automations/**/runs/

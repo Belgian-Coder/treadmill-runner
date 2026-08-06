@@ -192,7 +192,7 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
-  public async Task Simulated_heart_rate_drives_decrease_increase_and_stale_suspension_end_to_end()
+  public async Task Gateway_owned_heart_rate_control_survives_browser_lease_expiry_then_suspends_on_stale_hr()
   {
     using HttpClient client = factory.CreateClient();
     await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
@@ -219,7 +219,7 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     Assert.Equal(HttpStatusCode.OK, enable.StatusCode);
 
     await client.PostAsJsonAsync("/api/live/simulator/heart-rate", new { beatsPerMinute = 160 });
-    lease = await WaitWithHeartbeatsAsync(client, lease, TimeSpan.FromSeconds(11), 160);
+    await WaitWithHeartRateAsync(client, TimeSpan.FromSeconds(11), 160);
     ActiveSessionSnapshot decreased = Assert.IsType<ActiveSessionSnapshot>(
       await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
     Assert.Equal(5.5, decreased.Live.SpeedKph, 1);
@@ -227,12 +227,17 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     Assert.Equal(TreadmillCommandDisposition.Confirmed, decreased.LastCommandResult?.Disposition);
 
     await client.PostAsJsonAsync("/api/live/simulator/heart-rate", new { beatsPerMinute = 110 });
-    lease = await WaitWithHeartbeatsAsync(client, lease, TimeSpan.FromSeconds(21), 110);
+    await WaitWithHeartRateAsync(client, TimeSpan.FromSeconds(21), 110);
     ActiveSessionSnapshot increased = Assert.IsType<ActiveSessionSnapshot>(
       await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
     Assert.Equal(5.7, increased.Live.SpeedKph, 1);
     Assert.Equal(5.7, increased.RequestedSpeedKph, 1);
     Assert.Equal(TreadmillCommandDisposition.Confirmed, increased.LastCommandResult?.Disposition);
+
+    using HttpResponseMessage reacquire = await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId });
+    Assert.Equal(HttpStatusCode.OK, reacquire.StatusCode);
+    lease = Assert.IsType<ControlLease>(await reacquire.Content.ReadFromJsonAsync<ControlLease>());
 
     lease = await WaitWithHeartbeatsAsync(client, lease, TimeSpan.FromSeconds(6));
     ActiveSessionSnapshot stale = Assert.IsType<ActiveSessionSnapshot>(
@@ -248,6 +253,22 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
       expectedSessionVersion = stale.Version,
     });
     Assert.Equal(HttpStatusCode.OK, stop.StatusCode);
+  }
+
+  [Fact]
+  public async Task Same_holder_reacquires_the_existing_lease_idempotently()
+  {
+    using HttpClient client = factory.CreateClient();
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    string holderId = $"reload-{Guid.NewGuid():N}";
+
+    ControlLease first = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+    ControlLease recovered = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+
+    Assert.Equal(first.Id, recovered.Id);
+    Assert.True(recovered.ExpiresAt >= first.ExpiresAt);
   }
 
   [Fact]
@@ -383,5 +404,23 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
       lease = Assert.IsType<ControlLease>(await heartbeat.Content.ReadFromJsonAsync<ControlLease>());
     }
     return lease;
+  }
+
+  private static async Task WaitWithHeartRateAsync(
+    HttpClient client,
+    TimeSpan duration,
+    ushort heartRateBpm)
+  {
+    DateTimeOffset end = DateTimeOffset.UtcNow + duration;
+    while (DateTimeOffset.UtcNow < end)
+    {
+      TimeSpan remaining = end - DateTimeOffset.UtcNow;
+      if (remaining <= TimeSpan.Zero) break;
+      await Task.Delay(TimeSpan.FromSeconds(Math.Min(2, remaining.TotalSeconds)));
+      using HttpResponseMessage heartRate = await client.PostAsJsonAsync(
+        "/api/live/simulator/heart-rate",
+        new { beatsPerMinute = heartRateBpm });
+      Assert.Equal(HttpStatusCode.OK, heartRate.StatusCode);
+    }
   }
 }

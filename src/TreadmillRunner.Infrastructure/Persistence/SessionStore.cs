@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
+using TreadmillRunner.Core.Control;
 
 namespace TreadmillRunner.Infrastructure.Persistence;
 
@@ -281,6 +282,46 @@ public sealed class SessionStore(
 
     await context.SaveChangesAsync(cancellationToken);
     return unfinished.Length;
+  }
+
+  public async Task SaveRecoveryCheckpointAsync(
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(checkpoint);
+    RequireId(checkpoint.SessionId, nameof(checkpoint.SessionId));
+    RequireUtc(checkpoint.SavedAtUtc, nameof(checkpoint.SavedAtUtc));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutSessionEntity session = await FindRequiredAsync(context, checkpoint.SessionId, cancellationToken);
+    if (IsTerminal(ParseState(session.State))) return;
+    string json = JsonSerializer.Serialize(checkpoint, EventJsonOptions);
+    if (Encoding.UTF8.GetByteCount(json) > 16_384)
+      throw new InvalidOperationException("The bounded session recovery checkpoint is too large.");
+    session.RecoveryCheckpointJson = json;
+    session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task<RecoverableWorkoutSession?> FindRecoverableAsync(
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    List<WorkoutSessionEntity> candidates = await context.WorkoutSessions.AsNoTracking()
+      .Include(candidate => candidate.Samples)
+      .Include(candidate => candidate.Events)
+      .Where(candidate => candidate.State == nameof(SessionState.Running) &&
+        candidate.SessionOrigin == nameof(SessionOrigin.Hardware) &&
+        candidate.RecoveryCheckpointJson != null)
+      .ToListAsync(cancellationToken);
+    WorkoutSessionEntity? entity = candidates
+      .OrderByDescending(candidate => candidate.RecoveryCheckpointUpdatedAtUtc)
+      .FirstOrDefault();
+    if (entity?.RecoveryCheckpointJson is null) return null;
+    SessionRecoveryCheckpoint? checkpoint = JsonSerializer.Deserialize<SessionRecoveryCheckpoint>(
+      entity.RecoveryCheckpointJson, EventJsonOptions);
+    if (checkpoint is null || checkpoint.SessionId != entity.Id)
+      throw new InvalidOperationException("The active session recovery checkpoint is invalid.");
+    return new RecoverableWorkoutSession(Map(entity), checkpoint);
   }
 
   public async Task<HistoryDeletionPreview?> PreviewDeletionAsync(

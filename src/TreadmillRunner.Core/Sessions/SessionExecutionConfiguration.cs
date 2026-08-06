@@ -67,4 +67,6 @@ public sealed record SessionTreadmillSnapshot(
   string? FirmwareRevision,
   TreadmillRunner.Core.Devices.TreadmillCapabilityEvidence Evidence,
   TreadmillRunner.Core.Devices.TreadmillCapabilities Capabilities,
-  long ConnectionGeneration);
+  long ConnectionGeneration,
+  Guid? EnrollmentId = null,
+  string? IdentityFingerprint = null);

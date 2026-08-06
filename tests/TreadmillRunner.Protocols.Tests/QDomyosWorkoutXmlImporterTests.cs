@@ -100,6 +100,23 @@ public sealed class QDomyosWorkoutXmlImporterTests
   }
 
   [Fact]
+  public async Task Standalone_xml_keeps_explicit_speed_when_heart_rate_and_bounds_are_combined()
+  {
+    const string xml = """
+        <rows device="treadmill">
+          <row duration="00:05:00" speed="6" zonehr="2" minspeed="4" maxspeed="8" />
+        </rows>
+        """;
+
+    WorkoutImportResult result = await ImportAsync(xml);
+
+    WorkoutStep step = Assert.IsType<WorkoutStep>(Assert.Single(result.Definition.Blocks));
+    Assert.Equal(6, Assert.IsType<FixedSpeed>(step.Speed).KilometersPerHour);
+    Assert.Contains(result.Warnings, warning => warning.Code == "qdomyos.conflicting-speed-target");
+    Assert.DoesNotContain(result.Warnings, warning => warning.Code.StartsWith("qdomyos.v4-", StringComparison.Ordinal));
+  }
+
+  [Fact]
   public async Task Rejects_corrupt_xml_and_repeat_bomb()
   {
     await Assert.ThrowsAsync<WorkoutImportException>(() => ImportAsync("<rows><row></rows>"));

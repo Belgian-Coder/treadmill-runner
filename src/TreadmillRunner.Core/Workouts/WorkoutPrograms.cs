@@ -13,24 +13,39 @@ public static class WorkoutProgramLimits
   public const int MaximumNameLength = 160;
   public const int MaximumDescriptionLength = 2_000;
   public const int MaximumCategoryLength = 40;
-  public const int MaximumItems = 100;
+  public const int MaximumItems = 1_000;
 }
 
 public sealed record WorkoutProgramItem
 {
-  public WorkoutProgramItem(Guid id, Guid workoutRevisionId, int position)
+  public WorkoutProgramItem(
+    Guid id,
+    Guid workoutRevisionId,
+    int position,
+    int? weekNumber = null,
+    int? sessionNumber = null,
+    string? phase = null)
   {
     if (id == Guid.Empty) throw new ArgumentException("Program item ID is required.", nameof(id));
     if (workoutRevisionId == Guid.Empty) throw new ArgumentException("Workout revision ID is required.", nameof(workoutRevisionId));
     if (position < 1) throw new ArgumentOutOfRangeException(nameof(position));
+    if (weekNumber is < 1) throw new ArgumentOutOfRangeException(nameof(weekNumber));
+    if (sessionNumber is < 1) throw new ArgumentOutOfRangeException(nameof(sessionNumber));
+    if (phase?.Trim().Length > 80) throw new ArgumentException("Program phase is too long.", nameof(phase));
     Id = id;
     WorkoutRevisionId = workoutRevisionId;
     Position = position;
+    WeekNumber = weekNumber;
+    SessionNumber = sessionNumber;
+    Phase = string.IsNullOrWhiteSpace(phase) ? null : phase.Trim();
   }
 
   public Guid Id { get; }
   public Guid WorkoutRevisionId { get; }
   public int Position { get; }
+  public int? WeekNumber { get; }
+  public int? SessionNumber { get; }
+  public string? Phase { get; }
 }
 
 public sealed class WorkoutProgramRevision
@@ -42,7 +57,10 @@ public sealed class WorkoutProgramRevision
     string name,
     string? description,
     string category,
-    IReadOnlyList<WorkoutProgramItem> items)
+    IReadOnlyList<WorkoutProgramItem> items,
+    string? templateId = null,
+    string? templateVersion = null,
+    Guid? ownerProfileId = null)
   {
     if (programId == Guid.Empty) throw new ArgumentException("Program ID is required.", nameof(programId));
     if (revisionId == Guid.Empty) throw new ArgumentException("Program revision ID is required.", nameof(revisionId));
@@ -54,6 +72,9 @@ public sealed class WorkoutProgramRevision
     if (category.Trim().Length > WorkoutProgramLimits.MaximumCategoryLength) throw new ArgumentException("Program category is too long.", nameof(category));
     ArgumentNullException.ThrowIfNull(items);
     if (items.Count is < 1 or > WorkoutProgramLimits.MaximumItems) throw new ArgumentOutOfRangeException(nameof(items));
+    if (templateId?.Trim().Length > 100) throw new ArgumentException("Template ID is too long.", nameof(templateId));
+    if (templateVersion?.Trim().Length > 40) throw new ArgumentException("Template version is too long.", nameof(templateVersion));
+    if (ownerProfileId == Guid.Empty) throw new ArgumentException("Owner profile ID cannot be empty.", nameof(ownerProfileId));
     if (items.Select(static item => item.Id).Distinct().Count() != items.Count) throw new ArgumentException("Program item IDs must be unique.", nameof(items));
     if (!items.Select(static item => item.Position).Order().SequenceEqual(Enumerable.Range(1, items.Count)))
     {
@@ -67,6 +88,9 @@ public sealed class WorkoutProgramRevision
     Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
     Category = category.Trim();
     Items = items.OrderBy(static item => item.Position).ToArray();
+    TemplateId = string.IsNullOrWhiteSpace(templateId) ? null : templateId.Trim();
+    TemplateVersion = string.IsNullOrWhiteSpace(templateVersion) ? null : templateVersion.Trim();
+    OwnerProfileId = ownerProfileId;
   }
 
   public Guid ProgramId { get; }
@@ -76,6 +100,9 @@ public sealed class WorkoutProgramRevision
   public string? Description { get; }
   public string Category { get; }
   public IReadOnlyList<WorkoutProgramItem> Items { get; }
+  public string? TemplateId { get; }
+  public string? TemplateVersion { get; }
+  public Guid? OwnerProfileId { get; }
 }
 
 public enum WorkoutProgramRunStatus

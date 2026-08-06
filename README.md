@@ -4,6 +4,14 @@ TreadmillRunner is a local-first treadmill workout application for one Horizon O
 
 The project combines a deterministic simulator with one exact Horizon Omega Z hardware adapter. On console software `S3.02` and Bluetooth firmware `V10.23.17`, owner-observed Stage 3 evidence verifies FTMS Start, Stop, speed, and incline with response-plus-fresh-telemetry confirmation. Pause remains disabled because it is not hardware verified. The treadmill safety key, physical Stop, and console remain authoritative.
 
+## See it in use
+
+| Live control and recovery | Premade training plans |
+|---|---|
+| [![Recovered live Control dashboard](screenshots/showcase/tr-023-control-recovered-desktop.png)](screenshots/showcase/tr-023-control-recovered-desktop.png) | [![Premade plan catalog and compatibility preview](screenshots/showcase/tr-024-premade-plan-catalog.png)](screenshots/showcase/tr-024-premade-plan-catalog.png) |
+
+The gateway owns active workout timing if a browser disappears. Browser controls reconnect indefinitely, while BLE and service-restart recovery stay guarded: recovery never sends Start, never replays an uncertain command, and never silently overrides an apparent physical-console change. See the [live-session guide](docs/project/live-session.md) for the exact guarantees.
+
 ## Install on Windows
 
 For normal use, download `TreadmillRunner-<version>-Windows-x64.zip` from [GitHub Releases](https://github.com/belgian-coder/treadmill-runner/releases/latest), extract it, and run `Install-TreadmillRunner.cmd`. The installer asks for administrator approval, installs the Windows service, verifies readiness, and opens the dashboard. The NUC must run Windows 11 x64 on a **Private** household network with the [ASP.NET Core Runtime 10 x64](https://dotnet.microsoft.com/download/dotnet/10.0).
@@ -61,6 +69,8 @@ Imports are previewed before anything is saved. The supported import paths are n
 
 The calendar supports weekly schedules, alternatives for a day, and skip/add/replace exceptions. Your active profile is local to the browser; a selected calendar alternative is persisted for that profile and date.
 
+**Workouts → Premade plans** offers 16 profile-scoped 5K, 10K, general-fitness, walking, maintenance, and heart-rate templates. Preview checks runner and treadmill limits before **Add to my training** creates an inactive immutable copy. The 58-week plan remains readable through phase/week groups rather than a flat 174-row editor. See [Premade training plans](docs/project/premade-plans.md).
+
 ## Running in the simulator
 
 On the Today page, select a runner and workout, review readiness, take control, and arm the session. Arming never starts a belt. The simulator test action represents measured physical movement; the gateway then owns progression and continues if the browser reloads or disconnects. After completion, save an optional RPE score and note, then open History for persisted charts, zone time, adherence, events, and weekly totals.
@@ -95,6 +105,7 @@ For a Release WebAssembly publish, run `.\eng\clean-wasm-publish.ps1 -Configurat
 10. [Release operations](docs/project/release-operations.md)
 11. [Garmin integrations](docs/project/garmin-connect.md)
 12. [Connect IQ companion and IQ Store release](docs/project/connect-iq-companion.md)
+13. [Premade training plans](docs/project/premade-plans.md)
 
 ## License
 

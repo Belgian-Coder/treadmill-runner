@@ -36,6 +36,11 @@ public sealed class WorkoutProgramStore(
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     WorkoutProgramEntity[] programs = await ProgramQuery(context).AsNoTracking()
+      .Where(program => userProfileId == null ||
+        program.Revisions.OrderByDescending(revision => revision.RevisionNumber)
+          .Select(revision => revision.OwnerProfileId).First() == null ||
+        program.Revisions.OrderByDescending(revision => revision.RevisionNumber)
+          .Select(revision => revision.OwnerProfileId).First() == userProfileId)
       .OrderBy(program => program.Revisions.OrderByDescending(revision => revision.RevisionNumber).Select(revision => revision.Name).First())
       .ToArrayAsync(cancellationToken);
     WorkoutProgramRunEntity[] activeRuns = userProfileId is null
@@ -278,6 +283,9 @@ public sealed class WorkoutProgramStore(
     Description = revision.Description,
     Category = revision.Category,
     ContentSha256 = WorkoutProgramCanonicalizer.ComputeSha256(revision),
+    TemplateId = revision.TemplateId,
+    TemplateVersion = revision.TemplateVersion,
+    OwnerProfileId = revision.OwnerProfileId,
     CreatedAtUtc = nowUtc,
     Items = revision.Items.Select(item => new WorkoutProgramItemEntity
     {
@@ -285,6 +293,9 @@ public sealed class WorkoutProgramStore(
       WorkoutProgramRevisionId = revision.RevisionId,
       WorkoutRevisionId = item.WorkoutRevisionId,
       Position = item.Position,
+      WeekNumber = item.WeekNumber,
+      SessionNumber = item.SessionNumber,
+      Phase = item.Phase,
     }).ToList(),
   };
 
@@ -305,7 +316,11 @@ public sealed class WorkoutProgramStore(
     entity.Description,
     entity.Category,
     entity.Items.OrderBy(static item => item.Position)
-      .Select(item => new WorkoutProgramItem(item.Id, item.WorkoutRevisionId, item.Position)).ToArray());
+      .Select(item => new WorkoutProgramItem(
+        item.Id, item.WorkoutRevisionId, item.Position, item.WeekNumber, item.SessionNumber, item.Phase)).ToArray(),
+    entity.TemplateId,
+    entity.TemplateVersion,
+    entity.OwnerProfileId);
 
   private static WorkoutProgramRun MapRun(WorkoutProgramRunEntity entity) => new(
     entity.Id,
@@ -326,7 +341,11 @@ public static class WorkoutProgramCanonicalizer
       revision.Name,
       revision.Description ?? string.Empty,
       revision.Category,
-      string.Join(',', revision.Items.OrderBy(static item => item.Position).Select(static item => item.WorkoutRevisionId.ToString("D"))),
+      revision.TemplateId ?? string.Empty,
+      revision.TemplateVersion ?? string.Empty,
+      revision.OwnerProfileId?.ToString("D") ?? string.Empty,
+      string.Join(',', revision.Items.OrderBy(static item => item.Position).Select(static item =>
+        $"{item.WorkoutRevisionId:D}:{item.WeekNumber}:{item.SessionNumber}:{item.Phase}")),
     });
     return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
   }

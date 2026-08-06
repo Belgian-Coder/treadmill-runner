@@ -19,6 +19,23 @@ public sealed class ControlLeaseManagerTests
   }
 
   [Fact]
+  public void Same_holder_reacquires_and_renews_the_existing_lease()
+  {
+    var time = new TestTimeProvider();
+    Guid leaseId = Guid.NewGuid();
+    var manager = new ControlLeaseManager(time, () => leaseId);
+    ControlLease first = manager.TryAcquire("browser-a")!;
+    time.Advance(TimeSpan.FromSeconds(10));
+
+    ControlLease reacquired = manager.TryAcquire("browser-a")!;
+
+    Assert.Equal(first.Id, reacquired.Id);
+    Assert.Equal(first.AcquiredAt, reacquired.AcquiredAt);
+    Assert.Equal(time.GetUtcNow().Add(ControlLeaseManager.LeaseTimeToLive), reacquired.ExpiresAt);
+    Assert.True(manager.IsValid(leaseId, "browser-a"));
+  }
+
+  [Fact]
   public void Lease_expires_at_fifteen_seconds()
   {
     var time = new TestTimeProvider();

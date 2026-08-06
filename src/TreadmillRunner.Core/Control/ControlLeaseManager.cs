@@ -37,6 +37,16 @@ public sealed class ControlLeaseManager
       RemoveExpiredLease();
       if (_current is not null)
       {
+        if (string.Equals(_current.HolderId, holderId, StringComparison.Ordinal))
+        {
+          _current = _current with
+          {
+            ExpiresAt = _timeProvider.GetUtcNow() + LeaseTimeToLive,
+          };
+          _lastRenewedTimestamp = _timeProvider.GetTimestamp();
+          return _current;
+        }
+
         return null;
       }
 

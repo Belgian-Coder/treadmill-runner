@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "story": "US-TR-024",
+  "validatedAtUtc": "2026-08-06T17:03:00Z",
+  "baselineCommit": "6a8627f4af981d973f68d0845de67a0cbf6cf096",
+  "buildFingerprint": "tr-024-working-tree-20260806",
+  "result": "passed",
+  "commands": [
+    {
+      "name": "release-build",
+      "command": "dotnet build TreadmillRunner.slnx -c Release --no-restore",
+      "result": "passed",
+      "durationSeconds": 19.5,
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "name": "focused-core-tests",
+      "command": "dotnet test TreadmillRunner.Core.Tests -c Release --filter PremadePlanCatalogTests|WorkoutProgram",
+      "result": "passed",
+      "durationSeconds": 2.0,
+      "summary": "16 passed"
+    },
+    {
+      "name": "focused-protocol-tests",
+      "command": "dotnet test TreadmillRunner.Protocols.Tests -c Release --filter QDomyosWorkoutXmlImporterTests|TreadmillWorkoutBundleImporterTests",
+      "result": "passed",
+      "durationSeconds": 2.0,
+      "summary": "15 passed; standalone XML remains fixed and v4 bundle HR is adaptive"
+    },
+    {
+      "name": "focused-integration-tests",
+      "command": "dotnet test TreadmillRunner.IntegrationTests -c Release --filter PremadePlanEndpointTests|WorkoutProgramEndpointTests|PersistenceSchemaTests",
+      "result": "passed",
+      "durationSeconds": 17.3,
+      "summary": "8 passed; includes 174 positions, replay, fresh copy, profile isolation, immutability, and schema inventory"
+    },
+    {
+      "name": "focused-browser-test",
+      "command": "publish E2E host and run PremadePlanExperienceTests",
+      "result": "passed",
+      "durationSeconds": 55.3,
+      "summary": "1 end-to-end flow passed; desktop and phone layout assertions plus two screenshots"
+    },
+    {
+      "name": "migration-copy",
+      "command": "eng/database.ps1 -Action Update -DatabasePath <copied-validation-database>",
+      "result": "passed",
+      "durationSeconds": 7.3,
+      "summary": "reviewed recovery and premade-plan migrations applied to a copied production-shaped database"
+    },
+    {
+      "name": "pending-model-check",
+      "command": "dotnet ef migrations has-pending-model-changes",
+      "result": "passed",
+      "durationSeconds": 3.0,
+      "summary": "no model changes since the latest migration"
+    },
+    {
+      "name": "format-and-line-endings",
+      "command": "dotnet format --verify-no-changes; validate_line_endings.py . --changed-only",
+      "result": "passed",
+      "durationSeconds": 31.3,
+      "summary": "91 changed files checked; no line-ending failures"
+    },
+    {
+      "name": "security-and-public-evidence",
+      "command": "changed-only .NET security scan; eng/validate-public-evidence.ps1",
+      "result": "passed",
+      "durationSeconds": 2.2,
+      "summary": "0 high; six medium pattern matches manually reviewed as documentation links or an intentional unsafe-archive rejection fixture; public evidence sanitized"
+    },
+    {
+      "name": "full-deterministic-validation",
+      "command": "eng/validate.ps1 -Configuration Release",
+      "result": "passed",
+      "durationSeconds": 114.9,
+      "summary": "Release build 0 warnings and 0 errors; 214 non-browser tests passed; public evidence, BLE ownership, Connect IQ static checks, and repository validation passed"
+    },
+    {
+      "name": "full-browser-validation",
+      "command": "eng/playwright.ps1 -Configuration Release",
+      "result": "passed",
+      "durationSeconds": 539.7,
+      "summary": "55 browser scenarios passed in 6.6 test minutes, including reconnect, iPhone portrait and landscape, Operations recovery, populated screenshots, and premade plans"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "screenshots/showcase/tr-024-premade-plan-catalog.png",
+      "sha256": "F8F17347F087FA2BB8FF9161D70079B0D8CA87745884E5531715165010D41ED5"
+    },
+    {
+      "path": "screenshots/showcase/tr-024-long-plan-grouped.png",
+      "sha256": "BE4C3CDA0F8ECABA3DE566CB134D5FF36C94B96FB4A5E62ACC5B274577E4496E"
+    }
+  ],
+  "skipped": [
+    "live treadmill commands",
+    "BLE commissioning",
+    "deployment",
+    "long soak testing",
+    "power-cycle testing",
+    "GitHub tag or release",
+    "delegated subagent reviews closed at owner request"
+  ]
+}

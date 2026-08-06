@@ -19,6 +19,7 @@ try {
 
     python -B (Join-Path $projectRoot 'tools/garmin/test_adapter_contract.py')
     if ($LASTEXITCODE -ne 0) { throw 'Garmin adapter contract fixtures failed.' }
+    & (Join-Path $PSScriptRoot 'validate-public-evidence.ps1')
     & (Join-Path $PSScriptRoot 'validate-connectiq.ps1')
     & (Join-Path $PSScriptRoot 'verify-ble-read-only.ps1')
     & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration

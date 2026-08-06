@@ -8,6 +8,13 @@ public sealed record WorkoutStepTransition(
     TimeSpan Elapsed,
     double DistanceKilometers);
 
+public sealed record WorkoutProgressionCheckpoint(
+  int CurrentStepIndex,
+  TimeSpan LastElapsed,
+  double LastDistanceKilometers,
+  TimeSpan StepStartedAtElapsed,
+  double StepStartedAtDistanceKilometers);
+
 public sealed class WorkoutProgression
 {
   private const double DistanceComparisonEpsilonKilometers = 1e-9;
@@ -115,18 +122,52 @@ public sealed class WorkoutProgression
     var transitions = new List<WorkoutStepTransition>();
     while (CurrentStep is { } step && IsGoalComplete(step.Goal))
     {
+      TimeSpan completedAtElapsed = elapsed;
+      double completedAtDistance = distanceKilometers;
+      if (step.Goal is TimeGoal completedTime)
+      {
+        completedAtElapsed = _stepStartedAtElapsed + completedTime.Duration;
+      }
+      else if (step.Goal is DistanceGoal completedDistance)
+      {
+        completedAtDistance = _stepStartedAtDistanceKilometers + completedDistance.Kilometers;
+      }
       var completedStepIndex = CurrentStepIndex;
       CurrentStepIndex++;
       transitions.Add(new WorkoutStepTransition(
           completedStepIndex,
           IsComplete ? null : CurrentStepIndex,
-          elapsed,
-          distanceKilometers));
-      _stepStartedAtElapsed = elapsed;
-      _stepStartedAtDistanceKilometers = distanceKilometers;
+          completedAtElapsed,
+          completedAtDistance));
+      _stepStartedAtElapsed = completedAtElapsed;
+      _stepStartedAtDistanceKilometers = completedAtDistance;
     }
 
     return transitions.AsReadOnly();
+  }
+
+  public WorkoutProgressionCheckpoint Capture() => new(
+    CurrentStepIndex,
+    _lastElapsed,
+    _lastDistanceKilometers,
+    _stepStartedAtElapsed,
+    _stepStartedAtDistanceKilometers);
+
+  public void Restore(WorkoutProgressionCheckpoint checkpoint)
+  {
+    ArgumentNullException.ThrowIfNull(checkpoint);
+    if (checkpoint.CurrentStepIndex < 0 || checkpoint.CurrentStepIndex > _steps.Count ||
+        checkpoint.LastElapsed < TimeSpan.Zero || checkpoint.StepStartedAtElapsed < TimeSpan.Zero ||
+        checkpoint.StepStartedAtElapsed > checkpoint.LastElapsed ||
+        !double.IsFinite(checkpoint.LastDistanceKilometers) || checkpoint.LastDistanceKilometers < 0 ||
+        !double.IsFinite(checkpoint.StepStartedAtDistanceKilometers) || checkpoint.StepStartedAtDistanceKilometers < 0 ||
+        checkpoint.StepStartedAtDistanceKilometers > checkpoint.LastDistanceKilometers)
+      throw new ArgumentException("The workout progression checkpoint is invalid.", nameof(checkpoint));
+    CurrentStepIndex = checkpoint.CurrentStepIndex;
+    _lastElapsed = checkpoint.LastElapsed;
+    _lastDistanceKilometers = checkpoint.LastDistanceKilometers;
+    _stepStartedAtElapsed = checkpoint.StepStartedAtElapsed;
+    _stepStartedAtDistanceKilometers = checkpoint.StepStartedAtDistanceKilometers;
   }
 
   private bool IsGoalComplete(StepGoal goal) => goal switch

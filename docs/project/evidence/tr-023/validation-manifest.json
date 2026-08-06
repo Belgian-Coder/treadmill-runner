@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "story": "US-TR-023",
+  "validatedAtUtc": "2026-08-06T14:22:37Z",
+  "baselineCommit": "6a8627f4af981d973f68d0845de67a0cbf6cf096",
+  "buildFingerprint": "tr-023-working-tree-20260806",
+  "result": "passed",
+  "commands": [
+    {
+      "name": "release-build",
+      "command": "eng/build.ps1 -Configuration Release",
+      "result": "passed",
+      "durationSeconds": 16.6,
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "name": "core-tests",
+      "command": "dotnet test TreadmillRunner.Core.Tests -c Release --no-build --no-restore",
+      "result": "passed",
+      "durationSeconds": 2.3,
+      "summary": "127 passed"
+    },
+    {
+      "name": "focused-integration-tests",
+      "command": "dotnet test TreadmillRunner.IntegrationTests -c Release --filter LiveSessionEndpointTests|SessionStoreTests",
+      "result": "passed",
+      "durationSeconds": 69.1,
+      "summary": "21 passed"
+    },
+    {
+      "name": "focused-browser-tests",
+      "command": "eng/playwright.ps1 -Configuration Release -Filter TR023ContinuityCases",
+      "result": "passed",
+      "durationSeconds": 207.1,
+      "summary": "6 passed; desktop, tablet, portrait, landscape, reload, and prolonged reconnect"
+    },
+    {
+      "name": "format-verification",
+      "command": "dotnet format TreadmillRunner.slnx --verify-no-changes --no-restore",
+      "result": "passed",
+      "durationSeconds": 28.6,
+      "summary": "no changed formatting required"
+    },
+    {
+      "name": "changed-line-endings",
+      "command": "validate_line_endings.py . --changed-only",
+      "result": "passed",
+      "durationSeconds": 0.7,
+      "summary": "36 checked; no failures"
+    },
+    {
+      "name": "security-pattern-review",
+      "command": "dotnet_security_review.py scan --target . --changed-only",
+      "result": "passed",
+      "durationSeconds": 1.6,
+      "summary": "0 high; 3 documentation-only false positives manually reviewed"
+    },
+    {
+      "name": "migration-copy",
+      "command": "eng/database.ps1 -Action Update -DatabasePath <copied-validation-database>",
+      "result": "passed",
+      "durationSeconds": 3.0,
+      "summary": "reviewed recovery-checkpoint migration applied to a copied production-shaped database"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "screenshots/showcase/tr-023-run-preflight-iphone.png",
+      "sha256": "21A32D6E9C6B18BEEBB3053D989E037662FE25CF43214FEC7C1F927A8BEFCA96"
+    },
+    {
+      "path": "screenshots/showcase/tr-023-control-recovered-desktop.png",
+      "sha256": "432DFC56AB0D860428FFD46273B126C69A5D371C91A51B6B61DFB3D6632793D7"
+    },
+    {
+      "path": "screenshots/showcase/tr-023-control-reconnecting-iphone.png",
+      "sha256": "3D49149FEE8EEDAFA6D026D666FDB23862E2CDFED1A577B3B9D7BBD02D6011A8"
+    },
+    {
+      "path": "screenshots/showcase/tr-023-control-iphone-landscape.png",
+      "sha256": "6C191950F110DFCF410544910BE56C278946339B8598189D5A2E7740F7AAEA46"
+    }
+  ],
+  "skipped": [
+    "live treadmill commands",
+    "deployment",
+    "long soak testing",
+    "power-cycle testing",
+    "GitHub tag or release"
+  ]
+}

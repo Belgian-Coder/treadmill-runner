@@ -9,7 +9,7 @@ updated: 2026-08-05
 
 # Architecture
 
-The TR-003 planning schema and preview/confirm sequence are documented in [Planning data and import flow](planning-data.md). The TR-004 runtime sequence and recovery rules are documented in [Simulated live session](live-session.md). Official Garmin OAuth/training publication, the separately isolated unsupported FIT uploader, and the read-only Connect IQ watch binding are documented in [Garmin integrations](garmin-connect.md).
+The TR-003 planning schema and preview/confirm sequence are documented in [Planning data and import flow](planning-data.md). The profile-scoped catalog and immutable materialization rules are documented in [Premade training plans](premade-plans.md). The TR-004 runtime sequence and recovery rules are documented in [Simulated live session](live-session.md). Official Garmin OAuth/training publication, the separately isolated unsupported FIT uploader, and the read-only Connect IQ watch binding are documented in [Garmin integrations](garmin-connect.md).
 
 ![Windows-local runtime](diagrams/project-context-architecture.svg)
 
@@ -17,7 +17,7 @@ Source: [Mermaid](diagrams/project-context-architecture.mmd)
 
 ## Design rule
 
-The Windows gateway owns Bluetooth, workout time, HR automation, safety state, and persistence. Browser clients are replaceable views. SignalR loss does not stop the gateway loop, while BLE loss suspends automation and never replays or resumes commands.
+The Windows gateway owns Bluetooth, workout time, HR automation, safety state, and persistence. Browser clients are replaceable views. SignalR loss does not stop the gateway loop. BLE loss records a telemetry gap and invalidates old-generation intents; guarded recovery may create fresh current-position commands but never Start or replay an uncertain command.
 
 ## Solution boundaries
 
@@ -39,13 +39,14 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 - Start/Stop intents carry operation ID, session ID/version/state, lease/holder, four-second expiry, and connection generation. Reconnect invalidates them; Start is consumed before its single motion-affecting write and is never retried.
 - The deterministic session engine uses `TimeProvider` and emits immutable snapshots/events.
 - SignalR publishes simulated live state at 4 Hz; durable session sampling is 1 Hz.
+- The compiled premade-plan catalog is read-only. Preview reuses capability evaluation; explicit materialization stores profile/template provenance, deduplicates identical definitions within the copy, preserves every phase/week/session position, and never activates the plan.
 - Garmin integration has three non-interchangeable seams: supported Training API publication, unsupported completed-FIT upload, and native Connect IQ watch recording. The private uploader runs out of process, stores only protected session tokens, admits sessions only after an enable watermark, and atomically leases each job. Unknown/duplicate outcomes cannot auto-retry. Watch tokens are profile-owned SHA-256 hashes and authorize only read-only session status.
 
 ## Safety states
 
 `Idle -> ArmedWaitingForPhysicalStart -> Running -> PausedWaitingForPhysicalResume -> Running -> Completed|Stopped|Interrupted|Faulted`.
 
-Arming never moves the belt. For a persisted exact model/firmware capability with `HardwareVerified` evidence, TR-006B exposes a three-second Hold to start action at the verified speed-range minimum. The coordinator obtains FTMS control, rechecks every guard, writes Start once, and requires the matching response plus fresh measured movement. The state changes to Running only after three moving samples. A gateway restart interrupts the session, reconnect returns only to `Ready`, and Start is never replayed or used for automatic resume. Until the hardware gate passes, the same flow continues to require physical-console Start.
+Arming never moves the belt. For a persisted exact model/firmware capability with `HardwareVerified` evidence, TR-006B exposes a three-second Hold to start action at the verified speed-range minimum. The coordinator obtains FTMS control, rechecks every guard, writes Start once, and requires the matching response plus fresh measured movement. The state changes to Running only after three moving samples. A gateway restart can restore tracking only from a bounded checkpoint for the same enrolled treadmill; planned commands remain suspended until the user explicitly resumes and Start is never replayed or used for recovery.
 
 ## Extension boundary
 

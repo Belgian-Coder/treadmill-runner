@@ -92,6 +92,14 @@ public interface ILiveSessionCoordinator : ITreadmillCommandContextValidator
     string holderId,
     CancellationToken cancellationToken = default);
 
+  Task<ActiveSessionSnapshot> ResumePlannedControlsAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    long connectionGeneration,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default);
+
   Task ResetAsync(CancellationToken cancellationToken = default);
 
   Task<bool> TryBeginMaintenanceAsync(CancellationToken cancellationToken = default);
@@ -122,6 +130,7 @@ public sealed class LiveSessionCoordinator(
   private bool _startupRecoveryComplete;
   private bool _startupRecoveryWaitLogged;
   private bool _maintenanceActive;
+  private readonly Guid _serviceInstanceId = Guid.NewGuid();
 
   public LiveSnapshot Current => Volatile.Read(ref _current);
 
@@ -275,7 +284,9 @@ public sealed class LiveSessionCoordinator(
           devices.Treadmill.FirmwareRevision,
           devices.Treadmill.Evidence,
           devices.Treadmill.Capabilities ?? control.ToCapabilities(),
-          devices.Treadmill.ConnectionGeneration)
+          devices.Treadmill.ConnectionGeneration,
+          control.EnrollmentId,
+          control.IdentityFingerprint)
         : null;
       var definition = new NewWorkoutSession(
         Guid.NewGuid(),
@@ -686,19 +697,26 @@ public sealed class LiveSessionCoordinator(
       throw new ArgumentException("An operation ID is required.", nameof(operationId));
     }
 
-    if (leaseCoordinator.Current is not ControlLease lease ||
-        lease.Id != leaseId ||
-        !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
-    {
-      throw new InvalidOperationException("A current controller lease is required for treadmill commands.");
-    }
-
     await _gate.WaitAsync(cancellationToken);
     try
     {
       if (_maintenanceActive)
         throw new InvalidOperationException("A software update is being activated; treadmill commands are unavailable.");
       ActiveRun active = RequireActive();
+
+      bool gatewayOwned = origin is TreadmillCommandOrigin.PlannedTransition or TreadmillCommandOrigin.HeartRateAutomation;
+      if (gatewayOwned)
+      {
+        if (leaseId != active.AutomationAuthorityId ||
+            !string.Equals(holderId, active.AutomationAuthorityHolder, StringComparison.Ordinal))
+          throw new InvalidOperationException("The automatic command authority is not current for this session.");
+      }
+      else if (leaseCoordinator.Current is not ControlLease lease ||
+               lease.Id != leaseId ||
+               !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
+      {
+        throw new InvalidOperationException("A current controller lease is required for treadmill commands.");
+      }
 
       if (active.Machine.Version != expectedSessionVersion)
       {
@@ -817,11 +835,19 @@ public sealed class LiveSessionCoordinator(
   {
     ArgumentNullException.ThrowIfNull(intent);
     ActiveSessionSnapshot? snapshot = CurrentSession;
+    if (snapshot is null ||
+        snapshot.SessionId != intent.SessionId ||
+        snapshot.Version != intent.ExpectedSessionVersion ||
+        snapshot.Live.SessionState != intent.ExpectedSessionState)
+      return false;
+
+    if (intent.Origin is TreadmillCommandOrigin.PlannedTransition or TreadmillCommandOrigin.HeartRateAutomation)
+      return _active is { } active &&
+        intent.LeaseId == active.AutomationAuthorityId &&
+        string.Equals(intent.HolderId, active.AutomationAuthorityHolder, StringComparison.Ordinal);
+
     ControlLease? lease = leaseCoordinator.Current;
-    return snapshot is not null &&
-      snapshot.SessionId == intent.SessionId &&
-      snapshot.Version == intent.ExpectedSessionVersion &&
-      snapshot.Live.SessionState == intent.ExpectedSessionState &&
+    return
       lease is not null &&
       lease.Id == intent.LeaseId &&
       string.Equals(lease.HolderId, intent.HolderId, StringComparison.Ordinal);
@@ -976,6 +1002,7 @@ public sealed class LiveSessionCoordinator(
         throw new InvalidOperationException("Remote speed control is not hardware verified.");
 
       active.HeartRateAutomationMode = mode;
+      active.DesiredHeartRateAutomationMode = mode;
       active.HeartRateController.ResetDwell();
       active.Machine.MarkConfigurationChanged();
       active.HeartRateAutomationReason = mode switch
@@ -987,9 +1014,64 @@ public sealed class LiveSessionCoordinator(
         _ => null,
       };
       active.CommandsSuspended = false;
+      active.CommandsSuspendedReason = null;
       active.ProcessedOperationIds.Add(operationId);
       active.Warnings.Remove("Automatic treadmill commands are suspended after a rejected command.");
       active.Warnings.Remove("A treadmill command has an unknown physical outcome; automation is suspended.");
+      PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
+      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      return active.Snapshot;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  public async Task<ActiveSessionSnapshot> ResumePlannedControlsAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    long connectionGeneration,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default)
+  {
+    if (operationId == Guid.Empty) throw new ArgumentException("An operation ID is required.", nameof(operationId));
+    if (leaseCoordinator.Current is not ControlLease lease || lease.Id != leaseId ||
+        !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
+      throw new InvalidOperationException("A current controller lease is required to resume planned controls.");
+
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      ActiveRun active = RequireActive();
+      if (active.ProcessedOperationIds.Contains(operationId)) return active.Snapshot;
+      if (active.Machine.Version != expectedSessionVersion)
+        throw new InvalidOperationException($"Expected session version {expectedSessionVersion}, but current version is {active.Machine.Version}.");
+      if (active.Machine.State != SessionState.Running || !active.IsMoving || active.TelemetryAge > FreshTelemetryLimit)
+        throw new InvalidOperationException("Fresh moving treadmill telemetry is required before planned controls can resume.");
+      if (active.LastCommandResult?.Disposition == TreadmillCommandDisposition.Unknown)
+        throw new InvalidOperationException("An unknown treadmill command outcome must be resolved physically before controls can resume.");
+      long currentGeneration = active.HardwareMode
+        ? deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId).Treadmill.ConnectionGeneration
+        : active.ConnectionGeneration;
+      if (connectionGeneration != currentGeneration)
+        throw new InvalidOperationException("The treadmill connection changed; refresh before resuming controls.");
+
+      active.ConnectionGeneration = currentGeneration;
+      active.CommandsSuspended = false;
+      active.CommandsSuspendedReason = null;
+      active.CanResumePlannedControls = false;
+      active.RecoveryState = SessionRecoveryState.Recovered;
+      active.ConnectionPhase = SessionConnectionPhase.Recovered;
+      active.LastReconciledAtUtc = timeProvider.GetUtcNow();
+      active.RecoveredAfterRestart = false;
+      active.RestartRecoveryDeadlineUtc = null;
+      if (active.RequiresHeartRate)
+        active.HeartRateAutomationMode = active.DesiredHeartRateAutomationMode;
+      active.HeartRateAutomationReason = "Planned controls resumed after fresh treadmill telemetry was confirmed.";
+      active.Machine.MarkConfigurationChanged();
+      active.ProcessedOperationIds.Add(operationId);
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
       await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
       return active.Snapshot;
@@ -1092,6 +1174,25 @@ public sealed class LiveSessionCoordinator(
       else
       {
         await ApplyHardwareTelemetryAsync(active, now, cancellationToken);
+        if (active.RecoveryState == SessionRecoveryState.Recovered &&
+            active.LastReconciledAtUtc is { } reconciledAt &&
+            now - reconciledAt >= TimeSpan.FromSeconds(5))
+        {
+          active.RecoveryState = SessionRecoveryState.None;
+          active.ConnectionPhase = SessionConnectionPhase.Ready;
+        }
+        if (active.RecoveredAfterRestart && active.RestartRecoveryDeadlineUtc <= now &&
+            active.RecoveryState == SessionRecoveryState.RestartTracking && !active.IsMoving)
+        {
+          using IServiceScope interruptedScope = scopeFactory.CreateScope();
+          await interruptedScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+            now,
+            "Fresh movement from the enrolled treadmill was not confirmed after gateway restart.",
+            cancellationToken);
+          active.Machine.Interrupt();
+          active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
+          active.CommandsSuspendedReason = "Session recovery timed out without fresh treadmill movement.";
+        }
         if (!active.HardwareMode)
         {
           active.HeartRateAge = active.HeartRateObservedAt is null
@@ -1132,9 +1233,9 @@ public sealed class LiveSessionCoordinator(
           else if (active.SampleCadence.TryAdvance(now))
           {
             using IServiceScope sampleScope = scopeFactory.CreateScope();
-            await sampleScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendSampleAsync(
-              CreateSample(active, now),
-              cancellationToken);
+            ISessionStore store = sampleScope.ServiceProvider.GetRequiredService<ISessionStore>();
+            await store.AppendSampleAsync(CreateSample(active, now), cancellationToken);
+            await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
           }
         }
 
@@ -1185,19 +1286,9 @@ public sealed class LiveSessionCoordinator(
       return null;
     }
 
-    if (leaseCoordinator.Current is not ControlLease lease)
-    {
-      SuspendAutomation(active, "Controller lease loss suspended automatic treadmill commands.");
-      return null;
-    }
-
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId);
     if (active.HardwareMode && devices.Treadmill.ConnectionGeneration != active.ConnectionGeneration)
-    {
-      active.ConnectionGeneration = devices.Treadmill.ConnectionGeneration;
-      SuspendAutomation(active, "A treadmill reconnect expired every pending command; explicitly re-enable automation.");
       return null;
-    }
 
     WorkoutStep? step = active.Progression.CurrentStep;
     if (step?.Speed is HeartRateSpeed or HeartRateZoneSpeed)
@@ -1233,8 +1324,8 @@ public sealed class LiveSessionCoordinator(
             hrTarget,
             TreadmillCommandOrigin.HeartRateAutomation,
             active.Machine.Version,
-            lease.Id,
-            lease.HolderId);
+            active.AutomationAuthorityId,
+            active.AutomationAuthorityHolder);
       }
     }
     else if (active.CanSetSpeedRemotely && active.SpeedRange is { } speedRange)
@@ -1249,8 +1340,8 @@ public sealed class LiveSessionCoordinator(
           requested,
           TreadmillCommandOrigin.PlannedTransition,
           active.Machine.Version,
-          lease.Id,
-          lease.HolderId);
+          active.AutomationAuthorityId,
+          active.AutomationAuthorityHolder);
     }
 
     if (active.CanSetInclineRemotely && active.InclineRange is { } inclineRange)
@@ -1265,8 +1356,8 @@ public sealed class LiveSessionCoordinator(
           requested,
           TreadmillCommandOrigin.PlannedTransition,
           active.Machine.Version,
-          lease.Id,
-          lease.HolderId);
+          active.AutomationAuthorityId,
+          active.AutomationAuthorityHolder);
     }
 
     return null;
@@ -1356,8 +1447,11 @@ public sealed class LiveSessionCoordinator(
 
   private static void SuspendAutomation(ActiveRun active, string reason)
   {
+    if (active.HeartRateAutomationMode is HeartRateAutomationMode.Disabled or HeartRateAutomationMode.Shadow or HeartRateAutomationMode.DecreaseOnly or HeartRateAutomationMode.Full)
+      active.DesiredHeartRateAutomationMode = active.HeartRateAutomationMode;
     active.HeartRateController.ResetDwell();
     active.CommandsSuspended = true;
+    active.CommandsSuspendedReason = reason;
     active.HeartRateAutomationMode = HeartRateAutomationMode.SuspendedSafety;
     active.HeartRateAutomationReason = reason;
     AddWarningOnce(active, reason);
@@ -1368,11 +1462,19 @@ public sealed class LiveSessionCoordinator(
     try
     {
       using IServiceScope recoveryScope = scopeFactory.CreateScope();
-      await recoveryScope.ServiceProvider.GetRequiredService<ISessionStore>()
-        .InterruptUnfinishedAsync(
+      ISessionStore sessionStore = recoveryScope.ServiceProvider.GetRequiredService<ISessionStore>();
+      RecoverableWorkoutSession? recoverable = await sessionStore.FindRecoverableAsync(cancellationToken);
+      if (recoverable is null)
+      {
+        await sessionStore.InterruptUnfinishedAsync(
           timeProvider.GetUtcNow(),
-          "Gateway restarted before the session reached a terminal state.",
+          "Gateway restarted without a complete recovery checkpoint.",
           cancellationToken);
+        _startupRecoveryComplete = true;
+        return;
+      }
+
+      await RestoreActiveSessionAsync(recoverable, cancellationToken);
       _startupRecoveryComplete = true;
     }
     catch (SqliteException exception) when (
@@ -1386,6 +1488,104 @@ public sealed class LiveSessionCoordinator(
         _startupRecoveryWaitLogged = true;
       }
     }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+      logger.LogError(exception, "Session restart recovery was rejected; no treadmill command was issued.");
+      using IServiceScope failureScope = scopeFactory.CreateScope();
+      await failureScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+        timeProvider.GetUtcNow(),
+        "Gateway restart recovery data was invalid or unavailable.",
+        cancellationToken);
+      _active = null;
+      _startupRecoveryComplete = true;
+    }
+  }
+
+  private async Task RestoreActiveSessionAsync(
+    RecoverableWorkoutSession recoverable,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutSession stored = recoverable.Session;
+    SessionRecoveryCheckpoint checkpoint = recoverable.Checkpoint;
+    if (stored.StartedAt is null || checkpoint.State != SessionState.Running)
+      throw new InvalidOperationException("Only a running session with a start time can be recovered.");
+
+    (_, _, WorkoutDefinition workout) = await LoadPlanAsync(
+      stored.Definition.UserProfileId, stored.Definition.WorkoutRevisionId, cancellationToken);
+    SessionExecutionConfiguration configuration = JsonSerializer.Deserialize<SessionExecutionConfiguration>(
+      stored.Definition.ControllerConfigurationJson,
+      new JsonSerializerOptions(JsonSerializerDefaults.Web))
+      ?? throw new InvalidOperationException("The stored session configuration is invalid.");
+    using IServiceScope enrollmentScope = scopeFactory.CreateScope();
+    VersionedDeviceEnrollment? currentEnrollment = await enrollmentScope.ServiceProvider
+      .GetRequiredService<IDeviceEnrollmentStore>()
+      .FindActiveAsync(DeviceRole.Treadmill, cancellationToken);
+    if (configuration.Treadmill?.IdentityFingerprint is not { Length: 64 } expectedFingerprint ||
+        currentEnrollment?.Enrollment.IdentityFingerprint is not { } currentFingerprint ||
+        !string.Equals(expectedFingerprint, currentFingerprint, StringComparison.Ordinal))
+    {
+      await enrollmentScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+        timeProvider.GetUtcNow(),
+        "Gateway restart recovery could not confirm the same enrolled treadmill.",
+        cancellationToken);
+      return;
+    }
+    var progression = new WorkoutProgression(workout);
+    progression.Restore(checkpoint.Progression);
+    var controllerSettings = configuration.Profile.HeartRateController is { } settings
+      ? new HeartRateControllerSettings(
+        settings.IncreaseStepKph,
+        settings.IncreaseCooldownSeconds,
+        settings.DecreaseStepKph,
+        settings.DecreaseCooldownSeconds)
+      : HeartRateControllerSettings.Default;
+    TreadmillCapabilities? capabilities = configuration.Treadmill?.Capabilities;
+    DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(stored.Definition.UserProfileId);
+    var active = new ActiveRun(
+      stored.Definition,
+      workout,
+      SessionStateMachine.Restore(timeProvider, SessionState.Running, checkpoint.SessionVersion),
+      progression,
+      configuration.Profile.MaximumSpeedKph ?? 20,
+      timeProvider.GetUtcNow(),
+      hardwareMode: stored.Definition.Origin == SessionOrigin.Hardware,
+      requiresHeartRate: ContainsHeartRateTarget(workout.Blocks),
+      MapHeartRateSource(devices),
+      canStartRemotely: false,
+      canStopRemotely: capabilities?.CanStopRemotely == true,
+      minimumStartSpeedKph: null,
+      canSetSpeedRemotely: capabilities?.CanSetSpeedRemotely == true,
+      canSetInclineRemotely: capabilities?.CanSetInclineRemotely == true,
+      canPauseRemotely: capabilities?.CanPauseRemotely == true,
+      capabilities?.SpeedRange,
+      capabilities?.InclineRange,
+      controllerSettings,
+      checkpoint.DesiredHeartRateAutomationMode,
+      checkpoint.ConnectionGeneration,
+      devices.SelectedHeartRateEnrollmentId,
+      devices.HeartRateSelectionGeneration)
+    {
+      StartedAt = checkpoint.StartedAtUtc,
+      Elapsed = checkpoint.Progression.LastElapsed,
+      DistanceKilometers = checkpoint.DistanceKilometers,
+      MeasuredSpeedKph = checkpoint.MeasuredSpeedKph,
+      MeasuredInclinePercent = checkpoint.MeasuredInclinePercent,
+      SpeedOverrideKph = checkpoint.SpeedOverrideKph,
+      InclineOverridePercent = checkpoint.InclineOverridePercent,
+      CommandsSuspended = true,
+      CommandsSuspendedReason = "The gateway restarted; confirm fresh treadmill movement before resuming planned controls.",
+      ConnectionPhase = SessionConnectionPhase.Reconnecting,
+      RecoveryState = SessionRecoveryState.RestartTracking,
+      RecoveredAfterRestart = true,
+      RestartRecoveryDeadlineUtc = timeProvider.GetUtcNow().AddSeconds(30),
+    };
+    active.DesiredHeartRateAutomationMode = checkpoint.DesiredHeartRateAutomationMode;
+    active.HeartRateAutomationMode = active.RequiresHeartRate
+      ? HeartRateAutomationMode.SuspendedSafety
+      : HeartRateAutomationMode.Disabled;
+    AddWarningOnce(active, "Gateway restarted; tracking recovery never issues Start and planned controls remain paused.");
+    _active = active;
+    PublishSnapshot(active, timeProvider.GetUtcNow(), AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
   }
 
   private async Task<(VersionedUserProfile Profile, StoredWorkoutRevision Revision, WorkoutDefinition Workout)> LoadPlanAsync(
@@ -1433,7 +1633,9 @@ public sealed class LiveSessionCoordinator(
       capabilities.CanSetInclineRemotely && capabilities.InclineRange is not null,
       capabilities.CanPauseRemotely,
       capabilities.SpeedRange,
-      capabilities.InclineRange);
+      capabilities.InclineRange,
+      enrollment.Id,
+      enrollment.IdentityFingerprint);
   }
 
   private async Task ApplyHardwareTelemetryAsync(
@@ -1465,8 +1667,12 @@ public sealed class LiveSessionCoordinator(
       }
     }
     TimeSpan? treadmillAge = devices.TreadmillAge;
+    bool generationChanged = devices.Treadmill.ConnectionGeneration != active.ConnectionGeneration;
     if (devices.TreadmillTelemetry is { } treadmill && treadmillAge <= FreshTelemetryLimit)
     {
+      if (generationChanged && active.TelemetryGapStartedAtUtc is null)
+        await BeginTelemetryGapAsync(active, now, "The treadmill connection generation changed.", cancellationToken);
+
       SessionState previous = active.Machine.State;
       active.MeasuredSpeedKph = treadmill.SpeedKph;
       active.MeasuredInclinePercent = treadmill.InclinePercent;
@@ -1475,9 +1681,26 @@ public sealed class LiveSessionCoordinator(
       active.Machine.ObserveTelemetry(treadmill.SpeedKph);
       await MarkRunningIfTransitionedAsync(active, previous, now, cancellationToken);
       active.Warnings.Remove("Treadmill telemetry is stale; session automation is suspended.");
+
+      if (active.TelemetryGapStartedAtUtc is not null)
+      {
+        if (active.ReconnectCandidateGeneration == devices.Treadmill.ConnectionGeneration)
+          active.ReconnectStableSamples++;
+        else
+        {
+          active.ReconnectCandidateGeneration = devices.Treadmill.ConnectionGeneration;
+          active.ReconnectStableSamples = 1;
+        }
+
+        active.ConnectionPhase = SessionConnectionPhase.Reconnecting;
+        active.RecoveryState = SessionRecoveryState.Reconciling;
+        if (active.ReconnectStableSamples >= 2)
+          await CompleteTelemetryReconnectAsync(active, devices, treadmill, now, cancellationToken);
+      }
     }
     else
     {
+      await BeginTelemetryGapAsync(active, now, devices.Treadmill.Fault ?? "Treadmill telemetry became stale.", cancellationToken);
       active.IsMoving = false;
       active.TelemetryAge = treadmillAge ?? TimeSpan.MaxValue;
       AddWarningOnce(active, "Treadmill telemetry is stale; session automation is suspended.");
@@ -1505,6 +1728,99 @@ public sealed class LiveSessionCoordinator(
         SuspendAutomation(active, "Heart-rate telemetry is stale; heart-rate automation is suspended.");
     }
   }
+
+  private async Task BeginTelemetryGapAsync(
+    ActiveRun active,
+    DateTimeOffset now,
+    string reason,
+    CancellationToken cancellationToken)
+  {
+    if (active.TelemetryGapStartedAtUtc is not null) return;
+    active.TelemetryGapStartedAtUtc = now;
+    active.PreGapMeasuredSpeedKph = active.MeasuredSpeedKph;
+    active.PreGapMeasuredInclinePercent = active.MeasuredInclinePercent;
+    active.ReconnectStableSamples = 0;
+    active.ReconnectCandidateGeneration = 0;
+    active.ConnectionPhase = SessionConnectionPhase.Reconnecting;
+    active.RecoveryState = active.RecoveredAfterRestart
+      ? SessionRecoveryState.RestartTracking
+      : SessionRecoveryState.TelemetryGap;
+    active.CanResumePlannedControls = false;
+    using IServiceScope scope = scopeFactory.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+      active.Definition.SessionId,
+      new DeviceDisconnectedEvent(SessionDeviceRole.Treadmill, reason, now),
+      cancellationToken);
+  }
+
+  private async Task CompleteTelemetryReconnectAsync(
+    ActiveRun active,
+    DeviceTelemetrySnapshot devices,
+    TreadmillTelemetry treadmill,
+    DateTimeOffset now,
+    CancellationToken cancellationToken)
+  {
+    RecoveryReconciliationDecision decision = RecoveryReconciliationPolicy.Evaluate(new(
+      active.Machine.State,
+      SameEnrolledTreadmill: true,
+      FreshStableTelemetry: active.ReconnectStableSamples >= 2,
+      active.RecoveredAfterRestart,
+      treadmill.SpeedKph,
+      treadmill.InclinePercent,
+      active.PreGapMeasuredSpeedKph,
+      active.PreGapMeasuredInclinePercent,
+      active.SpeedRange is { } speedRange ? (double)speedRange.Increment : 0.1,
+      active.InclineRange is { } inclineRange ? (double)inclineRange.Increment : 0.5,
+      active.LastCommandResult?.Disposition));
+
+    active.ConnectionGeneration = devices.Treadmill.ConnectionGeneration;
+    active.TelemetryGapStartedAtUtc = null;
+    active.ReconnectStableSamples = 0;
+    active.ReconnectCandidateGeneration = 0;
+    active.LastReconciledAtUtc = now;
+    using IServiceScope scope = scopeFactory.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+      active.Definition.SessionId,
+      new DeviceReconnectedEvent(SessionDeviceRole.Treadmill, now),
+      cancellationToken);
+
+    if (decision.Action == RecoveryReconciliationAction.ResumeAutomatically)
+    {
+      active.CommandsSuspended = false;
+      active.CommandsSuspendedReason = null;
+      active.CanResumePlannedControls = false;
+      active.ConnectionPhase = SessionConnectionPhase.Recovered;
+      active.RecoveryState = SessionRecoveryState.Recovered;
+      if (active.RequiresHeartRate)
+        active.HeartRateAutomationMode = active.DesiredHeartRateAutomationMode;
+      active.HeartRateAutomationReason = "Treadmill telemetry recovered; current planned targets will be reconciled with fresh commands.";
+      active.Warnings.Remove("Treadmill telemetry is stale; session automation is suspended.");
+      return;
+    }
+
+    string reason = decision.Reason;
+    SuspendAutomation(active, reason);
+    active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
+    active.RecoveryState = active.RecoveredAfterRestart
+      ? SessionRecoveryState.RestartTracking
+      : SessionRecoveryState.AwaitingResume;
+    active.CanResumePlannedControls = decision.Action == RecoveryReconciliationAction.RequireExplicitResume;
+  }
+
+  private static SessionRecoveryCheckpoint CreateRecoveryCheckpoint(ActiveRun active, DateTimeOffset now) => new(
+    active.Definition.SessionId,
+    now,
+    active.Machine.State,
+    active.Machine.Version,
+    active.StartedAt ?? now,
+    active.Progression.Capture(),
+    active.DistanceKilometers,
+    active.MeasuredSpeedKph,
+    active.MeasuredInclinePercent,
+    active.SpeedOverrideKph,
+    active.InclineOverridePercent,
+    active.DesiredHeartRateAutomationMode,
+    active.ConnectionGeneration);
 
   private async Task MarkRunningIfTransitionedAsync(
     ActiveRun active,
@@ -1640,7 +1956,14 @@ public sealed class LiveSessionCoordinator(
       active.InclineRange,
       active.HeartRateAutomationMode,
       active.HeartRateAutomationReason,
-      active.WorkoutPlan);
+      active.WorkoutPlan,
+      active.ConnectionPhase,
+      _serviceInstanceId,
+      active.RecoveryState,
+      active.CommandsSuspendedReason,
+      active.TelemetryGapStartedAtUtc,
+      active.CanResumePlannedControls,
+      active.LastReconciledAtUtc);
   }
 
   private static IReadOnlyList<WorkoutPlanPoint> BuildWorkoutPlan(WorkoutDefinition definition)
@@ -1908,11 +2231,26 @@ public sealed class LiveSessionCoordinator(
     public TreadmillOperatingRange? InclineRange { get; } = inclineRange;
     public HeartRateSpeedController HeartRateController { get; } = new(heartRateControllerSettings);
     public HeartRateAutomationMode HeartRateAutomationMode { get; set; } = heartRateAutomationMode;
+    public HeartRateAutomationMode DesiredHeartRateAutomationMode { get; set; } = heartRateAutomationMode;
     public string? HeartRateAutomationReason { get; set; } = heartRateAutomationMode == HeartRateAutomationMode.Shadow
       ? "Shadow mode records decisions without sending speed commands."
       : null;
     public long ConnectionGeneration { get; set; } = connectionGeneration;
+    public Guid AutomationAuthorityId { get; } = Guid.NewGuid();
+    public string AutomationAuthorityHolder { get; } = $"gateway-session:{definition.SessionId:N}";
     public bool CommandsSuspended { get; set; }
+    public string? CommandsSuspendedReason { get; set; }
+    public SessionConnectionPhase ConnectionPhase { get; set; } = SessionConnectionPhase.Ready;
+    public SessionRecoveryState RecoveryState { get; set; } = SessionRecoveryState.None;
+    public DateTimeOffset? TelemetryGapStartedAtUtc { get; set; }
+    public DateTimeOffset? LastReconciledAtUtc { get; set; }
+    public bool CanResumePlannedControls { get; set; }
+    public double PreGapMeasuredSpeedKph { get; set; }
+    public double PreGapMeasuredInclinePercent { get; set; }
+    public long ReconnectCandidateGeneration { get; set; }
+    public int ReconnectStableSamples { get; set; }
+    public bool RecoveredAfterRestart { get; set; }
+    public DateTimeOffset? RestartRecoveryDeadlineUtc { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset LastTickAt { get; set; } = createdAt;
     public FixedIntervalCadence SampleCadence { get; } = new(PersistenceInterval, createdAt);
@@ -1944,7 +2282,9 @@ public sealed class LiveSessionCoordinator(
     bool CanSetIncline,
     bool CanPause,
     TreadmillOperatingRange? SpeedRange,
-    TreadmillOperatingRange? InclineRange)
+    TreadmillOperatingRange? InclineRange,
+    Guid? EnrollmentId = null,
+    string? IdentityFingerprint = null)
   {
     public static TreadmillControlAvailability Unavailable { get; } =
       new(false, false, null, false, false, false, null, null);

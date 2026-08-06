@@ -148,6 +148,24 @@ public enum SessionControlAccess
   Controller,
 }
 
+public enum SessionConnectionPhase
+{
+  Ready,
+  Reconnecting,
+  Recovered,
+  NeedsAttention,
+}
+
+public enum SessionRecoveryState
+{
+  None,
+  TelemetryGap,
+  Reconciling,
+  Recovered,
+  AwaitingResume,
+  RestartTracking,
+}
+
 public sealed record ActiveWorkoutStep
 {
   public ActiveWorkoutStep(
@@ -248,7 +266,14 @@ public sealed record ActiveSessionSnapshot
       TreadmillOperatingRange? inclineRange = null,
       HeartRateAutomationMode heartRateAutomationMode = HeartRateAutomationMode.Disabled,
       string? heartRateAutomationReason = null,
-      IReadOnlyList<WorkoutPlanPoint>? workoutPlan = null)
+      IReadOnlyList<WorkoutPlanPoint>? workoutPlan = null,
+      SessionConnectionPhase connectionPhase = SessionConnectionPhase.Ready,
+      Guid? serviceInstanceId = null,
+      SessionRecoveryState recoveryState = SessionRecoveryState.None,
+      string? commandsSuspendedReason = null,
+      DateTimeOffset? telemetryGapStartedAtUtc = null,
+      bool canResumePlannedControls = false,
+      DateTimeOffset? lastReconciledAtUtc = null)
   {
     RequireId(sessionId, nameof(sessionId));
     RequireId(userProfileId, nameof(userProfileId));
@@ -312,6 +337,13 @@ public sealed record ActiveSessionSnapshot
       ? null
       : heartRateAutomationReason.Trim();
     WorkoutPlan = Array.AsReadOnly((workoutPlan ?? []).ToArray());
+    ConnectionPhase = connectionPhase;
+    ServiceInstanceId = serviceInstanceId;
+    RecoveryState = recoveryState;
+    CommandsSuspendedReason = string.IsNullOrWhiteSpace(commandsSuspendedReason) ? null : commandsSuspendedReason.Trim();
+    TelemetryGapStartedAtUtc = telemetryGapStartedAtUtc;
+    CanResumePlannedControls = canResumePlannedControls;
+    LastReconciledAtUtc = lastReconciledAtUtc;
   }
 
   public Guid SessionId { get; }
@@ -346,6 +378,13 @@ public sealed record ActiveSessionSnapshot
   public HeartRateAutomationMode HeartRateAutomationMode { get; }
   public string? HeartRateAutomationReason { get; }
   public IReadOnlyList<WorkoutPlanPoint> WorkoutPlan { get; }
+  public SessionConnectionPhase ConnectionPhase { get; }
+  public Guid? ServiceInstanceId { get; }
+  public SessionRecoveryState RecoveryState { get; }
+  public string? CommandsSuspendedReason { get; }
+  public DateTimeOffset? TelemetryGapStartedAtUtc { get; }
+  public bool CanResumePlannedControls { get; }
+  public DateTimeOffset? LastReconciledAtUtc { get; }
 
   private static void RequireId(Guid value, string parameterName)
   {

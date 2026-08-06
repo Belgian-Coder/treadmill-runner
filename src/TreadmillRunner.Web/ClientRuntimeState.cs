@@ -11,6 +11,7 @@ public sealed class ClientRuntimeState
   public bool UpdateRequired { get; private set; }
   public string ExpectedFingerprint => AppBuildInfo.Fingerprint;
   public string? ServerFingerprint { get; private set; }
+  public DateTimeOffset? ServerStartedAtUtc { get; private set; }
   public event Action? Changed;
 
   public async Task CheckAsync(HttpClient client, CancellationToken cancellationToken = default)
@@ -22,6 +23,7 @@ public sealed class ClientRuntimeState
       SystemVersionView? version = await response.Content.ReadFromJsonAsync<SystemVersionView>(cancellationToken);
       IsConnected = true;
       ServerFingerprint = version?.BuildFingerprint;
+      ServerStartedAtUtc = version?.ServiceStartedAtUtc;
       UpdateRequired = !string.Equals(ServerFingerprint, ExpectedFingerprint, StringComparison.Ordinal);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -94,6 +94,13 @@ public static class WorkoutProgramPlanningEndpoints
       ValidateOperationId(request.OperationId);
       StoredWorkoutProgram existing = await store.FindAsync(id, cancellationToken)
         ?? throw new KeyNotFoundException();
+      if (existing.CurrentRevision.TemplateId is not null)
+      {
+        return TypedResults.Conflict(new
+        {
+          message = "Premade training plans are immutable. Add a fresh copy from the catalog instead.",
+        });
+      }
       WorkoutProgramRevision revision = CreateRevision(
         id, Guid.NewGuid(), existing.CurrentRevision.RevisionNumber + 1, request);
       fingerprint = PlanningOperationFingerprint.Compute(new
@@ -256,7 +263,15 @@ public static class WorkoutProgramPlanningEndpoints
       using JsonDocument json = JsonDocument.Parse(revision.DefinitionJson);
       string name = json.RootElement.GetProperty("title").GetString() ?? "Workout";
       items.Add(new WorkoutProgramItemDto(
-        item.Id, item.WorkoutRevisionId, item.Position, name, revision.RevisionNumber, DurationMinutes(json.RootElement)));
+        item.Id,
+        item.WorkoutRevisionId,
+        item.Position,
+        name,
+        revision.RevisionNumber,
+        DurationMinutes(json.RootElement),
+        item.WeekNumber,
+        item.SessionNumber,
+        item.Phase));
     }
     WorkoutProgramProgress? progress = stored.Progress;
     return new WorkoutProgramDto(
@@ -272,7 +287,10 @@ public static class WorkoutProgramPlanningEndpoints
       progress?.CompletedItemCount ?? 0,
       progress?.NextItem?.Id,
       progress?.NextItem?.WorkoutRevisionId,
-      progress?.IsComplete ?? false);
+      progress?.IsComplete ?? false,
+      stored.Program.CurrentRevision.TemplateId,
+      stored.Program.CurrentRevision.TemplateVersion,
+      stored.Program.CurrentRevision.OwnerProfileId);
   }
 
   private static double? DurationMinutes(JsonElement root)

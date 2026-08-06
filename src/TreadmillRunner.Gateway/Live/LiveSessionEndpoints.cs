@@ -45,6 +45,12 @@ public sealed record HeartRateAutomationRequest(
   string HolderId,
   Guid LeaseId,
   long ExpectedSessionVersion);
+public sealed record ResumePlannedControlsRequest(
+  Guid OperationId,
+  string HolderId,
+  Guid LeaseId,
+  long ExpectedSessionVersion,
+  long ConnectionGeneration);
 public sealed record TreadmillCommandRequest(
   Guid OperationId,
   string HolderId,
@@ -86,6 +92,7 @@ public static class LiveSessionEndpoints
     live.MapPost("/sessions/pause", PauseAsync);
     live.MapPost("/sessions/stop", StopAsync);
     live.MapPost("/sessions/heart-rate-automation", SetHeartRateAutomationAsync);
+    live.MapPost("/sessions/resume-planned-controls", ResumePlannedControlsAsync);
     if (includeSimulatorRoutes)
     {
       live.MapPost("/simulator/reset", ResetAsync);
@@ -157,15 +164,62 @@ public static class LiveSessionEndpoints
     AcquireLeaseRequest request,
     IControlLeaseCoordinator coordinator)
   {
-    ControlLease? current = coordinator.Current;
-    if (current is not null && string.Equals(current.HolderId, request.HolderId, StringComparison.Ordinal))
-    {
-      return Results.Ok(current);
-    }
-
     return coordinator.TryAcquire(request.HolderId) is { } lease
       ? Results.Ok(lease)
       : Results.Conflict(new { error = "Another browser currently holds the controller lease." });
+  }
+
+  private static async Task<IResult> ResumePlannedControlsAsync(
+    ResumePlannedControlsRequest request,
+    ILiveSessionCoordinator coordinator,
+    IOperationReceiptStore receiptStore,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    const string operationType = "session.resume-planned-controls";
+    string fingerprint = PlanningOperationFingerprint.Compute(new
+    {
+      request.HolderId,
+      request.LeaseId,
+      request.ExpectedSessionVersion,
+      request.ConnectionGeneration,
+    });
+    try
+    {
+      if (request.OperationId == Guid.Empty)
+        return Results.BadRequest(new { error = "An operation ID is required." });
+      if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } stored)
+      {
+        return stored.OperationType == operationType && stored.RequestFingerprint == fingerprint
+          ? Results.Content(stored.OutcomeJson, "application/json", statusCode: stored.StatusCode)
+          : Results.Conflict(new { error = "That operation ID was already used for another action or request." });
+      }
+
+      ActiveSessionSnapshot snapshot = await coordinator.ResumePlannedControlsAsync(
+        request.OperationId,
+        request.ExpectedSessionVersion,
+        request.ConnectionGeneration,
+        request.LeaseId,
+        request.HolderId,
+        cancellationToken);
+      string outcome = JsonSerializer.Serialize(snapshot, WebJsonOptions);
+      var receipt = new OperationReceipt(
+        Guid.NewGuid(), request.OperationId, operationType, StatusCodes.Status200OK,
+        outcome, timeProvider.GetUtcNow(), fingerprint);
+      if (!await receiptStore.TryAddAsync(receipt, cancellationToken) &&
+          await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } raced &&
+          (raced.OperationType != operationType || raced.RequestFingerprint != fingerprint))
+        return Results.Conflict(new { error = "That operation ID was already used for another action or request." });
+      return Results.Ok(snapshot);
+    }
+    catch (ArgumentException exception)
+    {
+      return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return Results.Conflict(new { error = exception.Message });
+    }
   }
 
   private static IResult HeartbeatLease(

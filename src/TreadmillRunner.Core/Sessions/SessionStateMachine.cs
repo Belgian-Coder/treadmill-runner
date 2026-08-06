@@ -22,6 +22,14 @@ public sealed class SessionStateMachine
 
   public event EventHandler<ManualSpeedOverrideEvent>? ManualSpeedOverrideRecorded;
 
+  public static SessionStateMachine Restore(TimeProvider timeProvider, SessionState state, long version)
+  {
+    if (state is not (SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume))
+      throw new ArgumentOutOfRangeException(nameof(state), "Only an unfinished active state can be restored.");
+    if (version < 1) throw new ArgumentOutOfRangeException(nameof(version));
+    return new SessionStateMachine(timeProvider) { State = state, Version = version };
+  }
+
   public void Arm()
   {
     RequireState(SessionState.Idle);

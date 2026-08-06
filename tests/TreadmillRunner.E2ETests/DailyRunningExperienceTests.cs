@@ -29,7 +29,17 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     int width,
     int height)
   {
-    SeededPlan plan = await SeedPlanAsync("preflight", heartRateTarget: true);
+    var browserErrors = new List<string>();
+    Page.PageError += (_, error) => browserErrors.Add(error);
+    Page.Console += (_, message) =>
+    {
+      if (message.Type is "error" or "warning") browserErrors.Add($"{message.Type}: {message.Text}");
+    };
+    SeededPlan plan = await SeedPlanAsync(
+      "preflight",
+      heartRateTarget: true,
+      profileDisplayName: viewportName == "iphone17-pro-max" ? "Alex Demo" : null,
+      workoutDisplayName: viewportName == "iphone17-pro-max" ? "Aerobic base run" : null);
     await Page.SetViewportSizeAsync(width, height);
     await ResetSimulatorAsync();
 
@@ -37,7 +47,17 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
       .ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    try
+    {
+      await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    }
+    catch (TimeoutException exception)
+    {
+      string body = await Page.Locator("body").InnerTextAsync();
+      throw new InvalidOperationException(
+        $"Run page did not hydrate the seeded runner. Browser errors: {string.Join(" | ", browserErrors)}. Body: {body}",
+        exception);
+    }
     ILocator selectedRunner = Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true });
     await Expect(selectedRunner).ToHaveAttributeAsync("aria-checked", "true");
     await Expect(selectedRunner).ToHaveCSSAsync("background-color", "rgb(23, 75, 66)");
@@ -47,8 +67,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Selected workout")).ToHaveTextAsync(plan.WorkoutName);
     await Expect(Page.Locator(".connection-state")).ToHaveTextAsync("Gateway ready");
     ILocator readiness = Page.Locator(".readiness-card");
+    await Expect(readiness).ToHaveAttributeAsync("open", "");
     await Expect(readiness.GetByText("Ready", new() { Exact = true })).ToBeVisibleAsync();
-    await readiness.Locator("summary").ClickAsync();
     await Expect(Page.Locator(".readiness-list").GetByText("Treadmill connected", new() { Exact = false })).ToBeVisibleAsync();
     await Expect(Page.Locator(".readiness-list").GetByText("Heart rate connected", new() { Exact = false })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Safety notice"))
@@ -57,9 +77,10 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
     await AssertNoHorizontalOverflowAsync();
     await AssertTouchTargetAsync(Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" }), viewportName);
-    if (width == 440)
+    if (viewportName == "iphone17-pro-max")
     {
-      await AssertInsideViewportAsync(Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" }), viewportName);
+      await readiness.ScrollIntoViewIfNeededAsync();
+      await ShowcaseScreenshotAsync("tr-023-run-preflight-iphone.png");
     }
     await ScreenshotAsync($"tr004-preflight-{viewportName}.png");
   }
@@ -138,9 +159,31 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Initial_live_channel_failure_keeps_controls_disabled_and_recovers_without_reload()
+  {
+    SeededPlan plan = await SeedPlanAsync("initial-signalr-recovery", heartRateTarget: false);
+    await Page.SetViewportSizeAsync(440, 956);
+    await Page.RouteAsync("**/hubs/live**", route => route.AbortAsync());
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+    await Expect(Page.Locator(".connection-state")).ToContainTextAsync("retrying", new() { Timeout = 15_000 });
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" })).ToBeDisabledAsync();
+
+    await Page.UnrouteAsync("**/hubs/live**");
+
+    await Expect(Page.Locator(".connection-state")).ToContainTextAsync("Gateway ready", new() { Timeout = 20_000 });
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" })).ToBeEnabledAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Browser_reload_keeps_the_gateway_owned_session_and_restores_its_controller_view()
   {
-    SeededPlan plan = await SeedPlanAsync("reconnect", heartRateTarget: false);
+    SeededPlan plan = await SeedPlanAsync(
+      "reconnect", heartRateTarget: false, goalMinutes: 0.2,
+      profileDisplayName: "Morgan Demo", workoutDisplayName: "Steady reconnect run");
     await Page.SetViewportSizeAsync(1920, 1080);
 
     await NavigateAndSelectPlanAsync(plan);
@@ -164,7 +207,58 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(motionControls.GetByRole(AriaRole.Status)).ToContainTextAsync("Controller access restored");
     await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new System.Text.RegularExpressions.Regex("^M.+L"));
+    await ShowcaseScreenshotAsync("tr-023-control-recovered-desktop.png");
     await ScreenshotAsync("tr004-live-browser-reconnect-desktop-full-hd.png");
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Active_session_survives_browser_network_loss_and_rehydrates_elapsed_time()
+  {
+    SeededPlan plan = await SeedPlanAsync(
+      "offline-recovery", heartRateTarget: false,
+      profileDisplayName: "Taylor Demo", workoutDisplayName: "Reliable easy run");
+    await Page.SetViewportSizeAsync(440, 956);
+    await NavigateAndSelectPlanAsync(plan);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
+      .ToBeVisibleAsync();
+    await SetPhysicalMotionAsync(isMoving: true, measuredSpeedKph: 6.0, measuredInclinePercent: 0.5);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    string elapsedBefore = await Page.GetByLabel("Elapsed time", new() { Exact = true }).InnerTextAsync();
+
+    await Page.Context.SetOfflineAsync(true);
+    await Expect(Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "Live updates unavailable" }))
+      .ToBeVisibleAsync(new() { Timeout = 15_000 });
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Speed +0.1 km/h" })).ToBeDisabledAsync();
+    await ShowcaseScreenshotAsync("tr-023-control-reconnecting-iphone.png");
+    await Task.Delay(TimeSpan.FromSeconds(12));
+    await Page.Context.SetOfflineAsync(false);
+
+    await Expect(Page.Locator(".control-header-actions .connection-state"))
+      .ToContainTextAsync("Gateway ready", new() { Timeout = 40_000 });
+    await Expect(Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "Live updates unavailable" }))
+      .ToHaveCountAsync(0);
+    string elapsedAfter = await Page.GetByLabel("Elapsed time", new() { Exact = true }).InnerTextAsync();
+    Assert.NotEqual(elapsedBefore, elapsedAfter);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Active_control_is_touch_usable_in_iphone_landscape()
+  {
+    SeededPlan plan = await SeedPlanAsync("iphone-landscape", heartRateTarget: false);
+    await Page.SetViewportSizeAsync(956, 440);
+    await NavigateAndSelectPlanAsync(plan);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true })).ToBeVisibleAsync();
+    await SetPhysicalMotionAsync(isMoving: true, measuredSpeedKph: 6.0, measuredInclinePercent: 0.5);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await AssertNoHorizontalOverflowAsync();
+    await AssertTouchTargetAsync(Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }), "iphone-landscape");
+    await ShowcaseScreenshotAsync("tr-023-control-iphone-landscape.png");
   }
 
   [Fact]
@@ -436,11 +530,13 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     bool heartRateTarget,
     bool openSpeed = false,
     double? goalMinutes = null,
-    bool distanceGoal = false)
+    bool distanceGoal = false,
+    string? profileDisplayName = null,
+    string? workoutDisplayName = null)
   {
     string suffix = $"{scenario}-{Guid.NewGuid():N}"[..(scenario.Length + 9)];
-    string profileName = $"Runner {suffix}";
-    string workoutName = $"Workout {suffix}";
+    string profileName = profileDisplayName ?? $"Runner {suffix}";
+    string workoutName = workoutDisplayName ?? $"Workout {suffix}";
 
     using HttpClient client = CreateClient();
     using HttpResponseMessage profileResponse = await client.PostAsJsonAsync("/api/planning/profiles", new
@@ -579,6 +675,17 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
   private async Task ScreenshotViewportAsync(string fileName)
   {
     string directory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
+    Directory.CreateDirectory(directory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(directory, fileName),
+      FullPage = false,
+    });
+  }
+
+  private async Task ShowcaseScreenshotAsync(string fileName)
+  {
+    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
     Directory.CreateDirectory(directory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {

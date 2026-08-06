@@ -118,7 +118,10 @@ public sealed record WorkoutProgramItemView(
   int Position,
   string WorkoutName,
   int WorkoutRevisionNumber,
-  double? DurationMinutes);
+  double? DurationMinutes,
+  int? WeekNumber = null,
+  int? SessionNumber = null,
+  string? Phase = null);
 
 public sealed record WorkoutProgramRunView(
   Guid Id,
@@ -141,7 +144,64 @@ public sealed record WorkoutProgramView(
   int CompletedItemCount,
   Guid? NextItemId,
   Guid? NextWorkoutRevisionId,
-  bool IsComplete);
+  bool IsComplete,
+  string? TemplateId = null,
+  string? TemplateVersion = null,
+  Guid? OwnerProfileId = null);
+
+public sealed record PremadePlanCatalogView(
+  string Id,
+  string Version,
+  string Name,
+  string Description,
+  string Goal,
+  string Experience,
+  int Weeks,
+  int SessionsPerWeek,
+  int SessionCount,
+  int MaximumDurationMinutes,
+  double MaximumSpeedKph,
+  double MaximumInclinePercent,
+  bool Repeatable,
+  bool RequiresHeartRate,
+  IReadOnlyList<string> Tags,
+  bool AlreadyAdded,
+  int CopyCount);
+
+public sealed record PremadePlanPhaseView(string Name, int FirstWeek, int LastWeek, int SessionCount);
+
+public sealed record PremadePlanPreviewView(
+  PremadePlanCatalogView Template,
+  Guid ProfileId,
+  string ProfileName,
+  bool Compatible,
+  string CompatibilityMessage,
+  bool HeartRateZonesReady,
+  double NormalizedMaximumSpeedKph,
+  double NormalizedMaximumInclinePercent,
+  int NormalizedTargetCount,
+  int RejectedTargetCount,
+  int UniqueWorkoutCount,
+  IReadOnlyList<PremadePlanPhaseView> Phases);
+
+public sealed record PremadePlanMaterializeRequest(
+  Guid OperationId,
+  Guid ProfileId,
+  string TemplateId,
+  string TemplateVersion,
+  bool FreshCopy);
+
+public sealed record PremadePlanMaterializeView(
+  Guid InstallationId,
+  Guid ProgramId,
+  Guid ProgramRevisionId,
+  string TemplateId,
+  string TemplateVersion,
+  int CopyNumber,
+  int PositionCount,
+  int UniqueWorkoutCount,
+  bool AlreadyAdded,
+  bool Replayed);
 
 public sealed record WorkoutProgramStartRequest(
   Guid OperationId,

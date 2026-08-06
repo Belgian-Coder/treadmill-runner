@@ -23,13 +23,14 @@ updated: 2026-08-02
 - One browser may hold the manual-control lease; all others observe.
 - Browser loss expires that lease but does not terminate the gateway-owned workout.
 - A new browser may reclaim manual control after expiry. It cannot pre-empt a live lease.
-- Reload, reconnect, service restart, update, or restore may never start the belt, resume automation, or replay commands.
+- Reload, reconnect, service restart, update, or restore may never start the belt or replay a command. Browser-only loss does not suspend healthy gateway-owned automation. BLE recovery may resume only after same-device moving telemetry is stable and no console intervention or unknown outcome is present; restart recovery always requires explicit planned-control resume.
 - A verified Start intent is explicit, single-use, short-lived, bound to the active lease and connection generation, and consumed before its one allowed write. It is never automatically retried.
 
 ## Command rules
 
 - Only the serialized device coordinator may write GATT.
 - Bind commands to operation ID, expected state, control lease, short expiry, and connection generation.
+- Treat every recovered generation as new: expire old intents, compare fresh physical values with the pre-gap values, and send only newly confirmed current-position targets.
 - Clamp finite values to verified machine, profile, workout, and personal limits.
 - Rate-limit increases; coalesce only commands proven safe to supersede.
 - A successful BLE write is not success. Require measured telemetry confirmation.

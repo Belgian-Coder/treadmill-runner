@@ -25,3 +25,5 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-020 — Private-LAN Garmin sign-in](tr-020-private-lan-garmin-sign-in.md)
 - [TR-021 — Daily-use polish, data hygiene, and maintenance](tr-021-daily-use-polish.md)
 - [TR-022 — Automatic update reconnect](tr-022-automatic-update-reconnect.md)
+- [TR-023 — Daily-use connection continuity](tr-023-connection-continuity.md)
+- [TR-024 — Premade training-plan catalog and public evidence](tr-024-premade-plan-catalog.md)

@@ -909,6 +909,60 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.ToTable("OperationReceipts", (string)null);
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.PremadePlanInstallationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CopyNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TemplateContentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .IsFixedLength();
+
+                    b.Property<string>("TemplateId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TemplateVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutProgramId")
+                        .IsUnique();
+
+                    b.HasIndex("UserProfileId", "TemplateId", "TemplateVersion", "CopyNumber")
+                        .IsUnique();
+
+                    b.ToTable("PremadePlanInstallations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PremadePlanInstallations_CopyNumber", "\"CopyNumber\" > 0");
+
+                            t.HasCheckConstraint("CK_PremadePlanInstallations_Hash", "length(\"TemplateContentSha256\") = 64");
+
+                            t.HasCheckConstraint("CK_PremadePlanInstallations_TemplateId", "length(\"TemplateId\") > 0");
+
+                            t.HasCheckConstraint("CK_PremadePlanInstallations_TemplateVersion", "length(\"TemplateVersion\") > 0");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.SessionEventEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1264,7 +1318,17 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Phase")
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("SessionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("WeekNumber")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("WorkoutProgramRevisionId")
@@ -1315,13 +1379,26 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("OwnerProfileId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("RevisionNumber")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("TemplateId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TemplateVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("WorkoutProgramId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerProfileId");
 
                     b.HasIndex("WorkoutProgramId", "ContentSha256")
                         .IsUnique();
@@ -1480,6 +1557,13 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("PerceivedExertion")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecoveryCheckpointJson")
+                        .HasMaxLength(16384)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("RecoveryCheckpointUpdatedAtUtc")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("SelectionSource")
                         .IsRequired()
@@ -1729,6 +1813,21 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.PremadePlanInstallationEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutProgramId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.SessionEventEntity", b =>
                 {
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutSessionEntity", "WorkoutSession")
@@ -1813,6 +1912,11 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRevisionEntity", b =>
                 {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerProfileId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramEntity", "WorkoutProgram")
                         .WithMany("Revisions")
                         .HasForeignKey("WorkoutProgramId")

@@ -24,6 +24,7 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<WorkoutProgramRevisionEntity> WorkoutProgramRevisions => Set<WorkoutProgramRevisionEntity>();
   internal DbSet<WorkoutProgramItemEntity> WorkoutProgramItems => Set<WorkoutProgramItemEntity>();
   internal DbSet<WorkoutProgramRunEntity> WorkoutProgramRuns => Set<WorkoutProgramRunEntity>();
+  internal DbSet<PremadePlanInstallationEntity> PremadePlanInstallations => Set<PremadePlanInstallationEntity>();
   internal DbSet<WorkoutSessionEntity> WorkoutSessions => Set<WorkoutSessionEntity>();
   internal DbSet<SessionSampleEntity> SessionSamples => Set<SessionSampleEntity>();
   internal DbSet<SessionEventEntity> SessionEvents => Set<SessionEventEntity>();
@@ -60,6 +61,7 @@ public sealed class TreadmillRunnerDbContext(
     ConfigureImports(modelBuilder);
     ConfigureCalendar(modelBuilder);
     ConfigureWorkoutPrograms(modelBuilder);
+    ConfigurePremadePlanInstallations(modelBuilder);
     ConfigureSessions(modelBuilder);
     ConfigureGarmin(modelBuilder);
     ConfigureOperationReceipts(modelBuilder);
@@ -499,17 +501,24 @@ public sealed class TreadmillRunnerDbContext(
     revision.Property(entity => entity.Description).HasMaxLength(2000);
     revision.Property(entity => entity.Category).HasMaxLength(40);
     revision.Property(entity => entity.ContentSha256).HasMaxLength(64).IsFixedLength();
+    revision.Property(entity => entity.TemplateId).HasMaxLength(100);
+    revision.Property(entity => entity.TemplateVersion).HasMaxLength(40);
     revision.HasIndex(entity => new { entity.WorkoutProgramId, entity.RevisionNumber }).IsUnique();
     revision.HasIndex(entity => new { entity.WorkoutProgramId, entity.ContentSha256 }).IsUnique();
     revision.HasOne(entity => entity.WorkoutProgram)
       .WithMany(entity => entity.Revisions)
       .HasForeignKey(entity => entity.WorkoutProgramId)
       .OnDelete(DeleteBehavior.Restrict);
+    revision.HasOne<UserProfileEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.OwnerProfileId)
+      .OnDelete(DeleteBehavior.Restrict);
 
     var item = modelBuilder.Entity<WorkoutProgramItemEntity>();
     item.ToTable("WorkoutProgramItems", table =>
       table.HasCheckConstraint("CK_WorkoutProgramItems_Position", "\"Position\" > 0"));
     item.HasKey(entity => entity.Id);
+    item.Property(entity => entity.Phase).HasMaxLength(80);
     item.HasIndex(entity => new { entity.WorkoutProgramRevisionId, entity.Position }).IsUnique();
     item.HasOne(entity => entity.WorkoutProgramRevision)
       .WithMany(entity => entity.Items)
@@ -541,6 +550,38 @@ public sealed class TreadmillRunnerDbContext(
       .OnDelete(DeleteBehavior.Restrict);
   }
 
+  private static void ConfigurePremadePlanInstallations(ModelBuilder modelBuilder)
+  {
+    var installation = modelBuilder.Entity<PremadePlanInstallationEntity>();
+    installation.ToTable("PremadePlanInstallations", table =>
+    {
+      table.HasCheckConstraint("CK_PremadePlanInstallations_CopyNumber", "\"CopyNumber\" > 0");
+      table.HasCheckConstraint("CK_PremadePlanInstallations_TemplateId", "length(\"TemplateId\") > 0");
+      table.HasCheckConstraint("CK_PremadePlanInstallations_TemplateVersion", "length(\"TemplateVersion\") > 0");
+      table.HasCheckConstraint("CK_PremadePlanInstallations_Hash", "length(\"TemplateContentSha256\") = 64");
+    });
+    installation.HasKey(entity => entity.Id);
+    installation.Property(entity => entity.TemplateId).HasMaxLength(100);
+    installation.Property(entity => entity.TemplateVersion).HasMaxLength(40);
+    installation.Property(entity => entity.TemplateContentSha256).HasMaxLength(64).IsFixedLength();
+    installation.HasIndex(entity => new
+    {
+      entity.UserProfileId,
+      entity.TemplateId,
+      entity.TemplateVersion,
+      entity.CopyNumber,
+    }).IsUnique();
+    installation.HasIndex(entity => entity.WorkoutProgramId).IsUnique();
+    installation.HasOne<UserProfileEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.UserProfileId)
+      .OnDelete(DeleteBehavior.Restrict);
+    installation.HasOne<WorkoutProgramEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutProgramId)
+      .OnDelete(DeleteBehavior.Restrict);
+  }
+
   private static void ConfigureSessions(ModelBuilder modelBuilder)
   {
     var session = modelBuilder.Entity<WorkoutSessionEntity>();
@@ -560,6 +601,7 @@ public sealed class TreadmillRunnerDbContext(
     session.Property(entity => entity.SelectionSource).HasMaxLength(20);
     session.Property(entity => entity.SessionOrigin).HasMaxLength(20);
     session.Property(entity => entity.MetricAlgorithmVersion).HasMaxLength(60);
+    session.Property(entity => entity.RecoveryCheckpointJson).HasMaxLength(16_384);
     session.Property(entity => entity.DebriefNote).HasMaxLength(1000);
     session.HasIndex(entity => new { entity.UserProfileId, entity.ArmedAtUtc });
     session.HasIndex(entity => entity.State);

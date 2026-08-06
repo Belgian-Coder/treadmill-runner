@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Protocols.Imports;
 
 namespace TreadmillRunner.Protocols.Tests;
@@ -22,6 +23,12 @@ public sealed class TreadmillWorkoutBundleImporterTests
     Assert.Equal(["primary", "primary"], bundle.Select(WorkoutSetSelectionStrategy.Default).Select(static item => item.Variant));
     Assert.Equal(["hr-alternative", "primary"], bundle.Select(WorkoutSetSelectionStrategy.PreferHeartRate).Select(static item => item.Variant));
     Assert.All(bundle.Select(WorkoutSetSelectionStrategy.PreferHeartRate), item => Assert.StartsWith(item.CanonicalSlot, item.Definition.Title));
+    WorkoutStep adaptive = Assert.IsType<WorkoutStep>(bundle.Select(WorkoutSetSelectionStrategy.PreferHeartRate)[0].Definition.Blocks[0]);
+    HeartRateZoneSpeed heartRate = Assert.IsType<HeartRateZoneSpeed>(adaptive.Speed);
+    Assert.Equal(2, heartRate.ZoneNumber);
+    Assert.Equal(5, heartRate.InitialKilometersPerHour);
+    Assert.Equal(4, heartRate.MinimumKilometersPerHour);
+    Assert.Equal(8, heartRate.MaximumKilometersPerHour);
   }
 
   [Fact]

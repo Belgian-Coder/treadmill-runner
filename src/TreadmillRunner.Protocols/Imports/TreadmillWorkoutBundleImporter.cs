@@ -131,7 +131,7 @@ public sealed class TreadmillWorkoutBundleImporter
           throw new WorkoutImportException($"Indexed Omega workout is missing: {path}.");
         byte[] xml = await ReadEntryAsync(xmlEntry, MaximumEntryBytes, cancellationToken);
         await using var xmlStream = new MemoryStream(xml, writable: false);
-        WorkoutImportResult imported = await _xmlImporter.ImportAsync(xmlStream, Path.GetFileName(path), cancellationToken);
+        WorkoutImportResult imported = await _xmlImporter.ImportBundleV4Async(xmlStream, Path.GetFileName(path), cancellationToken);
         string title = $"{group.Key} · {NormalizeTitle(row["title"])}";
         var definition = new WorkoutDefinition(
           imported.Definition.SchemaVersion,

@@ -91,6 +91,28 @@ public sealed class WorkoutProgressionTests
     Assert.Null(progression.HeartRateTarget);
   }
 
+  [Fact]
+  public void Large_elapsed_jump_advances_every_completed_timed_step_and_checkpoint_restores_position()
+  {
+    var definition = new WorkoutDefinition(1, "Reconnect", null,
+    [
+      Step(new TimeGoal(TimeSpan.FromMinutes(1)), new FixedSpeed(5), new FixedIncline(0)),
+      Step(new TimeGoal(TimeSpan.FromMinutes(1)), new FixedSpeed(6), new FixedIncline(1)),
+      Step(new TimeGoal(TimeSpan.FromMinutes(1)), new FixedSpeed(7), new FixedIncline(2)),
+    ]);
+    var progression = new WorkoutProgression(definition);
+
+    IReadOnlyList<WorkoutStepTransition> transitions = progression.Advance(TimeSpan.FromSeconds(130), 0.2);
+
+    Assert.Equal(2, transitions.Count);
+    Assert.Equal(2, progression.CurrentStepIndex);
+    WorkoutProgressionCheckpoint checkpoint = progression.Capture();
+    var restored = new WorkoutProgression(definition);
+    restored.Restore(checkpoint);
+    Assert.Equal(2, restored.CurrentStepIndex);
+    Assert.InRange(restored.ProgressFraction, 0.16, 0.17);
+  }
+
   private static WorkoutStep Step(
       StepGoal goal,
       SpeedDirective speed,

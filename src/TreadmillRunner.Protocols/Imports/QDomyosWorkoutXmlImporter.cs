@@ -25,7 +25,20 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
   public async ValueTask<WorkoutImportResult> ImportAsync(
       Stream source,
       string fileName,
-      CancellationToken cancellationToken = default)
+      CancellationToken cancellationToken = default) =>
+    await ImportAsync(source, fileName, preferBoundedHeartRate: false, cancellationToken);
+
+  internal async ValueTask<WorkoutImportResult> ImportBundleV4Async(
+      Stream source,
+      string fileName,
+      CancellationToken cancellationToken = default) =>
+    await ImportAsync(source, fileName, preferBoundedHeartRate: true, cancellationToken);
+
+  private async ValueTask<WorkoutImportResult> ImportAsync(
+      Stream source,
+      string fileName,
+      bool preferBoundedHeartRate,
+      CancellationToken cancellationToken)
   {
     byte[] bytes = await WorkoutImportGuard.ReadBoundedAsync(source, cancellationToken);
     try
@@ -71,7 +84,8 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
       }
 
       bool usedSpeedUnit = false;
-      IReadOnlyList<WorkoutBlock> blocks = ParseBlocks(root.Elements(), depth: 0, warnings, ref usedSpeedUnit);
+      IReadOnlyList<WorkoutBlock> blocks = ParseBlocks(
+        root.Elements(), depth: 0, warnings, preferBoundedHeartRate, ref usedSpeedUnit);
       if (usedSpeedUnit)
       {
         warnings.Add(new WorkoutImportWarning(
@@ -108,6 +122,7 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
       IEnumerable<XElement> elements,
       int depth,
       List<WorkoutImportWarning> warnings,
+      bool preferBoundedHeartRate,
       ref bool usedSpeedUnit)
   {
     if (depth >= 8)
@@ -135,6 +150,7 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
             element.Elements(),
             depth + 1,
             warnings,
+            preferBoundedHeartRate,
             ref usedSpeedUnit);
         blocks.Add(new WorkoutRepeat(count, nested));
         continue;
@@ -148,7 +164,7 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
         continue;
       }
 
-      blocks.Add(ParseStep(element, warnings, ref usedSpeedUnit));
+      blocks.Add(ParseStep(element, warnings, preferBoundedHeartRate, ref usedSpeedUnit));
     }
 
     return blocks;
@@ -157,6 +173,7 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
   private static WorkoutStep ParseStep(
       XElement row,
       List<WorkoutImportWarning> warnings,
+      bool preferBoundedHeartRate,
       ref bool usedSpeedUnit)
   {
     foreach (XAttribute attribute in row.Attributes())
@@ -266,7 +283,9 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
 
     bool hasFixedOrRampSpeed = speed is not null || speedFrom is not null;
     bool hasHeartRateTarget = heartRateZone is not null || heartRateMin is not null || heartRateMax is not null;
-    if (hasFixedOrRampSpeed && hasHeartRateTarget)
+    bool useBoundedHeartRate = preferBoundedHeartRate && speed is > 0 && speedFrom is null &&
+      minimumSpeed is > 0 && maximumSpeed is > 0 && hasHeartRateTarget;
+    if (hasFixedOrRampSpeed && hasHeartRateTarget && !useBoundedHeartRate)
     {
       warnings.Add(new WorkoutImportWarning(
           "qdomyos.conflicting-speed-target",
@@ -274,7 +293,30 @@ public sealed class QDomyosWorkoutXmlImporter : IWorkoutImporter
     }
 
     SpeedDirective speedDirective;
-    if (speedTo is not null)
+    if (useBoundedHeartRate && heartRateMin is not null && heartRateMax is not null)
+    {
+      speedDirective = new HeartRateSpeed(
+        checked((ushort)heartRateMin.Value),
+        checked((ushort)heartRateMax.Value),
+        speed!.Value,
+        minimumSpeed!.Value,
+        maximumSpeed!.Value);
+      warnings.Add(new WorkoutImportWarning(
+        "qdomyos.v4-bounded-heart-rate",
+        "The v4 bundle's explicit heart-rate target and speed bounds were retained as an adaptive directive."));
+    }
+    else if (useBoundedHeartRate && heartRateZone is not null)
+    {
+      speedDirective = new HeartRateZoneSpeed(
+        heartRateZone.Value,
+        speed!.Value,
+        minimumSpeed!.Value,
+        maximumSpeed!.Value);
+      warnings.Add(new WorkoutImportWarning(
+        "qdomyos.v4-bounded-heart-rate-zone",
+        "The v4 bundle's heart-rate zone and speed bounds were retained as an adaptive directive."));
+    }
+    else if (speedTo is not null)
     {
       speedDirective = new SpeedRamp(speedFrom!.Value, speedTo.Value);
     }

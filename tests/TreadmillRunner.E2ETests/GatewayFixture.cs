@@ -156,8 +156,8 @@ public sealed class GatewayFixture : IAsyncLifetime
       WorkingDirectory = ProjectRoot,
       UseShellExecute = false,
       CreateNoWindow = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
+      RedirectStandardOutput = false,
+      RedirectStandardError = false,
     };
     startInfo.ArgumentList.Add("-NoProfile");
     startInfo.ArgumentList.Add("-File");
@@ -171,7 +171,7 @@ public sealed class GatewayFixture : IAsyncLifetime
     await process.WaitForExitAsync();
     if (process.ExitCode != 0)
     {
-      throw new InvalidOperationException($"Explicit E2E database migration failed: {await process.StandardError.ReadToEndAsync()}");
+      throw new InvalidOperationException("Explicit E2E database migration failed. Review the test process output above.");
     }
   }
 

@@ -218,6 +218,9 @@ internal sealed class WorkoutProgramRevisionEntity
   public string? Description { get; set; }
   public string Category { get; set; } = string.Empty;
   public string ContentSha256 { get; set; } = string.Empty;
+  public string? TemplateId { get; set; }
+  public string? TemplateVersion { get; set; }
+  public Guid? OwnerProfileId { get; set; }
   public DateTimeOffset CreatedAtUtc { get; set; }
   public WorkoutProgramEntity WorkoutProgram { get; set; } = null!;
   public List<WorkoutProgramItemEntity> Items { get; set; } = [];
@@ -229,7 +232,22 @@ internal sealed class WorkoutProgramItemEntity
   public Guid WorkoutProgramRevisionId { get; set; }
   public Guid WorkoutRevisionId { get; set; }
   public int Position { get; set; }
+  public int? WeekNumber { get; set; }
+  public int? SessionNumber { get; set; }
+  public string? Phase { get; set; }
   public WorkoutProgramRevisionEntity WorkoutProgramRevision { get; set; } = null!;
+}
+
+internal sealed class PremadePlanInstallationEntity
+{
+  public Guid Id { get; set; }
+  public Guid UserProfileId { get; set; }
+  public string TemplateId { get; set; } = string.Empty;
+  public string TemplateVersion { get; set; } = string.Empty;
+  public string TemplateContentSha256 { get; set; } = string.Empty;
+  public int CopyNumber { get; set; }
+  public Guid WorkoutProgramId { get; set; }
+  public DateTimeOffset CreatedAtUtc { get; set; }
 }
 
 internal sealed class WorkoutProgramRunEntity
@@ -267,6 +285,8 @@ internal sealed class WorkoutSessionEntity
   public double AverageInclinePercent { get; set; }
   public string MetricAlgorithmVersion { get; set; } = string.Empty;
   public string ControllerConfigurationJson { get; set; } = "{}";
+  public string? RecoveryCheckpointJson { get; set; }
+  public DateTimeOffset? RecoveryCheckpointUpdatedAtUtc { get; set; }
   public int? PerceivedExertion { get; set; }
   public string? DebriefNote { get; set; }
   public DateTimeOffset? DebriefUpdatedAtUtc { get; set; }

@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Core.Control;
+using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -136,6 +138,32 @@ public sealed class SessionStoreTests : IAsyncLifetime
     SessionInterruptedEvent interruption = Assert.IsType<SessionInterruptedEvent>(Assert.Single(active.Events));
     Assert.Equal("Gateway restarted.", interruption.Reason);
     Assert.Equal(SessionState.Completed, (await store.FindAsync(completedId))?.State);
+  }
+
+  [Fact]
+  public async Task Hardware_session_recovery_checkpoint_round_trips_without_marking_the_session_terminal()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-06T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(
+      sessionId, ids.ProfileId, "Runner", ids.RevisionId, "Recovery run", started.AddSeconds(-2),
+      "{}", SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.Hardware));
+    await store.MarkRunningAsync(sessionId, started);
+    var progression = new WorkoutProgressionCheckpoint(2, TimeSpan.FromMinutes(3), .4,
+      TimeSpan.FromMinutes(2), .25);
+    var checkpoint = new SessionRecoveryCheckpoint(
+      sessionId, started.AddMinutes(3), SessionState.Running, 8, started, progression,
+      .4, 7.2, 1.5, 7.5, 1.5, HeartRateAutomationMode.Full, 12);
+
+    await store.SaveRecoveryCheckpointAsync(checkpoint);
+    RecoverableWorkoutSession recovered = Assert.IsType<RecoverableWorkoutSession>(await store.FindRecoverableAsync());
+
+    Assert.Equal(SessionState.Running, recovered.Session.State);
+    Assert.Equal(checkpoint, recovered.Checkpoint);
   }
 
   [Fact]

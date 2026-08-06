@@ -19,7 +19,7 @@
                 <a class="primary-action" href="/workouts/new">New workout</a>
             </div>
         }
-        else
+        else if (libraryMode == "programs")
         {
             <button class="primary-action" type="button" @onclick="NewProgram">New training plan</button>
         }
@@ -28,6 +28,7 @@
     <nav class="library-segments" aria-label="Workout library view">
         <button type="button" aria-pressed="@(libraryMode == "workouts" ? "true" : "false")" @onclick='() => SetLibraryMode("workouts")'>Workouts</button>
         <button type="button" aria-pressed="@(libraryMode == "programs" ? "true" : "false")" @onclick='() => SetLibraryMode("programs")'>Training plans</button>
+        <button type="button" aria-pressed="@(libraryMode == "premade" ? "true" : "false")" @onclick='() => SetLibraryMode("premade")'>Premade plans</button>
     </nav>
 
     @if (!string.IsNullOrEmpty(message))
@@ -102,9 +103,9 @@
             }
         </section>
     }
-    else
+    else if (libraryMode == "programs")
     {
-        <section class="program-workspace @(showProgramEditor ? "program-workspace--editing" : null)" aria-label="Training plans">
+        <section class="program-workspace @(showProgramEditor ? "program-workspace--editing" : "program-workspace--browse")" aria-label="Training plans">
             <div class="program-browser">
                 <div class="program-toolbar">
                     <label class="field field--search">Search training plans
@@ -132,7 +133,7 @@
                         @foreach (WorkoutProgramView program in FilteredPrograms)
                         {
                             <article class="program-card @(editingProgramId == program.Id ? "program-card--selected" : null)">
-                                <button class="program-card__select" type="button" @onclick="() => EditProgram(program)" aria-label="Edit @program.Name" aria-describedby="@ProgramDescriptionId(program)">
+                                <button class="program-card__select" type="button" @onclick="() => OpenProgram(program)" aria-label="@(program.TemplateId is null ? "Edit" : "View") @program.Name" aria-describedby="@ProgramDescriptionId(program)">
                                     <span class="program-card__topline"><span class="category-pill">@program.Category</span><small>rev @program.RevisionNumber</small></span>
                                     <strong>@program.Name</strong>
                                     <span>@(string.IsNullOrWhiteSpace(program.Description) ? "No description" : program.Description)</span>
@@ -148,6 +149,32 @@
                                     }
                                     <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(program)">Archive</button>
                                 </div>
+                                @if (program.TemplateId is not null)
+                                {
+                                    <details class="template-program-groups">
+                                        <summary>View @program.Items.Count scheduled sessions</summary>
+                                        <div class="template-program-phase-grid">
+                                            @foreach (var phase in program.Items.GroupBy(item => item.Phase ?? "Plan").OrderBy(group => group.Min(item => item.Position)))
+                                            {
+                                                <section>
+                                                    <h4>@phase.Key</h4>
+                                                    @foreach (var week in phase.GroupBy(item => item.WeekNumber ?? 1).OrderBy(group => group.Key))
+                                                    {
+                                                        <details>
+                                                            <summary>Week @week.Key · @week.Count() session(s)</summary>
+                                                            <ol>
+                                                                @foreach (WorkoutProgramItemView item in week.OrderBy(item => item.SessionNumber).ThenBy(item => item.Position))
+                                                                {
+                                                                    <li><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></li>
+                                                                }
+                                                            </ol>
+                                                        </details>
+                                                    }
+                                                </section>
+                                            }
+                                        </div>
+                                    </details>
+                                }
                                 @if (pendingArchive is { Kind: ArchiveKind.Program } archive && archive.Id == program.Id)
                                 {
                                     <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-program-confirm-title">
@@ -261,12 +288,95 @@
             }
         </section>
     }
+    else
+    {
+        <section class="premade-plan-workspace" aria-label="Premade training-plan catalog">
+            <div class="premade-plan-browser planning-panel">
+                <div class="panel-heading"><div><p class="eyebrow">Ready-made training</p><h2>Premade plans</h2></div><span>@FilteredPremadePlans.Count plan(s)</span></div>
+                <p class="field-help">Preview against the selected runner and treadmill limits. Nothing starts automatically.</p>
+                @if (activeProfileId is null)
+                {
+                    <p class="notice">Select a runner on Run before adding a premade plan.</p>
+                }
+                <div class="premade-plan-filters">
+                    <label class="field field--search">Search
+                        <input type="search" @bind="premadeSearch" @bind:event="oninput" placeholder="Plan name or goal" />
+                    </label>
+                    <label class="field">Goal
+                        <select @bind="premadeGoal">
+                            <option value="All">All goals</option><option value="5K">5K</option><option value="10K">10K</option><option value="General fitness">General fitness</option><option value="Walking">Walking</option><option value="Maintenance">Maintenance</option>
+                        </select>
+                    </label>
+                    <label class="field">Experience
+                        <select @bind="premadeExperience"><option value="All">Any level</option><option value="Beginner">Beginner</option><option value="Intermediate">Intermediate</option><option value="Experienced">Experienced</option><option value="All levels">All levels</option></select>
+                    </label>
+                    <label class="field">Heart rate
+                        <select @bind="premadeHeartRate"><option value="All">Optional or required</option><option value="Required">HR required</option><option value="No">No HR required</option></select>
+                    </label>
+                    <label class="field">Session duration
+                        <select @bind="premadeDuration"><option value="All">Any duration</option><option value="30">Up to 30 min</option><option value="45">Up to 45 min</option><option value="60">Up to 60 min</option><option value="61">Over 60 min</option></select>
+                    </label>
+                    <label class="field">Sessions per week
+                        <select @bind="premadeFrequency"><option value="All">Any frequency</option><option value="3">3 per week</option><option value="4">4 per week</option></select>
+                    </label>
+                </div>
+                @if (loading)
+                {
+                    <p class="empty-state">Loading premade plans…</p>
+                }
+                else
+                {
+                    <div class="premade-plan-grid">
+                        @foreach (PremadePlanCatalogView plan in FilteredPremadePlans)
+                        {
+                            <button class="premade-plan-card @(selectedPremadeId == plan.Id ? "premade-plan-card--selected" : null)" type="button" @onclick="() => SelectPremadeAsync(plan)">
+                                <span class="program-card__topline"><span class="category-pill">@plan.Goal</span><small>@plan.Experience</small></span>
+                                <strong>@plan.Name</strong><span>@plan.Description</span>
+                                <span class="premade-plan-card__stats">@plan.Weeks weeks · @plan.SessionCount sessions · @plan.SessionsPerWeek/week</span>
+                                <span class="premade-plan-card__footer">@(plan.RequiresHeartRate ? "Heart rate required" : "Heart rate optional") <b>@(plan.AlreadyAdded ? "Already added" : "Preview")</b></span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            <aside class="premade-plan-preview planning-panel" aria-live="polite">
+                @if (premadePreview is null)
+                {
+                    <div class="empty-state"><p>Select a plan to check it for the active runner.</p></div>
+                }
+                else
+                {
+                    <p class="eyebrow">For @premadePreview.ProfileName</p><h2>@premadePreview.Template.Name</h2>
+                    <p>@premadePreview.CompatibilityMessage</p>
+                    <dl class="compact-stats compact-stats--four">
+                        <div><dt>Weeks</dt><dd>@premadePreview.Template.Weeks</dd></div><div><dt>Sessions</dt><dd>@premadePreview.Template.SessionCount</dd></div>
+                        <div><dt>Max speed</dt><dd>@premadePreview.NormalizedMaximumSpeedKph.ToString("0.0") km/h</dd></div><div><dt>Max incline</dt><dd>@premadePreview.NormalizedMaximumInclinePercent.ToString("0.0")%</dd></div>
+                    </dl>
+                    <div class="premade-plan-phases">
+                        @foreach (PremadePlanPhaseView phase in premadePreview.Phases)
+                        {
+                            <div><strong>@phase.Name</strong><span>Weeks @phase.FirstWeek–@phase.LastWeek · @phase.SessionCount sessions</span></div>
+                        }
+                    </div>
+                    <p class="field-help">@premadePreview.UniqueWorkoutCount unique workouts are reused across @premadePreview.Template.SessionCount scheduled positions. @premadePreview.NormalizedTargetCount target(s) are normalized conservatively.</p>
+                    <div class="card-actions premade-plan-actions">
+                        <button class="primary-action" type="button" disabled="@(!premadePreview.Compatible || premadeBusy || premadePreview.Template.AlreadyAdded)" @onclick="() => AddPremadeAsync(false)">@(premadePreview.Template.AlreadyAdded ? "Already added" : "Add to my training")</button>
+                        @if (premadePreview.Template.AlreadyAdded)
+                        {
+                            <button class="secondary-action" type="button" disabled="@premadeBusy" @onclick="() => AddPremadeAsync(true)">Add fresh copy</button>
+                        }
+                    </div>
+                }
+            </aside>
+        </section>
+    }
 </div>
 
 @code {
     private static readonly string[] ProgramCategories = ["All", "5K", "10K", "Base", "Custom"];
     private List<WorkoutSummaryView> workouts = [];
     private List<WorkoutProgramView> programs = [];
+    private List<PremadePlanCatalogView> premadePlans = [];
     private bool loading = true;
     private string? message;
     private string libraryMode = "workouts";
@@ -288,6 +398,15 @@
     private string? programDraftKey;
     private string? pendingProgramDraft;
     private CancellationTokenSource? programDraftDebounce;
+    private string premadeSearch = string.Empty;
+    private string premadeGoal = "All";
+    private string premadeExperience = "All";
+    private string premadeHeartRate = "All";
+    private string premadeDuration = "All";
+    private string premadeFrequency = "All";
+    private string? selectedPremadeId;
+    private PremadePlanPreviewView? premadePreview;
+    private bool premadeBusy;
 
     private IReadOnlyList<WorkoutSummaryView> ProgramEligibleWorkouts => workouts
         .Where(static workout => !workout.IsArchived && !string.Equals(workout.Kind, "ManualTemplate", StringComparison.Ordinal))
@@ -316,6 +435,18 @@
         .ThenBy(static program => program.Name, StringComparer.CurrentCultureIgnoreCase)
         .ToArray();
 
+    private IReadOnlyList<PremadePlanCatalogView> FilteredPremadePlans => premadePlans
+        .Where(plan => string.IsNullOrWhiteSpace(premadeSearch) || plan.Name.Contains(premadeSearch, StringComparison.CurrentCultureIgnoreCase) || plan.Description.Contains(premadeSearch, StringComparison.CurrentCultureIgnoreCase) || plan.Tags.Any(tag => tag.Contains(premadeSearch, StringComparison.CurrentCultureIgnoreCase)))
+        .Where(plan => premadeGoal == "All" || string.Equals(plan.Goal, premadeGoal, StringComparison.CurrentCultureIgnoreCase) || plan.Tags.Contains(premadeGoal, StringComparer.CurrentCultureIgnoreCase))
+        .Where(plan => premadeExperience == "All" || string.Equals(plan.Experience, premadeExperience, StringComparison.CurrentCultureIgnoreCase))
+        .Where(plan => premadeHeartRate == "All" || (premadeHeartRate == "Required" ? plan.RequiresHeartRate : !plan.RequiresHeartRate))
+        .Where(plan => premadeDuration switch { "30" => plan.MaximumDurationMinutes <= 30, "45" => plan.MaximumDurationMinutes <= 45, "60" => plan.MaximumDurationMinutes <= 60, "61" => plan.MaximumDurationMinutes > 60, _ => true })
+        .Where(plan => premadeFrequency == "All" || plan.SessionsPerWeek.ToString(System.Globalization.CultureInfo.InvariantCulture) == premadeFrequency)
+        .OrderBy(static plan => plan.Goal, StringComparer.CurrentCultureIgnoreCase)
+        .ThenBy(static plan => plan.Weeks)
+        .ThenBy(static plan => plan.Name, StringComparer.CurrentCultureIgnoreCase)
+        .ToArray();
+
     private bool HasFilters => !string.IsNullOrWhiteSpace(searchText) || durationFilter != "all" || sortOrder != "updated";
     private bool CanSaveProgram => !string.IsNullOrWhiteSpace(programDraft.Name) && !string.IsNullOrWhiteSpace(programDraft.Category) && programDraft.Items.Count > 0;
     private string ProgramDurationLabel
@@ -341,6 +472,8 @@
             workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
             string programUrl = activeProfileId is { } profileId ? $"api/planning/programs?profileId={profileId}" : "api/planning/programs";
             programs = await Http.GetFromJsonAsync<List<WorkoutProgramView>>(programUrl) ?? [];
+            string catalogUrl = activeProfileId is { } selectedProfileId ? $"api/planning/premade-plans?profileId={selectedProfileId}" : "api/planning/premade-plans";
+            premadePlans = await Http.GetFromJsonAsync<List<PremadePlanCatalogView>>(catalogUrl) ?? [];
         }
         catch (HttpRequestException)
         {
@@ -356,6 +489,52 @@
     {
         libraryMode = mode;
         message = null;
+    }
+
+    private async Task SelectPremadeAsync(PremadePlanCatalogView plan)
+    {
+        selectedPremadeId = plan.Id;
+        premadePreview = null;
+        if (activeProfileId is not { } profileId)
+        {
+            message = "Select a runner on Run before previewing a premade plan.";
+            return;
+        }
+        try
+        {
+            premadePreview = await Http.GetFromJsonAsync<PremadePlanPreviewView>($"api/planning/premade-plans/{Uri.EscapeDataString(plan.Id)}/preview?profileId={profileId:D}&version={Uri.EscapeDataString(plan.Version)}");
+        }
+        catch (HttpRequestException)
+        {
+            message = "This premade plan could not be checked right now.";
+        }
+    }
+
+    private async Task AddPremadeAsync(bool freshCopy)
+    {
+        if (premadePreview is null || activeProfileId is not { } profileId || premadeBusy) return;
+        premadeBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/planning/premade-plans/materialize", new PremadePlanMaterializeRequest(
+                Guid.NewGuid(), profileId, premadePreview.Template.Id, premadePreview.Template.Version, freshCopy));
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The premade plan could not be added. Review its compatibility and try again.";
+                return;
+            }
+            PremadePlanMaterializeView? result = await response.Content.ReadFromJsonAsync<PremadePlanMaterializeView>();
+            message = result is { AlreadyAdded: true }
+                ? $"{premadePreview.Template.Name} was already in this runner's training plans."
+                : $"{premadePreview.Template.Name} was added without activating it.";
+            await ReloadAsync();
+            PremadePlanCatalogView? refreshed = premadePlans.FirstOrDefault(plan => plan.Id == selectedPremadeId);
+            if (refreshed is not null) await SelectPremadeAsync(refreshed);
+        }
+        finally
+        {
+            premadeBusy = false;
+        }
     }
 
     private bool MatchesSearch(WorkoutSummaryView workout) => string.IsNullOrWhiteSpace(searchText) || workout.Name.Contains(searchText, StringComparison.CurrentCultureIgnoreCase) || (workout.Description?.Contains(searchText, StringComparison.CurrentCultureIgnoreCase) ?? false);
@@ -389,6 +568,18 @@
         workoutToAdd = null;
         showProgramEditor = true;
         await LoadProgramDraftAsync();
+    }
+
+    private Task OpenProgram(WorkoutProgramView program)
+    {
+        if (program.TemplateId is not null)
+        {
+            showProgramEditor = false;
+            editingProgramId = program.Id;
+            message = "Premade plans are immutable. Use Add fresh copy in the catalog when you want another instance.";
+            return Task.CompletedTask;
+        }
+        return EditProgram(program);
     }
 
     private void RequestCloseProgramEditor()

@@ -4,7 +4,7 @@ type: index
 status: active
 owner: project-context-generator
 audience: both
-updated: 2026-07-05
+updated: 2026-08-06
 ---
 
 # Project Documentation
@@ -16,6 +16,8 @@ Start with `project-context.md`. It is the human-owned project profile that stor
 The [installation guide](../installation.md) is the user/operator starting point for Windows setup, first run, online and offline updates, repair, and household-network safety.
 
 The [story backlog](backlog.md) owns delivery order. Safety- or extension-sensitive acceptance details live in the [story index](stories/README.md).
+
+The project-owned [user-story plan override](workflow-overrides/user-story-workflow/plan.md) adds TreadmillRunner-specific mock-first constraints for sanitized prototype data, safety and disconnected states, responsive evidence, the Blazor production boundary, and separate design and implementation approval.
 
 Operators publishing or installing application updates should use the [release operations runbook](release-operations.md). It documents signing trust, UI activation, rollback, and recovery.
 

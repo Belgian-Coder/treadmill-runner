@@ -390,7 +390,7 @@
                 </div>
             </article>
 
-            <details class="readiness-card">
+            <details class="readiness-card" open>
                 <summary><span>Pre-run checks</span><strong>@(preflight is null ? "Select a run" : preflight.IsReady ? "Ready" : "Needs attention")</strong></summary>
                 <ul class="readiness-list">
                     @foreach (PreflightCheck check in preflight?.Checks ?? Array.Empty<PreflightCheck>())
@@ -400,7 +400,7 @@
                 </ul>
                 @if (preflight?.TargetEvaluations.Any(static target => target.Disposition != WorkoutTargetDisposition.Accepted) == true)
                 {
-                    <details class="target-evaluations">
+                    <details class="target-evaluations" open="@(preflight.TargetEvaluations.Any(static target => target.Disposition == WorkoutTargetDisposition.Rejected))">
                         <summary>Target adjustments</summary>
                         <ul class="readiness-list">
                             @foreach (WorkoutTargetEvaluation target in preflight.TargetEvaluations.Where(static target => target.Disposition != WorkoutTargetDisposition.Accepted))
@@ -428,8 +428,11 @@
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
     private HubConnection? hubConnection;
     private CancellationTokenSource? heartbeatCancellation;
+    private CancellationTokenSource? connectionCancellation;
     private CancellationTokenSource? startHoldCancellation;
     private Task? heartbeatTask;
+    private Task? connectionTask;
+    private bool isForcingHubRestart;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
     private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
@@ -451,6 +454,7 @@
     private string holderId = string.Empty;
     private string connectionStatus = "Connecting to gateway";
     private bool liveStateConnected;
+    private bool wantsControl;
     private string controlStatus = "Observer";
     private string actionStatus = "Select a runner and workout.";
     private int? perceivedEffort;
@@ -566,16 +570,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try { maintenance = await Http.GetFromJsonAsync<TreadmillMaintenanceSnapshot>("api/devices/treadmill/maintenance"); }
-        catch (HttpRequestException) { maintenance = null; }
-        profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
-        workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
-        selectedProfileId = await ActiveProfile.GetAsync();
-        if (selectedProfileId is not null)
-        {
-            await LoadProfilePlanningAsync();
-            await ApplyRecommendationAsync();
-        }
         holderId = await JS.InvokeAsync<string?>("localStorage.getItem", HolderStorageKey) ?? string.Empty;
         soundEnabled = string.Equals(
             await JS.InvokeAsync<string?>("localStorage.getItem", SoundStorageKey),
@@ -587,23 +581,50 @@
             await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
         }
 
-        using HttpResponseMessage activeSessionResponse = await Http.GetAsync("api/live/session");
-        session = activeSessionResponse.StatusCode == System.Net.HttpStatusCode.NoContent
-            ? null
-            : await activeSessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
-        if (session is not null)
+        connectionStatus = "Connecting to live updates";
+        try
         {
-            AppendLiveChartPoint(session);
-            if (session.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+            await ReloadRunSelectionDataAsync();
+            using HttpResponseMessage activeSessionResponse = await Http.GetAsync("api/live/session");
+            session = activeSessionResponse.StatusCode == System.Net.HttpStatusCode.NoContent
+                ? null
+                : await activeSessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            if (session is not null)
             {
-                Navigation.NavigateTo("/control", replace: true);
-                return;
+                AppendLiveChartPoint(session);
+                if (session.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+                {
+                    Navigation.NavigateTo("/control", replace: true);
+                    return;
+                }
             }
-
-            await TakeControlAsync(restoring: true);
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            lease = null;
+            liveStateConnected = false;
+            connectionStatus = "Gateway unavailable · retrying";
+        }
+    }
 
-        connectionStatus = "Gateway ready";
+    private async Task ReloadRunSelectionDataAsync()
+    {
+        try
+        {
+            using HttpResponseMessage maintenanceResponse = await Http.GetAsync("api/devices/treadmill/maintenance");
+            maintenance = maintenanceResponse.StatusCode == System.Net.HttpStatusCode.NoContent
+                ? null
+                : await maintenanceResponse.Content.ReadFromJsonAsync<TreadmillMaintenanceSnapshot>();
+        }
+        catch (JsonException) { maintenance = null; }
+        profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
+        workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
+        selectedProfileId = await ActiveProfile.GetAsync();
+        if (selectedProfileId is not null)
+        {
+            await LoadProfilePlanningAsync();
+            await ApplyRecommendationAsync();
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -611,7 +632,7 @@
         if (!firstRender) return;
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new IndefiniteHubRetryPolicy())
             .Build();
         hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async incoming =>
         {
@@ -638,18 +659,11 @@
             await InvokeAsync(StateHasChanged);
         });
         hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting to gateway", false);
-        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready", true);
-        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable", false);
-        try
-        {
-            await hubConnection.StartAsync();
-            await SetConnectionAsync("Gateway ready", true);
-        }
-        catch (HttpRequestException)
-        {
-            liveStateConnected = false;
-            connectionStatus = "Gateway unavailable";
-        }
+        hubConnection.Reconnected += _ => RecoverAfterGatewayReconnectAsync();
+        hubConnection.Closed += _ => RestartHubAfterCloseAsync();
+        connectionCancellation = new CancellationTokenSource();
+        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
+        _ = connectionTask;
     }
 
     private async Task SelectProfileAsync(Guid profileId)
@@ -910,12 +924,75 @@
             controlStatus = restoring ? "Controller restored" : "Controller ready";
             actionStatus = controlStatus;
             StartHeartbeat();
+            wantsControl = true;
         }
         else
         {
             controlStatus = "Observer";
             actionStatus = "Another browser currently controls manual actions.";
         }
+    }
+
+    private async Task StartHubUntilConnectedAsync(CancellationToken cancellationToken)
+    {
+        int attempt = 0;
+        while (!cancellationToken.IsCancellationRequested && hubConnection is { State: HubConnectionState.Disconnected })
+        {
+            try
+            {
+                await hubConnection.StartAsync(cancellationToken);
+                await RecoverAfterGatewayReconnectAsync();
+                return;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await SetConnectionAsync("Gateway unavailable · retrying", false);
+                TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
+                await Task.Delay(delay, cancellationToken);
+            }
+        }
+    }
+
+    private async Task RecoverAfterGatewayReconnectAsync()
+    {
+        if (hubConnection?.State != HubConnectionState.Connected)
+        {
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            return;
+        }
+        await Runtime.CheckAsync(Http);
+        heartbeatCancellation?.Cancel();
+        lease = null;
+        isManualCommandPending = false;
+        isStopPending = false;
+        await ReloadRunSelectionDataAsync();
+        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
+        session = response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+        if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+        {
+            Navigation.NavigateTo("/control", replace: true);
+            return;
+        }
+        if (hubConnection.State != HubConnectionState.Connected)
+        {
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            return;
+        }
+        if (wantsControl && !Runtime.UpdateRequired) await TakeControlAsync(restoring: true);
+        await SetConnectionAsync("Gateway ready", true);
+    }
+
+    private async Task RestartHubAfterCloseAsync()
+    {
+        await SetConnectionAsync("Gateway unavailable · retrying", false);
+        if (isForcingHubRestart) return;
+        if (connectionCancellation?.IsCancellationRequested != false) return;
+        if (connectionTask is { IsCompleted: false }) return;
+        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
+        _ = connectionTask;
     }
 
     private async Task ArmAsync()
@@ -1044,6 +1121,13 @@
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             actionStatus = "Remote Start canceled before sending.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            controlStatus = "Observer";
+            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
         }
         finally
         {
@@ -1244,6 +1328,48 @@
         {
             // Page disposal or a replacement heartbeat loop owns the expected cancellation.
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            controlStatus = "Observer";
+            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            await RecoverAfterHeartbeatFailureAsync(cancellationToken);
+        }
+    }
+
+    private async Task RecoverAfterHeartbeatFailureAsync(CancellationToken cancellationToken)
+    {
+        int attempt = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Runtime.CheckAsync(Http, cancellationToken);
+                if (Runtime.IsConnected && hubConnection?.State == HubConnectionState.Connected)
+                {
+                    await RecoverAfterGatewayReconnectAsync();
+                    return;
+                }
+                if (Runtime.IsConnected && attempt >= 2 && hubConnection is not null)
+                {
+                    isForcingHubRestart = true;
+                    try { await hubConnection.StopAsync(cancellationToken); }
+                    finally { isForcingHubRestart = false; }
+                    connectionTask = StartHubUntilConnectedAsync(cancellationToken);
+                    await connectionTask;
+                    if (hubConnection.State == HubConnectionState.Connected) return;
+                }
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+            {
+                // The next bounded attempt reloads authoritative server and lease state.
+            }
+
+            TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
+            try { await Task.Delay(delay, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        }
     }
 
     private async Task SaveDebriefAsync()
@@ -1412,11 +1538,17 @@
     {
         startHoldCancellation?.Cancel();
         heartbeatCancellation?.Cancel();
+        connectionCancellation?.Cancel();
         if (heartbeatTask is not null)
         {
             await heartbeatTask;
         }
         heartbeatCancellation?.Dispose();
+        if (connectionTask is not null)
+        {
+            try { await connectionTask; } catch (OperationCanceledException) { }
+        }
+        connectionCancellation?.Dispose();
         startHoldCancellation?.Dispose();
         if (hubConnection is not null) await hubConnection.DisposeAsync();
     }

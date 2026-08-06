@@ -33,8 +33,9 @@ Source: [Mermaid](diagrams/live-session-command-flow.mmd)
 ## Authority and recovery
 
 - A lease heartbeat runs every five seconds and expires after fifteen seconds. It gates manual browser actions only.
-- Browser loss never stops the gateway-owned session. Reloading with the same browser holder ID explicitly reacquires its controller view.
-- Gateway startup marks unfinished persisted sessions `Interrupted`; it never resumes or replays treadmill commands.
+- Browser loss never stops the gateway-owned session. Planned progression and eligible HR control continue at the gateway; reloading with the same browser holder ID idempotently reacquires its controller view.
+- BLE loss preserves elapsed time and records an unobserved telemetry gap without fabricating distance or measurements. Two fresh stable samples from the same moving treadmill can reconcile the current elapsed target unless a console change, stale HR, protocol fault, or unknown result blocks it.
+- Gateway startup restores tracking only from a bounded checkpoint for the same enrolled treadmill. Fresh movement must be confirmed within 30 seconds; all commands remain suspended until **Resume planned controls**. Invalid/unavailable recovery becomes `Interrupted` and never sends Start.
 - Every treadmill request includes operation ID, lease/holder, and expected session version. The gateway adds session state, short expiry, and connection generation, serializes writes, consumes the operation before writing, and returns `Rejected`, `Confirmed`, or `Unknown`.
 - `Confirmed` requires the matching FTMS response plus fresh measured telemetry. `Unknown` is persistent, suspends automation, instructs physical inspection, and is never blindly retried.
 - Repeated manual operation IDs return the current result without creating another event.
@@ -42,7 +43,7 @@ Source: [Mermaid](diagrams/live-session-command-flow.mmd)
 
 ## Current limits
 
-- The Development simulator reports a fixed HR value. An enrolled Polar H10 supplies real HR; Garmin is outside v1. The HR controller supports Shadow, Decrease only, Full, and Off, with configurable steps/cooldowns and automatic suspension on stale telemetry, reconnect, write uncertainty, pause, lease loss, protocol fault, or manual speed override.
+- The Development simulator reports a fixed HR value. An enrolled Polar H10 supplies real HR; Garmin is outside v1. The HR controller supports Shadow, Decrease only, Full, and Off, with configurable steps/cooldowns. Browser lease loss removes manual authority but does not suspend gateway-owned control; stale telemetry, unsafe reconnect, write uncertainty, pause, protocol fault, or manual speed override still suspends it.
 - FTMS Start/Resume, Stop, Pause, speed, and incline software paths are implemented but each stays blocked unless the persisted exact-model evidence is `HardwareVerified` for that capability. The complete Omega Z sequence is prepared and remains physically unvalidated.
 - Accelerated four-hour cadence and bounded chart-memory tests pass. An explicit soak persists and reads 14,400 one-second SQLite samples. In-process controller acceptance stays below 100 ms p95 and loopback browser telemetry stays below 500 ms p95. Formal household-Wi-Fi p95 measurement is not a deployment acceptance check; retained timestamps are diagnostic evidence if normal use feels delayed.
 - Signed update check/stage/activate and helper rollback are implemented and deterministically tested. Real A→B activation and broken-C rollback on the Windows VM remain deployment evidence; publishing the Playwright host is not update evidence.

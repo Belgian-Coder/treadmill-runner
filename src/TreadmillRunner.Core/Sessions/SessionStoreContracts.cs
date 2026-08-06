@@ -1,3 +1,6 @@
+using TreadmillRunner.Core.Control;
+using TreadmillRunner.Core.Workouts;
+
 namespace TreadmillRunner.Core.Sessions;
 
 public enum WorkoutSelectionSource
@@ -94,6 +97,25 @@ public sealed record StoredWorkoutSession(
     IReadOnlyList<SessionSample> Samples,
     IReadOnlyList<SessionEvent> Events);
 
+public sealed record SessionRecoveryCheckpoint(
+  Guid SessionId,
+  DateTimeOffset SavedAtUtc,
+  SessionState State,
+  long SessionVersion,
+  DateTimeOffset StartedAtUtc,
+  WorkoutProgressionCheckpoint Progression,
+  double DistanceKilometers,
+  double MeasuredSpeedKph,
+  double MeasuredInclinePercent,
+  double? SpeedOverrideKph,
+  double? InclineOverridePercent,
+  HeartRateAutomationMode DesiredHeartRateAutomationMode,
+  long ConnectionGeneration);
+
+public sealed record RecoverableWorkoutSession(
+  StoredWorkoutSession Session,
+  SessionRecoveryCheckpoint Checkpoint);
+
 public sealed record HistoryDeletionPreview(
   Guid SessionId,
   Guid UserProfileId,
@@ -171,5 +193,12 @@ public interface ISessionStore
   Task<int> InterruptUnfinishedAsync(
     DateTimeOffset interruptedAt,
     string reason,
+    CancellationToken cancellationToken = default);
+
+  Task SaveRecoveryCheckpointAsync(
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default);
+
+  Task<RecoverableWorkoutSession?> FindRecoverableAsync(
     CancellationToken cancellationToken = default);
 }

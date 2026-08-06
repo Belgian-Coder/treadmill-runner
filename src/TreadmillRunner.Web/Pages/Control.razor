@@ -62,6 +62,18 @@
             </section>
         }
 
+        @if (session.RecoveryState is not SessionRecoveryState.None)
+        {
+            <section class="recovery-status recovery-status--@session.ConnectionPhase.ToString().ToLowerInvariant()" role="status" aria-live="polite" aria-busy="@isManualCommandPending">
+                <div><strong>@RecoveryHeading</strong><span>@RecoveryDetail</span></div>
+                @if (session.CanResumePlannedControls)
+                {
+                    <p>The belt is already moving. This does not Start or resume the treadmill; it allows automatic speed and incline changes to match the current workout position.</p>
+                    <button class="primary-action touch-action" type="button" @onclick="ResumePlannedControlsAsync" disabled="@(!CanResumePlannedControls)">@(isManualCommandPending ? "Resuming…" : "Resume automatic speed & incline")</button>
+                }
+            </section>
+        }
+
         @if (session.LastCommandResult is { Disposition: TreadmillCommandDisposition.Unknown } unknownResult)
         {
             <section class="command-result command-unknown" role="alert">
@@ -74,7 +86,7 @@
             </section>
         }
 
-        <section class="control-console-grid" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
+        <section class="control-console-grid @(!liveStateConnected ? "control-console-grid--stale" : null)" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
             <aside class="control-rail control-rail--speed" aria-labelledby="speed-control-title">
                 <span class="eyebrow">Target speed</span>
                 <h2 id="speed-control-title">@session.RequestedSpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></h2>
@@ -238,14 +250,18 @@
     private BoundedLiveSeries<ControlChartPoint> chartPoints = new(43_200);
     private HubConnection? hubConnection;
     private CancellationTokenSource? heartbeatCancellation;
+    private CancellationTokenSource? connectionCancellation;
     private CancellationTokenSource? startHoldCancellation;
     private Task? heartbeatTask;
+    private Task? connectionTask;
+    private bool isForcingHubRestart;
     private DotNetObjectReference<Control>? wakeLockReference;
     private ActiveSessionSnapshot? session;
     private ControlLease? lease;
     private string holderId = string.Empty;
     private string connectionStatus = "Connecting";
     private bool liveStateConnected;
+    private bool wantsControl = true;
     private string controlStatus = "Observer";
     private string actionStatus = "Waiting for an active session.";
     private bool isTakingControl;
@@ -347,17 +363,25 @@
             await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
         }
 
-        await RefreshSessionAsync();
-        if (session is null || session.Live.SessionState is SessionState.Stopped or SessionState.Completed)
+        wantsControl = true;
+        connectionStatus = "Connecting to live updates";
+        try
         {
-            Navigation.NavigateTo("/", replace: true);
-            return;
+            await RefreshSessionAsync();
+            if (session is null || IsTerminal(session.Live.SessionState))
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            await HydrateChartAsync(session.SessionId);
         }
-
-        await HydrateChartAsync(session.SessionId);
-
-        await TakeControlAsync(restoring: true);
-        connectionStatus = "Gateway ready";
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            lease = null;
+            connectionStatus = "Gateway unavailable · retrying";
+            liveStateConnected = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -368,14 +392,14 @@
         await UpdateWakeLockAsync();
         hubConnection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new IndefiniteHubRetryPolicy())
             .Build();
         hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async snapshot =>
         {
             session = snapshot;
             AppendChartPoint(snapshot);
             await UpdateWakeLockAsync();
-            if (snapshot.Live.SessionState is SessionState.Stopped or SessionState.Completed)
+            if (IsTerminal(snapshot.Live.SessionState))
             {
                 Navigation.NavigateTo("/", replace: true);
                 return;
@@ -383,18 +407,11 @@
             await InvokeAsync(StateHasChanged);
         });
         hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting", false);
-        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready", true);
-        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable", false);
-        try
-        {
-            await hubConnection.StartAsync();
-            await SetConnectionAsync("Gateway ready", true);
-        }
-        catch (HttpRequestException)
-        {
-            liveStateConnected = false;
-            connectionStatus = "Gateway unavailable";
-        }
+        hubConnection.Reconnected += _ => RecoverAfterGatewayReconnectAsync();
+        hubConnection.Closed += _ => RestartHubAfterCloseAsync();
+        connectionCancellation = new CancellationTokenSource();
+        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
+        _ = connectionTask;
     }
 
     private Task TakeControlAsync() => TakeControlAsync(restoring: false);
@@ -412,6 +429,7 @@
                 controlStatus = restoring ? "Controller restored" : "Controller";
                 actionStatus = restoring ? "Controller access restored." : "Direct controls are ready.";
                 StartHeartbeat();
+                wantsControl = true;
             }
             else
             {
@@ -420,9 +438,137 @@
                 actionStatus = "Another browser currently controls manual actions.";
             }
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            actionStatus = "Manual controls are unavailable because the gateway connection was interrupted.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+        }
         finally
         {
             isTakingControl = false;
+        }
+    }
+
+    private async Task StartHubUntilConnectedAsync(CancellationToken cancellationToken)
+    {
+        int attempt = 0;
+        while (!cancellationToken.IsCancellationRequested && hubConnection is { State: HubConnectionState.Disconnected })
+        {
+            try
+            {
+                await hubConnection.StartAsync(cancellationToken);
+                await RecoverAfterGatewayReconnectAsync();
+                return;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await SetConnectionAsync("Gateway unavailable · retrying", false);
+                TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
+                await Task.Delay(delay, cancellationToken);
+            }
+        }
+    }
+
+    private async Task RecoverAfterGatewayReconnectAsync()
+    {
+        if (hubConnection?.State != HubConnectionState.Connected)
+        {
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            return;
+        }
+        await Runtime.CheckAsync(Http);
+        heartbeatCancellation?.Cancel();
+        lease = null;
+        isManualCommandPending = false;
+        isStopPending = false;
+        await RefreshSessionAsync();
+        if (session is null || IsTerminal(session.Live.SessionState))
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+        if (hubConnection.State != HubConnectionState.Connected)
+        {
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            return;
+        }
+        if (wantsControl && !Runtime.UpdateRequired) await TakeControlAsync(restoring: true);
+        await SetConnectionAsync("Gateway ready", true);
+    }
+
+    private async Task RestartHubAfterCloseAsync()
+    {
+        await SetConnectionAsync("Gateway unavailable · retrying", false);
+        if (isForcingHubRestart) return;
+        if (connectionCancellation?.IsCancellationRequested != false) return;
+        if (connectionTask is { IsCompleted: false }) return;
+        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
+        _ = connectionTask;
+    }
+
+    private string RecoveryHeading => session?.RecoveryState switch
+    {
+        SessionRecoveryState.TelemetryGap => "Treadmill reconnecting",
+        SessionRecoveryState.Reconciling => "Checking treadmill state",
+        SessionRecoveryState.Recovered => "Treadmill reconnected",
+        SessionRecoveryState.RestartTracking => "Restoring previous session tracking",
+        _ => "Planned controls paused",
+    };
+
+    private string RecoveryDetail => session?.RecoveryState == SessionRecoveryState.Recovered
+        ? $"Fresh treadmill state was confirmed{(session.LastReconciledAtUtc is { } reconciled ? $" at {reconciled.ToLocalTime():HH:mm:ss}" : string.Empty)}."
+        : session?.CommandsSuspendedReason ?? "The gateway is checking fresh treadmill state.";
+
+    private static bool IsTerminal(SessionState state) => state is
+        SessionState.Stopped or SessionState.Completed or SessionState.Interrupted or SessionState.Faulted;
+
+    private bool CanResumePlannedControls => ClientReady && liveStateConnected && lease is not null &&
+        session?.CanResumePlannedControls == true && !isManualCommandPending && !isStopPending;
+
+    private async Task ResumePlannedControlsAsync()
+    {
+        if (!CanResumePlannedControls || session is null || lease is null) return;
+        isManualCommandPending = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/resume-planned-controls", new
+            {
+                operationId = Guid.NewGuid(),
+                holderId,
+                leaseId = lease.Id,
+                expectedSessionVersion = session.Version,
+                connectionGeneration = session.Live.TreadmillConnectionGeneration,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+                actionStatus = "Planned controls resumed from fresh treadmill state.";
+            }
+            else
+            {
+                string detail = "The gateway did not confirm that recovery is safe.";
+                try
+                {
+                    using JsonDocument problem = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                    if (problem.RootElement.TryGetProperty("error", out JsonElement error) && error.GetString() is { Length: > 0 } message)
+                        detail = message;
+                }
+                catch (JsonException) { }
+                await RefreshSessionAsync();
+                actionStatus = $"Planned controls remain paused. {detail}";
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            actionStatus = "Planned controls remain paused because the gateway connection was interrupted.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+        }
+        finally
+        {
+            isManualCommandPending = false;
         }
     }
 
@@ -566,6 +712,13 @@
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             actionStatus = "Remote Start canceled before sending.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            controlStatus = "Observer";
+            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
         }
         finally
         {
@@ -957,6 +1110,48 @@
         {
             // Page disposal or a replacement heartbeat loop owns the expected cancellation.
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            lease = null;
+            controlStatus = "Observer";
+            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
+            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            await RecoverAfterHeartbeatFailureAsync(cancellationToken);
+        }
+    }
+
+    private async Task RecoverAfterHeartbeatFailureAsync(CancellationToken cancellationToken)
+    {
+        int attempt = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Runtime.CheckAsync(Http, cancellationToken);
+                if (Runtime.IsConnected && hubConnection?.State == HubConnectionState.Connected)
+                {
+                    await RecoverAfterGatewayReconnectAsync();
+                    return;
+                }
+                if (Runtime.IsConnected && attempt >= 2 && hubConnection is not null)
+                {
+                    isForcingHubRestart = true;
+                    try { await hubConnection.StopAsync(cancellationToken); }
+                    finally { isForcingHubRestart = false; }
+                    connectionTask = StartHubUntilConnectedAsync(cancellationToken);
+                    await connectionTask;
+                    if (hubConnection.State == HubConnectionState.Connected) return;
+                }
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+            {
+                // The next bounded attempt reloads authoritative server and lease state.
+            }
+
+            TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
+            try { await Task.Delay(delay, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        }
     }
 
     private async Task SetConnectionAsync(string status, bool connected)
@@ -1009,8 +1204,14 @@
         wakeLockReference = null;
         startHoldCancellation?.Cancel();
         heartbeatCancellation?.Cancel();
+        connectionCancellation?.Cancel();
         if (heartbeatTask is not null) await heartbeatTask;
         heartbeatCancellation?.Dispose();
+        if (connectionTask is not null)
+        {
+            try { await connectionTask; } catch (OperationCanceledException) { }
+        }
+        connectionCancellation?.Dispose();
         startHoldCancellation?.Dispose();
         if (hubConnection is not null) await hubConnection.DisposeAsync();
         if (hasRendered)

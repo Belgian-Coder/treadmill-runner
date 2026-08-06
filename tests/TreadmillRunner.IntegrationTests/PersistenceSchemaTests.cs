@@ -110,7 +110,9 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
 
     await context.Database.MigrateAsync();
 
-    Assert.Equal(13, (await context.Database.GetAppliedMigrationsAsync()).Count());
+    Assert.Equal(
+      context.Database.GetMigrations().ToArray(),
+      (await context.Database.GetAppliedMigrationsAsync()).ToArray());
     Assert.Equal("wal", await ExecuteScalarAsync<string>(context, "PRAGMA journal_mode;"));
     Assert.Equal(1L, await ExecuteScalarAsync<long>(context, "PRAGMA foreign_keys;"));
     Assert.Equal(5000L, await ExecuteScalarAsync<long>(context, "PRAGMA busy_timeout;"));
@@ -129,6 +131,7 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
       "WorkoutProgramRevisions",
       "WorkoutProgramItems",
       "WorkoutProgramRuns",
+      "PremadePlanInstallations",
       "ImportAudits",
       "CalendarSeries",
       "CalendarSeriesOptions",

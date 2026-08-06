@@ -5,6 +5,16 @@ namespace TreadmillRunner.Core.Tests;
 public sealed class SessionStateMachineTests
 {
   [Fact]
+  public void Restores_only_an_active_state_and_version_without_replaying_transitions()
+  {
+    SessionStateMachine restored = SessionStateMachine.Restore(
+      new TestTimeProvider(), SessionState.Running, version: 7);
+
+    Assert.Equal(SessionState.Running, restored.State);
+    Assert.Equal(7, restored.Version);
+    Assert.Empty(restored.Events);
+  }
+  [Fact]
   public void Arm_requires_three_consecutive_physical_start_samples()
   {
     var time = new TestTimeProvider();

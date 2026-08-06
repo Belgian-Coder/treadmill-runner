@@ -37,7 +37,9 @@ public sealed class SqliteRestoreServiceTests : IAsyncLifetime
     await using TreadmillRunnerDbContext restored = await liveFactory.CreateDbContextAsync();
     Assert.Equal("After", (await restored.UserProfiles.AsNoTracking().SingleAsync()).DisplayName);
     Assert.Equal("ok", await SqliteRestoreService.IntegrityAsync(restored));
-    Assert.Equal(13, (await restored.Database.GetAppliedMigrationsAsync()).Count());
+    Assert.Equal(
+      restored.Database.GetMigrations().ToArray(),
+      (await restored.Database.GetAppliedMigrationsAsync()).ToArray());
   }
 
   [Fact]
