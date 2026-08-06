@@ -130,7 +130,8 @@ public sealed record SessionSummary
       double? averageHeartRateBpm,
       ushort? maximumHeartRateBpm,
       double averageSpeedKph,
-      double averageInclinePercent)
+      double averageInclinePercent,
+      SessionOrigin origin = SessionOrigin.Legacy)
   {
     SessionContractValidation.RequireId(sessionId, nameof(sessionId));
     SessionContractValidation.RequireId(userProfileId, nameof(userProfileId));
@@ -182,6 +183,7 @@ public sealed record SessionSummary
     MaximumHeartRateBpm = maximumHeartRateBpm;
     AverageSpeedKph = averageSpeedKph;
     AverageInclinePercent = averageInclinePercent;
+    Origin = origin;
   }
 
   public Guid SessionId { get; }
@@ -199,6 +201,7 @@ public sealed record SessionSummary
   public ushort? MaximumHeartRateBpm { get; }
   public double AverageSpeedKph { get; }
   public double AverageInclinePercent { get; }
+  public SessionOrigin Origin { get; }
 }
 
 internal static class SessionContractValidation

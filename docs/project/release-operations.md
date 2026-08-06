@@ -13,7 +13,7 @@ This runbook explains how software releases move from source code to the **Opera
 
 ## The release chain
 
-1. `eng/publish-release.ps1` builds an immutable versioned Windows release, adds the hash-verified offline Garmin adapter runtime, and proves its credential-free import probe.
+1. `eng/publish-release.ps1` builds an immutable versioned Windows release, embeds a content fingerprint derived from the source revision plus local source changes, writes that provenance to `build-metadata.json`, adds the hash-verified offline Garmin adapter runtime, and proves its credential-free import probe.
 2. `eng/package-update.ps1` creates a deterministic package ZIP, hashes it, writes and signs the stable manifest, and creates a two-entry signed offline bundle containing that manifest and package.
 3. The elevated service installer pins the public certificate at `%ProgramFiles%\TreadmillRunner\updater\signing.cer`. GitHub Releases is the default discovery transport and the protected ProgramData local folder remains the fallback. Neither source can replace the trust anchor.
 4. **Operations → Check now** obtains one origin-bound release candidate and validates version, channel, schema range, and signature. Its package can only be opened from that same origin.
@@ -91,6 +91,8 @@ GitHub Actions is disabled completely in repository settings. The repository has
 The release workstation is authoritative for deterministic Release validation, browser acceptance, the offline Garmin runtime probe, building, signing, packaging, checksums, and publication. GitHub receives only committed source, the immutable annotated tag, the public signing certificate, and the finished release assets. The private signing key never leaves the workstation.
 
 Because `publish-release.ps1` is the only release-content entry point, the same locally verified adapter bundle/probe is used by GitHub Release assets and protected local-feed releases.
+
+The client/server compatibility fingerprint is content-derived, not merely the human release number. Two local builds with the same version but different application source therefore cannot silently share a browser identity. The browser compares its embedded fingerprint with the no-cache server version endpoint and blocks mutations when they differ. Release directories remain immutable, so publish with a higher version after any source change rather than attempting to overwrite an earlier build.
 
 Do not create or push release tags manually. A tag is the immutable identity of one published version and must identify the exact `main` commit whose assets were built. The release script creates the annotated tag only after local validation, publishing, signing, and checksum generation have succeeded.
 

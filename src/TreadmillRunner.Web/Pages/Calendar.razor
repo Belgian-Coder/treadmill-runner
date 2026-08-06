@@ -27,9 +27,13 @@
         {
             <section class="planning-panel" aria-labelledby="series-title">
                 <div class="panel-heading"><h2 id="series-title">Weekly schedule</h2><span>Europe/Brussels</span></div>
-                <EditForm Model="series" OnValidSubmit="SaveSeriesAsync" FormName="calendar-series-form">
+                <EditForm Model="series" OnValidSubmit="SaveSeriesAsync" FormName="calendar-series-form" @oninput="QueueCalendarDraftSave" @onchange="QueueCalendarDraftSave">
+                    @if (pendingCalendarDraft is not null)
+                    {
+                        <section class="notice draft-recovery" role="status"><strong>Unfinished schedule found.</strong><button type="button" @onclick="ContinueCalendarDraftAsync">Continue draft</button><button type="button" @onclick="DiscardCalendarDraftAsync">Discard draft</button></section>
+                    }
                     <div class="form-grid">
-                        <label class="field field--wide">Schedule name<input @bind="series.Name" required maxlength="160" /></label>
+                        <label class="field field--wide">Schedule name<input @bind="series.Name" @bind:event="oninput" required maxlength="160" /></label>
                         <label class="field">Starts<input @bind="series.StartDate" type="date" required /></label>
                         <label class="field">Ends (optional)<input @bind="series.EndDate" type="date" /></label>
                         <label class="field">Repeat every (weeks)<input @bind="series.IntervalWeeks" type="number" min="1" max="52" /></label>
@@ -289,6 +293,9 @@
     private bool openModalPending;
     private bool focusModalStagePending;
     private DotNetObjectReference<Calendar>? modalReference;
+    private string? calendarDraftKey;
+    private string? pendingCalendarDraft;
+    private CancellationTokenSource? calendarDraftDebounce;
 
     private IReadOnlyList<ScheduleGroupSummary> ScheduleGroups => calendarSeries
         .GroupBy(static item => item.ScheduleGroupId)
@@ -308,6 +315,8 @@
         {
             initialized = true;
             activeProfileId = await ActiveProfile.GetAsync();
+            calendarDraftKey = $"{activeProfileId?.ToString("N") ?? "household"}.calendar.new";
+            pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
             if (activeProfileId is not null)
             {
                 workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
@@ -344,6 +353,7 @@
         {
             series.WeekdayFlags.Remove(flag);
         }
+        QueueCalendarDraftSave();
     }
 
     private async Task SaveSeriesAsync(EditContext _)
@@ -385,12 +395,58 @@
         message = response.IsSuccessStatusCode ? "Schedule saved." : "The schedule could not be saved.";
         if (response.IsSuccessStatusCode)
         {
+            await DiscardCalendarDraftAsync();
             pendingSeriesOperationId = Guid.NewGuid();
             showSeriesForm = false;
             await ReloadCalendarAsync();
         }
 
         savingSeries = false;
+    }
+
+    private void QueueCalendarDraftSave()
+    {
+        calendarDraftDebounce?.Cancel();
+        calendarDraftDebounce = new CancellationTokenSource();
+        _ = SaveCalendarDraftAfterDelayAsync(calendarDraftDebounce.Token);
+    }
+
+    private async Task SaveCalendarDraftAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(450, cancellationToken);
+            if (calendarDraftKey is null) return;
+            var draft = new CalendarDraft(series.Name, series.StartDate, series.EndDate, series.IntervalWeeks, series.WeekdayFlags.ToArray(), series.PrimaryRevisionId, series.AlternativeRevisionId, series.ExceptionDate, series.ExceptionKind);
+            bool saved = await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", calendarDraftKey, System.Text.Json.JsonSerializer.Serialize(draft));
+            if (!saved) message = "Browser draft recovery is unavailable because this schedule is too large or local storage is unavailable.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private Task ContinueCalendarDraftAsync()
+    {
+        try
+        {
+            CalendarDraft? draft = System.Text.Json.JsonSerializer.Deserialize<CalendarDraft>(pendingCalendarDraft!);
+            if (draft is not null)
+            {
+                series.Name = draft.Name; series.StartDate = draft.StartDate; series.EndDate = draft.EndDate;
+                series.IntervalWeeks = draft.IntervalWeeks; series.PrimaryRevisionId = draft.PrimaryRevisionId;
+                series.AlternativeRevisionId = draft.AlternativeRevisionId; series.ExceptionDate = draft.ExceptionDate;
+                series.ExceptionKind = draft.ExceptionKind; series.WeekdayFlags.Clear();
+                foreach (int flag in draft.WeekdayFlags) series.WeekdayFlags.Add(flag);
+                pendingCalendarDraft = null; message = "Browser-local schedule draft restored.";
+            }
+        }
+        catch (System.Text.Json.JsonException) { return DiscardCalendarDraftAsync(); }
+        return Task.CompletedTask;
+    }
+
+    private async Task DiscardCalendarDraftAsync()
+    {
+        if (calendarDraftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", calendarDraftKey);
+        pendingCalendarDraft = null;
     }
 
     private async Task SelectDayAsync(CalendarDayView day, CalendarOptionView option)
@@ -772,6 +828,10 @@
         public DateOnly? ExceptionDate { get; set; }
         public string ExceptionKind { get; set; } = "Skip";
     }
+
+    private sealed record CalendarDraft(string Name, DateOnly StartDate, DateOnly? EndDate, int IntervalWeeks,
+        IReadOnlyList<int> WeekdayFlags, Guid? PrimaryRevisionId, Guid? AlternativeRevisionId,
+        DateOnly? ExceptionDate, string ExceptionKind);
 
     private sealed record CalendarAgendaDay(DateOnly Date, CalendarDayView Day);
     private sealed record CalendarAgendaWeek(DateOnly Start, DateOnly End, IReadOnlyList<CalendarAgendaDay> Days, int WorkoutCount);

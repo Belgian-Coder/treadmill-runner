@@ -14,6 +14,7 @@ public sealed class ReleaseScriptContractTests
   [InlineData("create-update-acceptance-feed.ps1")]
   [InlineData("select-update-acceptance-fixture.ps1")]
   [InlineData("install-gateway-service.ps1")]
+  [InlineData("publish-release.ps1")]
   [InlineData("Install-TreadmillRunner.ps1")]
   [InlineData("new-installer-bundle.ps1")]
   [InlineData("create-github-release.ps1")]
@@ -56,7 +57,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("--draft", release, StringComparison.Ordinal);
     Assert.Contains("--verify-tag", release, StringComparison.Ordinal);
     Assert.Contains("git tag -a $tag", release, StringComparison.Ordinal);
-    Assert.Contains("git fetch origin \"refs/tags/$tag:refs/tags/$tag\"", release, StringComparison.Ordinal);
+    Assert.Contains("git fetch origin \"refs/tags/${tag}:refs/tags/${tag}\"", release, StringComparison.Ordinal);
     Assert.Contains("git rev-list -n 1", release, StringComparison.Ordinal);
     Assert.Contains("Tags are never moved", release, StringComparison.Ordinal);
     Assert.Contains("gh release upload $tag @assets", release, StringComparison.Ordinal);
@@ -75,19 +76,32 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
-  public void GitHub_Actions_runs_only_for_semantic_release_tags_or_manual_dispatch()
+  public void GitHub_Actions_is_completely_disabled_and_release_builds_stay_local()
   {
-    string workflow = File.ReadAllText(Path.Combine(ProjectRoot, ".github", "workflows", "ci.yml"));
+    string workflows = Path.Combine(ProjectRoot, ".github", "workflows");
+    string dependabot = Path.Combine(ProjectRoot, ".github", "dependabot.yml");
+    string instructions = File.ReadAllText(Path.Combine(ProjectRoot, "AGENTS.md"));
 
-    Assert.Contains("name: TreadmillRunner release validation", workflow, StringComparison.Ordinal);
-    Assert.Contains("push:", workflow, StringComparison.Ordinal);
-    Assert.Contains("tags:", workflow, StringComparison.Ordinal);
-    Assert.Contains("'v[0-9]+.[0-9]+.[0-9]+'", workflow, StringComparison.Ordinal);
-    Assert.Contains("workflow_dispatch:", workflow, StringComparison.Ordinal);
-    Assert.DoesNotContain("branches:", workflow, StringComparison.Ordinal);
-    Assert.DoesNotContain("pull_request:", workflow, StringComparison.Ordinal);
-    Assert.Equal(1, workflow.Split("runs-on: windows-latest", StringSplitOptions.None).Length - 1);
-    Assert.Contains("--locked-mode", workflow, StringComparison.Ordinal);
+    Assert.False(Directory.Exists(workflows) && Directory.EnumerateFiles(workflows, "*", SearchOption.AllDirectories).Any());
+    Assert.False(File.Exists(dependabot));
+    Assert.Contains("GitHub Actions is disabled", instructions, StringComparison.Ordinal);
+    Assert.Contains("all validation, building, signing, and packaging runs on the release workstation", instructions, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Local_publish_embeds_a_content_fingerprint_and_records_release_provenance()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "publish-release.ps1"));
+    string buildProps = File.ReadAllText(Path.Combine(ProjectRoot, "Directory.Build.props"));
+
+    Assert.Contains("git -C $projectRoot diff --binary HEAD -- src Directory.Build.props", script, StringComparison.Ordinal);
+    Assert.Contains("git -C $projectRoot ls-files --others --exclude-standard -- src Directory.Build.props", script, StringComparison.Ordinal);
+    Assert.Contains("-p:TreadmillRunnerBuildId=$buildId", script, StringComparison.Ordinal);
+    Assert.Contains("-p:InformationalVersion=\"$Version+$buildId\"", script, StringComparison.Ordinal);
+    Assert.Contains("build-metadata.json", script, StringComparison.Ordinal);
+    Assert.Contains("sourceRevision = $headRevision", script, StringComparison.Ordinal);
+    Assert.Contains("buildId = $buildId", script, StringComparison.Ordinal);
+    Assert.Contains("TreadmillRunnerBuildId", buildProps, StringComparison.Ordinal);
   }
 
   [Fact]

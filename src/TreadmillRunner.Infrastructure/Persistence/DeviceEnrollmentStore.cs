@@ -106,6 +106,19 @@ public sealed class DeviceEnrollmentStore(
     await PersistenceReceipts.ThrowIfCompletedAsync(context, operation, cancellationToken);
     DeviceEnrollmentEntity entity = CreateEntity(enrollment, nowUtc);
     context.DeviceEnrollments.Add(entity);
+    if (enrollment.Role == DeviceRole.Treadmill)
+    {
+      context.TreadmillMaintenancePolicies.Add(new TreadmillMaintenancePolicyEntity
+      {
+        Id = Guid.NewGuid(),
+        DeviceEnrollmentId = enrollment.Id,
+        IntervalMonths = 3,
+        DistanceIntervalKilometers = 241,
+        Version = 1,
+        CreatedAtUtc = nowUtc,
+        UpdatedAtUtc = nowUtc,
+      });
+    }
     context.HeartRateDeviceAssignments.AddRange(assignments.Select(preference => CreateAssignment(
       enrollment.Id,
       preference,

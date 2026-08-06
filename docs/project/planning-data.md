@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: developer-and-operator
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # Planning data and import flow
@@ -49,6 +49,12 @@ Run recommendation priority is deterministic:
 TR-005 adds `DeviceEnrollments` as a separate local operational aggregate. It stores at most one active row per `Treadmill` or `HeartRate` role using a filtered unique index. A row contains the Windows device identifier, protocol ID, SHA-256 identity fingerprint, display/model/firmware labels, explicit treadmill telemetry mode, serialized reported capabilities, evidence level and verification time, optimistic version, and archive metadata. Forgetting archives rather than deletes the row. The raw Windows identifier stays local and must be redacted from shared evidence and diagnostic bundles.
 
 TR-017 adds `BleReliabilityIncidents`, keyed to the local device enrollment and indexed for open-incident and time-window queries. One row represents an outage episode across multiple failed reconnect attempts and is closed only after valid telemetry returns. It persists display label, role, generation/timing, bounded attempt count, failure category, sanitized fault, and maximum delay; raw BLE identifiers and fingerprints are deliberately absent. Recovered rows are retained for 90 days.
+
+TR-021 adds a durable `SessionOrigin` to every workout session. The migration classifies recognized hardware, simulator, and Garmin upload-test configurations and assigns `Legacy` to anything unknown or malformed. Ordinary history, weekly totals, workout reuse, progression, maintenance, and Garmin reconciliation exclude `SystemTest`; the explicit Tests history view includes only those records.
+
+Session deletion is a previewed, version-bound operation. It is permitted only for a terminal, non-recoverable, non-program-linked session whose Garmin state satisfies the story rules. The transaction removes its samples, events, and eligible system-test upload job. Operation receipts remain as tombstones, and deleting a historical hardware session adjusts later maintenance-event distance baselines so already-completed service intervals do not drift.
+
+`TreadmillMaintenancePolicies` owns one editable interval per enrolled treadmill. `TreadmillMaintenanceEvents` records the performed time, app-tracked hardware-distance baseline, bounded note, and unique operation ID. Due state is the earlier of the date or distance threshold after the first recorded baseline; simulator, system-test, legacy, and deleted sessions do not contribute.
 
 ## Preview and confirm
 

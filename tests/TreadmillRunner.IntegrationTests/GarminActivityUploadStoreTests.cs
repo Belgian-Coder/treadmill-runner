@@ -104,6 +104,29 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
     Assert.Null(await store.FindAccountAsync(profileId));
   }
 
+  [Fact]
+  public async Task Unknown_job_can_be_acknowledged_as_found_without_provider_confirmation_or_retry()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, _) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(profileId, "marc", "protected-token-json", true, now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await store.MarkUnknownAsync(leased.Id, "Confirmation was lost.", now.AddSeconds(1));
+
+    GarminActivityUploadJob found = await store.AcknowledgeFoundInGarminAsync(
+      leased.Id, profileId, Guid.NewGuid(), new string('a', 64), now.AddMinutes(1));
+
+    Assert.Equal("FoundInGarmin", found.Status);
+    Assert.Equal(now.AddMinutes(1), found.AcknowledgedAtUtc);
+    Assert.Null(found.RemoteId);
+    Assert.False(found.CanRetry);
+    Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
+    Assert.False(await store.RetryFailedAsync(found.Id, profileId, now.AddHours(1)));
+  }
+
   private async Task<IDbContextFactory<TreadmillRunnerDbContext>> CreateDatabaseAsync()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);

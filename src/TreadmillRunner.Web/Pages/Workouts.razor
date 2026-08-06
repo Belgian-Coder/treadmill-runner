@@ -1,6 +1,7 @@
 @page "/workouts"
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
+@inject IJSRuntime JS
 
 <PageTitle>Workouts · TreadmillRunner</PageTitle>
 
@@ -177,11 +178,15 @@
 
             @if (showProgramEditor)
             {
-                <section class="planning-panel program-editor" aria-labelledby="program-editor-title">
+                <section class="planning-panel program-editor" aria-labelledby="program-editor-title" @oninput="QueueProgramDraftSave" @onchange="QueueProgramDraftSave">
                     <div class="panel-heading">
                         <div><p class="eyebrow">Ordered plan</p><h2 id="program-editor-title">@(editingProgramId is null ? "New training plan" : "Edit training plan")</h2></div>
                         <button class="text-action" type="button" @onclick="RequestCloseProgramEditor" aria-label="Close training plan editor">Close</button>
                     </div>
+                    @if (pendingProgramDraft is not null)
+                    {
+                        <section class="notice draft-recovery" role="status"><strong>Unfinished training plan found.</strong><button type="button" @onclick="ContinueProgramDraftAsync">Continue draft</button><button type="button" @onclick="DiscardProgramDraftAsync">Discard draft</button></section>
+                    }
                     @if (confirmDiscardProgram)
                     {
                         <section class="program-start-confirm" role="alertdialog" aria-labelledby="discard-program-confirm-title">
@@ -195,7 +200,7 @@
                     }
                     <div class="form-grid">
                         <label class="field">Plan name
-                            <input maxlength="120" @bind="programDraft.Name" placeholder="Couch to 5K" />
+                            <input maxlength="120" @bind="programDraft.Name" @bind:event="oninput" placeholder="Couch to 5K" />
                         </label>
                         <label class="field">Category
                             <select @bind="programDraft.Category">
@@ -206,7 +211,7 @@
                             </select>
                         </label>
                         <label class="field field--wide">Description
-                            <textarea rows="2" maxlength="1000" @bind="programDraft.Description" placeholder="What this plan builds toward"></textarea>
+                            <textarea rows="2" maxlength="1000" @bind="programDraft.Description" @bind:event="oninput" placeholder="What this plan builds toward"></textarea>
                         </label>
                     </div>
 
@@ -280,6 +285,9 @@
     private PendingProgramStart? pendingProgramStart;
     private PendingArchive? pendingArchive;
     private readonly Dictionary<Guid, Guid> pendingArchiveOperations = [];
+    private string? programDraftKey;
+    private string? pendingProgramDraft;
+    private CancellationTokenSource? programDraftDebounce;
 
     private IReadOnlyList<WorkoutSummaryView> ProgramEligibleWorkouts => workouts
         .Where(static workout => !workout.IsArchived && !string.Equals(workout.Kind, "ManualTemplate", StringComparison.Ordinal))
@@ -354,7 +362,7 @@
     private bool MatchesDuration(WorkoutSummaryView workout) => durationFilter switch { "short" => workout.DurationMinutes is <= 30, "medium" => workout.DurationMinutes is > 30 and <= 60, "long" => workout.DurationMinutes is > 60, "distance" => workout.DurationMinutes is null, _ => true };
     private void ClearFilters() { searchText = string.Empty; durationFilter = "all"; sortOrder = "updated"; }
 
-    private void NewProgram()
+    private async Task NewProgram()
     {
         libraryMode = "programs";
         editingProgramId = null;
@@ -363,9 +371,10 @@
         confirmDiscardProgram = false;
         workoutToAdd = null;
         showProgramEditor = true;
+        await LoadProgramDraftAsync();
     }
 
-    private void EditProgram(WorkoutProgramView program)
+    private async Task EditProgram(WorkoutProgramView program)
     {
         editingProgramId = program.Id;
         programDraft = new ProgramDraft
@@ -379,6 +388,7 @@
         confirmDiscardProgram = false;
         workoutToAdd = null;
         showProgramEditor = true;
+        await LoadProgramDraftAsync();
     }
 
     private void RequestCloseProgramEditor()
@@ -399,6 +409,7 @@
         editingProgramId = null;
         confirmDiscardProgram = false;
         programDraftBaseline = string.Empty;
+        _ = DiscardProgramDraftAsync();
     }
 
     private void AddSelectedWorkout()
@@ -408,6 +419,7 @@
         if (workout is null) return;
         programDraft.Items.Add(new ProgramDraftItem(revisionId, workout.Name, workout.CurrentRevisionNumber, workout.DurationMinutes));
         workoutToAdd = null;
+        QueueProgramDraftSave();
     }
 
     private void MoveProgramItem(int index, int delta)
@@ -417,11 +429,12 @@
         ProgramDraftItem item = programDraft.Items[index];
         programDraft.Items.RemoveAt(index);
         programDraft.Items.Insert(destination, item);
+        QueueProgramDraftSave();
     }
 
     private void RemoveProgramItem(int index)
     {
-        if (index >= 0 && index < programDraft.Items.Count) programDraft.Items.RemoveAt(index);
+        if (index >= 0 && index < programDraft.Items.Count) { programDraft.Items.RemoveAt(index); QueueProgramDraftSave(); }
     }
 
     private void DuplicateProgramItem(int index)
@@ -429,6 +442,7 @@
         if (index >= 0 && index < programDraft.Items.Count)
         {
             programDraft.Items.Insert(index + 1, programDraft.Items[index]);
+            QueueProgramDraftSave();
         }
     }
 
@@ -442,6 +456,7 @@
         using HttpResponseMessage response = await Http.PostAsJsonAsync(url, request);
         message = response.IsSuccessStatusCode ? $"{programDraft.Name} saved." : "The training plan could not be saved.";
         if (!response.IsSuccessStatusCode) return;
+        await DiscardProgramDraftAsync();
         showProgramEditor = false;
         editingProgramId = null;
         await ReloadAsync();
@@ -527,6 +542,48 @@
     }
 
     private static string DraftSignature(ProgramDraft draft) => System.Text.Json.JsonSerializer.Serialize(draft);
+
+    private async Task LoadProgramDraftAsync()
+    {
+        programDraftKey = $"{activeProfileId?.ToString("N") ?? "household"}.program.{editingProgramId?.ToString("N") ?? "new"}";
+        pendingProgramDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", programDraftKey);
+    }
+
+    private void QueueProgramDraftSave()
+    {
+        programDraftDebounce?.Cancel();
+        programDraftDebounce = new CancellationTokenSource();
+        _ = SaveProgramDraftAfterDelayAsync(programDraftDebounce.Token);
+    }
+
+    private async Task SaveProgramDraftAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(450, cancellationToken);
+            if (programDraftKey is not null &&
+                !await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", programDraftKey, DraftSignature(programDraft)))
+                message = "Browser draft recovery is unavailable because this training plan is too large or local storage is unavailable.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private Task ContinueProgramDraftAsync()
+    {
+        try
+        {
+            ProgramDraft? restored = System.Text.Json.JsonSerializer.Deserialize<ProgramDraft>(pendingProgramDraft!);
+            if (restored is not null) { programDraft = restored; pendingProgramDraft = null; message = "Browser-local training-plan draft restored."; }
+        }
+        catch (System.Text.Json.JsonException) { return DiscardProgramDraftAsync(); }
+        return Task.CompletedTask;
+    }
+
+    private async Task DiscardProgramDraftAsync()
+    {
+        if (programDraftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", programDraftKey);
+        pendingProgramDraft = null;
+    }
 
     private static string ProgramProgress(WorkoutProgramView program) => program.Run is null ? $"{program.Items.Count} workouts" : program.IsComplete ? "Complete" : $"{program.CompletedItemCount} of {program.Items.Count} complete";
     private static string NextWorkoutLabel(WorkoutProgramView program)

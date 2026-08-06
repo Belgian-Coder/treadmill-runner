@@ -1,6 +1,8 @@
 @page "/workouts/new"
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject ActiveProfileState ActiveProfile
+@inject IJSRuntime JS
 
 <PageTitle>Workout editor · TreadmillRunner</PageTitle>
 
@@ -13,6 +15,10 @@
     @if (!string.IsNullOrEmpty(message))
     {
         <p class="notice" role="status">@message</p>
+    }
+    @if (pendingDraft is not null)
+    {
+        <section class="notice draft-recovery" role="status"><strong>Unfinished workout found.</strong><span>Continue where you left off or discard the browser-local draft.</span><button type="button" @onclick="ContinueDraftAsync">Continue draft</button><button type="button" @onclick="DiscardDraftAsync">Discard draft</button></section>
     }
 
     <div class="workout-editor-shell">
@@ -39,11 +45,11 @@
         </div>
     </details>
 
-    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout">
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout" @oninput="QueueDraftSave" @onchange="QueueDraftSave">
         <section class="planning-panel">
             <div class="form-grid">
-                <label class="field field--wide">Workout name<input @bind="form.Name" maxlength="160" required /></label>
-                <label class="field field--wide">Description<textarea @bind="form.Description" rows="2" maxlength="500"></textarea></label>
+                <label class="field field--wide">Workout name<input @bind="form.Name" @bind:event="oninput" maxlength="160" required /></label>
+                <label class="field field--wide">Description<textarea @bind="form.Description" @bind:event="oninput" rows="2" maxlength="500"></textarea></label>
             </div>
         </section>
 
@@ -88,6 +94,9 @@
     private Guid pendingOperationId = Guid.NewGuid();
     private IReadOnlyList<WorkoutSummaryView> existingWorkouts = Array.Empty<WorkoutSummaryView>();
     private string existingWorkoutSearch = string.Empty;
+    private string? pendingDraft;
+    private string? draftKey;
+    private CancellationTokenSource? draftDebounce;
 
     private IReadOnlyList<WorkoutSummaryView> FilteredExistingWorkouts => existingWorkouts
         .Where(workout => string.IsNullOrWhiteSpace(existingWorkoutSearch) ||
@@ -143,6 +152,60 @@
         {
             loading = false;
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        Guid? profileId = await ActiveProfile.GetAsync();
+        draftKey = $"{profileId?.ToString("N") ?? "household"}.workout.{WorkoutId?.ToString("N") ?? "new"}";
+        pendingDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", draftKey);
+        if (pendingDraft is not null) StateHasChanged();
+    }
+
+    private void QueueDraftSave()
+    {
+        draftDebounce?.Cancel();
+        draftDebounce = new CancellationTokenSource();
+        _ = SaveDraftAfterDelayAsync(draftDebounce.Token);
+    }
+
+    private async Task SaveDraftAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(450, cancellationToken);
+            if (draftKey is null) return;
+            string payload = System.Text.Json.JsonSerializer.Serialize(new WorkoutDraft(form.Name, form.Description, form.Blocks.Select(ToInput).ToArray()));
+            bool saved = await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", draftKey, payload);
+            if (!saved) message = "Browser draft recovery is unavailable because this draft is too large or local storage is unavailable.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private Task ContinueDraftAsync()
+    {
+        try
+        {
+            WorkoutDraft? draft = System.Text.Json.JsonSerializer.Deserialize<WorkoutDraft>(pendingDraft!);
+            if (draft is not null)
+            {
+                form.Name = draft.Name;
+                form.Description = draft.Description;
+                form.Blocks.Clear();
+                form.Blocks.AddRange(draft.Blocks.Select(ToForm));
+                pendingDraft = null;
+                message = "Browser-local draft restored.";
+            }
+        }
+        catch (System.Text.Json.JsonException) { return DiscardDraftAsync(); }
+        return Task.CompletedTask;
+    }
+
+    private async Task DiscardDraftAsync()
+    {
+        if (draftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", draftKey);
+        pendingDraft = null;
     }
 
     private void ResetBlankWorkout()
@@ -345,6 +408,7 @@
             : await Http.PostAsJsonAsync($"api/planning/workouts/{WorkoutId}/revisions", request);
         if (response.IsSuccessStatusCode)
         {
+            if (draftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", draftKey);
             pendingOperationId = Guid.NewGuid();
             WorkoutSaveResponse? saved = await response.Content.ReadFromJsonAsync<WorkoutSaveResponse>();
             message = $"Saved immutable revision {saved?.RevisionNumber ?? 1}.";
@@ -388,6 +452,8 @@
         public string? Description { get; set; }
         public List<BlockForm> Blocks { get; } = [new()];
     }
+
+    private sealed record WorkoutDraft(string Name, string? Description, IReadOnlyList<WorkoutBlockInput> Blocks);
 
     private sealed class BlockForm
     {

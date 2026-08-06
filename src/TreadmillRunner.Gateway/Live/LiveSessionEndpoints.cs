@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
 using TreadmillRunner.Core.Profiles;
@@ -50,6 +51,11 @@ public sealed record TreadmillCommandRequest(
   Guid LeaseId,
   long ExpectedSessionVersion);
 public sealed record SaveDebriefRequest(int? PerceivedExertion, string? Note);
+public sealed record DeleteHistorySessionRequest(
+  Guid OperationId,
+  Guid ProfileId,
+  string ExpectedRevision,
+  bool Confirmed);
 public sealed record HistoryEventResponse(
   string EventType,
   DateTimeOffset OccurredAt,
@@ -92,6 +98,8 @@ public static class LiveSessionEndpoints
     history.MapGet("", ListHistoryAsync);
     history.MapGet("/weekly", GetWeeklyHistoryAsync);
     history.MapGet("/{sessionId:guid}", GetHistoryAsync);
+    history.MapGet("/{sessionId:guid}/deletion-preview", GetDeletionPreviewAsync);
+    history.MapPost("/{sessionId:guid}/delete", DeleteHistoryAsync);
     history.MapGet("/{sessionId:guid}/export.csv", ExportCsvAsync);
     history.MapGet("/{sessionId:guid}/export.fit", ExportFitAsync);
     history.MapPut("/{sessionId:guid}/debrief", SaveDebriefAsync);
@@ -537,13 +545,14 @@ public static class LiveSessionEndpoints
     Guid profileId,
     ISessionStore store,
     CancellationToken cancellationToken,
-    int take = 50)
+    int take = 50,
+    bool includeTests = false)
   {
     if (take is < 1 or > 5_000)
     {
       return Results.BadRequest(new { error = "History take must be between 1 and 5000." });
     }
-    return Results.Ok(await store.ListSummariesAsync(profileId, take, cancellationToken));
+    return Results.Ok(await store.ListSummariesAsync(profileId, take, cancellationToken, includeTests));
   }
 
   private static async Task<IResult> GetHistoryAsync(
@@ -580,6 +589,82 @@ public static class LiveSessionEndpoints
       Events = session.Events.Select(ToHistoryEvent).ToArray(),
       Analytics = analytics,
     });
+  }
+
+  private static async Task<IResult> GetDeletionPreviewAsync(
+    Guid sessionId,
+    Guid profileId,
+    ISessionStore store,
+    CancellationToken cancellationToken)
+  {
+    HistoryDeletionPreview? preview = await store.PreviewDeletionAsync(sessionId, profileId, cancellationToken);
+    return preview is null ? TypedResults.NotFound() : TypedResults.Ok(preview);
+  }
+
+  private static async Task<IResult> DeleteHistoryAsync(
+    Guid sessionId,
+    DeleteHistorySessionRequest request,
+    ISessionStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (request.OperationId == Guid.Empty || request.ProfileId == Guid.Empty || sessionId == Guid.Empty)
+      return TypedResults.BadRequest(new { error = "Operation, profile, and session IDs are required." });
+    if (!request.Confirmed)
+      return TypedResults.BadRequest(new { error = "Explicit deletion confirmation is required." });
+    if (string.IsNullOrWhiteSpace(request.ExpectedRevision) || request.ExpectedRevision.Length != 64)
+      return TypedResults.BadRequest(new { error = "Review the deletion preview before confirming." });
+
+    string fingerprint = PlanningOperationFingerprint.Compute(new
+    {
+      request.ProfileId,
+      SessionId = sessionId,
+      request.ExpectedRevision,
+      request.Confirmed,
+    });
+    try
+    {
+      HistoryDeletionResult result = await store.DeleteAsync(new DeleteHistorySessionOperation(
+        request.OperationId,
+        sessionId,
+        request.ProfileId,
+        request.ExpectedRevision,
+        fingerprint,
+        timeProvider.GetUtcNow()), cancellationToken);
+      return TypedResults.Ok(result);
+    }
+    catch (OperationReplayException replay)
+    {
+      if (!string.Equals(replay.Receipt.OperationType, "history.delete", StringComparison.Ordinal) ||
+          !string.Equals(replay.Receipt.RequestFingerprint, fingerprint, StringComparison.Ordinal))
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      HistoryDeletionResult? result = JsonSerializer.Deserialize<HistoryDeletionResult>(
+        replay.Receipt.OutcomeJson,
+        WebJsonOptions);
+      return result is null
+        ? TypedResults.Conflict(new { error = "The completed deletion receipt could not be read." })
+        : TypedResults.Ok(result);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    catch (DbUpdateConcurrencyException exception)
+    {
+      return TypedResults.Conflict(new { error = exception.Message });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return TypedResults.Conflict(new { error = exception.Message });
+    }
+    catch (KeyNotFoundException)
+    {
+      return TypedResults.NotFound();
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.BadRequest(new { error = exception.Message });
+    }
   }
 
   private static async Task<IResult> GetWeeklyHistoryAsync(

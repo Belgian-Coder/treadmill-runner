@@ -139,6 +139,247 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task System_tests_are_hidden_by_default_and_delete_transactionally_with_replay_receipt()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    var ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Garmin upload verification", now, "{\"mode\":\"GarminUploadTest\"}",
+      SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.SystemTest));
+    await store.MarkRunningAsync(sessionId, now.AddSeconds(1));
+    await store.AppendSampleAsync(Sample(sessionId, 0, now.AddSeconds(1), 0, 6, 6, 120));
+    await store.FinalizeAsync(new SessionSummary(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Garmin upload verification", SessionState.Completed, now.AddSeconds(1), now.AddMinutes(1),
+      TimeSpan.FromSeconds(59), .1, 8, 120, 120, 6, 0, origin: SessionOrigin.SystemTest));
+
+    Assert.Empty(await store.ListSummariesAsync(ids.ProfileId));
+    Assert.Equal(SessionOrigin.SystemTest, Assert.Single(await store.ListSummariesAsync(ids.ProfileId, includeSystemTests: true)).Origin);
+    HistoryDeletionPreview preview = Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(sessionId, ids.ProfileId));
+    Assert.True(preview.CanDelete);
+    Guid operationId = Guid.NewGuid();
+    string fingerprint = new string('d', 64);
+    HistoryDeletionResult deleted = await store.DeleteAsync(new DeleteHistorySessionOperation(
+      operationId, sessionId, ids.ProfileId, preview.Revision, fingerprint, now.AddMinutes(2)));
+    Assert.True(deleted.Deleted);
+    Assert.Equal(1, deleted.DeletedSampleCount);
+    Assert.Null(await store.FindAsync(sessionId));
+    OperationReplayException replay = await Assert.ThrowsAsync<OperationReplayException>(() => store.DeleteAsync(
+      new DeleteHistorySessionOperation(operationId, sessionId, ids.ProfileId, preview.Revision, fingerprint, now.AddMinutes(2))));
+    Assert.Contains("history.delete", replay.Receipt.OperationType, StringComparison.Ordinal);
+  }
+
+  [Theory]
+  [InlineData("Pending", false)]
+  [InlineData("InFlight", false)]
+  [InlineData("Unknown", false)]
+  [InlineData("Confirmed", true)]
+  [InlineData("FoundInGarmin", true)]
+  [InlineData("Dismissed", true)]
+  [InlineData("Failed", true)]
+  public async Task System_test_deletion_obeys_every_Garmin_job_terminal_rule(string status, bool expectedCanDelete)
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid sessionId = await CreateTerminalSessionAsync(store, ids, now, SessionOrigin.SystemTest);
+    Guid accountId = Guid.NewGuid();
+    Guid jobId = Guid.NewGuid();
+    await using (var context = await factory.CreateDbContextAsync())
+    {
+      context.GarminActivityUploadAccounts.Add(new GarminActivityUploadAccountEntity
+      {
+        Id = accountId,
+        UserProfileId = ids.ProfileId,
+        AccountLabel = "Test",
+        ProtectedTokenStore = "protected",
+        Enabled = true,
+        State = "Connected",
+        ConnectedAtUtc = now,
+        UpdatedAtUtc = now,
+        Version = 1,
+      });
+      context.GarminActivityUploadJobs.Add(new GarminActivityUploadJobEntity
+      {
+        Id = jobId,
+        UserProfileId = ids.ProfileId,
+        GarminActivityUploadAccountId = accountId,
+        WorkoutSessionId = sessionId,
+        IdempotencyKey = new string('f', 64),
+        Status = status,
+        AvailableAtUtc = now,
+        CreatedAtUtc = now,
+        UpdatedAtUtc = now,
+        AcknowledgedAtUtc = status == "FoundInGarmin" ? now : null,
+      });
+      await context.SaveChangesAsync();
+    }
+
+    HistoryDeletionPreview preview = Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(sessionId, ids.ProfileId));
+    Assert.Equal(expectedCanDelete, preview.CanDelete);
+    if (!expectedCanDelete) return;
+    await store.DeleteAsync(new DeleteHistorySessionOperation(
+      Guid.NewGuid(), sessionId, ids.ProfileId, preview.Revision, new string('a', 64), now.AddMinutes(2)));
+    await using var assertionContext = await factory.CreateDbContextAsync();
+    Assert.False(await assertionContext.GarminActivityUploadJobs.AnyAsync(item => item.Id == jobId));
+  }
+
+  [Fact]
+  public async Task Deletion_blocks_nonterminal_program_linked_and_normal_sessions_with_Garmin_jobs()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+
+    Guid nonterminalId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(nonterminalId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Active", now, "{}", SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.Hardware));
+    Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(nonterminalId, ids.ProfileId)).CanDelete);
+
+    Guid linkedId = await CreateTerminalSessionAsync(store, ids, now.AddMinutes(2), SessionOrigin.Hardware);
+    await using (var context = await factory.CreateDbContextAsync())
+    {
+      var program = new WorkoutProgramEntity { Id = Guid.NewGuid(), CreatedAtUtc = now };
+      var revision = new WorkoutProgramRevisionEntity
+      {
+        Id = Guid.NewGuid(),
+        WorkoutProgramId = program.Id,
+        RevisionNumber = 1,
+        Name = "Plan",
+        Category = "5K",
+        ContentSha256 = new string('c', 64),
+        CreatedAtUtc = now,
+      };
+      var item = new WorkoutProgramItemEntity { Id = Guid.NewGuid(), WorkoutProgramRevisionId = revision.Id, WorkoutRevisionId = ids.RevisionId, Position = 1 };
+      var run = new WorkoutProgramRunEntity
+      {
+        Id = Guid.NewGuid(),
+        UserProfileId = ids.ProfileId,
+        WorkoutProgramRevisionId = revision.Id,
+        Status = "Active",
+        StartedAtUtc = now,
+        Version = 1,
+      };
+      context.AddRange(program, revision, item, run);
+      WorkoutSessionEntity linked = await context.WorkoutSessions.SingleAsync(candidate => candidate.Id == linkedId);
+      linked.WorkoutProgramRunId = run.Id;
+      linked.WorkoutProgramItemId = item.Id;
+      await context.SaveChangesAsync();
+    }
+    Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(linkedId, ids.ProfileId)).CanDelete);
+
+    Guid normalId = await CreateTerminalSessionAsync(store, ids, now.AddMinutes(4), SessionOrigin.Hardware);
+    HistoryDeletionPreview stalePreview = Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(normalId, ids.ProfileId));
+    Assert.True(stalePreview.CanDelete);
+    await using (var context = await factory.CreateDbContextAsync())
+    {
+      Guid accountId = Guid.NewGuid();
+      context.GarminActivityUploadAccounts.Add(new GarminActivityUploadAccountEntity
+      {
+        Id = accountId,
+        UserProfileId = ids.ProfileId,
+        AccountLabel = "Test",
+        ProtectedTokenStore = "protected",
+        Enabled = true,
+        State = "Connected",
+        ConnectedAtUtc = now,
+        UpdatedAtUtc = now,
+        Version = 1,
+      });
+      context.GarminActivityUploadJobs.Add(new GarminActivityUploadJobEntity
+      {
+        Id = Guid.NewGuid(),
+        UserProfileId = ids.ProfileId,
+        GarminActivityUploadAccountId = accountId,
+        WorkoutSessionId = normalId,
+        IdempotencyKey = new string('e', 64),
+        Status = "Confirmed",
+        AvailableAtUtc = now,
+        CreatedAtUtc = now,
+        UpdatedAtUtc = now,
+      });
+      await context.SaveChangesAsync();
+    }
+    Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(normalId, ids.ProfileId)).CanDelete);
+    await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => store.DeleteAsync(new DeleteHistorySessionOperation(
+      Guid.NewGuid(), normalId, ids.ProfileId, stalePreview.Revision, new string('d', 64), now.AddMinutes(6))));
+  }
+
+  [Fact]
+  public async Task Deleting_historical_hardware_session_adjusts_later_maintenance_baselines()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Incorrect hardware run", now, "{\"mode\":\"hardware:ftms:Ftms\"}",
+      SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.Hardware));
+    await store.MarkRunningAsync(sessionId, now.AddSeconds(1));
+    await store.FinalizeAsync(new SessionSummary(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Incorrect hardware run", SessionState.Completed, now.AddSeconds(1), now.AddHours(1),
+      TimeSpan.FromMinutes(59), 5, 100, null, null, 5, 0, origin: SessionOrigin.Hardware));
+
+    Guid policyId = Guid.NewGuid();
+    Guid eventId = Guid.NewGuid();
+    await using (var context = await factory.CreateDbContextAsync())
+    {
+      var enrollment = new DeviceEnrollmentEntity
+      {
+        Id = Guid.NewGuid(),
+        Role = "Treadmill",
+        DeviceId = "local",
+        ProtocolId = "omega",
+        IdentityFingerprint = new string('a', 64),
+        DisplayName = "Omega Z",
+        TelemetryMode = "Ftms",
+        CapabilitiesJson = "{}",
+        Evidence = "Verified",
+        Version = 1,
+        CreatedAtUtc = now,
+        UpdatedAtUtc = now,
+      };
+      context.DeviceEnrollments.Add(enrollment);
+      context.TreadmillMaintenancePolicies.Add(new TreadmillMaintenancePolicyEntity
+      {
+        Id = policyId,
+        DeviceEnrollmentId = enrollment.Id,
+        IntervalMonths = 3,
+        DistanceIntervalKilometers = 241,
+        Version = 1,
+        CreatedAtUtc = now.AddHours(2),
+        UpdatedAtUtc = now.AddHours(2),
+      });
+      context.TreadmillMaintenanceEvents.Add(new TreadmillMaintenanceEventEntity
+      {
+        Id = eventId,
+        TreadmillMaintenancePolicyId = policyId,
+        OperationId = Guid.NewGuid(),
+        PerformedAtUtc = now.AddHours(2),
+        AppDistanceBaselineKilometers = 5,
+        CreatedAtUtc = now.AddHours(2),
+      });
+      await context.SaveChangesAsync();
+    }
+
+    HistoryDeletionPreview preview = Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(sessionId, ids.ProfileId));
+    await store.DeleteAsync(new DeleteHistorySessionOperation(
+      Guid.NewGuid(), sessionId, ids.ProfileId, preview.Revision, new string('b', 64), now.AddHours(3)));
+
+    await using var assertionContext = await factory.CreateDbContextAsync();
+    Assert.Equal(0, (await assertionContext.TreadmillMaintenanceEvents.SingleAsync(item => item.Id == eventId)).AppDistanceBaselineKilometers);
+  }
+
+  [Fact]
   [Trait("Category", "Soak")]
   public async Task Four_hour_one_hertz_session_persists_and_reads_all_samples()
   {
@@ -221,6 +462,22 @@ public sealed class SessionStoreTests : IAsyncLifetime
       estimatedKilocalories: elapsedSeconds * 0.12,
       telemetryAge: TimeSpan.FromMilliseconds(40),
       SessionMetricAlgorithms.EstimatedCaloriesV1);
+
+  private static async Task<Guid> CreateTerminalSessionAsync(
+    ISessionStore store,
+    SeedIds ids,
+    DateTimeOffset now,
+    SessionOrigin origin)
+  {
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Run", now, "{}", SessionMetricAlgorithms.EstimatedCaloriesV1, origin: origin));
+    await store.MarkRunningAsync(sessionId, now.AddSeconds(1));
+    await store.FinalizeAsync(new SessionSummary(sessionId, ids.ProfileId, "Runner", ids.RevisionId,
+      "Run", SessionState.Completed, now.AddSeconds(1), now.AddMinutes(1), TimeSpan.FromSeconds(59),
+      .1, 8, 120, 120, 6, 0, origin: origin));
+    return sessionId;
+  }
 
   private static async Task MigrateAndSeedAsync(IDbContextFactory<TreadmillRunnerDbContext> factory)
   {

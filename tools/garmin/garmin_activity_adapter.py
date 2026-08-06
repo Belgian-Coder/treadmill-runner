@@ -60,6 +60,11 @@ def interpret_import_result(result: Any) -> dict[str, Any]:
         return {"state": "failed", "kind": "rejected", "message": "Garmin rejected the imported activity."}
     successes = detail.get("successes")
     if not isinstance(successes, list) or not successes or not isinstance(successes[0], dict):
+        # garminconnect returns this only after the import POST completed with a
+        # successful HTTP response whose body did not expose a detailed item ID.
+        status = str(detail.get("status", "")).strip().lower()
+        if status in {"uploaded", "success", "succeeded", "completed"}:
+            return {"state": "confirmed"}
         return {"state": "unknown", "kind": "response", "message": "Garmin did not provide explicit import confirmation."}
     remote_id = successes[0].get("activityId") or successes[0].get("internalId")
     if remote_id is None or not str(remote_id).strip():

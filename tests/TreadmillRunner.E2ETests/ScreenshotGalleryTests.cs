@@ -230,6 +230,17 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
           Path = Path.Combine(galleryDirectory, "workout-editor-building-iphone17-pro-max.png"),
           FullPage = true,
         });
+        await Page.GetByLabel("Workout name", new() { Exact = true }).FillAsync("Recovered progressive intervals");
+        await Page.WaitForTimeoutAsync(650);
+        await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await Expect(Page.GetByText("Unfinished workout found.", new() { Exact = true })).ToBeVisibleAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Continue draft", Exact = true }).ClickAsync();
+        await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync("Recovered progressive intervals");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "workout-editor-restored-draft-iphone17-pro-max.png"),
+          FullPage = true,
+        });
       }
       else if (fileName == "workout-import")
       {
@@ -270,6 +281,47 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(0);
         await Page.GetByRole(AriaRole.Button, new() { Name = "Clear filters", Exact = true }).ClickAsync();
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(3);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Tests", Exact = true }).ClickAsync();
+        await Expect(Page.Locator(".history-card")).ToHaveCountAsync(1);
+        await Expect(Page.Locator(".history-card")).ToContainTextAsync("System test");
+        await Expect(Page.Locator(".weekly-summary-panel")).ToHaveCountAsync(0);
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Tests", Exact = true })).ToHaveAttributeAsync("aria-pressed", "true");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "history-tests-iphone17-pro-max.png"),
+          FullPage = true,
+        });
+      }
+      else if (fileName == "history-detail")
+      {
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Delete local session", Exact = true }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Permanent deletion preview", Exact = true })).ToBeVisibleAsync();
+        foreach (ILocator action in new[]
+        {
+          Page.GetByRole(AriaRole.Button, new() { Name = "Delete local session", Exact = true }),
+          Page.GetByRole(AriaRole.Button, new() { Name = "Permanently delete", Exact = true }),
+        })
+        {
+          LocatorBoundingBoxResult? box = await action.BoundingBoxAsync();
+          Assert.NotNull(box);
+          Assert.True(box.Width >= 44 && box.Height >= 44, $"Deletion touch target is too small: {box}");
+        }
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "history-deletion-preview-iphone17-pro-max.png"),
+          FullPage = true,
+        });
+      }
+      else if (fileName == "devices")
+      {
+        await scenario.InstallMaintenanceSetupRouteAsync(Page);
+        await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await Expect(Page.GetByText("Record the last belt/deck service", new() { Exact = false })).ToBeVisibleAsync();
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "devices-maintenance-setup-iphone17-pro-max.png"),
+          FullPage = true,
+        });
       }
       else if (fileName == "workouts")
       {
@@ -305,6 +357,41 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     {
       await scenario.ResetSimulatorAsync(gateway.BaseAddress);
     }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Phone_shell_captures_installed_update_and_landscape_states()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.AddInitScriptAsync("Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });");
+    await Page.SetViewportSizeAsync(440, 956);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await SelectFeaturedRunAsync();
+    await Expect(Page.Locator("html")).ToHaveClassAsync(new Regex("standalone-shell"));
+    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+    Directory.CreateDirectory(galleryDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max.png"), FullPage = true });
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max-viewport.png"), FullPage = false });
+
+    await Page.SetViewportSizeAsync(956, 440);
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max-landscape.png"), FullPage = true });
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max-landscape-viewport.png"), FullPage = false });
+
+    await Page.RouteAsync("**/api/system/version*", route => route.FulfillAsync(new RouteFulfillOptions
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Headers = new Dictionary<string, string> { ["Cache-Control"] = "no-store" },
+      Body = "{\"releaseVersion\":\"9.9.9\",\"buildFingerprint\":\"new-build-ready\",\"serviceStartedAtUtc\":\"2026-08-06T10:00:00Z\"}",
+    }));
+    await Page.SetViewportSizeAsync(440, 956);
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.GetByText("Update ready", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "update-ready-iphone17-pro-max.png"), FullPage = true });
   }
 
   private async Task<ILocator> OpenCalendarManagerAsync()
@@ -376,7 +463,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       case "profiles":
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin Connect", Exact = true })).ToContainTextAsync("Marc's Garmin account");
-        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("Unsupported");
+        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("Experimental");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToBeVisibleAsync();
         break;
       case "workouts":
@@ -426,11 +513,10 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     ILocator runner = Page.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true });
     await runner.ClickAsync();
     await Expect(runner).ToHaveAttributeAsync("aria-checked", "true");
-    await Page.Locator(".workout-choice-card")
-      .Filter(new() { HasText = GalleryScenario.FeaturedWorkoutName }).First.ClickAsync();
+    ILocator selectedWorkout = Page.GetByLabel("Selected workout", new() { Exact = true });
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
-    await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
-      .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
+    await Expect(selectedWorkout)
+      .ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
   }
 
   private async Task AssertPopulatedAsync(string fileName, GalleryScenario scenario)

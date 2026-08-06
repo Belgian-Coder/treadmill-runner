@@ -1,3 +1,7 @@
+if (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true) {
+  document.documentElement.classList.add("standalone-shell");
+}
+
 window.treadmillRunnerSound = {
   playCue: function () {
     const AudioContextType = window.AudioContext || window.webkitAudioContext;
@@ -17,6 +21,60 @@ window.treadmillRunnerSound = {
     oscillator.addEventListener("ended", () => context.close());
     return true;
   }
+};
+
+window.treadmillRunnerRuntime = {
+  visibilityHandler: null,
+  reference: null,
+  initialize: function (reference) {
+    this.dispose();
+    this.reference = reference;
+    this.visibilityHandler = () => {
+      if (document.visibilityState === "visible") this.reference?.invokeMethodAsync("BrowserVisibleAsync");
+    };
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+  },
+  reload: function (fingerprint) {
+    const key = `treadmillrunner.reload.${fingerprint}`;
+    if (sessionStorage.getItem(key) === "attempted") return false;
+    sessionStorage.setItem(key, "attempted");
+    const url = new URL(window.location.href);
+    url.searchParams.set("build", fingerprint);
+    window.location.replace(url.toString());
+    return true;
+  },
+  dispose: function () {
+    if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.visibilityHandler = null;
+    this.reference = null;
+  }
+};
+
+window.treadmillRunnerDrafts = {
+  prefix: "treadmillrunner.draft.v1.",
+  save: function (key, payload) {
+    const text = String(payload ?? "");
+    if (text.length === 0 || new TextEncoder().encode(text).length > 262144) return false;
+    try {
+      localStorage.setItem(this.prefix + key, JSON.stringify({ schemaVersion: 1, savedAtUtc: new Date().toISOString(), payload: text }));
+      return true;
+    } catch { return false; }
+  },
+  load: function (key) {
+    const storageKey = this.prefix + key;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw || new TextEncoder().encode(raw).length > 262144) { localStorage.removeItem(storageKey); return null; }
+      const draft = JSON.parse(raw);
+      const age = Date.now() - Date.parse(draft.savedAtUtc);
+      if (draft.schemaVersion !== 1 || typeof draft.payload !== "string" || !Number.isFinite(age) || age < 0 || age > 30 * 86400000) {
+        localStorage.removeItem(storageKey);
+        return null;
+      }
+      return draft.payload;
+    } catch { localStorage.removeItem(storageKey); return null; }
+  },
+  remove: function (key) { try { localStorage.removeItem(this.prefix + key); } catch { } }
 };
 
 window.treadmillRunnerView = {

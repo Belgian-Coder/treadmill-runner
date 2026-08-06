@@ -10,4 +10,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
+  <ItemGroup Condition="'$(TreadmillRunnerBuildId)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>TreadmillRunnerBuildId</_Parameter1>
+      <_Parameter2>$(TreadmillRunnerBuildId)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

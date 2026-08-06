@@ -4,7 +4,7 @@ type: integration-runbook
 status: implemented-setup-required
 owner: project
 audience: runner-operator-and-developer
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # Garmin integrations
@@ -25,18 +25,28 @@ Do not enable completed-activity upload for a run that was also recorded on a Ga
 - If no watch is worn: enable completed-activity upload for that runner before the run. The NUC queues the completed local FIT automatically.
 - If only workouts/plans need to appear on Garmin devices: use the official Training API path after Garmin approval. It does not upload completed activities.
 
-## Unsupported completed-activity upload
+## Experimental completed-activity upload
 
 ### Profile setup
 
 1. Install a current signed TreadmillRunner release. The pinned adapter runtime is included and checked offline during packaging.
-2. Open TreadmillRunner over trusted HTTPS, or open it locally on the NUC. Plain remote HTTP is rejected for credential entry.
-3. Open **Profiles**, edit the runner, and find **Garmin activity upload — Unsupported**.
+2. Open TreadmillRunner on the NUC, over trusted HTTPS, or from a device whose direct peer address is on the trusted household LAN. Private-LAN HTTP is allowed for convenience but is not encrypted.
+3. Open **Profiles**, edit the runner, and find **Garmin activity upload — Experimental**.
 4. Enter that runner's Garmin email and password. The password is streamed once to an isolated Python process and is never persisted.
 5. If Garmin requests MFA, enter the current verification code. Challenges expire after five minutes and are bound to the selected profile.
 6. Keep **Enable automatic upload after connecting** off if the watch is normally used; otherwise explicitly enable it.
 
 Each household profile has an independent protected account envelope, enable switch, jobs, failures, and disconnect action. An MFA challenge is cryptographically bound to its selected profile. TreadmillRunner intentionally has no household login: any trusted-LAN operator can administer either profile, so the application must not be exposed to a guest or public network.
+
+After the one-time login completes, unattended operation does not require the password, the browser, or an interactive Windows session. The NUC stores only the resulting Garmin session token in the existing DPAPI-backed encrypted envelope. The background worker resumes after service or machine restart and uploads eligible completed sessions for profiles that remain enabled. If Garmin expires the session or requires MFA again, reconnect that profile from the NUC, trusted HTTPS, or the private household LAN.
+
+### One-time upload acceptance
+
+The operator may explicitly call `POST /api/integrations/garmin/activity-upload/profiles/{profileId}/test-activity` with a fresh `operationId` and the connected account's `expectedVersion`. The route is idle-only and limited to the same local/private/HTTPS transport policy. It creates a clearly labelled one-minute synthetic completed session with 60 samples, then uses the normal `SessionFitActivityExporter`, durable queue, encrypted account token, and worker. It never issues a treadmill command.
+
+Treat the operation ID as single-use. A repeated ID is rejected. Poll the profile job list until it is `Confirmed`, `Failed`, or `Unknown`; an `Unknown` test must be reviewed in Garmin Connect and must not be blindly resent. The synthetic session remains visible in local History so the exact FIT source is auditable.
+
+The pinned library can return `{"status":"uploaded"}` after a successful import HTTP response without exposing Garmin's activity ID. TreadmillRunner treats that documented library-success shape as Confirmed with an empty remote ID. Empty, malformed, interrupted, or otherwise unrecognized responses remain Unknown and are never automatically retried.
 
 ### Queue behavior and duplicate protection
 
@@ -55,7 +65,8 @@ Each household profile has an independent protected account envelope, enable swi
 - Garmin passwords and MFA codes are never written to SQLite, configuration, logs, screenshots, diagnostics, or API responses.
 - The adapter communicates with the gateway as bounded JSON Lines over redirected standard input/output. Secret-bearing input is not used as a command-line argument.
 - The browser receives account labels, state, safe errors, counts, and job dispositions—never protected token material.
-- Upload account changes are idle-only. Credential requests are accepted only via HTTPS or from a loopback browser on the NUC.
+- Upload account changes are idle-only. Credential requests are accepted via HTTPS or from a direct loopback/private/link-local peer. Private-LAN HTTP carries the one-time password and MFA without transport encryption; use it only on the trusted household network.
+- Never expose or port-forward TreadmillRunner. The installer firewall rule remains limited to the Windows Private profile/local subnet. Public/non-local HTTP peers are rejected with HTTP 426, but NAT or a reverse proxy can hide the original peer address and must not be used to bypass this boundary.
 - Provider behavior is not guaranteed. Garmin may change or block the private consumer interface at any time.
 
 ### Runtime, installation, and readiness

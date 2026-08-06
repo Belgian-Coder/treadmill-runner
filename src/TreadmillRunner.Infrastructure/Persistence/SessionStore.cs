@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
@@ -25,6 +27,7 @@ public sealed class SessionStore(
       WorkoutProgramRunId = session.Selection.ProgramRunId,
       WorkoutProgramItemId = session.Selection.ProgramItemId,
       SelectionSource = session.Selection.Source.ToString(),
+      SessionOrigin = session.Origin.ToString(),
       WorkoutTitle = session.WorkoutTitle,
       State = SessionState.ArmedWaitingForPhysicalStart.ToString(),
       ArmedAtUtc = session.ArmedAt,
@@ -215,7 +218,8 @@ public sealed class SessionStore(
   public async Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
     Guid userProfileId,
     int take = 50,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default,
+    bool includeSystemTests = false)
   {
     RequireId(userProfileId, nameof(userProfileId));
     if (take is < 1 or > 5_000)
@@ -227,16 +231,20 @@ public sealed class SessionStore(
     // SQLite stores DateTimeOffset as its canonical UTC text representation but EF cannot
     // translate ORDER BY for DateTimeOffset. Keep the query bounded in SQLite and order that
     // canonical representation directly rather than loading an unbounded history to the client.
-    WorkoutSessionEntity[] sessions = await context.WorkoutSessions
-      .FromSqlInterpolated($"""
+    string originClause = includeSystemTests ? string.Empty : " AND \"SessionOrigin\" <> 'SystemTest'";
+    string sql = """
         SELECT * FROM "WorkoutSessions"
-        WHERE "UserProfileId" = {userProfileId}
+        WHERE "UserProfileId" = {0}
           AND "StartedAtUtc" IS NOT NULL
           AND "EndedAtUtc" IS NOT NULL
           AND "State" IN ('Completed', 'Stopped', 'Interrupted', 'Faulted')
+        """ + originClause + """
+
         ORDER BY "EndedAtUtc" DESC
-        LIMIT {take}
-        """)
+        LIMIT {1}
+        """;
+    WorkoutSessionEntity[] sessions = await context.WorkoutSessions
+      .FromSqlRaw(sql, userProfileId, take)
       .AsNoTracking()
       .ToArrayAsync(cancellationToken);
     return sessions.Select(MapSummary).ToArray();
@@ -275,6 +283,157 @@ public sealed class SessionStore(
     return unfinished.Length;
   }
 
+  public async Task<HistoryDeletionPreview?> PreviewDeletionAsync(
+    Guid sessionId,
+    Guid userProfileId,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    RequireId(userProfileId, nameof(userProfileId));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await BuildDeletionPreviewAsync(context, sessionId, userProfileId, cancellationToken);
+  }
+
+  public async Task<HistoryDeletionResult> DeleteAsync(
+    DeleteHistorySessionOperation operation,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(operation);
+    RequireId(operation.OperationId, nameof(operation.OperationId));
+    RequireId(operation.SessionId, nameof(operation.SessionId));
+    RequireId(operation.UserProfileId, nameof(operation.UserProfileId));
+    RequireUtc(operation.RequestedAtUtc, nameof(operation.RequestedAtUtc));
+    if (string.IsNullOrWhiteSpace(operation.ExpectedRevision) || operation.ExpectedRevision.Length != 64)
+      throw new ArgumentException("A valid deletion preview revision is required.", nameof(operation));
+    if (string.IsNullOrWhiteSpace(operation.RequestFingerprint) || operation.RequestFingerprint.Length != 64)
+      throw new ArgumentException("A valid request fingerprint is required.", nameof(operation));
+
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(
+      System.Data.IsolationLevel.Serializable,
+      cancellationToken);
+    var receipt = new PersistenceWriteOperation(
+      operation.OperationId,
+      "history.delete",
+      200,
+      "{}",
+      operation.RequestedAtUtc,
+      operation.RequestFingerprint);
+    await PersistenceReceipts.ThrowIfCompletedAsync(context, receipt, cancellationToken);
+
+    HistoryDeletionPreview preview = await BuildDeletionPreviewAsync(
+      context,
+      operation.SessionId,
+      operation.UserProfileId,
+      cancellationToken) ?? throw new KeyNotFoundException($"Session {operation.SessionId} was not found.");
+    if (!string.Equals(preview.Revision, operation.ExpectedRevision, StringComparison.Ordinal))
+      throw new DbUpdateConcurrencyException("The session or its Garmin upload state changed after the deletion preview. Review it again.");
+    if (!preview.CanDelete)
+      throw new InvalidOperationException(preview.Reason);
+
+    WorkoutSessionEntity entity = await context.WorkoutSessions.SingleAsync(
+      candidate => candidate.Id == operation.SessionId && candidate.UserProfileId == operation.UserProfileId,
+      cancellationToken);
+    var result = new HistoryDeletionResult(
+      entity.Id,
+      true,
+      preview.SampleCount,
+      preview.EventCount,
+      preview.GarminStatus,
+      preview.MaintenanceDistanceImpactKilometers,
+      preview.GarminRemoteActivityMayRemain,
+      operation.RequestedAtUtc);
+    if (ParseOrigin(entity.SessionOrigin) == SessionOrigin.Hardware && entity.DistanceKilometers > 0)
+    {
+      DateTimeOffset includedBy = entity.EndedAtUtc ?? entity.ArmedAtUtc;
+      TreadmillMaintenanceEventEntity[] affectedBaselines = (await context.TreadmillMaintenanceEvents
+        .ToArrayAsync(cancellationToken))
+        .Where(item => item.CreatedAtUtc >= includedBy)
+        .ToArray();
+      foreach (TreadmillMaintenanceEventEntity maintenanceEvent in affectedBaselines)
+      {
+        maintenanceEvent.AppDistanceBaselineKilometers = Math.Max(
+          0,
+          maintenanceEvent.AppDistanceBaselineKilometers - entity.DistanceKilometers);
+      }
+    }
+    context.WorkoutSessions.Remove(entity);
+    PersistenceReceipts.Add(context, receipt with { OutcomeJson = JsonSerializer.Serialize(result, EventJsonOptions) });
+    await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
+    return result;
+  }
+
+  private static async Task<HistoryDeletionPreview?> BuildDeletionPreviewAsync(
+    TreadmillRunnerDbContext context,
+    Guid sessionId,
+    Guid userProfileId,
+    CancellationToken cancellationToken)
+  {
+    var data = await context.WorkoutSessions.AsNoTracking()
+      .Where(candidate => candidate.Id == sessionId && candidate.UserProfileId == userProfileId)
+      .Select(candidate => new
+      {
+        Session = candidate,
+        SampleCount = candidate.Samples.Count,
+        EventCount = candidate.Events.Count,
+        Garmin = context.GarminActivityUploadJobs.AsNoTracking()
+          .Where(job => job.WorkoutSessionId == candidate.Id)
+          .Select(job => new { job.Id, job.Status, job.UpdatedAtUtc })
+          .SingleOrDefault(),
+      })
+      .SingleOrDefaultAsync(cancellationToken);
+    if (data is null) return null;
+
+    SessionState state = ParseState(data.Session.State);
+    SessionOrigin origin = ParseOrigin(data.Session.SessionOrigin);
+    bool terminal = IsTerminal(state) && data.Session.StartedAtUtc is not null && data.Session.EndedAtUtc is not null;
+    bool linked = data.Session.WorkoutProgramRunId is not null || data.Session.WorkoutProgramItemId is not null;
+    string? garminStatus = data.Garmin?.Status;
+    bool safeTestGarmin = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed";
+    bool canDelete = terminal && !linked && (origin == SessionOrigin.SystemTest ? safeTestGarmin : garminStatus is null);
+    string reason = !terminal
+      ? "Only a terminal session can be permanently deleted."
+      : linked
+        ? "This session is linked to a workout program and cannot be deleted."
+        : origin != SessionOrigin.SystemTest && garminStatus is not null
+          ? "A normal session with Garmin upload history cannot be deleted."
+          : origin == SessionOrigin.SystemTest && !safeTestGarmin
+            ? "Wait for the Garmin test upload to finish, or acknowledge its unknown outcome, before deleting it."
+            : "This session can be permanently deleted.";
+    string revisionMaterial = string.Join('|',
+      data.Session.Id.ToString("D"),
+      data.Session.UserProfileId.ToString("D"),
+      data.Session.State,
+      data.Session.SessionOrigin,
+      data.Session.WorkoutProgramRunId?.ToString("D") ?? string.Empty,
+      data.Session.WorkoutProgramItemId?.ToString("D") ?? string.Empty,
+      data.SampleCount,
+      data.EventCount,
+      data.Session.DistanceKilometers.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+      data.Garmin?.Id.ToString("D") ?? string.Empty,
+      garminStatus ?? string.Empty,
+      data.Garmin?.UpdatedAtUtc.ToString("O") ?? string.Empty);
+    string revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(revisionMaterial)));
+    bool remoteMayRemain = origin == SessionOrigin.SystemTest && garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed";
+    return new HistoryDeletionPreview(
+      data.Session.Id,
+      data.Session.UserProfileId,
+      data.Session.WorkoutTitle,
+      state,
+      origin,
+      data.SampleCount,
+      data.EventCount,
+      data.Session.DistanceKilometers,
+      origin == SessionOrigin.Hardware ? data.Session.DistanceKilometers : 0,
+      linked,
+      garminStatus,
+      canDelete,
+      reason,
+      revision,
+      remoteMayRemain);
+  }
+
   private static WorkoutSessionEntity FindRequiredEntity(
     WorkoutSessionEntity? session,
     Guid sessionId) => session ?? throw new KeyNotFoundException($"Session {sessionId} was not found.");
@@ -306,7 +465,8 @@ public sealed class SessionStore(
         new WorkoutSessionSelection(
           Enum.Parse<WorkoutSelectionSource>(entity.SelectionSource),
           entity.WorkoutProgramRunId,
-          entity.WorkoutProgramItemId)),
+          entity.WorkoutProgramItemId),
+        ParseOrigin(entity.SessionOrigin)),
       ParseState(entity.State),
       entity.StartedAtUtc,
       entity.EndedAtUtc,
@@ -337,7 +497,8 @@ public sealed class SessionStore(
     entity.AverageHeartRateBpm,
     entity.MaximumHeartRateBpm,
     entity.AverageSpeedKph,
-    entity.AverageInclinePercent);
+    entity.AverageInclinePercent,
+    ParseOrigin(entity.SessionOrigin));
 
   private static SessionSample MapSample(SessionSampleEntity entity) => new(
     entity.WorkoutSessionId,
@@ -392,6 +553,11 @@ public sealed class SessionStore(
     Enum.TryParse(value, ignoreCase: false, out SessionState state)
       ? state
       : throw new InvalidOperationException($"Stored session state '{value}' is invalid.");
+
+  private static SessionOrigin ParseOrigin(string value) =>
+    Enum.TryParse(value, ignoreCase: false, out SessionOrigin origin)
+      ? origin
+      : SessionOrigin.Legacy;
 
   private static bool IsTerminal(SessionState state) => state is
     SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted;

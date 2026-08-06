@@ -8,6 +8,8 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<DeviceEnrollmentEntity> DeviceEnrollments => Set<DeviceEnrollmentEntity>();
   internal DbSet<HeartRateDeviceAssignmentEntity> HeartRateDeviceAssignments => Set<HeartRateDeviceAssignmentEntity>();
   internal DbSet<BleReliabilityIncidentEntity> BleReliabilityIncidents => Set<BleReliabilityIncidentEntity>();
+  internal DbSet<TreadmillMaintenancePolicyEntity> TreadmillMaintenancePolicies => Set<TreadmillMaintenancePolicyEntity>();
+  internal DbSet<TreadmillMaintenanceEventEntity> TreadmillMaintenanceEvents => Set<TreadmillMaintenanceEventEntity>();
   internal DbSet<UserProfileEntity> UserProfiles => Set<UserProfileEntity>();
   internal DbSet<HeartRateZoneEntity> HeartRateZones => Set<HeartRateZoneEntity>();
   internal DbSet<WorkoutEntity> Workouts => Set<WorkoutEntity>();
@@ -52,6 +54,7 @@ public sealed class TreadmillRunnerDbContext(
     ConfigureDeviceEnrollments(modelBuilder);
     ConfigureHeartRateDeviceAssignments(modelBuilder);
     ConfigureBleReliability(modelBuilder);
+    ConfigureTreadmillMaintenance(modelBuilder);
     ConfigureProfiles(modelBuilder);
     ConfigureWorkouts(modelBuilder);
     ConfigureImports(modelBuilder);
@@ -93,6 +96,37 @@ public sealed class TreadmillRunnerDbContext(
       .HasFilter("\"RecoveredAtUnixMilliseconds\" IS NULL");
     incident.HasIndex(entity => new { entity.DeviceEnrollmentId, entity.RecoveredAtUnixMilliseconds });
     incident.HasIndex(entity => entity.StartedAtUnixMilliseconds);
+  }
+
+  private static void ConfigureTreadmillMaintenance(ModelBuilder modelBuilder)
+  {
+    var policy = modelBuilder.Entity<TreadmillMaintenancePolicyEntity>();
+    policy.ToTable("TreadmillMaintenancePolicies", table =>
+    {
+      table.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Months", "\"IntervalMonths\" >= 1 AND \"IntervalMonths\" <= 24");
+      table.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Distance", "\"DistanceIntervalKilometers\" >= 1 AND \"DistanceIntervalKilometers\" <= 5000");
+      table.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Version", "\"Version\" > 0");
+    });
+    policy.HasKey(entity => entity.Id);
+    policy.Property(entity => entity.Version).IsConcurrencyToken();
+    policy.HasIndex(entity => entity.DeviceEnrollmentId).IsUnique();
+    policy.HasOne(entity => entity.DeviceEnrollment).WithOne()
+      .HasForeignKey<TreadmillMaintenancePolicyEntity>(entity => entity.DeviceEnrollmentId)
+      .OnDelete(DeleteBehavior.Cascade);
+
+    var maintenanceEvent = modelBuilder.Entity<TreadmillMaintenanceEventEntity>();
+    maintenanceEvent.ToTable("TreadmillMaintenanceEvents", table =>
+    {
+      table.HasCheckConstraint("CK_TreadmillMaintenanceEvents_Distance", "\"AppDistanceBaselineKilometers\" >= 0");
+      table.HasCheckConstraint("CK_TreadmillMaintenanceEvents_Note", "\"Note\" IS NULL OR length(\"Note\") <= 500");
+    });
+    maintenanceEvent.HasKey(entity => entity.Id);
+    maintenanceEvent.Property(entity => entity.Note).HasMaxLength(500);
+    maintenanceEvent.HasIndex(entity => entity.OperationId).IsUnique();
+    maintenanceEvent.HasIndex(entity => new { entity.TreadmillMaintenancePolicyId, entity.PerformedAtUtc });
+    maintenanceEvent.HasOne(entity => entity.Policy).WithMany(entity => entity.Events)
+      .HasForeignKey(entity => entity.TreadmillMaintenancePolicyId)
+      .OnDelete(DeleteBehavior.Cascade);
   }
 
   private static void ConfigureGarmin(ModelBuilder modelBuilder)
@@ -199,7 +233,7 @@ public sealed class TreadmillRunnerDbContext(
     var uploadJob = modelBuilder.Entity<GarminActivityUploadJobEntity>();
     uploadJob.ToTable("GarminActivityUploadJobs", table =>
     {
-      table.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed')");
+      table.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin')");
       table.HasCheckConstraint("CK_GarminActivityUploadJobs_Attempts", "\"AttemptCount\" >= 0 AND \"AttemptCount\" <= 3");
       table.HasCheckConstraint("CK_GarminActivityUploadJobs_Key", "length(\"IdempotencyKey\") = 64");
     });
@@ -517,16 +551,19 @@ public sealed class TreadmillRunnerDbContext(
       table.HasCheckConstraint("CK_WorkoutSessions_Distance", "\"DistanceKilometers\" >= 0");
       table.HasCheckConstraint("CK_WorkoutSessions_Calories", "\"EstimatedCalories\" >= 0");
       table.HasCheckConstraint("CK_WorkoutSessions_Rpe", "\"PerceivedExertion\" IS NULL OR (\"PerceivedExertion\" >= 1 AND \"PerceivedExertion\" <= 10)");
+      table.HasCheckConstraint("CK_WorkoutSessions_Origin", "\"SessionOrigin\" IN ('Legacy', 'Hardware', 'Simulator', 'SystemTest')");
     });
     session.HasKey(entity => entity.Id);
     session.Property(entity => entity.State).HasMaxLength(40);
     session.Property(entity => entity.UserProfileName).HasMaxLength(100);
     session.Property(entity => entity.WorkoutTitle).HasMaxLength(160);
     session.Property(entity => entity.SelectionSource).HasMaxLength(20);
+    session.Property(entity => entity.SessionOrigin).HasMaxLength(20);
     session.Property(entity => entity.MetricAlgorithmVersion).HasMaxLength(60);
     session.Property(entity => entity.DebriefNote).HasMaxLength(1000);
     session.HasIndex(entity => new { entity.UserProfileId, entity.ArmedAtUtc });
     session.HasIndex(entity => entity.State);
+    session.HasIndex(entity => new { entity.UserProfileId, entity.SessionOrigin, entity.EndedAtUtc });
     session.HasIndex(entity => new { entity.WorkoutProgramRunId, entity.WorkoutProgramItemId })
       .IsUnique()
       .HasFilter("\"State\" = 'Completed' AND \"WorkoutProgramRunId\" IS NOT NULL");

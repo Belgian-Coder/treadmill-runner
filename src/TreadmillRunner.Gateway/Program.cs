@@ -17,6 +17,8 @@ using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Gateway.Updates;
 using TreadmillRunner.Gateway.Garmin;
 using Microsoft.AspNetCore.DataProtection;
+using TreadmillRunner.Core.System;
+using TreadmillRunner.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -92,6 +94,7 @@ builder.Services.AddScoped<IWorkoutProgramStore, WorkoutProgramStore>();
 builder.Services.AddScoped<IOperationReceiptStore, OperationReceiptStore>();
 builder.Services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
 builder.Services.AddScoped<IBleReliabilityStore, BleReliabilityStore>();
+builder.Services.AddScoped<ITreadmillMaintenanceStore, TreadmillMaintenanceStore>();
 builder.Services.AddSingleton<IGarminStore, GarminStore>();
 builder.Services.AddSingleton<IGarminWatchBindingStore, GarminWatchBindingStore>();
 builder.Services.AddSingleton<IGarminActivityUploadStore, GarminActivityUploadStore>();
@@ -167,6 +170,61 @@ builder.Services.AddSingleton<ILiveSnapshotSource>(static services => services.G
 builder.Services.AddHostedService(static services => services.GetRequiredService<LiveSessionCoordinator>());
 
 var app = builder.Build();
+DateTimeOffset serviceStartedAtUtc = DateTimeOffset.UtcNow;
+
+app.Use(async (context, next) =>
+{
+  bool mutation = !HttpMethods.IsGet(context.Request.Method) &&
+    !HttpMethods.IsHead(context.Request.Method) &&
+    !HttpMethods.IsOptions(context.Request.Method);
+  bool browserApiMutation = mutation && context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) &&
+    context.Request.Headers.ContainsKey("Sec-Fetch-Site");
+  bool hasFingerprint = context.Request.Headers.TryGetValue(ClientRuntimeState.HeaderName, out var fingerprint);
+  // Browser fetches always send Sec-Fetch-Site. Non-browser local operator and watch clients are
+  // intentionally exempt unless they opt into the build contract by sending the fingerprint header.
+  if (mutation && (browserApiMutation || hasFingerprint) &&
+      (!hasFingerprint || !string.Equals(fingerprint.ToString(), AppBuildInfo.Fingerprint, StringComparison.Ordinal)))
+  {
+    context.Response.StatusCode = StatusCodes.Status409Conflict;
+    context.Response.Headers["X-TreadmillRunner-Server-Build"] = AppBuildInfo.Fingerprint;
+    await context.Response.WriteAsJsonAsync(new
+    {
+      type = "https://treadmillrunner.local/problems/client-update-required",
+      title = "Client update required",
+      status = StatusCodes.Status409Conflict,
+      code = "ClientUpdateRequired",
+      detail = "Reload the application before changing state.",
+    });
+    return;
+  }
+  await next();
+});
+
+app.Use(async (context, next) =>
+{
+  string path = context.Request.Path.Value ?? string.Empty;
+  if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
+      path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/manifest.webmanifest", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/runner-sound.js", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/apple-touch-icon-180.png", StringComparison.OrdinalIgnoreCase) ||
+      path.StartsWith("/app-icon-", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/_framework/blazor.web.js", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/_framework/resource-collection.js", StringComparison.OrdinalIgnoreCase) ||
+      string.IsNullOrEmpty(Path.GetExtension(path)))
+  {
+    context.Response.OnStarting(static state =>
+    {
+      HttpResponse response = (HttpResponse)state;
+      response.Headers.CacheControl = "no-store";
+      response.Headers.Pragma = "no-cache";
+      response.Headers.Expires = "0";
+      return Task.CompletedTask;
+    }, context.Response);
+  }
+  await next();
+});
 
 app.Use(async (context, next) =>
 {
@@ -241,8 +299,15 @@ app.MapHealthChecks("/health/ble", new Microsoft.AspNetCore.Diagnostics.HealthCh
   Predicate = static check => check.Tags.Contains("ble", StringComparer.Ordinal),
 });
 app.MapGet("/api/live/snapshot", static (ILiveSnapshotSource source) => TypedResults.Ok(source.Current));
+app.MapGet("/api/system/version", () => Results.Ok(new
+{
+  releaseVersion = AppBuildInfo.ReleaseVersion,
+  buildFingerprint = AppBuildInfo.Fingerprint,
+  serviceStartedAtUtc,
+})).DisableHttpMetrics();
 app.MapBleDiagnostics();
 app.MapDeviceEnrollments();
+app.MapTreadmillMaintenance();
 app.MapProfilePlanning();
 app.MapWorkoutPlanning();
 app.MapWorkoutSetPlanning();

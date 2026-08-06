@@ -65,6 +65,44 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Daily_use_migration_classifies_existing_sessions_from_valid_configuration_json()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    Guid profileId = Guid.NewGuid();
+    Guid workoutId = Guid.NewGuid();
+    Guid revisionId = Guid.NewGuid();
+    Guid hardwareId = Guid.NewGuid();
+    Guid simulatorId = Guid.NewGuid();
+    Guid testId = Guid.NewGuid();
+    Guid legacyId = Guid.NewGuid();
+    await using (var oldContext = await factory.CreateDbContextAsync())
+    {
+      IMigrator migrator = oldContext.GetService<IMigrator>();
+      await migrator.MigrateAsync("20260805150219_AddBleReliabilityIncidents");
+      string now = "2026-08-06 10:00:00+00:00";
+      await oldContext.Database.ExecuteSqlRawAsync(
+        "INSERT INTO UserProfiles (Id,DisplayName,NormalizedDisplayName,UnitSystem,WeightKilograms,MaximumHeartRateBpm,MaximumSpeedKph,HeartRateIncreaseStepKph,HeartRateIncreaseCooldownSeconds,HeartRateDecreaseStepKph,HeartRateDecreaseCooldownSeconds,Version,IsArchived,ArchivedAtUtc,CreatedAtUtc,UpdatedAtUtc) VALUES ({0},'Marc','MARC','Metric',75,190,18,0.2,30,0.5,15,1,0,NULL,{7},{7});" +
+        "INSERT INTO Workouts (Id,Name,Kind,CreatedAtUtc,IsArchived) VALUES ({1},'Existing workout','Structured',{7},0);" +
+        "INSERT INTO WorkoutRevisions (Id,WorkoutId,RevisionNumber,DefinitionJson,ContentSha256,CreatedAtUtc) VALUES ({2},{1},1,'{{}}','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',{7});" +
+        "INSERT INTO WorkoutSessions (Id,UserProfileId,UserProfileName,WorkoutRevisionId,SelectionSource,WorkoutTitle,State,ArmedAtUtc,StartedAtUtc,EndedAtUtc,DurationSeconds,DistanceKilometers,EstimatedCalories,AverageHeartRateBpm,MaximumHeartRateBpm,AverageSpeedKph,AverageInclinePercent,MetricAlgorithmVersion,ControllerConfigurationJson,PerceivedExertion,DebriefNote,DebriefUpdatedAtUtc) VALUES " +
+        "({3},{0},'Marc',{2},'Legacy','Hardware','Completed',{7},{7},{7},60,0.1,1,NULL,NULL,6,0,'v1','{{\"mode\":\"hardware:ftms:Ftms\"}}',NULL,NULL,NULL)," +
+        "({4},{0},'Marc',{2},'Legacy','Simulator','Completed',{7},{7},{7},60,0.1,1,NULL,NULL,6,0,'v1','{{\"mode\":\"simulator\"}}',NULL,NULL,NULL)," +
+        "({5},{0},'Marc',{2},'Legacy','Test','Completed',{7},{7},{7},60,0.1,1,NULL,NULL,6,0,'v1','{{\"mode\":\"GarminUploadTest\"}}',NULL,NULL,NULL)," +
+        "({6},{0},'Marc',{2},'Legacy','Legacy','Completed',{7},{7},{7},60,0.1,1,NULL,NULL,6,0,'v1','not-json',NULL,NULL,NULL);",
+        profileId, workoutId, revisionId, hardwareId, simulatorId, testId, legacyId, now);
+      await migrator.MigrateAsync();
+    }
+
+    await using var context = await factory.CreateDbContextAsync();
+    Dictionary<Guid, string> origins = await context.WorkoutSessions.AsNoTracking()
+      .ToDictionaryAsync(item => item.Id, item => item.SessionOrigin);
+    Assert.Equal("Hardware", origins[hardwareId]);
+    Assert.Equal("Simulator", origins[simulatorId]);
+    Assert.Equal("SystemTest", origins[testId]);
+    Assert.Equal("Legacy", origins[legacyId]);
+  }
+
+  [Fact]
   public async Task Initial_migration_creates_reviewed_schema_and_required_pragmas()
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
@@ -72,7 +110,7 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
 
     await context.Database.MigrateAsync();
 
-    Assert.Equal(12, (await context.Database.GetAppliedMigrationsAsync()).Count());
+    Assert.Equal(13, (await context.Database.GetAppliedMigrationsAsync()).Count());
     Assert.Equal("wal", await ExecuteScalarAsync<string>(context, "PRAGMA journal_mode;"));
     Assert.Equal(1L, await ExecuteScalarAsync<long>(context, "PRAGMA foreign_keys;"));
     Assert.Equal(5000L, await ExecuteScalarAsync<long>(context, "PRAGMA busy_timeout;"));
@@ -106,6 +144,8 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
       "GarminWatchBindings",
       "GarminActivityUploadAccounts",
       "GarminActivityUploadJobs",
+      "TreadmillMaintenancePolicies",
+      "TreadmillMaintenanceEvents",
       "OperationReceipts");
   }
 

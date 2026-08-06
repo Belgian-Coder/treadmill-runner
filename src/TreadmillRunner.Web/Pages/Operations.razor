@@ -42,6 +42,7 @@
                     }
                     <code class="app-access-url">@candidate.Url</code>
                     <button class="secondary-action" type="button" @onclick="CopyAccessUrlAsync">Copy address</button>
+                    <details class="advanced-settings"><summary>Install on iPhone Home Screen</summary><p>Open this address in Safari, tap Share, then <strong>Add to Home Screen</strong>. The installed app still requires this NUC and household Wi-Fi; it does not cache workouts or controls for offline use.</p></details>
                     @if (!candidate.IsSecure)
                     {
                         <p class="field-help">This private address uses HTTP. Screen stay-awake on iPhone can require HTTPS; configure <code>Gateway:PublicUrl</code> with a trusted local HTTPS address to make that address selectable here.</p>

@@ -3,6 +3,7 @@
 @using System.Globalization
 @using System.Text
 @inject HttpClient Http
+@inject NavigationManager Navigation
 
 <PageTitle>Session detail · TreadmillRunner</PageTitle>
 
@@ -26,7 +27,39 @@ else
         <section class="controls-card" aria-label="Session exports">
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.csv")" download>Download CSV</a>
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.fit")" download>Download FIT Activity</a>
+            <button class="touch-action danger-action" type="button" disabled="@previewLoading" @onclick="LoadDeletionPreviewAsync">@(previewLoading ? "Checking…" : "Delete local session")</button>
         </section>
+        @if (deletionPreview is null && !string.IsNullOrWhiteSpace(deletionMessage))
+        {
+            <p class="field-error" role="status">@deletionMessage</p>
+        }
+
+        @if (deletionPreview is not null)
+        {
+            <section class="panel-card deletion-preview" aria-labelledby="deletion-preview-title">
+                <h2 id="deletion-preview-title">Permanent deletion preview</h2>
+                <p>@deletionPreview.Reason</p>
+                <dl class="device-facts">
+                    <div><dt>Samples</dt><dd>@deletionPreview.SampleCount</dd></div>
+                    <div><dt>Events</dt><dd>@deletionPreview.EventCount</dd></div>
+                    <div><dt>Origin</dt><dd>@deletionPreview.Origin</dd></div>
+                    <div><dt>Garmin</dt><dd>@(deletionPreview.GarminStatus ?? "No upload job")</dd></div>
+                </dl>
+                @if (deletionPreview.MaintenanceDistanceImpactKilometers > 0)
+                {
+                    <p class="field-error">Deleting this record removes @deletionPreview.MaintenanceDistanceImpactKilometers.ToString("0.00") km from the app-tracked maintenance total.</p>
+                }
+                @if (deletionPreview.GarminRemoteActivityMayRemain)
+                {
+                    <p class="field-error"><strong>This deletes local data only.</strong> Delete any uploaded test activity separately in Garmin Connect.</p>
+                }
+                <div class="form-actions">
+                    <button class="touch-action danger-action" type="button" disabled="@(!deletionPreview.CanDelete || deleting)" @onclick="DeleteSessionAsync">@(deleting ? "Deleting…" : "Permanently delete")</button>
+                    <button class="touch-action secondary-action" type="button" @onclick="CancelDeletion">Cancel</button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(deletionMessage)) { <p class="field-error" role="status">@deletionMessage</p> }
+            </section>
+        }
 
         <section class="route-card">
             <h2>Planned versus actual</h2>
@@ -112,6 +145,11 @@ else
     [Parameter] public Guid SessionId { get; set; }
     private StoredWorkoutSessionView? session;
     private int speedAxisMaximum = 10;
+    private HistoryDeletionPreview? deletionPreview;
+    private Guid deletionOperationId;
+    private bool previewLoading;
+    private bool deleting;
+    private string deletionMessage = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -120,6 +158,63 @@ else
             ? session.Samples.SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }).Max()
             : 0;
         speedAxisMaximum = (int)Math.Ceiling(Math.Max(10, observedMaximum));
+    }
+
+    private async Task LoadDeletionPreviewAsync()
+    {
+        if (session is null) return;
+        deletionMessage = string.Empty;
+        previewLoading = true;
+        try
+        {
+            deletionOperationId = Guid.NewGuid();
+            deletionPreview = await Http.GetFromJsonAsync<HistoryDeletionPreview>(
+                $"api/history/{SessionId}/deletion-preview?profileId={session.Definition.UserProfileId}");
+            if (deletionPreview is null) deletionMessage = "The deletion preview is unavailable. No local data was changed.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            deletionPreview = null;
+            deletionMessage = "The gateway is unavailable. No local data was changed.";
+        }
+        finally { previewLoading = false; }
+    }
+
+    private async Task DeleteSessionAsync()
+    {
+        if (session is null || deletionPreview is null || !deletionPreview.CanDelete) return;
+        deleting = true;
+        deletionMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/history/{SessionId}/delete", new
+            {
+                operationId = deletionOperationId,
+                profileId = session.Definition.UserProfileId,
+                expectedRevision = deletionPreview.Revision,
+                confirmed = true,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/history", replace: true);
+                return;
+            }
+            deletionMessage = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                ? "The session or upload state changed. Review the deletion preview again."
+                : "The local session could not be deleted.";
+        }
+        catch (HttpRequestException)
+        {
+            deletionMessage = "The gateway is unavailable. No local data was deleted.";
+        }
+        finally { deleting = false; }
+    }
+
+    private void CancelDeletion()
+    {
+        deletionPreview = null;
+        deletionMessage = string.Empty;
+        deletionOperationId = Guid.Empty;
     }
 
     private string BuildSpeedPath(Func<SessionSample, double?> selector)

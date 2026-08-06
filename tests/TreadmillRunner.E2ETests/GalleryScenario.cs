@@ -112,6 +112,7 @@ public sealed record GalleryScenario(
     await page.RouteAsync("**/api/devices/enrollments", route => FulfillJsonAsync(route, DeviceEnrollments()));
     await page.RouteAsync("**/api/devices/status*", route => FulfillJsonAsync(route, DeviceStatus()));
     await page.RouteAsync("**/api/devices/reliability*", route => FulfillJsonAsync(route, DeviceReliability()));
+    await page.RouteAsync("**/api/devices/treadmill/maintenance", route => FulfillJsonAsync(route, MaintenanceDue()));
     await page.RouteAsync("**/api/planning/workouts/reuse*", route => FulfillJsonAsync(route, WorkoutReuse()));
     await page.RouteAsync("**/api/planning/workout-sets/import/preview", route => FulfillJsonAsync(route, WorkoutSetPreview()));
     await page.RouteAsync("**/api/updates/status", route => FulfillJsonAsync(route, UpdateStatus()));
@@ -205,13 +206,18 @@ public sealed record GalleryScenario(
       {
         await FulfillJsonAsync(route, WeeklyHistory());
       }
+      else if (path.Equals($"/api/history/{HistorySessionId:D}/deletion-preview", StringComparison.OrdinalIgnoreCase))
+      {
+        await FulfillJsonAsync(route, DeletionPreview());
+      }
       else if (path.Equals($"/api/history/{HistorySessionId:D}", StringComparison.OrdinalIgnoreCase))
       {
         await FulfillJsonAsync(route, HistoryDetail());
       }
       else if (path.Equals("/api/history", StringComparison.OrdinalIgnoreCase))
       {
-        await FulfillJsonAsync(route, HistorySummaries());
+        bool tests = new Uri(route.Request.Url).Query.Contains("includeTests=true", StringComparison.OrdinalIgnoreCase);
+        await FulfillJsonAsync(route, tests ? SystemTestSummaries() : HistorySummaries());
       }
       else
       {
@@ -219,6 +225,9 @@ public sealed record GalleryScenario(
       }
     });
   }
+
+  public Task InstallMaintenanceSetupRouteAsync(IPage page) =>
+    page.RouteAsync("**/api/devices/treadmill/maintenance", route => FulfillJsonAsync(route, MaintenanceSetup()));
 
   private object GarminStatus(string path)
   {
@@ -555,6 +564,42 @@ public sealed record GalleryScenario(
     issues = Array.Empty<string>(),
   };
 
+  private static object MaintenanceDue()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    return new
+    {
+      policy = new { id = Guid.Parse("80b048cf-eef7-41cf-9bea-e64ab85c1899"), deviceEnrollmentId = Guid.Parse("9d8764d1-0113-4728-8e5a-b18a8064f836"), deviceDisplayName = "Horizon Omega Z", intervalMonths = 3, distanceIntervalKilometers = 241.0, version = 3, updatedAtUtc = now.AddDays(-100) },
+      state = 2,
+      isDue = true,
+      appTrackedHardwareDistanceKilometers = 534.7,
+      nextDueAtUtc = now.AddDays(-8),
+      nextDueDistanceKilometers = 610.2,
+      remainingKilometers = 75.5,
+      lastEvent = new { id = Guid.Parse("e90dfeb9-21e9-468c-9949-36f0eb1a793f"), policyId = Guid.Parse("80b048cf-eef7-41cf-9bea-e64ab85c1899"), operationId = Guid.Parse("56e21b02-5555-49a4-a79f-bfed4b2fdcdd"), performedAtUtc = now.AddDays(-100), appDistanceBaselineKilometers = 369.2, note = "Deck inspected; silicone surface serviced.", createdAtUtc = now.AddDays(-100) },
+      events = new[] { new { id = Guid.Parse("e90dfeb9-21e9-468c-9949-36f0eb1a793f"), policyId = Guid.Parse("80b048cf-eef7-41cf-9bea-e64ab85c1899"), operationId = Guid.Parse("56e21b02-5555-49a4-a79f-bfed4b2fdcdd"), performedAtUtc = now.AddDays(-100), appDistanceBaselineKilometers = 369.2, note = "Deck inspected; silicone surface serviced.", createdAtUtc = now.AddDays(-100) } },
+      usageNotice = "Only hardware sessions recorded by TreadmillRunner count toward this distance. Console-only use is not visible to the app.",
+    };
+  }
+
+  private static object MaintenanceSetup()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    return new
+    {
+      policy = new { id = Guid.Parse("80b048cf-eef7-41cf-9bea-e64ab85c1899"), deviceEnrollmentId = Guid.Parse("9d8764d1-0113-4728-8e5a-b18a8064f836"), deviceDisplayName = "Horizon Omega Z", intervalMonths = 3, distanceIntervalKilometers = 241.0, version = 1, updatedAtUtc = now },
+      state = 0,
+      isDue = false,
+      appTrackedHardwareDistanceKilometers = 534.7,
+      nextDueAtUtc = (DateTimeOffset?)null,
+      nextDueDistanceKilometers = (double?)null,
+      remainingKilometers = (double?)null,
+      lastEvent = (object?)null,
+      events = Array.Empty<object>(),
+      usageNotice = "Only hardware sessions recorded by TreadmillRunner count toward this distance. Console-only use is not visible to the app.",
+    };
+  }
+
   private static object UpdateStatus() => new
   {
     state = "Available",
@@ -578,6 +623,12 @@ public sealed record GalleryScenario(
     ];
   }
 
+  private object[] SystemTestSummaries()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    return [HistorySummary(Guid.Parse("60d0485d-fc7a-4e55-b8a8-2574ab34f359"), FeaturedWorkoutRevisionId, "Garmin upload verification", 4, now.AddHours(-4), "00:01:00", .08, 120, 120, 4.5, 0, 3)];
+  }
+
   private object HistorySummary(
     Guid sessionId,
     Guid revisionId,
@@ -589,7 +640,8 @@ public sealed record GalleryScenario(
     double averageHeartRate,
     ushort maximumHeartRate,
     double averageSpeed,
-    double averageIncline) => new
+    double averageIncline,
+    int origin = 1) => new
     {
       sessionId,
       userProfileId = MarcProfileId,
@@ -606,7 +658,27 @@ public sealed record GalleryScenario(
       maximumHeartRateBpm = maximumHeartRate,
       averageSpeedKph = averageSpeed,
       averageInclinePercent = averageIncline,
+      origin,
     };
+
+  private object DeletionPreview() => new
+  {
+    sessionId = HistorySessionId,
+    userProfileId = MarcProfileId,
+    workoutTitle = FeaturedWorkoutName,
+    state = 4,
+    origin = 1,
+    sampleCount = 2052,
+    eventCount = 4,
+    distanceKilometers = 5.02,
+    maintenanceDistanceImpactKilometers = 5.02,
+    isProgramLinked = false,
+    garminStatus = (string?)null,
+    canDelete = true,
+    reason = "This session can be permanently deleted.",
+    revision = new string('a', 64),
+    garminRemoteActivityMayRemain = false,
+  };
 
   private static object WeeklyHistory()
   {

@@ -90,6 +90,7 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
         SELECT * FROM "WorkoutSessions"
         WHERE "UserProfileId" = {userProfileId}
           AND "State" = 'Completed'
+          AND "SessionOrigin" <> 'SystemTest'
           AND "EndedAtUtc" IS NOT NULL
         ORDER BY "EndedAtUtc" DESC
         LIMIT 1000

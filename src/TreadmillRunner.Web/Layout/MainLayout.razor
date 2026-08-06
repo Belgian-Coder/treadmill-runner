@@ -2,6 +2,8 @@
 
 @implements IAsyncDisposable
 @inject IJSRuntime JS
+@inject HttpClient Http
+@inject TreadmillRunner.Web.ClientRuntimeState Runtime
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
@@ -37,6 +39,20 @@
 </header>
 
 <main id="main-content" class="app-shell" tabindex="-1">
+    @if (Runtime.UpdateRequired)
+    {
+        <section class="runtime-banner runtime-banner--update" role="alert">
+            <span><strong>Update ready</strong> — reload before continuing.</span>
+            <button type="button" @onclick="ReloadAsync">Reload</button>
+        </section>
+    }
+    else if (!Runtime.IsConnected)
+    {
+        <section class="runtime-banner" role="alert">
+            <strong>Gateway disconnected — reconnecting.</strong>
+            <span>Controls are unavailable. Bluetooth disconnect is never a stop mechanism.</span>
+        </section>
+    }
     @Body
 </main>
 
@@ -47,14 +63,47 @@
 </div>
 
 @code {
+    private CancellationTokenSource? monitorCancellation;
+    private DotNetObjectReference<MainLayout>? selfReference;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await JS.InvokeVoidAsync("treadmillRunnerView.initializeAutoHideHeader", "site-header");
+        if (!firstRender) return;
+        Runtime.Changed += RuntimeChanged;
+        await JS.InvokeVoidAsync("treadmillRunnerView.initializeAutoHideHeader", "site-header");
+        selfReference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("treadmillRunnerRuntime.initialize", selfReference);
+        monitorCancellation = new CancellationTokenSource();
+        await Runtime.CheckAsync(Http, monitorCancellation.Token);
+        _ = MonitorVersionAsync(monitorCancellation.Token);
     }
+
+    [JSInvokable]
+    public async Task BrowserVisibleAsync() => await Runtime.CheckAsync(Http);
+
+    private async Task MonitorVersionAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(60));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+                await Runtime.CheckAsync(Http, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private void RuntimeChanged() => _ = InvokeAsync(StateHasChanged);
+    private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reload", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
 
     public async ValueTask DisposeAsync()
     {
+        Runtime.Changed -= RuntimeChanged;
+        monitorCancellation?.Cancel();
         try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeAutoHideHeader"); }
         catch (JSDisconnectedException) { }
+        try { await JS.InvokeVoidAsync("treadmillRunnerRuntime.dispose"); }
+        catch (JSDisconnectedException) { }
+        selfReference?.Dispose();
+        monitorCancellation?.Dispose();
     }
 }

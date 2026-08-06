@@ -1,9 +1,14 @@
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using TreadmillRunner.Web.Planning;
+using TreadmillRunner.Web;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
-builder.Services.AddScoped(_ => new HttpClient
+builder.Services.AddScoped<ClientRuntimeState>();
+builder.Services.AddScoped(services => new HttpClient(new ClientBuildFingerprintHandler(services.GetRequiredService<ClientRuntimeState>())
+{
+  InnerHandler = new HttpClientHandler(),
+})
 {
   BaseAddress = new Uri(builder.HostEnvironment.BaseAddress),
 });

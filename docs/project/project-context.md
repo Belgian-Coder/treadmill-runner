@@ -4,14 +4,14 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # Project context
 
 ## Purpose and current milestone
 
-Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-001 is the simulator foundation, TR-003/003B provide local planning and ordered programs, TR-004 provides the authoritative runner flow, TR-005 adds real read-only telemetry, TR-006B/C add fail-closed FTMS control, TR-007 provides recovery and signed UI updates, TR-015 adds origin-bound GitHub Releases and signed offline update import, and TR-017 adds fast reuse, generated-set import, observable wake lock, local QR access, durable BLE reliability/battery telemetry, and safe database integrity maintenance. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; Pause and vendor motion remain disabled.
+Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-001 is the simulator foundation, TR-003/003B provide local planning and ordered programs, TR-004 provides the authoritative runner flow, TR-005 adds real read-only telemetry, TR-006B/C add fail-closed FTMS control, TR-007 provides recovery and signed UI updates, TR-015 adds origin-bound GitHub Releases and signed offline update import, TR-017 adds fast reuse and local reliability, and TR-021 adds test-session hygiene, stale-client blocking, browser-local drafts, an installable network-only phone shell, and treadmill maintenance tracking. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; Pause and vendor motion remain disabled.
 
 ## Load first
 
@@ -80,3 +80,5 @@ Source: [Mermaid](diagrams/project-context-structure.mmd)
 - TR-009 adds capability-aware target preflight, immutable session hardware snapshots, Polar-first source policy, system-level simulated HR automation, screen wake lock, `/health/ble`, and maintenance-locked semantic restore verification.
 - TR-013 adds isolated per-profile Garmin surfaces: official training publication remains approval-gated; unsupported completed-FIT upload is opt-in with protected tokens, enable watermark, atomic durable jobs, terminal duplicate/unknown handling, and no stored password; Connect IQ records only after explicit watch input and can read profile/session status only after trusted HTTPS pairing. The watch source/store package is prepared, while SDK/simulator/physical-watch/IQ Store acceptance remains external.
 - TR-017 adds exact-revision one-tap reuse, validated treadmill-workout v4 program import, local QR sharing, typed Screen Wake Lock status, bounded BLE reconnection/outage reports, optional HR battery, awaited startup/daily integrity checks, safe SQLite maintenance, and verified last-known-good backups. Its external workout skill remains read-only and is neither executed nor copied into the app.
+- TR-021 classifies Hardware/Simulator/SystemTest/Legacy sessions, hides system tests from normal totals and progression, supports guarded transactional local deletion, adds manual Found-in-Garmin acknowledgment, checks server/client build fingerprints, keeps editor drafts in bounded expiring browser storage, and tracks informational maintenance intervals from app-recorded hardware distance. It intentionally registers no service worker.
+- TR-020 permits the one-time experimental Garmin login/MFA from a direct private or link-local household peer as an explicit owner convenience decision. Public HTTP peers remain rejected, passwords/codes remain ephemeral, and the service retains only DPAPI-protected session tokens for unattended uploads. The app must never be port-forwarded or exposed to guest/public networks.

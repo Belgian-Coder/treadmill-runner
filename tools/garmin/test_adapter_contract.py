@@ -24,8 +24,11 @@ class ImportDispositionTests(unittest.TestCase):
         self.assertEqual("duplicate", result["kind"])
         self.assertNotIn("API Error", result["message"])
 
+    def test_library_success_status_without_remote_id_is_confirmed(self) -> None:
+        self.assertEqual({"state": "confirmed"}, interpret_import_result({"status": "uploaded"}))
+
     def test_fallback_empty_and_malformed_results_are_unknown(self) -> None:
-        for payload in ({"status": "uploaded"}, {}, None, {"detailedImportResult": {"successes": [{}]}}):
+        for payload in ({}, None, {"detailedImportResult": {"successes": [{}]}}):
             with self.subTest(payload=payload):
                 self.assertEqual("unknown", interpret_import_result(payload)["state"])
 

@@ -4,7 +4,7 @@ type: delivery-backlog
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # Story backlog
@@ -41,5 +41,7 @@ All implementation stories use the reusable `user-story-workflow`; no project-sp
 | TR-014 | Minimal iPhone live-run dashboard, meaningful chart axes, responsive populated gallery, and live-loop reliability/performance | deterministic scope implemented; final workflow validation in progress | No treadmill commands in automated validation; phone/tablet/desktop browser checks |
 | [TR-016](stories/tr-016-tag-driven-github-releases.md) | Local-only tagged signed GitHub releases with no Actions builds | completed | Signing key and all build work remain local; tags are immutable and never force-moved |
 | [TR-019](stories/tr-019-local-only-release-publishing.md) | Disable GitHub Actions completely and publish locally built packages directly | completed | No commit, pull request, manual dispatch, or tag can consume hosted minutes |
+| [TR-020](stories/tr-020-private-lan-garmin-sign-in.md) | Allow one-time experimental Garmin login/MFA from trusted household-LAN devices and retain unattended encrypted-token uploads | implemented and installed in 1.5.12; first live import outcome requires Garmin Connect review | Public HTTP remains rejected; private-LAN HTTP is unencrypted; the first test is Unknown/no-retry and must not be resent blindly |
+| [TR-021](stories/tr-021-daily-use-polish.md) | Daily-use history hygiene, Garmin acknowledgment, stale-client recovery, browser drafts, iPhone shell, and treadmill maintenance | completed; locally signed 1.5.13 prepared, not deployed | No treadmill commands, deployment, public release, long soak, or repeated power cycles |
 
 Every story owns acceptance mapping, failing-first tests where practical, deterministic validation, documentation delta, skipped hardware checks, and finish evidence.

@@ -9,6 +9,7 @@ using TreadmillRunner.Core.Live;
 using TreadmillRunner.Gateway.Health;
 using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Operations;
+using TreadmillRunner.Core.System;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -42,6 +43,39 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Equal(TreadmillRunner.Core.Sessions.SessionState.Idle, snapshot.SessionState);
     Assert.Equal(0, snapshot.SpeedKph);
     Assert.Null(snapshot.HeartRateBpm);
+  }
+
+  [Fact]
+  public async Task Version_and_entry_documents_are_not_cacheable_and_stale_mutations_are_rejected()
+  {
+    using HttpClient client = factory.CreateClient();
+    using HttpResponseMessage version = await client.GetAsync("/api/system/version");
+    Assert.Equal(HttpStatusCode.OK, version.StatusCode);
+    Assert.Contains("no-store", version.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+    Assert.Contains(AppBuildInfo.Fingerprint, await version.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    using HttpResponseMessage manifest = await client.GetAsync("/manifest.webmanifest");
+    Assert.Contains("no-store", manifest.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+    using HttpResponseMessage touchIcon = await client.GetAsync("/apple-touch-icon-180.png");
+    Assert.Contains("no-store", touchIcon.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/api/updates/check") { Content = JsonContent.Create(new { }) };
+    request.Headers.Add("X-TreadmillRunner-Client-Build", "stale-build");
+    using HttpResponseMessage stale = await client.SendAsync(request);
+    Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+    Assert.Equal(AppBuildInfo.Fingerprint, stale.Headers.GetValues("X-TreadmillRunner-Server-Build").Single());
+    Assert.Contains("ClientUpdateRequired", await stale.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+    using var missingRequest = new HttpRequestMessage(HttpMethod.Post, "/api/updates/check") { Content = JsonContent.Create(new { }) };
+    missingRequest.Headers.Add("Sec-Fetch-Site", "same-origin");
+    using HttpResponseMessage missing = await client.SendAsync(missingRequest);
+    Assert.Equal(HttpStatusCode.Conflict, missing.StatusCode);
+    Assert.Contains("ClientUpdateRequired", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+    using var matchingRequest = new HttpRequestMessage(HttpMethod.Post, "/api/updates/check") { Content = JsonContent.Create(new { }) };
+    matchingRequest.Headers.Add("Sec-Fetch-Site", "same-origin");
+    matchingRequest.Headers.Add("X-TreadmillRunner-Client-Build", AppBuildInfo.Fingerprint);
+    using HttpResponseMessage matching = await client.SendAsync(matchingRequest);
+    Assert.NotEqual(HttpStatusCode.Conflict, matching.StatusCode);
   }
 
   [Fact]

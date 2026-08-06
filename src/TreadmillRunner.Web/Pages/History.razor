@@ -10,13 +10,18 @@
         <p>Completed, stopped, interrupted, and faulted sessions remain available locally.</p>
     </header>
 
+    <div class="segmented-control history-mode" role="group" aria-label="History type">
+        <button type="button" class="@(showTests ? "secondary-action" : "primary-action")" aria-pressed="@((!showTests).ToString().ToLowerInvariant())" @onclick="() => SetTestModeAsync(false)">Runs</button>
+        <button type="button" class="@(showTests ? "primary-action" : "secondary-action")" aria-pressed="@(showTests.ToString().ToLowerInvariant())" @onclick="() => SetTestModeAsync(true)">Tests</button>
+    </div>
+
     @if (sessions.Count == 0)
     {
-        <p class="empty-state">No completed sessions for the selected runner yet.</p>
+        <p class="empty-state">@(showTests ? "No system-test activities are stored for this runner." : "No completed sessions for the selected runner yet.")</p>
     }
     else
     {
-        @if (weekly is not null)
+        @if (!showTests && weekly is not null)
         {
             <section class="weekly-summary-panel" aria-label="This week's completed running">
                 <div class="weekly-summary-heading"><strong>This week · all completed activity</strong><span>These totals are not changed by the history filters below.</span></div>
@@ -48,13 +53,13 @@
                     <option value="all">All time</option>
                 </select>
             </label>
-            <span class="history-result-count" role="status">@FilteredSessions.Count run@(FilteredSessions.Count == 1 ? string.Empty : "s")</span>
+            <span class="history-result-count" role="status">@FilteredSessions.Count @(showTests ? (FilteredSessions.Count == 1 ? "test" : "tests") : (FilteredSessions.Count == 1 ? "run" : "runs"))</span>
         </section>
         <div class="history-list">
             @foreach (SessionSummary item in FilteredSessions)
             {
                 <article class="history-card">
-                    <div><span class="status-chip">@item.Status</span><h2><a href="/history/@item.SessionId">@item.WorkoutTitle</a></h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p></div>
+                    <div><span class="status-chip">@(item.Origin == SessionOrigin.SystemTest ? "System test" : item.Status)</span><h2><a href="/history/@item.SessionId">@item.WorkoutTitle</a></h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p></div>
                     <dl>
                         <div><dt>Time</dt><dd>@item.Duration.ToString(@"hh\:mm\:ss")</dd></div>
                         <div><dt>Distance</dt><dd>@item.DistanceKilometers.ToString("0.00") km</dd></div>
@@ -78,12 +83,17 @@
     private string searchText = string.Empty;
     private string statusFilter = "all";
     private string periodFilter = "30";
+    private bool showTests;
+    private Guid? profileId;
 
     private IReadOnlyList<SessionSummary> FilteredSessions
     {
         get
         {
             IEnumerable<SessionSummary> filtered = sessions;
+            filtered = filtered.Where(session => showTests
+                ? session.Origin == SessionOrigin.SystemTest
+                : session.Origin != SessionOrigin.SystemTest);
             if (!string.IsNullOrWhiteSpace(searchText))
             {
                 filtered = filtered.Where(session => session.WorkoutTitle.Contains(searchText, StringComparison.CurrentCultureIgnoreCase));
@@ -103,12 +113,24 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (await ActiveProfile.GetAsync() is { } profileId)
-        {
-            sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={profileId}&take=5000")
-                ?? Array.Empty<SessionSummary>();
-            weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={profileId}");
-        }
+        profileId = await ActiveProfile.GetAsync();
+        await LoadAsync();
+    }
+
+    private async Task SetTestModeAsync(bool value)
+    {
+        if (showTests == value) return;
+        showTests = value;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (profileId is not { } selected) return;
+        sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={selected}&take=5000&includeTests={showTests.ToString().ToLowerInvariant()}")
+            ?? Array.Empty<SessionSummary>();
+        if (!showTests)
+            weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={selected}");
     }
 
     private static string HeartRateLabel(SessionSummary session)

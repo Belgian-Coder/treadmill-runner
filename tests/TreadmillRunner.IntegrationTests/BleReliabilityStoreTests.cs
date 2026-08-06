@@ -46,7 +46,7 @@ public sealed class BleReliabilityStoreTests : IAsyncLifetime
     Assert.Equal(3, incident.FailedAttemptCount);
     Assert.Equal(8, incident.RecoveryDuration!.Value.TotalSeconds);
     Assert.Equal(4.2, incident.MaximumReconnectDelaySeconds, precision: 3);
-    Assert.DoesNotContain("017E5A36", incident.LastSanitizedFault, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("RAW-DEVICE-ID-DO-NOT-LOG", incident.LastSanitizedFault, StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]

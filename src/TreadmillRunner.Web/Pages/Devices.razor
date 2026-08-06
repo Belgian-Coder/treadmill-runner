@@ -101,6 +101,63 @@
         }
     </section>
 
+    @if (maintenance is not null)
+    {
+        <section class="panel-card maintenance-panel" aria-labelledby="maintenance-title">
+            <div class="panel-heading">
+                <div><p class="eyebrow">Treadmill care</p><h2 id="maintenance-title">Maintenance</h2></div>
+                <span class="status-chip">@MaintenanceStateLabel(maintenance.State)</span>
+            </div>
+            @if (maintenance.State == TreadmillMaintenanceState.SetupRequired)
+            {
+                <p>Record the last belt/deck service to start reminders. No due warning is shown until a baseline exists.</p>
+            }
+            else
+            {
+                <dl class="device-facts">
+                    <div><dt>App-tracked hardware distance</dt><dd>@maintenance.AppTrackedHardwareDistanceKilometers.ToString("0.0") km</dd></div>
+                    <div><dt>Next date</dt><dd>@(maintenance.NextDueAtUtc?.ToLocalTime().ToString("d") ?? "Not set")</dd></div>
+                    <div><dt>Remaining</dt><dd>@(maintenance.RemainingKilometers is { } remaining ? $"{remaining:0.0} km" : "Not set")</dd></div>
+                    <div><dt>Last recorded</dt><dd>@(maintenance.LastEvent?.PerformedAtUtc.ToLocalTime().ToString("d") ?? "Not set")</dd></div>
+                </dl>
+            }
+            <p class="field-hint">@maintenance.UsageNotice</p>
+            <p class="field-error"><strong>Check the exact Omega Z manual before lubricating.</strong> Waxed surfaces must not be lubricated. The 3-month/241-km default applies only to Horizon silicone-surface guidance.</p>
+            <details class="advanced-settings">
+                <summary>Reminder settings and service history</summary>
+                <div class="integration-form-grid">
+                    <label class="field">Months<input type="number" min="1" max="24" @bind="maintenanceMonths" /></label>
+                    <label class="field">Distance (km)<input type="number" min="1" max="5000" step="1" @bind="maintenanceDistance" /></label>
+                </div>
+                <button class="secondary-action" type="button" disabled="@maintenanceBusy" @onclick="SaveMaintenancePolicyAsync">Save reminder</button>
+                <div class="integration-form-grid maintenance-record-form">
+                    <label class="field">Service date<input type="date" @bind="maintenanceDate" @bind:format="yyyy-MM-dd" /></label>
+                    <label class="field">Note (optional)<input maxlength="500" @bind="maintenanceNote" placeholder="Inspection, lubrication, or service" /></label>
+                </div>
+                <button class="primary-action" type="button" disabled="@maintenanceBusy" @onclick="RecordMaintenanceAsync">@(maintenanceBusy ? "Recording…" : "Record maintenance")</button>
+                @if (maintenance.Events.Count > 0)
+                {
+                    <ol class="event-list">
+                        @foreach (TreadmillMaintenanceEvent item in maintenance.Events)
+                        {
+                            <li><strong>@item.PerformedAtUtc.ToLocalTime().ToString("d")</strong> · baseline @item.AppDistanceBaselineKilometers.ToString("0.0") km@(string.IsNullOrWhiteSpace(item.Note) ? string.Empty : $" · {item.Note}")</li>
+                        }
+                    </ol>
+                }
+            </details>
+            @if (!string.IsNullOrWhiteSpace(maintenanceMessage)) { <p class="action-status" role="status">@maintenanceMessage</p> }
+        </section>
+    }
+    else if (!string.IsNullOrWhiteSpace(maintenanceLoadError))
+    {
+        <section class="panel-card device-card" aria-labelledby="maintenance-unavailable-title">
+            <p class="eyebrow">Treadmill care</p>
+            <h2 id="maintenance-unavailable-title">Maintenance status unavailable</h2>
+            <p class="field-error" role="status">@maintenanceLoadError</p>
+            <button class="secondary-action" type="button" @onclick="LoadMaintenanceAsync">Try again</button>
+        </section>
+    }
+
     <details class="panel-card advanced-settings">
         <summary>Bluetooth reliability report</summary>
         <p class="field-hint">A local, sanitized record of connection outages and recoveries. Raw Windows Bluetooth identifiers and identity fingerprints are never included.</p>
@@ -236,8 +293,105 @@
     private string scanMessage = "Run a scan while the Omega Z and Polar H10 are powered and advertising.";
     private string actionStatus = "Enrollment changes are available only while no workout is active.";
     private bool isScanning;
+    private TreadmillMaintenanceSnapshot? maintenance;
+    private int maintenanceMonths = 3;
+    private double maintenanceDistance = 241;
+    private DateTime maintenanceDate = DateTime.Today;
+    private string maintenanceNote = string.Empty;
+    private string maintenanceMessage = string.Empty;
+    private string maintenanceLoadError = string.Empty;
+    private bool maintenanceBusy;
+    private Guid maintenanceEventOperationId;
 
-    protected override async Task OnInitializedAsync() => await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7));
+    protected override async Task OnInitializedAsync() => await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7), LoadMaintenanceAsync());
+
+    private async Task LoadMaintenanceAsync()
+    {
+        maintenanceLoadError = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("api/devices/treadmill/maintenance");
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                maintenance = null;
+                return;
+            }
+            response.EnsureSuccessStatusCode();
+            maintenance = await response.Content.ReadFromJsonAsync<TreadmillMaintenanceSnapshot>();
+            if (maintenance is not null)
+            {
+                maintenanceMonths = maintenance.Policy.IntervalMonths;
+                maintenanceDistance = maintenance.Policy.DistanceIntervalKilometers;
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            maintenance = null;
+            maintenanceLoadError = "The gateway could not load maintenance data. No reminder settings were changed.";
+        }
+    }
+
+    private async Task SaveMaintenancePolicyAsync()
+    {
+        if (maintenance is null) return;
+        using HttpResponseMessage response = await Http.PutAsJsonAsync("api/devices/treadmill/maintenance/policy", new
+        {
+            operationId = Guid.NewGuid(),
+            intervalMonths = maintenanceMonths,
+            distanceIntervalKilometers = maintenanceDistance,
+            expectedVersion = maintenance.Policy.Version,
+        });
+        maintenanceMessage = response.IsSuccessStatusCode
+            ? "Maintenance reminder updated."
+            : await ReadFailureAsync(response, "The maintenance reminder could not be updated.");
+        if (response.IsSuccessStatusCode) await LoadMaintenanceAsync();
+    }
+
+    private async Task RecordMaintenanceAsync()
+    {
+        if (maintenance is null || maintenanceBusy)
+        {
+            if (maintenance is null) maintenanceMessage = "Choose a valid service date.";
+            return;
+        }
+        maintenanceBusy = true;
+        maintenanceEventOperationId = maintenanceEventOperationId == Guid.Empty ? Guid.NewGuid() : maintenanceEventOperationId;
+        try
+        {
+            DateTime local = DateTime.SpecifyKind(maintenanceDate.Date.AddHours(12), DateTimeKind.Local);
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/devices/treadmill/maintenance/events", new
+            {
+                operationId = maintenanceEventOperationId,
+                performedAtUtc = new DateTimeOffset(local).ToUniversalTime(),
+                note = maintenanceNote,
+                expectedPolicyVersion = maintenance.Policy.Version,
+            });
+            maintenanceMessage = response.IsSuccessStatusCode
+                ? "Maintenance recorded and the reminder baseline was reset."
+                : await ReadFailureAsync(response, "Maintenance could not be recorded.");
+            maintenanceEventOperationId = Guid.Empty;
+            if (response.IsSuccessStatusCode)
+            {
+                maintenanceNote = string.Empty;
+                await LoadMaintenanceAsync();
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            maintenanceMessage = "The result is unknown because the gateway became unavailable. Retry uses the same operation and cannot create a duplicate event.";
+        }
+        finally { maintenanceBusy = false; }
+    }
+
+    private static string MaintenanceStateLabel(TreadmillMaintenanceState state) => state switch
+    {
+        TreadmillMaintenanceState.SetupRequired => "Set up",
+        TreadmillMaintenanceState.Current => "Current",
+        TreadmillMaintenanceState.DueByDate => "Due by date",
+        TreadmillMaintenanceState.DueByDistance => "Due by distance",
+        TreadmillMaintenanceState.DueByDateAndDistance => "Due",
+        _ => state.ToString(),
+    };
 
     private async Task LoadReliabilityAsync(int days)
     {

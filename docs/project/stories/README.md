@@ -4,7 +4,7 @@ type: delivery-index
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-02
+updated: 2026-08-06
 ---
 
 # TreadmillRunner stories
@@ -22,3 +22,5 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-017 — Local daily-use reliability and workout reuse](tr-017-local-daily-use-reliability.md)
 - [TR-018 — Garmin activity-upload readiness and offline runtime](tr-018-garmin-activity-upload-readiness.md)
 - [TR-019 — Local-only release publishing](tr-019-local-only-release-publishing.md)
+- [TR-020 — Private-LAN Garmin sign-in](tr-020-private-lan-garmin-sign-in.md)
+- [TR-021 — Daily-use polish, data hygiene, and maintenance](tr-021-daily-use-polish.md)

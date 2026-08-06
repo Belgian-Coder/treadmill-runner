@@ -8,7 +8,7 @@
 <section class="profile-integration garmin-activity-upload" aria-labelledby="garmin-activity-title">
     <div class="panel-heading">
         <div><p class="eyebrow">Completed activities</p><h3 id="garmin-activity-title">Garmin activity upload</h3></div>
-        <span class="integration-badge integration-badge--unsupported">Unsupported</span>
+        <span class="integration-badge integration-badge--unsupported">Experimental</span>
     </div>
     <p class="integration-note"><strong>Optional and disabled by default.</strong> This uses Garmin's private consumer interface, which Garmin may change without notice. Known failures can be retried; an unknown upload outcome is never retried automatically.</p>
     @if (loading)
@@ -35,14 +35,14 @@
             <label class="field">Garmin password<input type="password" autocomplete="current-password" maxlength="512" @bind="password" /></label>
         </div>
         <label class="choice-row"><input type="checkbox" @bind="enableAfterConnect" /> Enable automatic upload after connecting</label>
-        <p class="integration-note">The password is sent only to an isolated one-time login process and is never stored. Credential entry is accepted only over HTTPS or on the NUC itself.</p>
-        <button class="primary-action" type="button" @onclick="ConnectAsync" disabled="@(busy || string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))">@(busy ? "Connecting…" : "Connect unsupported upload")</button>
+        <p class="integration-note"><strong>Private-LAN HTTP setup is allowed but is not encrypted.</strong> Use this only on your trusted household network and never expose or port-forward TreadmillRunner. The password is sent once to the isolated login process and is never stored.</p>
+        <button class="primary-action" type="button" @onclick="ConnectAsync" disabled="@(busy || string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))">@(busy ? "Connecting…" : "Connect Garmin")</button>
     }
     else
     {
         <div class="integration-account">
             <strong>@status.AccountLabel</strong>
-            <span>@(status.Enabled ? "Automatic upload enabled" : "Automatic upload disabled") · @status.Confirmed confirmed · @status.Pending pending</span>
+            <span>@(status.Enabled ? "Automatic upload enabled" : "Automatic upload disabled") · @status.Confirmed confirmed · @status.FoundInGarmin found manually · @status.Pending pending</span>
             @if (status.Unknown > 0) { <small class="field-error">@status.Unknown unknown outcome(s)—review before dismissing.</small> }
             @if (status.Failed > 0) { <small class="field-error">@status.Failed known failure(s) can be retried.</small> }
             @if (!string.IsNullOrWhiteSpace(status.LastError)) { <small class="field-error" role="status">@status.LastError</small> }
@@ -70,6 +70,16 @@
                             <div class="form-actions">
                                 <a class="secondary-action" href="@($"history/{job.WorkoutSessionId}")">Open history</a>
                                 @if (job.CanRetry) { <button class="secondary-action" type="button" @onclick="() => RetryAsync(job.Id)">Retry known failure</button> }
+                                @if (job.Status == "Unknown" && confirmFoundJobId == job.Id)
+                                {
+                                    <span class="field-error" role="status">Confirm only after you visually found this activity in Garmin Connect.</span>
+                                    <button class="touch-action primary-action" type="button" disabled="@busy" @onclick="() => AcknowledgeFoundAsync(job.Id)">Confirm found</button>
+                                    <button class="touch-action secondary-action" type="button" disabled="@busy" @onclick="() => confirmFoundJobId = null">Cancel</button>
+                                }
+                                else if (job.Status == "Unknown")
+                                {
+                                    <button class="primary-action" type="button" @onclick="() => confirmFoundJobId = job.Id">Found in Garmin</button>
+                                }
                                 @if (job.Status is "Failed" or "Unknown") { <button class="secondary-action" type="button" @onclick="() => DismissAsync(job.Id)">Dismiss</button> }
                             </div>
                         </article>
@@ -124,6 +134,7 @@
     private GarminWatchBindingView? watchBinding;
     private List<GarminActivityJobView> jobs = [];
     private bool loading = true, watchLoading = true, busy, enableAfterConnect, confirmDisconnect;
+    private Guid? confirmFoundJobId;
     private string email = string.Empty, password = string.Empty, mfaCode = string.Empty, watchLabel = "Garmin watch", message = string.Empty, watchMessage = string.Empty, oneTimeWatchToken = string.Empty;
     private string jobsLoadError = string.Empty, watchLoadError = string.Empty;
     private Guid? challengeId;
@@ -195,7 +206,12 @@
         {
             using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/connect", new { email, password, enabled = enableAfterConnect });
             password = string.Empty;
-            if (response.StatusCode == HttpStatusCode.UpgradeRequired) { message = "For credential safety, open this page on the NUC itself or configure HTTPS first."; return; }
+            if (response.StatusCode == HttpStatusCode.UpgradeRequired)
+            {
+                GarminActivityErrorView? error = await ReadErrorAsync(response);
+                message = error?.Error ?? "Use a private household-network address or HTTPS to connect Garmin.";
+                return;
+            }
             if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
                 GarminActivityErrorView? error = await response.Content.ReadFromJsonAsync<GarminActivityErrorView>();
@@ -204,7 +220,12 @@
                 return;
             }
             GarminActivityConnectResultView? result = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<GarminActivityConnectResultView>() : null;
-            if (result is null) { message = "Garmin authentication could not be started."; return; }
+            if (result is null)
+            {
+                GarminActivityErrorView? error = await ReadErrorAsync(response);
+                message = error?.Error ?? "Garmin authentication could not be started.";
+                return;
+            }
             challengeId = result.ChallengeId; message = result.Message;
             if (result.State == "Connected") await LoadAsync();
         }
@@ -213,6 +234,12 @@
             message = "The gateway is unavailable; Garmin authentication was not completed.";
         }
         finally { password = string.Empty; busy = false; }
+    }
+
+    private static async Task<GarminActivityErrorView?> ReadErrorAsync(HttpResponseMessage response)
+    {
+        try { return await response.Content.ReadFromJsonAsync<GarminActivityErrorView>(); }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException) { return null; }
     }
 
     private async Task CompleteMfaAsync()
@@ -238,6 +265,19 @@
     private async Task DisconnectAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/disconnect", new { expectedVersion = version }), "The upload account could not be disconnected.")) { confirmDisconnect = false; await LoadAsync(); } }
     private async Task RetryAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/retry", null), "This job is not retryable or changed; refresh and review it.")) await LoadAsync(); }
     private async Task DismissAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/dismiss", null), "This job could not be dismissed.")) await LoadAsync(); }
+    private async Task AcknowledgeFoundAsync(Guid jobId)
+    {
+        if (confirmFoundJobId != jobId) return;
+        Guid operationId = Guid.NewGuid();
+        if (await SendAsync(
+            () => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/acknowledge-found", new { operationId }),
+            "Only an upload with an unknown outcome can be marked as found in Garmin."))
+        {
+            confirmFoundJobId = null;
+            await LoadAsync();
+            message = "Marked as found in Garmin. This is your acknowledgment, not provider confirmation, and it will not be retried.";
+        }
+    }
     private async Task PairWatchAsync()
     {
         busy = true; watchMessage = string.Empty;
@@ -285,9 +325,9 @@
         finally { busy = false; }
     }
 
-    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? AccountLabel, string State, int Pending, int Confirmed, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
+    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? AccountLabel, string State, int Pending, int Confirmed, int FoundInGarmin, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
     private static string FormatDuration(double? seconds) => seconds is null ? "duration unavailable" : TimeSpan.FromSeconds(seconds.Value).ToString(@"h\:mm\:ss");
-    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc);
+    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc, DateTimeOffset? AcknowledgedAtUtc);
     private sealed record GarminActivityConnectResultView(string State, Guid? ChallengeId, string? AccountLabel, string Message);
     private sealed record GarminActivityErrorView(string Error, string? AdapterState);
     private sealed record GarminWatchBindingView(Guid Id, Guid UserProfileId, string RunnerName, string DeviceLabel, DateTimeOffset CreatedAtUtc, DateTimeOffset? LastSeenAtUtc, int Version);

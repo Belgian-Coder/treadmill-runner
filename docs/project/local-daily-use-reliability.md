@@ -4,7 +4,7 @@ type: runbook
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # Local reliability, access, and generated workout sets
@@ -48,6 +48,14 @@ The gateway awaits an integrity pass before starting background writers, then re
 The flow runs bounded SQLite quick/full checks plus application semantic checks, performs a passive WAL checkpoint and `PRAGMA optimize`, removes only stale TreadmillRunner integrity-temp files, and promotes a SHA-256-verified last-known-good online backup. Three backups are retained by default (configurable from 2–10). Open **Backup and diagnostics** to download either a fresh full backup or the latest verified recovery backup. If corruption remains, readiness and Operations show recovery required; use the preview-before-restore flow. The app never deletes data or substitutes a backup automatically.
 
 Optional service settings are `Persistence__IntegrityCheckIntervalMinutes` (15–10080), `Persistence__IntegrityBackupRetention` (2–10), `Persistence__IntegrityBackupRoot`, and `Persistence__IntegrityStatusPath`.
+
+## Treadmill service reminders
+
+Open **Devices → Maintenance** after enrolling the treadmill. Record the most recent inspection/service once to establish the app-distance baseline; no due warning is shown before that baseline exists. The default reminder is the earlier of three months or 241 app-recorded hardware kilometres and can be changed. A due reminder on Run is advisory and never blocks preparation or controls.
+
+Only terminal hardware sessions recorded by TreadmillRunner count. Simulator and system-test sessions are excluded, both household profiles contribute, and console-only use is not visible. If an eligible historical hardware session is deleted, later recorded baselines are corrected transactionally so the remaining app distance stays consistent.
+
+Before applying lubricant, verify the exact Omega Z running-surface type in its manual. Horizon says waxed surfaces must not be lubricated; the three-month/241-km guidance applies only to its silicone surfaces.
 
 ## Troubleshooting evidence
 

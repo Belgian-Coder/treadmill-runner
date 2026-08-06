@@ -9,6 +9,14 @@ public enum WorkoutSelectionSource
   Program,
 }
 
+public enum SessionOrigin
+{
+  Legacy,
+  Hardware,
+  Simulator,
+  SystemTest,
+}
+
 public sealed record WorkoutSessionSelection(
   WorkoutSelectionSource Source,
   Guid? ProgramRunId = null,
@@ -28,7 +36,8 @@ public sealed record NewWorkoutSession
       DateTimeOffset armedAt,
       string controllerConfigurationJson,
       string metricAlgorithmVersion,
-      WorkoutSessionSelection? selection = null)
+      WorkoutSessionSelection? selection = null,
+      SessionOrigin origin = SessionOrigin.Legacy)
   {
     SessionContractValidation.RequireId(sessionId, nameof(sessionId));
     SessionContractValidation.RequireId(userProfileId, nameof(userProfileId));
@@ -54,6 +63,7 @@ public sealed record NewWorkoutSession
     ControllerConfigurationJson = controllerConfigurationJson.Trim();
     MetricAlgorithmVersion = metricAlgorithmVersion.Trim();
     Selection = selection;
+    Origin = origin;
   }
 
   public Guid SessionId { get; }
@@ -65,6 +75,7 @@ public sealed record NewWorkoutSession
   public string ControllerConfigurationJson { get; }
   public string MetricAlgorithmVersion { get; }
   public WorkoutSessionSelection Selection { get; }
+  public SessionOrigin Origin { get; }
 }
 
 public sealed record StoredWorkoutSession(
@@ -82,6 +93,41 @@ public sealed record StoredWorkoutSession(
     SessionDebrief? Debrief,
     IReadOnlyList<SessionSample> Samples,
     IReadOnlyList<SessionEvent> Events);
+
+public sealed record HistoryDeletionPreview(
+  Guid SessionId,
+  Guid UserProfileId,
+  string WorkoutTitle,
+  SessionState State,
+  SessionOrigin Origin,
+  int SampleCount,
+  int EventCount,
+  double DistanceKilometers,
+  double MaintenanceDistanceImpactKilometers,
+  bool IsProgramLinked,
+  string? GarminStatus,
+  bool CanDelete,
+  string Reason,
+  string Revision,
+  bool GarminRemoteActivityMayRemain);
+
+public sealed record DeleteHistorySessionOperation(
+  Guid OperationId,
+  Guid SessionId,
+  Guid UserProfileId,
+  string ExpectedRevision,
+  string RequestFingerprint,
+  DateTimeOffset RequestedAtUtc);
+
+public sealed record HistoryDeletionResult(
+  Guid SessionId,
+  bool Deleted,
+  int DeletedSampleCount,
+  int DeletedEventCount,
+  string? DeletedGarminStatus,
+  double RemovedMaintenanceDistanceKilometers,
+  bool GarminRemoteActivityMayRemain,
+  DateTimeOffset DeletedAtUtc);
 
 public interface ISessionStore
 {
@@ -110,6 +156,16 @@ public interface ISessionStore
   Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
     Guid userProfileId,
     int take = 50,
+    CancellationToken cancellationToken = default,
+    bool includeSystemTests = false);
+
+  Task<HistoryDeletionPreview?> PreviewDeletionAsync(
+    Guid sessionId,
+    Guid userProfileId,
+    CancellationToken cancellationToken = default);
+
+  Task<HistoryDeletionResult> DeleteAsync(
+    DeleteHistorySessionOperation operation,
     CancellationToken cancellationToken = default);
 
   Task<int> InterruptUnfinishedAsync(

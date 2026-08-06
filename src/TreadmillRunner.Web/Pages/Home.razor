@@ -10,6 +10,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ActiveProfileState ActiveProfile
+@inject ClientRuntimeState Runtime
 
 <PageTitle>TreadmillRunner</PageTitle>
 
@@ -236,6 +237,14 @@
             <p><strong>Safety key and physical Stop required.</strong><span class="desktop-safety-detail"> Remote Start appears only for an exact model and firmware with hardware-verified capability; otherwise use the physical console.</span></p>
         </section>
 
+        @if (maintenance?.IsDue == true)
+        {
+            <aside class="maintenance-advisory" role="status">
+                <p><strong>Treadmill maintenance is due.</strong> This reminder is informational and does not block your run.</p>
+                <a class="secondary-action compact-action" href="/devices">Review maintenance</a>
+            </aside>
+        }
+
         <section class="preflight-grid">
             <article class="selection-card">
                 <p class="eyebrow">Choose today’s run</p>
@@ -426,6 +435,7 @@
     private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
     private IReadOnlyList<CalendarSeriesView> calendarSeries = Array.Empty<CalendarSeriesView>();
     private IReadOnlyList<WorkoutReuseView> reusableWorkouts = Array.Empty<WorkoutReuseView>();
+    private TreadmillMaintenanceSnapshot? maintenance;
     private CalendarRangeView? planningCalendar;
     private Guid? selectedProfileId;
     private Guid? selectedRevisionId;
@@ -440,6 +450,7 @@
     private ControlLease? lease;
     private string holderId = string.Empty;
     private string connectionStatus = "Connecting to gateway";
+    private bool liveStateConnected;
     private string controlStatus = "Observer";
     private string actionStatus = "Select a runner and workout.";
     private int? perceivedEffort;
@@ -515,24 +526,25 @@
         }
     }
     private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
-    private bool CanTakeControl => preflight?.IsReady == true;
-    private bool CanArm => lease is not null && preflight?.IsReady == true;
-    private bool CanStart => lease is not null && session is
+    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected;
+    private bool CanTakeControl => ClientReady && preflight?.IsReady == true;
+    private bool CanArm => ClientReady && lease is not null && preflight?.IsReady == true;
+    private bool CanStart => ClientReady && lease is not null && session is
     {
         CanStartRemotely: true,
         Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
     };
-    private bool CanStop => !isStopPending && lease is not null && session?.CanStopRemotely == true && session.Live.SessionState is
+    private bool CanStop => ClientReady && !isStopPending && lease is not null && session?.CanStopRemotely == true && session.Live.SessionState is
         SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
-    private bool CanAdjustSpeed => !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
+    private bool CanAdjustSpeed => ClientReady && !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
-    private bool CanAdjustIncline => !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
+    private bool CanAdjustIncline => ClientReady && !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
-    private bool CanPause => !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
+    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
         session.Live.SessionState == SessionState.Running;
-    private bool CanResume => !isManualCommandPending && lease is not null && session?.CanStartRemotely == true &&
+    private bool CanResume => ClientReady && !isManualCommandPending && lease is not null && session?.CanStartRemotely == true &&
         session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume;
-    private bool CanSetAutomation => !isManualCommandPending && lease is not null &&
+    private bool CanSetAutomation => ClientReady && !isManualCommandPending && lease is not null &&
         session?.Live.SessionState == SessionState.Running;
     private bool CanSetSpeedAutomation => CanSetAutomation && session?.CanSetSpeedRemotely == true;
     private string CurrentStepLabel => session?.CurrentStep is { } step ? $"{step.Index + 1} of {step.TotalStepCount}" : "Complete";
@@ -554,6 +566,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        try { maintenance = await Http.GetFromJsonAsync<TreadmillMaintenanceSnapshot>("api/devices/treadmill/maintenance"); }
+        catch (HttpRequestException) { maintenance = null; }
         profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
         workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
         selectedProfileId = await ActiveProfile.GetAsync();
@@ -623,15 +637,17 @@
             }
             await InvokeAsync(StateHasChanged);
         });
-        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting to gateway");
-        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready");
-        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable");
+        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting to gateway", false);
+        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready", true);
+        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable", false);
         try
         {
             await hubConnection.StartAsync();
+            await SetConnectionAsync("Gateway ready", true);
         }
         catch (HttpRequestException)
         {
+            liveStateConnected = false;
             connectionStatus = "Gateway unavailable";
         }
     }
@@ -1385,8 +1401,9 @@
         _ => "check-waiting",
     };
 
-    private async Task SetConnectionAsync(string status)
+    private async Task SetConnectionAsync(string status, bool connected)
     {
+        liveStateConnected = connected;
         connectionStatus = status;
         await InvokeAsync(StateHasChanged);
     }

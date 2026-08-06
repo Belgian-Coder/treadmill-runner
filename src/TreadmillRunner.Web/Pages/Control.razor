@@ -8,6 +8,7 @@
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject ClientRuntimeState Runtime
 
 <PageTitle>@DashboardTitle · TreadmillRunner</PageTitle>
 
@@ -15,6 +16,7 @@
     <header class="dashboard-header control-page__header">
         <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
         <div class="control-header-actions">
+            <span class="connection-state" role="status">@connectionStatus</span>
             <HeartRateStatus Compact="true" />
             <span class="wake-lock-indicator @WakeLockIndicatorClass" role="status" aria-live="polite" aria-label="@WakeLockAccessibleLabel" title="@WakeLockAccessibleLabel">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -155,7 +157,7 @@
 
                 @if (lease is null)
                 {
-                    <button class="primary-action touch-action control-takeover" type="button" @onclick="TakeControlAsync" disabled="@isTakingControl">@(isTakingControl ? "Enabling…" : "Enable controls")</button>
+                    <button class="primary-action touch-action control-takeover" type="button" @onclick="TakeControlAsync" disabled="@(isTakingControl || !ClientReady)">@(isTakingControl ? "Enabling…" : "Enable controls")</button>
                 }
 
                 <section class="control-action-dock" aria-label="Treadmill motion controls">
@@ -243,6 +245,7 @@
     private ControlLease? lease;
     private string holderId = string.Empty;
     private string connectionStatus = "Connecting";
+    private bool liveStateConnected;
     private string controlStatus = "Observer";
     private string actionStatus = "Waiting for an active session.";
     private bool isTakingControl;
@@ -260,29 +263,30 @@
 
     private bool HasUnknownOutcome => session?.LastCommandResult?.Disposition == TreadmillCommandDisposition.Unknown;
     private bool HasController => lease is not null;
-    private bool CanStart => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected;
+    private bool CanStart => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
         CanStartRemotely: true,
         Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
     };
-    private bool CanResume => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    private bool CanResume => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
         CanStartRemotely: true,
         Live.SessionState: SessionState.PausedWaitingForPhysicalResume,
     };
-    private bool CanPause => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
+    private bool CanPause => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
         CanPauseRemotely: true,
         Live.SessionState: SessionState.Running,
     };
-    private bool CanStop => !isStopPending && HasController && session is not null &&
+    private bool CanStop => ClientReady && !isStopPending && HasController && session is not null &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanStopRemotely) && session.Live.SessionState is
         SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
-    private bool CanAdjustSpeed => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
+    private bool CanAdjustSpeed => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
-    private bool CanAdjustIncline => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
+    private bool CanAdjustIncline => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
-    private bool CanSetAutomation => !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController &&
+    private bool CanSetAutomation => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController &&
         session?.Live.SessionState == SessionState.Running;
     private bool CanSetSpeedAutomation => CanSetAutomation && session is not null &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
@@ -378,15 +382,17 @@
             }
             await InvokeAsync(StateHasChanged);
         });
-        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting");
-        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready");
-        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable");
+        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting", false);
+        hubConnection.Reconnected += _ => SetConnectionAsync("Gateway ready", true);
+        hubConnection.Closed += _ => SetConnectionAsync("Gateway unavailable", false);
         try
         {
             await hubConnection.StartAsync();
+            await SetConnectionAsync("Gateway ready", true);
         }
         catch (HttpRequestException)
         {
+            liveStateConnected = false;
             connectionStatus = "Gateway unavailable";
         }
     }
@@ -953,8 +959,9 @@
         }
     }
 
-    private async Task SetConnectionAsync(string status)
+    private async Task SetConnectionAsync(string status, bool connected)
     {
+        liveStateConnected = connected;
         connectionStatus = status;
         await InvokeAsync(StateHasChanged);
     }

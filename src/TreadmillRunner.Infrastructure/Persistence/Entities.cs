@@ -23,6 +23,31 @@ internal sealed class DeviceEnrollmentEntity
   public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
+internal sealed class TreadmillMaintenancePolicyEntity
+{
+  public Guid Id { get; set; }
+  public Guid DeviceEnrollmentId { get; set; }
+  public int IntervalMonths { get; set; } = 3;
+  public double DistanceIntervalKilometers { get; set; } = 241;
+  public int Version { get; set; }
+  public DateTimeOffset CreatedAtUtc { get; set; }
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+  public DeviceEnrollmentEntity DeviceEnrollment { get; set; } = null!;
+  public List<TreadmillMaintenanceEventEntity> Events { get; set; } = [];
+}
+
+internal sealed class TreadmillMaintenanceEventEntity
+{
+  public Guid Id { get; set; }
+  public Guid TreadmillMaintenancePolicyId { get; set; }
+  public Guid OperationId { get; set; }
+  public DateTimeOffset PerformedAtUtc { get; set; }
+  public double AppDistanceBaselineKilometers { get; set; }
+  public string? Note { get; set; }
+  public DateTimeOffset CreatedAtUtc { get; set; }
+  public TreadmillMaintenancePolicyEntity Policy { get; set; } = null!;
+}
+
 internal sealed class HeartRateDeviceAssignmentEntity
 {
   public Guid Id { get; set; }
@@ -227,6 +252,7 @@ internal sealed class WorkoutSessionEntity
   public Guid? WorkoutProgramRunId { get; set; }
   public Guid? WorkoutProgramItemId { get; set; }
   public string SelectionSource { get; set; } = "Legacy";
+  public string SessionOrigin { get; set; } = "Legacy";
   public string WorkoutTitle { get; set; } = string.Empty;
   public string State { get; set; } = string.Empty;
   public DateTimeOffset ArmedAtUtc { get; set; }
@@ -376,6 +402,7 @@ internal sealed class GarminActivityUploadJobEntity
   public string? LastError { get; set; }
   public DateTimeOffset CreatedAtUtc { get; set; }
   public DateTimeOffset UpdatedAtUtc { get; set; }
+  public DateTimeOffset? AcknowledgedAtUtc { get; set; }
   public GarminActivityUploadAccountEntity Account { get; set; } = null!;
 }
 

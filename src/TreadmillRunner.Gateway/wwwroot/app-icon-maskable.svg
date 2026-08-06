@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TreadmillRunner">
+  <rect width="512" height="512" fill="#071f29"/>
+  <rect x="102" y="102" width="308" height="308" rx="77" fill="#74e0bd"/>
+  <text x="256" y="293" text-anchor="middle" fill="#09252d" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="800">TR</text>
+</svg>

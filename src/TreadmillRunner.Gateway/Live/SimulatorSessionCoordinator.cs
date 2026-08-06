@@ -296,7 +296,8 @@ public sealed class LiveSessionCoordinator(
             devices.SelectedHeartRateDeviceFamily?.ToString(),
             treadmillSnapshot)),
         SessionMetricAlgorithms.EstimatedCaloriesV1,
-        selection);
+        selection,
+        hardwareMode ? SessionOrigin.Hardware : SessionOrigin.Simulator);
       var machine = new SessionStateMachine(timeProvider);
       machine.Arm();
       var active = new ActiveRun(

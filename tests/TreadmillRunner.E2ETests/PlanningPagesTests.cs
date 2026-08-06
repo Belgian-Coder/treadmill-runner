@@ -344,6 +344,9 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     ILocator panel = Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true });
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(panel.GetByLabel("Garmin password", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(panel).ToContainTextAsync("Experimental");
+    await Expect(panel).ToContainTextAsync("Private-LAN HTTP setup is allowed but is not encrypted.");
+    await Expect(panel.GetByRole(AriaRole.Button, new() { Name = "Connect Garmin", Exact = true })).ToBeVisibleAsync();
     await Expect(panel).Not.ToContainTextAsync("Activity-upload status is unavailable.");
 
     jobsStatus = 503;
@@ -356,6 +359,25 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Watch pairing status is temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Browser_drafts_are_bounded_expiring_profile_scoped_and_no_service_worker_is_registered()
+  {
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    Assert.True(await Page.EvaluateAsync<bool>("() => treadmillRunnerDrafts.save('profile-a.workout.new', '{\"name\":\"Draft A\"}')"));
+    Assert.Equal("{\"name\":\"Draft A\"}", await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('profile-a.workout.new')"));
+    Assert.Null(await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('profile-b.workout.new')"));
+    Assert.False(await Page.EvaluateAsync<bool>("() => treadmillRunnerDrafts.save('oversized', 'x'.repeat(262145))"));
+    await Page.EvaluateAsync("() => localStorage.setItem('treadmillrunner.draft.v1.corrupt', '{broken')");
+    Assert.Null(await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('corrupt')"));
+    await Page.EvaluateAsync("() => localStorage.setItem('treadmillrunner.draft.v1.expired', JSON.stringify({schemaVersion:1,savedAtUtc:new Date(Date.now()-31*86400000).toISOString(),payload:'{}'}))");
+    Assert.Null(await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('expired')"));
+    int registrations = await Page.EvaluateAsync<int>("async () => navigator.serviceWorker ? (await navigator.serviceWorker.getRegistrations()).length : 0");
+    Assert.Equal(0, registrations);
+    string manifest = await Page.EvaluateAsync<string>("async () => await (await fetch('/manifest.webmanifest', {cache:'no-store'})).text()");
+    Assert.Contains("standalone", manifest, StringComparison.Ordinal);
   }
 
   private async Task<Guid> CreateProfileAsync(string name)

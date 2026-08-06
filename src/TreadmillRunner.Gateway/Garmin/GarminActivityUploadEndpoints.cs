@@ -1,7 +1,10 @@
-using System.Net;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Gateway.Live;
+using TreadmillRunner.Gateway.Planning;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Garmin;
@@ -10,6 +13,8 @@ public sealed record GarminActivityConnectRequest(string Email, string Password,
 public sealed record GarminActivityMfaRequest(Guid ChallengeId, string Code);
 public sealed record GarminActivityEnabledRequest(bool Enabled, int ExpectedVersion);
 public sealed record GarminActivityDisconnectRequest(int ExpectedVersion);
+public sealed record GarminActivityTestRequest(Guid OperationId, int ExpectedVersion);
+public sealed record GarminActivityFoundRequest(Guid OperationId);
 public sealed record GarminActivityUploadStatusResponse(
   Guid ProfileId,
   bool Connected,
@@ -18,6 +23,7 @@ public sealed record GarminActivityUploadStatusResponse(
   string State,
   int Pending,
   int Confirmed,
+  int FoundInGarmin,
   int Failed,
   int Unknown,
   DateTimeOffset? LastSuccessAtUtc,
@@ -38,8 +44,10 @@ public static class GarminActivityUploadEndpoints
     group.MapPost("/profiles/{profileId:guid}/mfa", CompleteMfaAsync);
     group.MapPost("/profiles/{profileId:guid}/enabled", SetEnabledAsync);
     group.MapPost("/profiles/{profileId:guid}/disconnect", DisconnectAsync);
+    group.MapPost("/profiles/{profileId:guid}/test-activity", CreateTestActivityAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/retry", RetryAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/dismiss", DismissAsync);
+    group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/acknowledge-found", AcknowledgeFoundAsync);
     return endpoints;
   }
 
@@ -62,8 +70,8 @@ public static class GarminActivityUploadEndpoints
     GarminActivityConnectionService service,
     CancellationToken cancellationToken)
   {
-    if (!IsProtectedCredentialRequest(context))
-      return Results.Json(new { error = "Enter Garmin credentials only over HTTPS or from a browser on the NUC itself." }, statusCode: StatusCodes.Status426UpgradeRequired);
+    if (!GarminCredentialTransportPolicy.IsAllowed(context))
+      return Results.Json(new { error = "Garmin credentials over HTTP are accepted only from the NUC or a private household-network address. Use HTTPS for any other connection." }, statusCode: StatusCodes.Status426UpgradeRequired);
     if (HasActiveRun(sessions)) return TypedResults.Conflict(new { error = "Connect Garmin activity upload only while no run is active." });
     GarminAdapterReadiness adapter = await readiness.CheckAsync(cancellationToken);
     if (!adapter.CanConnect)
@@ -83,7 +91,8 @@ public static class GarminActivityUploadEndpoints
     GarminActivityConnectionService service,
     CancellationToken cancellationToken)
   {
-    if (!IsProtectedCredentialRequest(context)) return Results.StatusCode(StatusCodes.Status426UpgradeRequired);
+    if (!GarminCredentialTransportPolicy.IsAllowed(context))
+      return Results.Json(new { error = "Garmin verification over HTTP is accepted only from the NUC or a private household-network address. Use HTTPS for any other connection." }, statusCode: StatusCodes.Status426UpgradeRequired);
     if (HasActiveRun(sessions)) return TypedResults.Conflict(new { error = "Complete Garmin login only while no run is active." });
     if (request.Code.Length is < 4 or > 16) return TypedResults.BadRequest(new { error = "A valid verification code is required." });
     try { return TypedResults.Ok(await service.CompleteMfaAsync(profileId, request.ChallengeId, request.Code, cancellationToken)); }
@@ -112,6 +121,141 @@ public static class GarminActivityUploadEndpoints
     catch (InvalidOperationException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
   }
 
+  private static async Task<IResult> CreateTestActivityAsync(
+    Guid profileId,
+    GarminActivityTestRequest request,
+    HttpContext context,
+    ILiveSessionCoordinator liveSessions,
+    IProfileStore profiles,
+    IWorkoutStore workouts,
+    ISessionStore sessions,
+    IGarminActivityUploadStore uploads,
+    IOperationReceiptStore receipts,
+    GarminActivityUploadWorker worker,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (!GarminCredentialTransportPolicy.IsAllowed(context))
+      return Results.Json(new { error = "Create a Garmin test activity only from the NUC, a private household-network address, or HTTPS." }, statusCode: StatusCodes.Status426UpgradeRequired);
+    if (request.OperationId == Guid.Empty)
+      return TypedResults.BadRequest(new { error = "OperationId is required." });
+    if (HasActiveRun(liveSessions))
+      return TypedResults.Conflict(new { error = "Create a Garmin test activity only while no run is active." });
+
+    string requestFingerprint = PlanningOperationFingerprint.Compute(new { profileId, request.ExpectedVersion });
+    OperationReceipt? completed = await receipts.FindAsync(request.OperationId, cancellationToken);
+    if (completed is not null)
+    {
+      if (completed.OperationType != "garmin.activity.test" || completed.RequestFingerprint != requestFingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      return Results.Accepted($"/api/history/{request.OperationId:D}", new
+      {
+        sessionId = request.OperationId,
+        message = "This synthetic Garmin test operation already completed and will not be queued again.",
+      });
+    }
+
+    GarminActivityUploadStatus upload = await uploads.GetStatusAsync(profileId, cancellationToken);
+    if (!upload.Connected || !upload.Enabled || upload.Version != request.ExpectedVersion)
+      return TypedResults.Conflict(new { error = "Garmin activity upload must be connected, enabled, and at the expected profile version." });
+    if (await sessions.FindAsync(request.OperationId, cancellationToken) is not null)
+      return TypedResults.Conflict(new { error = "That test operation was already created. Review its existing Garmin job instead of sending it again." });
+
+    VersionedUserProfile profile = await profiles.FindAsync(profileId, cancellationToken)
+      ?? throw new KeyNotFoundException($"Profile {profileId} was not found.");
+    IReadOnlyList<StoredWorkout> availableWorkouts = await workouts.ListAsync(cancellationToken);
+    StoredWorkout? sourceWorkout = availableWorkouts
+      .FirstOrDefault(candidate => candidate.Kind == WorkoutKind.ManualTemplate && !candidate.IsArchived)
+      ?? availableWorkouts.FirstOrDefault(candidate => !candidate.IsArchived);
+    if (sourceWorkout is null)
+      return TypedResults.Conflict(new { error = "A workout revision required for the test activity is unavailable." });
+
+    const int durationSeconds = 60;
+    const double speedKph = 4.5;
+    const double inclinePercent = 0.5;
+    const ushort heartRateBpm = 120;
+    DateTimeOffset endedAt = timeProvider.GetUtcNow();
+    DateTimeOffset startedAt = endedAt.AddSeconds(-durationSeconds);
+    string configurationJson = JsonSerializer.Serialize(new SessionExecutionConfiguration(
+      "GarminUploadTest",
+      "Disabled",
+      SessionProfileSnapshot.FromProfile(profile.Profile),
+      "Synthetic test",
+      "Simulated",
+      "Synthetic"));
+    var definition = new NewWorkoutSession(
+      request.OperationId,
+      profileId,
+      profile.Profile.DisplayName,
+      sourceWorkout.LatestRevisionId,
+      "TreadmillRunner Garmin upload test",
+      startedAt.AddSeconds(-1),
+      configurationJson,
+      SessionMetricAlgorithms.EstimatedCaloriesV1,
+      new WorkoutSessionSelection(WorkoutSelectionSource.Manual),
+      SessionOrigin.SystemTest);
+
+    await sessions.CreateAsync(definition, cancellationToken);
+    await sessions.MarkRunningAsync(request.OperationId, startedAt, cancellationToken);
+    for (var second = 1; second <= durationSeconds; second++)
+    {
+      double distanceKilometers = speedKph * second / 3600d;
+      await sessions.AppendSampleAsync(new SessionSample(
+        request.OperationId,
+        second - 1,
+        startedAt.AddSeconds(second),
+        TimeSpan.FromSeconds(second),
+        speedKph,
+        speedKph,
+        speedKph,
+        inclinePercent,
+        inclinePercent,
+        inclinePercent,
+        heartRateBpm,
+        distanceKilometers,
+        0.1 * second,
+        TimeSpan.Zero,
+        SessionMetricAlgorithms.EstimatedCaloriesV1), cancellationToken);
+    }
+    await sessions.FinalizeAsync(new SessionSummary(
+      request.OperationId,
+      profileId,
+      profile.Profile.DisplayName,
+      sourceWorkout.LatestRevisionId,
+      definition.WorkoutTitle,
+      SessionState.Completed,
+      startedAt,
+      endedAt,
+      TimeSpan.FromSeconds(durationSeconds),
+      speedKph * durationSeconds / 3600d,
+      6,
+      heartRateBpm,
+      heartRateBpm,
+      speedKph,
+      inclinePercent), cancellationToken);
+    await uploads.EnqueueSystemTestAsync(profileId, request.OperationId, endedAt, cancellationToken);
+    var receipt = new OperationReceipt(
+      Guid.NewGuid(),
+      request.OperationId,
+      "garmin.activity.test",
+      StatusCodes.Status202Accepted,
+      JsonSerializer.Serialize(new { sessionId = request.OperationId }),
+      endedAt,
+      requestFingerprint);
+    if (!await receipts.TryAddAsync(receipt, cancellationToken))
+    {
+      OperationReceipt? raced = await receipts.FindAsync(request.OperationId, cancellationToken);
+      if (raced?.OperationType != receipt.OperationType || raced.RequestFingerprint != requestFingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    worker.Wake();
+    return Results.Accepted($"/api/history/{request.OperationId:D}", new
+    {
+      sessionId = request.OperationId,
+      message = "A one-minute synthetic TreadmillRunner FIT activity was queued for Garmin. Review its job before any retry.",
+    });
+  }
+
   private static async Task<IResult> RetryAsync(Guid profileId, Guid jobId, IGarminActivityUploadStore store, GarminActivityUploadWorker worker, TimeProvider timeProvider, CancellationToken cancellationToken)
   {
     bool changed = await store.RetryFailedAsync(jobId, profileId, timeProvider.GetUtcNow(), cancellationToken);
@@ -122,11 +266,46 @@ public static class GarminActivityUploadEndpoints
   private static async Task<IResult> DismissAsync(Guid profileId, Guid jobId, IGarminActivityUploadStore store, TimeProvider timeProvider, CancellationToken cancellationToken) =>
     await store.DismissAsync(jobId, profileId, timeProvider.GetUtcNow(), cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
 
+  private static async Task<IResult> AcknowledgeFoundAsync(
+    Guid profileId,
+    Guid jobId,
+    GarminActivityFoundRequest request,
+    IGarminActivityUploadStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (request.OperationId == Guid.Empty)
+      return TypedResults.BadRequest(new { error = "OperationId is required." });
+    string fingerprint = PlanningOperationFingerprint.Compute(new { profileId, jobId });
+    try
+    {
+      return TypedResults.Ok(await store.AcknowledgeFoundInGarminAsync(
+        jobId,
+        profileId,
+        request.OperationId,
+        fingerprint,
+        timeProvider.GetUtcNow(),
+        cancellationToken));
+    }
+    catch (OperationReplayException replay)
+    {
+      if (replay.Receipt.OperationType != "garmin.activity.found" || replay.Receipt.RequestFingerprint != fingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      GarminActivityUploadJob? job = JsonSerializer.Deserialize<GarminActivityUploadJob>(replay.Receipt.OutcomeJson);
+      return job is null
+        ? TypedResults.Conflict(new { error = "The completed Garmin acknowledgment could not be read." })
+        : TypedResults.Ok(job);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
+  }
+
   private static bool HasActiveRun(ILiveSessionCoordinator sessions) => sessions.CurrentSession?.Live.SessionState is
     SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
-
-  private static bool IsProtectedCredentialRequest(HttpContext context) => context.Request.IsHttps ||
-    (context.Connection.RemoteIpAddress is { } address && IPAddress.IsLoopback(address));
 
   private static async Task<GarminActivityUploadStatusResponse> StatusAsync(
     Guid profileId,
@@ -144,6 +323,7 @@ public static class GarminActivityUploadEndpoints
       status.State,
       status.Pending,
       status.Confirmed,
+      status.FoundInGarmin,
       status.Failed,
       status.Unknown,
       status.LastSuccessAtUtc,

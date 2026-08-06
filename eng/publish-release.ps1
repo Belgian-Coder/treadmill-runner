@@ -26,13 +26,36 @@ if (Test-Path -LiteralPath $releaseRoot) {
 }
 New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
 
+$headRevision = (& git -C $projectRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headRevision)) { throw 'The source revision could not be determined.' }
+$contentLines = [System.Collections.Generic.List[string]]::new()
+$contentLines.Add($headRevision)
+$contentLines.Add((& git -C $projectRoot diff --binary HEAD -- src Directory.Build.props).ForEach({ [string]$_ }) -join "`n")
+$untrackedSource = @(& git -C $projectRoot ls-files --others --exclude-standard -- src Directory.Build.props) | Sort-Object
+foreach ($relative in $untrackedSource) {
+    $sourcePath = Join-Path $projectRoot $relative
+    if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
+        $contentLines.Add("$relative=$((Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash)")
+    }
+}
+$contentBytes = [System.Text.Encoding]::UTF8.GetBytes(($contentLines -join "`n"))
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $contentHash = $sha256.ComputeHash($contentBytes)
+}
+finally {
+    $sha256.Dispose()
+}
+$buildId = ([System.BitConverter]::ToString($contentHash)).Replace('-', '').ToLowerInvariant()
+
 Push-Location $projectRoot
 try {
     dotnet restore TreadmillRunner.slnx --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
     dotnet publish src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj `
         -c Release --no-restore `
-        -p:Version=$Version -p:FileVersion="$Version.0" -p:InformationalVersion=$Version `
+        -p:Version=$Version -p:FileVersion="$Version.0" -p:InformationalVersion="$Version+$buildId" `
+        -p:TreadmillRunnerBuildId=$buildId `
         -o $publishPath
     if ($LASTEXITCODE -ne 0) { throw 'Framework-dependent gateway publish failed.' }
 
@@ -47,6 +70,11 @@ try {
     & (Join-Path $PSScriptRoot 'new-garmin-portable-runtime.ps1') -PublishPath $publishPath
     if ($LASTEXITCODE -ne 0) { throw 'Portable Garmin adapter runtime staging failed.' }
 
+    [System.IO.File]::WriteAllText(
+        (Join-Path $publishPath 'build-metadata.json'),
+        ([ordered]@{ version = $Version; sourceRevision = $headRevision; buildId = $buildId } | ConvertTo-Json -Compress),
+        [System.Text.UTF8Encoding]::new($false))
+
     foreach ($required in @(
         'TreadmillRunner.Gateway.exe',
         'TreadmillRunner.Gateway.dll',
@@ -55,6 +83,7 @@ try {
         'tools\garmin\runtime\python.exe',
         'tools\garmin\runtime\LICENSE.txt',
         'tools\garmin\THIRD-PARTY-NOTICES.md',
+        'build-metadata.json',
         'wwwroot\app.css',
         'wwwroot\_framework\blazor.webassembly.js')) {
         if (-not (Test-Path -LiteralPath (Join-Path $publishPath $required) -PathType Leaf)) {

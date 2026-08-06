@@ -66,12 +66,12 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StartedAtUnixMilliseconds");
-
                     b.HasIndex("DeviceEnrollmentId")
                         .IsUnique()
                         .HasDatabaseName("UX_BleReliabilityIncidents_OneOpenPerDevice")
                         .HasFilter("\"RecoveredAtUnixMilliseconds\" IS NULL");
+
+                    b.HasIndex("StartedAtUnixMilliseconds");
 
                     b.HasIndex("DeviceEnrollmentId", "RecoveredAtUnixMilliseconds");
 
@@ -486,6 +486,9 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("AcknowledgedAtUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("AttemptCount")
                         .HasColumnType("INTEGER");
 
@@ -551,7 +554,7 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_GarminActivityUploadJobs_Key", "length(\"IdempotencyKey\") = 64");
 
-                            t.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed')");
+                            t.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin')");
                         });
                 });
 
@@ -1039,6 +1042,86 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.ToTable("TrainingDaySelections", (string)null);
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenanceEventEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("AppDistanceBaselineKilometers")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("PerformedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TreadmillMaintenancePolicyId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.HasIndex("TreadmillMaintenancePolicyId", "PerformedAtUtc");
+
+                    b.ToTable("TreadmillMaintenanceEvents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TreadmillMaintenanceEvents_Distance", "\"AppDistanceBaselineKilometers\" >= 0");
+
+                            t.HasCheckConstraint("CK_TreadmillMaintenanceEvents_Note", "\"Note\" IS NULL OR length(\"Note\") <= 500");
+                        });
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenancePolicyEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("DeviceEnrollmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("DistanceIntervalKilometers")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("IntervalMonths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceEnrollmentId")
+                        .IsUnique();
+
+                    b.ToTable("TreadmillMaintenancePolicies", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Distance", "\"DistanceIntervalKilometers\" >= 1 AND \"DistanceIntervalKilometers\" <= 5000");
+
+                            t.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Months", "\"IntervalMonths\" >= 1 AND \"IntervalMonths\" <= 24");
+
+                            t.HasCheckConstraint("CK_TreadmillMaintenancePolicies_Version", "\"Version\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1403,6 +1486,11 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SessionOrigin")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("StartedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -1447,6 +1535,8 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasFilter("\"State\" = 'Completed' AND \"WorkoutProgramRunId\" IS NOT NULL");
 
+                    b.HasIndex("UserProfileId", "SessionOrigin", "EndedAtUtc");
+
                     b.ToTable("WorkoutSessions", null, t =>
                         {
                             t.HasCheckConstraint("CK_WorkoutSessions_Calories", "\"EstimatedCalories\" >= 0");
@@ -1454,6 +1544,8 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_WorkoutSessions_Distance", "\"DistanceKilometers\" >= 0");
 
                             t.HasCheckConstraint("CK_WorkoutSessions_Duration", "\"DurationSeconds\" >= 0");
+
+                            t.HasCheckConstraint("CK_WorkoutSessions_Origin", "\"SessionOrigin\" IN ('Legacy', 'Hardware', 'Simulator', 'SystemTest')");
 
                             t.HasCheckConstraint("CK_WorkoutSessions_Rpe", "\"PerceivedExertion\" IS NULL OR (\"PerceivedExertion\" >= 1 AND \"PerceivedExertion\" <= 10)");
 
@@ -1680,6 +1772,28 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenanceEventEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenancePolicyEntity", "Policy")
+                        .WithMany("Events")
+                        .HasForeignKey("TreadmillMaintenancePolicyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Policy");
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenancePolicyEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.DeviceEnrollmentEntity", "DeviceEnrollment")
+                        .WithOne()
+                        .HasForeignKey("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenancePolicyEntity", "DeviceEnrollmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeviceEnrollment");
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
                 {
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRevisionEntity", "WorkoutProgramRevision")
@@ -1779,6 +1893,11 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.GarminActivityUploadAccountEntity", b =>
                 {
                     b.Navigation("Jobs");
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.TreadmillMaintenancePolicyEntity", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", b =>
