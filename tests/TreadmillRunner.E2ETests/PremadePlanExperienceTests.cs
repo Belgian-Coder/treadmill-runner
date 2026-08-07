@@ -18,7 +18,7 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await Page.SetViewportSizeAsync(1180, 820);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Premade plans", Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Plan templates", Exact = true }).ClickAsync();
     await Expect(Page.Locator(".premade-plan-card")).ToHaveCountAsync(16);
     await Page.Locator(".premade-plan-filters select").Nth(0).SelectOptionAsync("10K");
     await Expect(Page.Locator(".premade-plan-card")).ToHaveCountAsync(6);
@@ -29,6 +29,15 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("58");
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("174");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Add for Demo Runner", Exact = true })).ToBeEnabledAsync();
+    await Page.Locator(".premade-plan-phases > details").First.Locator("summary").First.ClickAsync();
+    await Page.Locator(".premade-plan-phases > details").First.Locator("details > summary").First.ClickAsync();
+    ILocator previewSession = Page.Locator(".premade-plan-phases .program-session-detail").First;
+    await Expect(previewSession).ToBeVisibleAsync();
+    await previewSession.ClickAsync();
+    ILocator workoutDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(workoutDialog.GetByRole(AriaRole.Heading, new() { Name = "Planned graph", Exact = true })).ToBeVisibleAsync();
+    await Expect(workoutDialog.GetByRole(AriaRole.Heading, new() { Name = "All planned changes", Exact = true })).ToBeVisibleAsync();
+    await workoutDialog.GetByRole(AriaRole.Button, new() { Name = "Close workout details", Exact = true }).ClickAsync();
     await AssertNoHorizontalOverflowAsync();
     await SaveShowcaseAsync("tr-024-premade-plan-catalog.png");
 
@@ -63,7 +72,7 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
 
     await Page.SetViewportSizeAsync(440, 956);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Training plans", Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
     await AssertNoHorizontalOverflowAsync();
     LocatorBoundingBoxResult? firstCard = await Page.Locator(".program-card").First.BoundingBoxAsync();
     Assert.NotNull(firstCard);

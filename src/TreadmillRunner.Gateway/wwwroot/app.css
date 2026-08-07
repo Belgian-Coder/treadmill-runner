@@ -1236,7 +1236,11 @@ body.immersive-view { overflow: hidden; }
 .premade-plan-preview h2, .premade-plan-preview p { margin: 0; }
 .compact-stats--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .premade-plan-phases { display: grid; gap: .45rem; }
-.premade-plan-phases > div { display: flex; justify-content: space-between; gap: .7rem; padding: .65rem; border: 1px solid #d9f9f21c; border-radius: .75rem; background: #081e278f; }
+.premade-plan-phases > div, .premade-plan-phases > details { padding: .65rem; border: 1px solid #d9f9f21c; border-radius: .75rem; background: #081e278f; }
+.premade-plan-phases > div, .premade-plan-phases > details > summary { display: flex; justify-content: space-between; gap: .7rem; }
+.premade-plan-phases > details > summary, .premade-plan-phases > details > details > summary { min-height: 44px; align-items: center; cursor: pointer; color: #9fe7cf; font-weight: 800; }
+.premade-plan-phases > details > details { margin-top: .35rem; padding: 0 .35rem; border-top: 1px solid #d9f9f21c; }
+.premade-plan-phases .program-session-summary-list li { display: block; }
 .premade-plan-phases span { color: #a9c4c1; font-size: .74rem; text-align: right; }
 .premade-plan-actions { flex-wrap: wrap; }
 .template-program-groups { margin: 0 .3rem .4rem; border-top: 1px solid #d9f9f21c; }

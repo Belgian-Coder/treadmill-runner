@@ -49,7 +49,8 @@ public sealed class PremadePlanStore(
     if (userProfileId == Guid.Empty) throw new ArgumentException("Profile ID is required.", nameof(userProfileId));
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     PremadePlanInstallationEntity[] installations = await context.PremadePlanInstallations.AsNoTracking()
-      .Where(installation => installation.UserProfileId == userProfileId)
+      .Where(installation => installation.UserProfileId == userProfileId &&
+        context.WorkoutPrograms.Any(program => program.Id == installation.WorkoutProgramId && !program.IsArchived))
       .OrderBy(installation => installation.TemplateId)
       .ThenBy(installation => installation.CopyNumber)
       .ToArrayAsync(cancellationToken);
@@ -72,12 +73,19 @@ public sealed class PremadePlanStore(
       if (!await context.UserProfiles.AnyAsync(profile => profile.Id == request.UserProfileId && !profile.IsArchived, cancellationToken))
         throw new KeyNotFoundException("Profile was not found.");
 
-      PremadePlanInstallationEntity[] prior = await context.PremadePlanInstallations
+      PremadePlanInstallationEntity[] allPrior = await context.PremadePlanInstallations
         .Where(installation => installation.UserProfileId == request.UserProfileId &&
           installation.TemplateId == request.Template.Id &&
           installation.TemplateVersion == request.Template.Version)
         .OrderBy(installation => installation.CopyNumber)
         .ToArrayAsync(cancellationToken);
+      Guid[] activeProgramIds = await context.WorkoutPrograms
+        .Where(static program => !program.IsArchived)
+        .Select(static program => program.Id)
+        .ToArrayAsync(cancellationToken);
+      PremadePlanInstallationEntity[] prior = allPrior
+        .Where(installation => activeProgramIds.Contains(installation.WorkoutProgramId))
+        .ToArray();
       if (!request.FreshCopy && prior.FirstOrDefault() is { } existing)
       {
         var existingResult = new PremadePlanMaterializationResult(
@@ -97,7 +105,7 @@ public sealed class PremadePlanStore(
         return existingResult;
       }
 
-      int copyNumber = prior.Length == 0 ? 1 : prior.Max(static installation => installation.CopyNumber) + 1;
+      int copyNumber = allPrior.Length == 0 ? 1 : allPrior.Max(static installation => installation.CopyNumber) + 1;
       DateTimeOffset now = operation.CreatedAtUtc;
       var revisionByHash = new Dictionary<string, WorkoutRevisionEntity>(StringComparer.Ordinal);
       foreach ((string key, WorkoutDefinition definition) in request.WorkoutsByKey.OrderBy(static item => item.Key, StringComparer.Ordinal))

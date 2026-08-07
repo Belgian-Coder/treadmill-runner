@@ -234,6 +234,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Guid workoutId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("workoutId").GetGuid();
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Standalone workouts", Exact = true }).ClickAsync();
     ILocator card = Page.Locator(".workout-card").Filter(new() { HasText = unique });
     await Expect(card).ToContainTextAsync("Short incline progression for recovery days");
     await Expect(card).ToContainTextAsync("12 min");
@@ -579,7 +580,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.GetByLabel("Workout name").FillAsync("Nested revision");
     await Page.GetByRole(AriaRole.Button, new() { Name = "Save new revision" }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Workouts", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Training plans", Exact = true })).ToBeVisibleAsync();
 
     JsonElement[] revisions = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/workouts/{workoutId}/revisions"))!;
     Assert.Equal(2, revisions.Length);
@@ -618,7 +619,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
   [Trait("Category", "Browser")]
   public async Task Garmin_activity_setup_remains_visible_when_optional_resources_are_empty_or_fail()
   {
-    Guid profileId = await CreateProfileAsync($"Garmin readiness {Guid.NewGuid():N}");
+    string profileName = $"Garmin readiness {Guid.NewGuid():N}";
+    Guid profileId = await CreateProfileAsync(profileName);
     int jobsStatus = 200;
     int watchStatus = 204;
     await Page.RouteAsync("**/api/integrations/garmin/activity-upload/profiles/*/status", route =>
@@ -662,8 +664,14 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/profiles?garmin=connected&profileId={profileId:D}").AbsoluteUri,
       new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Button, new() { Name = $"Use {profileName} as active profile", Exact = true }).ClickAsync();
+    ILocator profileRow = Page.Locator(".profile-row").Filter(new() { HasText = profileName });
+    await profileRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
 
     ILocator panel = Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByText("Personal local goal", new() { Exact = true })).ToHaveCountAsync(0);
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(panel.GetByLabel("Garmin password", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(panel).ToContainTextAsync("Experimental");
@@ -673,12 +681,14 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     jobsStatus = 503;
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await profileRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Recent Garmin upload jobs are temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
 
     jobsStatus = 200;
     watchStatus = 503;
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await profileRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Watch pairing status is temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
   }

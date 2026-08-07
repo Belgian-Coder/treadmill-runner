@@ -850,7 +850,9 @@ public sealed class WorkoutProgramStore(
     Guid[] requested = revision.Items.SelectMany(static item =>
       item.Alternatives.Select(static option => option.WorkoutRevisionId).Prepend(item.WorkoutRevisionId)).Distinct().ToArray();
     int found = await context.WorkoutRevisions.CountAsync(candidate =>
-      requested.Contains(candidate.Id) && candidate.Workout.Kind == nameof(WorkoutKind.Structured), cancellationToken);
+      requested.Contains(candidate.Id) &&
+      (candidate.Workout.Kind == nameof(WorkoutKind.Structured) ||
+       candidate.Workout.Kind == nameof(WorkoutKind.PlanInternal)), cancellationToken);
     if (found != requested.Length) throw new ArgumentException("One or more workout revisions were not found.", nameof(revision));
   }
 

@@ -504,7 +504,6 @@
         }
         <div class="card-actions workout-details-actions">
             <button class="secondary-action" type="button" @onclick="CloseCalendarDetailsAsync">Close</button>
-            <button class="secondary-action" type="button" disabled="@(garminSyncBusy || calendarDetailsLoading || selectedCalendarRevision is null)" @onclick="SyncCalendarSessionToGarminAsync">@(garminSyncBusy ? "Sending…" : "Send this session to Garmin")</button>
             @if (selectedCalendarDetail.Option.Source != "Program" && !selectedCalendarDetail.Option.IsSelected)
             {
                 <button class="primary-action" type="button" disabled="@calendarSelectionBusy" @onclick="SelectCalendarDetailAsync">@(calendarSelectionBusy ? "Saving…" : "Choose for this day")</button>
@@ -549,7 +548,6 @@
     private WorkoutRevisionView? selectedCalendarRevision;
     private bool calendarDetailsLoading;
     private bool calendarSelectionBusy;
-    private bool garminSyncBusy;
     private string? calendarDetailsError;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
     private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
@@ -888,36 +886,6 @@
     }
 
     private Task RetryCalendarDetailsAsync() => LoadCalendarDetailsAsync();
-
-    private async Task SyncCalendarSessionToGarminAsync()
-    {
-        if (activeProfileId is not { } profileId || selectedCalendarDetail is not { } detail) return;
-        garminSyncBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsJsonAsync(
-                $"api/integrations/garmin/profiles/{profileId:D}/sessions",
-                new { date = detail.Date, workoutRevisionId = detail.Option.WorkoutRevisionId });
-            if (response.IsSuccessStatusCode)
-            {
-                message = "This calendar session is queued for Garmin Connect.";
-                await CloseCalendarDetailsAsync();
-            }
-            else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                message = "Connect this runner to Garmin on Profiles before sending a calendar session.";
-            }
-            else
-            {
-                message = "This session could not be sent to Garmin. Reload the calendar and try again.";
-            }
-        }
-        catch (HttpRequestException)
-        {
-            message = "Garmin Connect could not be reached right now.";
-        }
-        finally { garminSyncBusy = false; }
-    }
 
     private async Task SelectCalendarDetailAsync()
     {

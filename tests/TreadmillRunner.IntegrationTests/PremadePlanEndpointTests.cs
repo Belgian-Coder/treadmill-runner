@@ -12,6 +12,43 @@ public sealed class PremadePlanEndpointTests(PlanningGatewayFactory factory)
   : IClassFixture<PlanningGatewayFactory>
 {
   [Fact]
+  public async Task Archived_template_plan_is_not_reported_as_added_and_can_be_added_again()
+  {
+    using HttpClient client = factory.CreateClient();
+    Guid profileId = await CreateProfileAsync(client, includeAllZones: true);
+    var request = new
+    {
+      operationId = Guid.NewGuid(),
+      profileId,
+      templateId = "getting-started",
+      templateVersion = "1.0.0",
+      freshCopy = false,
+    };
+
+    using HttpResponseMessage firstResponse = await client.PostAsJsonAsync("/api/planning/premade-plans/materialize", request);
+    Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+    Guid firstProgramId = (await ReadJsonAsync(firstResponse)).GetProperty("programId").GetGuid();
+
+    using HttpResponseMessage archiveResponse = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{firstProgramId}/archive",
+      new { operationId = Guid.NewGuid() });
+    Assert.Equal(HttpStatusCode.NoContent, archiveResponse.StatusCode);
+
+    JsonElement[] catalog = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/premade-plans?profileId={profileId}"))!;
+    JsonElement template = Assert.Single(catalog, item => item.GetProperty("id").GetString() == "getting-started");
+    Assert.False(template.GetProperty("alreadyAdded").GetBoolean());
+
+    using HttpResponseMessage secondResponse = await client.PostAsJsonAsync(
+      "/api/planning/premade-plans/materialize",
+      request with { operationId = Guid.NewGuid() });
+    Assert.Equal(HttpStatusCode.Created, secondResponse.StatusCode);
+    JsonElement second = await ReadJsonAsync(secondResponse);
+    Assert.False(second.GetProperty("alreadyAdded").GetBoolean());
+    Assert.NotEqual(firstProgramId, second.GetProperty("programId").GetGuid());
+    Assert.Equal(2, second.GetProperty("copyNumber").GetInt32());
+  }
+
+  [Fact]
   public async Task Catalog_materializes_long_plan_idempotently_and_keeps_it_profile_scoped()
   {
     using HttpClient client = factory.CreateClient();

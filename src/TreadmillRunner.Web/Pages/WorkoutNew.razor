@@ -9,7 +9,7 @@
 <div class="planning-page planning-page--editor">
     <header class="planning-hero">
         <div><p class="eyebrow">Touch editor</p><h1>@(WorkoutId is null ? "New workout" : "New immutable revision")</h1><p>Time or distance goals, fixed or heart-rate-guided speed, incline ramps, cues, notes, and repeat blocks are saved as an immutable definition. Heart-rate guidance can be used for one step or the whole workout.</p></div>
-        <a class="secondary-action" href="/workouts">Back to library</a>
+        <a class="secondary-action" href="@(ReturnToPlan ? "/workouts?mode=programs" : "/workouts")">@(ReturnToPlan ? "Back to training plan" : "Back to library")</a>
     </header>
 
     @if (!string.IsNullOrEmpty(message))
@@ -22,6 +22,8 @@
     }
 
     <div class="workout-editor-shell">
+    @if (!ReturnToPlan)
+    {
     <details class="planning-panel existing-workout-browser">
         <summary><span><strong>Start from an existing workout</strong><small>@FilteredExistingWorkouts.Count available</small></span></summary>
         <div class="existing-workout-browser__body" aria-labelledby="existing-workouts-title">
@@ -44,6 +46,7 @@
             </div>
         </div>
     </details>
+    }
 
     <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout" @oninput="QueueDraftSave" @onchange="QueueDraftSave">
         <section class="planning-panel">
@@ -85,6 +88,12 @@
 @code {
     [SupplyParameterFromQuery]
     public Guid? WorkoutId { get; set; }
+
+    [SupplyParameterFromQuery]
+    public bool ReturnToPlan { get; set; }
+
+    [SupplyParameterFromQuery]
+    public Guid? EditPlanId { get; set; }
 
     private readonly WorkoutForm form = new();
     private bool saving;
@@ -402,7 +411,12 @@
     private async Task SaveAsync(EditContext _)
     {
         saving = true;
-        var request = new WorkoutSaveRequest(pendingOperationId, form.Name, form.Description, form.Blocks.Select(ToInput).ToArray());
+        var request = new WorkoutSaveRequest(
+            pendingOperationId,
+            form.Name,
+            form.Description,
+            form.Blocks.Select(ToInput).ToArray(),
+            ReturnToPlan && WorkoutId is null ? "PlanInternal" : "Structured");
         HttpResponseMessage response = WorkoutId is null
             ? await Http.PostAsJsonAsync("api/planning/workouts", request)
             : await Http.PostAsJsonAsync($"api/planning/workouts/{WorkoutId}/revisions", request);
@@ -412,7 +426,9 @@
             pendingOperationId = Guid.NewGuid();
             WorkoutSaveResponse? saved = await response.Content.ReadFromJsonAsync<WorkoutSaveResponse>();
             message = $"Saved immutable revision {saved?.RevisionNumber ?? 1}.";
-            Navigation.NavigateTo("/workouts");
+            Navigation.NavigateTo(ReturnToPlan && saved is not null
+                ? $"/workouts?mode=programs&addRevisionId={saved.RevisionId:D}{(EditPlanId is { } planId ? $"&editPlanId={planId:D}" : string.Empty)}"
+                : "/workouts");
         }
         else
         {

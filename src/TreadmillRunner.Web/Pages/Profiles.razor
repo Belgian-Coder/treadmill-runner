@@ -4,7 +4,6 @@
 @using System.Text.Json
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
-@inject NavigationManager Navigation
 
 <PageTitle>Profiles · TreadmillRunner</PageTitle>
 
@@ -13,7 +12,7 @@
         <div>
             <p class="eyebrow">Household</p>
             <h1>Profiles</h1>
-            <p>Keep preferences and heart-rate limits separate for everyone who uses the treadmill.</p>
+            <p>Keep heart-rate zones, speed limits, and Garmin activity uploads separate for each runner.</p>
         </div>
         <button class="primary-action" type="button" @onclick="StartCreate">New profile</button>
     </header>
@@ -52,12 +51,6 @@
                                 @if (activeProfileId == profile.Id)
                                 {
                                     <span class="integration-badge integration-badge--connected">Active in this browser</span>
-                                }
-                                @if (garminStatuses.GetValueOrDefault(profile.Id) is { } garmin)
-                                {
-                                    <span class="integration-badge @(garmin.Connected ? "integration-badge--connected" : null)">
-                                        @(garmin.Connected ? "Garmin connected" : "Garmin not connected")
-                                    </span>
                                 }
                             </div>
                         </article>
@@ -135,125 +128,6 @@
 
             @if (editingId is { } profileId)
             {
-                <section class="profile-integration" aria-labelledby="experience-title" aria-busy="@(preferencesLoading || goalLoading)">
-                    <div class="panel-heading">
-                        <div><p class="eyebrow">During a run</p><h3 id="experience-title">Display and cues</h3></div>
-                        <span>Stored locally</span>
-                    </div>
-                    @if (preferencesLoading)
-                    {
-                        <p class="muted" role="status">Loading saved display and cue preferences…</p>
-                    }
-                    <div class="form-grid">
-                        <label class="field">Display mode
-                            <select @bind="experience.DisplayStyle">
-                                <option value="Balanced">Balanced</option>
-                                <option value="LargeText">Large text</option>
-                                <option value="HighContrast">High contrast</option>
-                            </select>
-                        </label>
-                        <label class="field">Primary metric
-                            <select @bind="experience.FirstMetric">@MetricOptions()</select>
-                        </label>
-                        <label class="field">Second metric
-                            <select @bind="experience.SecondMetric">@MetricOptions()</select>
-                        </label>
-                        <label class="field">Optional third metric
-                            <select @bind="experience.ThirdMetric"><option value="">None</option>@MetricOptions()</select>
-                        </label>
-                        <label class="field">Cue volume
-                            <input type="range" min="0" max="100" step="5" @bind="experience.VolumePercent" />
-                            <small>@experience.VolumePercent%</small>
-                        </label>
-                    </div>
-                    <fieldset class="step-card">
-                        <legend>Informational cues</legend>
-                        <div class="form-grid form-grid--steps">
-                            <label class="check-field"><input type="checkbox" @bind="experience.StepChanges" /> <span>Step changes</span></label>
-                            <label class="check-field"><input type="checkbox" @bind="experience.HeartRateDeparture" /> <span>Heart-rate departure</span></label>
-                            <label class="check-field"><input type="checkbox" @bind="experience.Halfway" /> <span>Halfway</span></label>
-                            <label class="check-field"><input type="checkbox" @bind="experience.ConnectionProblems" /> <span>Connection problems</span></label>
-                            <label class="check-field"><input type="checkbox" @bind="experience.Completion" /> <span>Completion</span></label>
-                        </div>
-                    </fieldset>
-                    <p class="integration-note">Cues describe recorded state only; they never confirm that a treadmill command succeeded.</p>
-                    <button class="secondary-action" type="button" @onclick="SaveExperienceAsync" disabled="@(experienceBusy || preferencesLoading)">@(experienceBusy ? "Saving…" : "Save display and cues")</button>
-                    <details class="advanced-settings">
-                        <summary>Personal local goal</summary>
-                        @if (goalLoading)
-                        {
-                            <p class="muted" role="status">Loading saved goal…</p>
-                        }
-                        <div class="form-grid">
-                            <label class="field">Measure<select @bind="goal.Kind"><option value="Sessions">Sessions</option><option value="Minutes">Minutes</option><option value="Distance">Distance</option><option value="PlanCompletion">Plan completion</option></select></label>
-                            <label class="field">Period<select @bind="goal.Period"><option>Weekly</option><option>Monthly</option><option>Plan</option></select></label>
-                            <label class="field">Target<input type="number" min="0.1" step="0.1" @bind="goal.TargetValue" /><small>@GoalUnitLabel</small></label>
-                            <label class="check-field"><input type="checkbox" @bind="goal.Enabled" /> <span>Goal enabled</span></label>
-                        </div>
-                        <button class="secondary-action" type="button" @onclick="SaveGoalAsync" disabled="@(experienceBusy || goalLoading)">@(experienceBusy ? "Saving…" : "Save goal")</button>
-                    </details>
-                </section>
-                <section class="profile-integration" aria-labelledby="garmin-title">
-                    <div class="panel-heading">
-                        <div>
-                            <p class="eyebrow">Training sync</p>
-                            <h3 id="garmin-title">Garmin Connect</h3>
-                        </div>
-                        @if (garminStatuses.GetValueOrDefault(profileId) is { Connected: true })
-                        {
-                            <span class="integration-badge integration-badge--connected">Connected</span>
-                        }
-                    </div>
-                    @if (garminUnavailable.Contains(profileId))
-                    {
-                        <p class="field-error" role="status">Garmin status is temporarily unavailable.</p>
-                        <button class="secondary-action" type="button" @onclick="() => ReloadGarminStatusAsync(profileId)" disabled="@garminBusy">Try again</button>
-                    }
-                    else if (!garminStatuses.TryGetValue(profileId, out GarminConnectionStatusView? garminStatus))
-                    {
-                        <p class="muted" role="status">Loading Garmin status…</p>
-                    }
-                    else if (!garminStatus.ProviderConfigured)
-                    {
-                        <p>@garminStatus.SetupMessage</p>
-                        <button class="secondary-action" type="button" disabled>Connect Garmin</button>
-                    }
-                    else if (!garminStatus.Connected)
-                    {
-                        <p>Connect this runner's own Garmin account. TreadmillRunner never receives the Garmin password.</p>
-                        <p class="integration-note">After connecting, open one planned session in Calendar and send only that session to Garmin.</p>
-                        <button class="primary-action" type="button" @onclick="() => ConnectGarminAsync(profileId)" disabled="@garminBusy">@(garminBusy ? "Connecting…" : "Connect Garmin")</button>
-                    }
-                    else
-                    {
-                        <div class="integration-account">
-                            <strong>@garminStatus.AccountLabel</strong>
-                            <span>@GarminSyncSummary(garminStatus)</span>
-                            @if (garminStatus.LastSyncSuccessAtUtc is { } lastSuccess)
-                            {
-                                <small>Last synchronized @lastSuccess.ToLocalTime().ToString("g")</small>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(garminStatus.LastError))
-                            {
-                                <small class="field-error" role="status">@garminStatus.LastError</small>
-                            }
-                        </div>
-                        <div class="form-actions" aria-busy="@garminBusy">
-                            <a class="primary-action" href="/calendar">Choose session in Calendar</a>
-                            @if (disconnectGarminProfileId == profileId)
-                            {
-                                <p class="integration-note">Disconnect removes this runner's local Garmin credentials and pending queue. Content already sent to Garmin remains there; revoke access separately in Garmin if required.</p>
-                                <button class="danger-action" type="button" @onclick="() => DisconnectGarminAsync(profileId)" disabled="@garminBusy">Confirm disconnect</button>
-                                <button class="secondary-action" type="button" @onclick="() => disconnectGarminProfileId = null">Keep connected</button>
-                            }
-                            else
-                            {
-                                <button class="secondary-action" type="button" @onclick="() => disconnectGarminProfileId = profileId">Disconnect</button>
-                            }
-                        </div>
-                        <p class="integration-note">Sessions are sent one at a time from Calendar. Nothing else is synchronized automatically. Record the outside run on your watch.</p>
-                    }
-                </section>
                 <GarminActivityUploadPanel ProfileId="profileId" />
             }
         </section>
@@ -263,38 +137,19 @@
 
 @code {
     private readonly ProfileForm form = new();
-    private readonly ExperienceForm experience = new();
-    private readonly GoalForm goal = new();
     private List<ProfileView> profiles = [];
-    private readonly Dictionary<Guid, GarminConnectionStatusView> garminStatuses = [];
-    private readonly HashSet<Guid> garminUnavailable = [];
     private Guid? activeProfileId;
     private Guid? editingId;
     private int editingVersion;
     private bool loading = true;
     private bool saving;
-    private bool experienceBusy;
-    private bool preferencesLoading;
-    private bool goalLoading;
-    private int experienceVersion;
     private bool initialized;
     private bool isFormOpen;
     private bool zonesUseSuggestedDefaults = true;
-    private bool garminBusy;
-    private Guid? disconnectGarminProfileId;
     private bool archiveConfirming;
     private string? message;
     private Guid pendingSaveOperationId = Guid.NewGuid();
     private Guid pendingArchiveOperationId = Guid.NewGuid();
-
-    [SupplyParameterFromQuery(Name = "garmin")]
-    public string? GarminResult { get; set; }
-
-    [SupplyParameterFromQuery(Name = "reason")]
-    public string? GarminReason { get; set; }
-
-    [SupplyParameterFromQuery(Name = "profileId")]
-    public Guid? GarminProfileId { get; set; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -306,18 +161,6 @@
         initialized = true;
         activeProfileId = await ActiveProfile.GetAsync();
         await ReloadAsync();
-        if (string.Equals(GarminResult, "connected", StringComparison.OrdinalIgnoreCase))
-        {
-            message = "Garmin account connected. Choose a planned session in Calendar when you want to send it.";
-            if (GarminProfileId is { } profileId && profiles.FirstOrDefault(profile => profile.Id == profileId) is { } connectedProfile)
-            {
-                StartEdit(connectedProfile);
-            }
-        }
-        else if (string.Equals(GarminResult, "error", StringComparison.OrdinalIgnoreCase))
-        {
-            message = string.IsNullOrWhiteSpace(GarminReason) ? "Garmin account connection failed." : GarminReason;
-        }
         StateHasChanged();
     }
 
@@ -327,21 +170,6 @@
         try
         {
             profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
-            GarminConnectionStatusView?[] statuses = await Task.WhenAll(profiles.Select(async profile =>
-            {
-                try
-                {
-                    return await Http.GetFromJsonAsync<GarminConnectionStatusView>($"api/integrations/garmin/profiles/{profile.Id}/status");
-                }
-                catch (HttpRequestException)
-                {
-                    return null;
-                }
-            }));
-            garminStatuses.Clear();
-            garminUnavailable.Clear();
-            foreach (GarminConnectionStatusView status in statuses.OfType<GarminConnectionStatusView>()) garminStatuses[status.ProfileId] = status;
-            foreach (ProfileView profile in profiles.Where(profile => statuses.All(status => status?.ProfileId != profile.Id))) garminUnavailable.Add(profile.Id);
         }
         catch (HttpRequestException)
         {
@@ -365,112 +193,6 @@
         ResetForm();
         isFormOpen = true;
         message = null;
-        disconnectGarminProfileId = null;
-    }
-
-    private async Task ConnectGarminAsync(Guid profileId)
-    {
-        garminBusy = true;
-        message = null;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/connect", content: null);
-            if (!response.IsSuccessStatusCode)
-            {
-                message = "Garmin connection could not be started. Check the server setup.";
-                return;
-            }
-            GarminConnectStartView? start = await response.Content.ReadFromJsonAsync<GarminConnectStartView>();
-            if (start is null || !Uri.TryCreate(start.AuthorizationUrl, UriKind.Absolute, out _))
-            {
-                message = "Garmin returned an invalid authorization address.";
-                return;
-            }
-            Navigation.NavigateTo(start.AuthorizationUrl, forceLoad: true);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
-        {
-            message = "Garmin connection could not be started because the server is unavailable.";
-        }
-        finally
-        {
-            garminBusy = false;
-        }
-    }
-
-    private async Task SyncGarminAsync(Guid profileId)
-    {
-        garminBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/sync", content: null);
-            message = response.IsSuccessStatusCode ? "Garmin synchronization queued." : "Garmin synchronization could not be queued.";
-            await PollGarminStatusAsync(profileId);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
-        {
-            message = "Garmin synchronization status is temporarily unavailable.";
-            garminUnavailable.Add(profileId);
-        }
-        finally
-        {
-            garminBusy = false;
-        }
-    }
-
-    private async Task DisconnectGarminAsync(Guid profileId)
-    {
-        garminBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{profileId}/disconnect", content: null);
-            message = response.IsSuccessStatusCode ? "Garmin account disconnected from this runner." : "Garmin account could not be disconnected.";
-            disconnectGarminProfileId = null;
-            await ReloadGarminStatusAsync(profileId);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
-        {
-            message = "Garmin account could not be disconnected because the server is unavailable.";
-            garminUnavailable.Add(profileId);
-        }
-        finally
-        {
-            garminBusy = false;
-        }
-    }
-
-    private async Task ReloadGarminStatusAsync(Guid profileId)
-    {
-        try
-        {
-            GarminConnectionStatusView? status = await Http.GetFromJsonAsync<GarminConnectionStatusView>($"api/integrations/garmin/profiles/{profileId}/status");
-            if (status is not null)
-            {
-                garminStatuses[profileId] = status;
-                garminUnavailable.Remove(profileId);
-            }
-        }
-        catch (Exception exception) when (exception is HttpRequestException or NotSupportedException or JsonException)
-        {
-            garminUnavailable.Add(profileId);
-        }
-    }
-
-    private async Task PollGarminStatusAsync(Guid profileId)
-    {
-        for (var attempt = 0; attempt < 10; attempt++)
-        {
-            await ReloadGarminStatusAsync(profileId);
-            if (!garminStatuses.TryGetValue(profileId, out GarminConnectionStatusView? status) || status.PendingItems == 0) return;
-            await Task.Delay(250);
-        }
-    }
-
-    private static string GarminSyncSummary(GarminConnectionStatusView status)
-    {
-        if (status.FailedItems > 0) return $"{status.FailedItems} need attention · {status.PendingItems} pending";
-        if (status.PendingItems > 0) return $"{status.PendingItems} pending · {status.SyncedItems} synchronized";
-        return status.SyncedItems > 0 ? $"{status.SyncedItems} synchronized" : "Ready for first sync";
     }
 
     private void StartEdit(ProfileView profile)
@@ -506,153 +228,9 @@
         {
             ApplySuggestedZones(existingMaximum);
         }
-        ResetExperienceForm();
-        ResetGoalForm();
         archiveConfirming = false;
         message = null;
-        _ = LoadExperienceAsync(profile.Id);
-        _ = LoadGoalAsync(profile.Id);
     }
-
-    private async Task LoadExperienceAsync(Guid profileId)
-    {
-        preferencesLoading = true;
-        try
-        {
-            VersionedExperienceView? value = await Http.GetFromJsonAsync<VersionedExperienceView>($"api/local-first/profiles/{profileId}/preferences");
-            if (value is null || editingId != profileId) return;
-            experienceVersion = value.Version;
-            experience.DisplayStyle = value.Preferences.DisplayStyle.ToString();
-            experience.FirstMetric = value.Preferences.PrimaryMetrics.ElementAtOrDefault(0).ToString();
-            experience.SecondMetric = value.Preferences.PrimaryMetrics.ElementAtOrDefault(1).ToString();
-            experience.ThirdMetric = value.Preferences.PrimaryMetrics.Count > 2 ? value.Preferences.PrimaryMetrics[2].ToString() : string.Empty;
-            experience.StepChanges = value.Preferences.Cues.StepChanges;
-            experience.HeartRateDeparture = value.Preferences.Cues.HeartRateDeparture;
-            experience.Halfway = value.Preferences.Cues.Halfway;
-            experience.ConnectionProblems = value.Preferences.Cues.ConnectionProblems;
-            experience.Completion = value.Preferences.Cues.Completion;
-            experience.VolumePercent = value.Preferences.Cues.VolumePercent;
-            StateHasChanged();
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            if (editingId == profileId) message = "Display preferences are temporarily unavailable; safe defaults are shown.";
-        }
-        finally
-        {
-            if (editingId == profileId)
-            {
-                preferencesLoading = false;
-                StateHasChanged();
-            }
-        }
-    }
-
-    private async Task SaveExperienceAsync()
-    {
-        if (editingId is not { } profileId) return;
-        string[] metrics = new[] { experience.FirstMetric, experience.SecondMetric, experience.ThirdMetric }
-            .Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
-        if (metrics.Length is < 2 or > 3)
-        {
-            message = "Choose two or three different primary metrics.";
-            return;
-        }
-        experienceBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PutAsJsonAsync($"api/local-first/profiles/{profileId}/preferences", new
-            {
-                experience.DisplayStyle,
-                PrimaryMetrics = metrics,
-                Cues = new { experience.StepChanges, experience.HeartRateDeparture, experience.Halfway, experience.ConnectionProblems, experience.Completion, experience.VolumePercent },
-                ExpectedVersion = experienceVersion,
-            });
-            if (response.IsSuccessStatusCode)
-            {
-                VersionedExperienceView? saved = await response.Content.ReadFromJsonAsync<VersionedExperienceView>();
-                if (saved is not null) experienceVersion = saved.Version;
-                message = "Display and cue preferences saved locally.";
-            }
-            else message = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                ? "Display preferences changed elsewhere. Reopen this profile and try again."
-                : "Display preferences could not be saved. Check that the metrics are different.";
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            message = "Display preferences could not reach the local gateway. No changes were saved.";
-        }
-        finally { experienceBusy = false; }
-    }
-
-    private async Task LoadGoalAsync(Guid profileId)
-    {
-        goalLoading = true;
-        try
-        {
-            LocalGoalView[] goals = await Http.GetFromJsonAsync<LocalGoalView[]>($"api/local-first/profiles/{profileId}/goals") ?? [];
-            if (editingId != profileId || goals.FirstOrDefault() is not { } saved) return;
-            goal.Id = saved.Id;
-            goal.Kind = saved.Kind;
-            goal.Period = saved.Period;
-            goal.TargetValue = saved.TargetValue;
-            goal.Enabled = saved.Enabled;
-            goal.Version = saved.Version;
-            StateHasChanged();
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            if (editingId == profileId) message = "The saved local goal is temporarily unavailable; no goal has been changed.";
-        }
-        finally
-        {
-            if (editingId == profileId)
-            {
-                goalLoading = false;
-                StateHasChanged();
-            }
-        }
-    }
-
-    private async Task SaveGoalAsync()
-    {
-        if (editingId is not { } profileId) return;
-        experienceBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PutAsJsonAsync($"api/local-first/profiles/{profileId}/goals", new
-            {
-                goal.Id, goal.Kind, goal.Period, goal.TargetValue, goal.Enabled,
-                ExpectedVersion = goal.Id is null ? (int?)null : goal.Version,
-            });
-            if (response.IsSuccessStatusCode)
-            {
-                LocalGoalView? saved = await response.Content.ReadFromJsonAsync<LocalGoalView>();
-                if (saved is not null) { goal.Id = saved.Id; goal.Version = saved.Version; }
-                message = "Personal goal saved locally.";
-            }
-            else message = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                ? "The goal changed elsewhere. Reopen this profile and try again."
-                : "The local goal could not be saved. Check the target and period.";
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            message = "The goal could not reach the local gateway. No changes were saved.";
-        }
-        finally { experienceBusy = false; }
-    }
-
-    private static RenderFragment MetricOptions() => builder =>
-    {
-        string[] values = ["Speed", "Incline", "HeartRate", "ElapsedTime", "Distance", "Calories"];
-        for (var index = 0; index < values.Length; index++)
-        {
-            builder.OpenElement(index * 2, "option");
-            builder.AddAttribute(index * 2 + 1, "value", values[index]);
-            builder.AddContent(index * 2 + 2, values[index] switch { "HeartRate" => "Heart rate", "ElapsedTime" => "Elapsed time", _ => values[index] });
-            builder.CloseElement();
-        }
-    };
 
     private async Task SaveAsync(EditContext _)
     {
@@ -752,48 +330,10 @@
         form.HeartRateDecreaseCooldownSeconds = 15;
         form.HeartRateZones.Clear();
         zonesUseSuggestedDefaults = true;
-        disconnectGarminProfileId = null;
         archiveConfirming = false;
-        preferencesLoading = false;
-        goalLoading = false;
-        ResetExperienceForm();
-        ResetGoalForm();
     }
 
     private void BeginArchiveConfirmation() => archiveConfirming = true;
-
-    private void ResetExperienceForm()
-    {
-        experienceVersion = 0;
-        experience.DisplayStyle = "Balanced";
-        experience.FirstMetric = "Speed";
-        experience.SecondMetric = "HeartRate";
-        experience.ThirdMetric = "ElapsedTime";
-        experience.StepChanges = true;
-        experience.HeartRateDeparture = true;
-        experience.Halfway = true;
-        experience.ConnectionProblems = true;
-        experience.Completion = true;
-        experience.VolumePercent = 60;
-    }
-
-    private void ResetGoalForm()
-    {
-        goal.Id = null;
-        goal.Kind = "Sessions";
-        goal.Period = "Weekly";
-        goal.TargetValue = 3;
-        goal.Enabled = true;
-        goal.Version = 0;
-    }
-
-    private string GoalUnitLabel => goal.Kind switch
-    {
-        "Minutes" => "minutes",
-        "Distance" => form.UnitSystem == "Imperial" ? "kilometres (stored locally)" : "kilometres",
-        "PlanCompletion" => "percent",
-        _ => "sessions",
-    };
 
     private void AddZone()
     {
@@ -888,33 +428,6 @@
         public int HeartRateDecreaseCooldownSeconds { get; set; } = 15;
         public List<ZoneForm> HeartRateZones { get; } = [];
     }
-
-    private sealed class ExperienceForm
-    {
-        public string DisplayStyle { get; set; } = "Balanced";
-        public string FirstMetric { get; set; } = "Speed";
-        public string SecondMetric { get; set; } = "HeartRate";
-        public string ThirdMetric { get; set; } = "ElapsedTime";
-        public bool StepChanges { get; set; } = true;
-        public bool HeartRateDeparture { get; set; } = true;
-        public bool Halfway { get; set; } = true;
-        public bool ConnectionProblems { get; set; } = true;
-        public bool Completion { get; set; } = true;
-        public int VolumePercent { get; set; } = 60;
-    }
-
-    private sealed class GoalForm
-    {
-        public Guid? Id { get; set; }
-        public string Kind { get; set; } = "Sessions";
-        public string Period { get; set; } = "Weekly";
-        public double TargetValue { get; set; } = 3;
-        public bool Enabled { get; set; } = true;
-        public int Version { get; set; }
-    }
-
-    private sealed record VersionedExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
-    private sealed record LocalGoalView(Guid Id, Guid ProfileId, string Kind, string Period, double TargetValue, bool Enabled, int Version, DateTimeOffset UpdatedAtUtc);
 
     private sealed class ZoneForm
     {

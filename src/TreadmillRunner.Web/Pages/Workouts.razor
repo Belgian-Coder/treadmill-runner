@@ -2,16 +2,17 @@
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
-<PageTitle>Workouts · TreadmillRunner</PageTitle>
+<PageTitle>Training plans · TreadmillRunner</PageTitle>
 
 <div class="planning-page planning-page--programs">
     <header class="planning-hero planning-hero--compact">
         <div>
-            <p class="eyebrow">Library</p>
-            <h1>Workouts</h1>
-            <p>Build individual workouts or combine exact revisions into an ordered training plan.</p>
+            <p class="eyebrow">Training</p>
+            <h1>Training plans</h1>
+            <p>Create an ordered plan with detailed sessions, or start from a reusable plan template.</p>
         </div>
         @if (libraryMode == "workouts")
         {
@@ -27,9 +28,9 @@
     </header>
 
     <nav class="library-segments" aria-label="Workout library view">
-        <button type="button" aria-pressed="@(libraryMode == "workouts" ? "true" : "false")" @onclick='() => SetLibraryMode("workouts")'>Workouts</button>
-        <button type="button" aria-pressed="@(libraryMode == "programs" ? "true" : "false")" @onclick='() => SetLibraryMode("programs")'>Training plans</button>
-        <button type="button" aria-pressed="@(libraryMode == "premade" ? "true" : "false")" @onclick='() => SetLibraryMode("premade")'>Premade plans</button>
+        <button type="button" aria-pressed="@(libraryMode == "programs" ? "true" : "false")" @onclick='() => SetLibraryMode("programs")'>My training plans</button>
+        <button type="button" aria-pressed="@(libraryMode == "premade" ? "true" : "false")" @onclick='() => SetLibraryMode("premade")'>Plan templates</button>
+        <button type="button" aria-pressed="@(libraryMode == "workouts" ? "true" : "false")" @onclick='() => SetLibraryMode("workouts")'>Standalone workouts</button>
     </nav>
 
     @if (!string.IsNullOrEmpty(message))
@@ -40,7 +41,7 @@
     @if (libraryMode == "workouts")
     {
         <section class="planning-panel" aria-labelledby="workout-list-title" aria-label="Workout library">
-            <div class="panel-heading"><div><h2 id="workout-list-title">Workout library</h2><span class="field-help">Current immutable revisions.</span></div><span>@FilteredWorkouts.Count result(s)</span></div>
+            <div class="panel-heading"><div><h2 id="workout-list-title">Standalone workouts</h2><span class="field-help">For one-off or special-case sessions outside a training plan.</span></div><span>@FilteredWorkouts.Count result(s)</span></div>
             <div class="library-toolbar">
                 <label class="field field--search">Search workouts
                     <input type="search" @bind="searchText" @bind:event="oninput" placeholder="Title or description" />
@@ -322,6 +323,7 @@
                             </select>
                         </label>
                         <button class="secondary-action" type="button" @onclick="AddSelectedWorkout" disabled="@(workoutToAdd is null)">Add</button>
+                        <button class="primary-action" type="button" @onclick="CreateWorkoutForPlanAsync">Create detailed workout for this plan</button>
                     </div>
 
                     <dl class="program-draft-summary" aria-label="Training plan summary">
@@ -359,10 +361,10 @@
     }
     else
     {
-        <section class="premade-plan-workspace" aria-label="Premade training-plan catalog">
+        <section class="premade-plan-workspace" aria-label="Training plan templates">
             <div class="premade-plan-browser planning-panel">
-                <div class="panel-heading"><div><p class="eyebrow">Ready-made training</p><h2>Premade plans</h2></div><span>@FilteredPremadePlans.Count plan(s)</span></div>
-                <p class="field-help">Preview against the selected runner and treadmill limits. Nothing starts automatically.</p>
+                <div class="panel-heading"><div><p class="eyebrow">Reusable starting points</p><h2>Plan templates</h2></div><span>@FilteredPremadePlans.Count plan(s)</span></div>
+                <p class="field-help">A template becomes one of My training plans only after you add it. Preview every session first; nothing starts automatically.</p>
                 @if (activeProfileId is null)
                 {
                     <p class="notice">Select a runner on Run before adding a premade plan.</p>
@@ -403,7 +405,7 @@
                                 <span class="program-card__topline"><span class="category-pill">@plan.Goal</span><small>@plan.Experience</small></span>
                                 <strong>@plan.Name</strong><span>@plan.Description</span>
                                 <span class="premade-plan-card__stats">@plan.Weeks weeks · @plan.SessionCount sessions · @plan.SessionsPerWeek/week</span>
-                                <span class="premade-plan-card__footer">@(plan.RequiresHeartRate ? "Heart rate required" : "Heart rate optional") <b>@(plan.AlreadyAdded ? "Already added" : "Preview")</b></span>
+                                <span class="premade-plan-card__footer">@(plan.RequiresHeartRate ? "Heart rate required" : "Heart rate optional") <b>@(plan.CopyCount > 0 ? $"{plan.CopyCount} in My plans" : "Preview")</b></span>
                             </button>
                         }
                     </div>
@@ -422,18 +424,42 @@
                         <div><dt>Weeks</dt><dd>@premadePreview.Template.Weeks</dd></div><div><dt>Sessions</dt><dd>@premadePreview.Template.SessionCount</dd></div>
                         <div><dt>Max speed</dt><dd>@premadePreview.NormalizedMaximumSpeedKph.ToString("0.0") km/h</dd></div><div><dt>Max incline</dt><dd>@premadePreview.NormalizedMaximumInclinePercent.ToString("0.0")%</dd></div>
                     </dl>
-                    <div class="premade-plan-phases">
+                    <div class="premade-plan-phases template-program-groups">
                         @foreach (PremadePlanPhaseView phase in premadePreview.Phases)
                         {
-                            <div><strong>@phase.Name</strong><span>Weeks @phase.FirstWeek–@phase.LastWeek · @phase.SessionCount sessions</span></div>
+                            <details>
+                                <summary><strong>@phase.Name</strong><span>Weeks @phase.FirstWeek–@phase.LastWeek · @phase.SessionCount sessions</span></summary>
+                                @foreach (var week in premadePreview.Sessions.Where(session => session.Phase == phase.Name).GroupBy(static session => session.WeekNumber).OrderBy(static group => group.Key))
+                                {
+                                    <details>
+                                        <summary>Week @week.Key · @week.Count() session(s)</summary>
+                                        <ol class="program-session-summary-list">
+                                            @foreach (PremadePlanSessionView session in week.OrderBy(static session => session.SessionNumber))
+                                            {
+                                                <li>
+                                                    <button class="program-session-detail" type="button" @onclick="() => OpenPremadeWorkoutDetailsAsync(session)"><span>Session @session.SessionNumber</span><strong>@session.WorkoutName</strong><small>@DurationLabel(PremadeWorkout(session.WorkoutKey)?.DurationMinutes)</small></button>
+                                                    @foreach (PremadePlanSessionAlternativeView alternative in session.Alternatives)
+                                                    {
+                                                        <button class="program-session-detail program-session-detail--alternative" type="button" @onclick="() => OpenPremadeWorkoutDetailsAsync(session, alternative)"><span>Alternative</span><strong>@alternative.WorkoutName</strong><small>@DurationLabel(PremadeWorkout(alternative.WorkoutKey)?.DurationMinutes)</small></button>
+                                                    }
+                                                </li>
+                                            }
+                                        </ol>
+                                    </details>
+                                }
+                            </details>
                         }
                     </div>
                     <p class="field-help">@premadePreview.UniqueWorkoutCount unique workouts are reused across @premadePreview.Template.SessionCount scheduled positions. @premadePreview.NormalizedTargetCount target(s) are normalized conservatively.</p>
                     <div class="card-actions premade-plan-actions">
-                        <button class="primary-action" type="button" disabled="@(!premadePreview.Compatible || premadeBusy || premadePreview.Template.AlreadyAdded)" @onclick="() => AddPremadeAsync(false)">@(premadePreview.Template.AlreadyAdded ? $"Already added for {premadePreview.ProfileName}" : $"Add for {premadePreview.ProfileName}")</button>
                         @if (premadePreview.Template.AlreadyAdded)
                         {
-                            <button class="secondary-action" type="button" disabled="@premadeBusy" @onclick="() => AddPremadeAsync(true)">Add fresh copy</button>
+                            <button class="primary-action" type="button" @onclick="ShowMyTrainingPlans">View @premadePreview.Template.CopyCount in My training plans</button>
+                            <button class="secondary-action" type="button" disabled="@premadeBusy" @onclick="() => AddPremadeAsync(true)">Add another copy</button>
+                        }
+                        else
+                        {
+                            <button class="primary-action" type="button" disabled="@(!premadePreview.Compatible || premadeBusy)" @onclick="() => AddPremadeAsync(false)">Add for @premadePreview.ProfileName</button>
                         }
                     </div>
                 }
@@ -495,6 +521,15 @@
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? RequestedMode { get; set; }
+
+    [SupplyParameterFromQuery]
+    public Guid? AddRevisionId { get; set; }
+
+    [SupplyParameterFromQuery]
+    public Guid? EditPlanId { get; set; }
+
     private static readonly string[] ProgramCategories = ["All", "5K", "10K", "Base", "Custom"];
     private static readonly (string Label, int Flag)[] ScheduleWeekdays =
     [
@@ -506,7 +541,7 @@
     private List<PremadePlanCatalogView> premadePlans = [];
     private bool loading = true;
     private string? message;
-    private string libraryMode = "workouts";
+    private string libraryMode = "programs";
     private string searchText = string.Empty;
     private string durationFilter = "all";
     private string structureFilter = "all";
@@ -620,6 +655,14 @@
     {
         activeProfileId = await ActiveProfile.GetAsync();
         await ReloadAsync();
+        if (string.Equals(RequestedMode, "programs", StringComparison.OrdinalIgnoreCase)) libraryMode = "programs";
+        if (AddRevisionId is { } revisionId)
+        {
+            WorkoutProgramView? program = EditPlanId is { } planId ? programs.FirstOrDefault(item => item.Id == planId) : null;
+            if (program is null) await NewProgram(); else await EditProgram(program);
+            if (pendingProgramDraft is not null) await ContinueProgramDraftAsync();
+            await AddCreatedWorkoutAsync(revisionId);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -663,6 +706,12 @@
     {
         libraryMode = mode;
         message = null;
+    }
+
+    private void ShowMyTrainingPlans()
+    {
+        libraryMode = "programs";
+        message = $"Showing {premadePreview?.Template.Name} in My training plans.";
     }
 
     private async Task SelectPremadeAsync(PremadePlanCatalogView plan)
@@ -816,6 +865,59 @@
         programDraft.Items.Add(new ProgramDraftItem(revisionId, workout.Name, workout.CurrentRevisionNumber, workout.DurationMinutes));
         workoutToAdd = null;
         QueueProgramDraftSave();
+    }
+
+    private async Task CreateWorkoutForPlanAsync()
+    {
+        if (programDraftKey is null) await LoadProgramDraftAsync();
+        if (programDraftKey is not null)
+        {
+            bool saved = await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", programDraftKey, DraftSignature(programDraft));
+            if (!saved)
+            {
+                message = "The training-plan draft could not be preserved in this browser.";
+                return;
+            }
+        }
+        Navigation.NavigateTo($"/workouts/new?returnToPlan=true{(editingProgramId is { } programId ? $"&editPlanId={programId:D}" : string.Empty)}");
+    }
+
+    private async Task AddCreatedWorkoutAsync(Guid revisionId)
+    {
+        try
+        {
+            WorkoutRevisionView? revision = await Http.GetFromJsonAsync<WorkoutRevisionView>($"api/planning/workouts/revisions/{revisionId:D}");
+            if (revision is null) return;
+            programDraft.Items.Add(new ProgramDraftItem(
+                revision.RevisionId,
+                revision.Name,
+                revision.RevisionNumber,
+                PlannedDurationMinutes(revision.Blocks)));
+            pendingProgramDraft = null;
+            QueueProgramDraftSave();
+            message = $"{revision.Name} was created and added to this training plan.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException)
+        {
+            message = "The workout was created, but it could not be added to the plan automatically. Reopen the plan and try again.";
+        }
+    }
+
+    private static double? PlannedDurationMinutes(IReadOnlyList<WorkoutBlockInput> blocks)
+    {
+        double total = 0;
+        foreach (WorkoutBlockInput block in blocks)
+        {
+            if (block.Kind == "repeat")
+            {
+                double? nested = PlannedDurationMinutes(block.Blocks);
+                if (nested is null) return null;
+                total += nested.Value * block.Repetitions;
+            }
+            else if (block.GoalKind == "time") total += block.GoalValue;
+            else return null;
+        }
+        return total;
     }
 
     private void MoveProgramItem(int index, int delta)
@@ -980,6 +1082,44 @@
         await InvokeAsync(StateHasChanged);
         await LoadWorkoutDetailsAsync();
     }
+
+    private PremadePlanWorkoutView? PremadeWorkout(string key) =>
+        premadePreview?.Workouts.FirstOrDefault(workout => string.Equals(workout.Key, key, StringComparison.Ordinal));
+
+    private async Task OpenPremadeWorkoutDetailsAsync(string workoutKey, string context)
+    {
+        PremadePlanWorkoutView? workout = PremadeWorkout(workoutKey);
+        if (workout is null) return;
+        selectedWorkoutDetails = null;
+        selectedPlanWorkoutName = workout.Name;
+        selectedPlanWorkoutContext = context;
+        selectedDetailRevisionId = null;
+        selectedDetailRevisionNumber = 1;
+        selectedWorkoutRevision = new WorkoutRevisionView(
+            Guid.Empty,
+            Guid.Empty,
+            1,
+            string.Empty,
+            workout.Name,
+            workout.Description,
+            workout.Blocks);
+        workoutDetailsError = null;
+        workoutDetailsLoading = false;
+        openWorkoutDetailsPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenPremadeWorkoutDetailsAsync(PremadePlanSessionView session) =>
+        OpenPremadeWorkoutDetailsAsync(
+            session.WorkoutKey,
+            $"{premadePreview?.Template.Name} · Week {session.WeekNumber} · Session {session.SessionNumber}");
+
+    private Task OpenPremadeWorkoutDetailsAsync(
+        PremadePlanSessionView session,
+        PremadePlanSessionAlternativeView alternative) =>
+        OpenPremadeWorkoutDetailsAsync(
+            alternative.WorkoutKey,
+            $"{premadePreview?.Template.Name} · Week {session.WeekNumber} · Session {session.SessionNumber} · {VariantLabel(alternative.Variant)}");
 
     private Task OpenProgramWorkoutDetailsAsync(WorkoutProgramView program, WorkoutProgramItemView item) =>
         OpenProgramWorkoutDetailsAsync(

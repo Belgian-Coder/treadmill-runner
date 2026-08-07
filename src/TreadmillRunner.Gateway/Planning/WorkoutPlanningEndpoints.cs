@@ -100,10 +100,9 @@ public static class WorkoutPlanningEndpoints
     {
       ValidateOperationId(request.OperationId);
       WorkoutDefinition definition = CreateDefinition(request);
-      if (!Enum.TryParse(request.Kind, ignoreCase: true, out WorkoutKind workoutKind) ||
-          workoutKind == WorkoutKind.PlanInternal)
+      if (!Enum.TryParse(request.Kind, ignoreCase: true, out WorkoutKind workoutKind))
       {
-        throw new ArgumentException("Workout kind must be Structured or ManualTemplate.");
+        throw new ArgumentException("Workout kind must be Structured, ManualTemplate, or PlanInternal.");
       }
       string contentSha256 = WorkoutDefinitionCanonicalizer.ComputeSha256(definition);
       requestFingerprint = PlanningOperationFingerprint.Compute(new { ContentSha256 = contentSha256, Kind = workoutKind });
@@ -750,6 +749,12 @@ public static class WorkoutPlanningEndpoints
       ReadNumber(incline, "endPercent"),
       block.GetProperty("cue").GetString(),
       block.GetProperty("notes").GetString());
+  }
+
+  internal static IReadOnlyList<WorkoutBlockRequest> ToBlockRequests(WorkoutDefinition definition)
+  {
+    using JsonDocument document = JsonDocument.Parse(WorkoutDefinitionCanonicalizer.Serialize(definition));
+    return document.RootElement.GetProperty("blocks").EnumerateArray().Select(ParseBlock).ToArray();
   }
 
   private static readonly WorkoutBlockRequest EmptyBlock = new(

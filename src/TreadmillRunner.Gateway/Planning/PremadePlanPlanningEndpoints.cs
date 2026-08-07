@@ -161,6 +161,30 @@ public static class PremadePlanPlanningEndpoints
         group.Max(static session => session.WeekNumber),
         group.Count()))
       .ToArray();
+    PremadePlanWorkoutDto[] workouts = prepared.WorkoutsByKey
+      .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+      .Select(static pair => new PremadePlanWorkoutDto(
+        pair.Key,
+        pair.Value.Title,
+        pair.Value.Description,
+        pair.Value.ExpandedStepCount,
+        pair.Value.KnownDuration?.TotalMinutes,
+        WorkoutPlanningEndpoints.ToBlockRequests(pair.Value)))
+      .ToArray();
+    PremadePlanSessionDto[] sessions = template.Sessions
+      .OrderBy(static session => session.Position)
+      .Select(static session => new PremadePlanSessionDto(
+        session.Position,
+        session.WeekNumber,
+        session.SessionNumber,
+        session.Phase,
+        session.WorkoutKey,
+        session.WorkoutName,
+        session.AlternativeVariants.Select(static alternative => new PremadePlanSessionAlternativeDto(
+          alternative.WorkoutKey,
+          alternative.Variant,
+          alternative.WorkoutName)).ToArray()))
+      .ToArray();
     return new PremadePlanPreviewDto(
       ToCatalogDto(template, installations),
       profile.Id,
@@ -173,7 +197,9 @@ public static class PremadePlanPlanningEndpoints
       prepared.Targets.Count(static target => target.Disposition == WorkoutTargetDisposition.Normalized),
       prepared.Targets.Count(static target => target.Disposition == WorkoutTargetDisposition.Rejected),
       prepared.WorkoutsByKey.Count,
-      phases);
+      phases,
+      workouts,
+      sessions);
   }
 
   private static PremadePlanCatalogDto ToCatalogDto(

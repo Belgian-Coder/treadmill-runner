@@ -43,7 +43,7 @@
     {
         @if (!showTests && insights is { } local)
         {
-            <section class="weekly-summary-panel" aria-label="Personal local trends and goals">
+            <section class="weekly-summary-panel" aria-label="Personal local trends">
                 <div class="weekly-summary-heading"><strong>Personal trends · completed runs</strong><span>Simulator and system-test sessions are excluded.</span></div>
                 <div class="weekly-summary trend-summary">
                     <article><span>Last 7 days</span><strong>@local.WeeklyTrends.CompletedSessions runs · @local.WeeklyTrends.DistanceKilometers.ToString("0.00") km</strong></article>
@@ -54,10 +54,6 @@
                 @if (local.Trends.IncompleteTelemetrySessions > 0)
                 {
                     <p class="field-hint">@local.Trends.IncompleteTelemetrySessions completed run(s) contain incomplete telemetry; totals retain the recorded values without estimation.</p>
-                }
-                @if (local.Goals.Any(static goal => goal.Enabled))
-                {
-                    <p class="field-hint"><strong>Local goals:</strong> @string.Join(" · ", local.Goals.Where(static goal => goal.Enabled).Select(static goal => $"{goal.TargetValue:0.#} {goal.Kind.ToLowerInvariant()} {goal.Period.ToLowerInvariant()}"))</p>
                 }
             </section>
         }

@@ -498,7 +498,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
   {
     "workout-editor" => $"/workouts/new?workoutId={scenario.FeaturedWorkoutId:D}",
     "history-detail" => $"/history/{scenario.HistorySessionId:D}",
-    "profiles" => $"/profiles?garmin=connected&profileId={scenario.MarcProfileId:D}",
+    "profiles" => "/profiles",
     _ => path,
   };
 
@@ -515,13 +515,16 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
           .ToBeVisibleAsync();
         break;
       case "profiles":
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin Connect", Exact = true })).ToContainTextAsync("Marc's Garmin account");
+        await Page.Locator(".profile-row").Filter(new() { HasText = "Marc" })
+          .GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToHaveCountAsync(0);
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToHaveCountAsync(0);
+        await Expect(Page.GetByText("Personal local goal", new() { Exact = true })).ToHaveCountAsync(0);
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("Experimental");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToBeVisibleAsync();
         break;
       case "workouts":
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Training plans", Exact = true }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
         break;
       case "history-detail":
         ILocator heartRateZones = Page.GetByText("Time in heart-rate zones", new() { Exact = true });
@@ -658,9 +661,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.Locator(".profile-row--active")).ToContainTextAsync("Marc");
         await Expect(Page.GetByLabel("Maximum heart rate", new() { Exact = true })).ToHaveValueAsync("206");
         ILocator advancedSections = Page.Locator(".advanced-settings");
-        await Expect(advancedSections).ToHaveCountAsync(2);
+        await Expect(advancedSections).ToHaveCountAsync(1);
         await Expect(advancedSections.Nth(0)).Not.ToHaveAttributeAsync("open", "");
-        await Expect(advancedSections.Nth(1)).Not.ToHaveAttributeAsync("open", "");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("disabled by default");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToContainTextAsync("never starts the treadmill");
         break;
@@ -692,6 +694,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
 
     await Page.SetViewportSizeAsync(1440, 1000);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Standalone workouts", Exact = true }).ClickAsync();
     ILocator featured = Page.Locator(".workout-card").Filter(new() { HasText = GalleryScenario.FeaturedWorkoutName });
     await Expect(featured).ToBeVisibleAsync();
     await Expect(featured.GetByText("Intervals", new() { Exact = true })).ToBeVisibleAsync();
@@ -729,7 +732,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Expect(calendarDialog.GetByRole(AriaRole.Heading, new() { Name = "All planned changes", Exact = true })).ToBeVisibleAsync();
     Assert.True(await calendarDialog.GetByRole(AriaRole.Region, new() { Name = "All planned workout changes", Exact = true }).Locator("tbody tr").CountAsync() > 0);
     await Expect(calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
-    await Expect(calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Send this session to Garmin", Exact = true })).ToBeVisibleAsync();
+    await Expect(calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Send this session to Garmin", Exact = true })).ToHaveCountAsync(0);
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-calendar-workout-details.png"), FullPage = false });
     await calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Close calendar workout details", Exact = true }).ClickAsync();
     await Expect(calendarDialog).ToBeHiddenAsync();

@@ -30,22 +30,6 @@ public sealed record ProfileUpsertRequest(
   double? HeartRateDecreaseStepKph = null,
   int? HeartRateDecreaseCooldownSeconds = null);
 
-public sealed record GarminConnectionStatusView(
-  Guid ProfileId,
-  bool ProviderConfigured,
-  string SetupMessage,
-  bool Connected,
-  string? AccountLabel,
-  DateTimeOffset? ConnectedAtUtc,
-  DateTimeOffset? LastSyncAttemptAtUtc,
-  DateTimeOffset? LastSyncSuccessAtUtc,
-  string? LastError,
-  int PendingItems,
-  int FailedItems,
-  int SyncedItems);
-
-public sealed record GarminConnectStartView(string AuthorizationUrl, DateTimeOffset ExpiresAtUtc);
-
 public sealed record WorkoutSummaryView(
   Guid Id,
   string Name,
@@ -189,6 +173,25 @@ public sealed record PremadePlanCatalogView(
 
 public sealed record PremadePlanPhaseView(string Name, int FirstWeek, int LastWeek, int SessionCount);
 
+public sealed record PremadePlanWorkoutView(
+  string Key,
+  string Name,
+  string? Description,
+  int ExpandedStepCount,
+  double? DurationMinutes,
+  IReadOnlyList<WorkoutBlockInput> Blocks);
+
+public sealed record PremadePlanSessionAlternativeView(string WorkoutKey, string Variant, string WorkoutName);
+
+public sealed record PremadePlanSessionView(
+  int Position,
+  int WeekNumber,
+  int SessionNumber,
+  string Phase,
+  string WorkoutKey,
+  string WorkoutName,
+  IReadOnlyList<PremadePlanSessionAlternativeView> Alternatives);
+
 public sealed record PremadePlanPreviewView(
   PremadePlanCatalogView Template,
   Guid ProfileId,
@@ -201,7 +204,9 @@ public sealed record PremadePlanPreviewView(
   int NormalizedTargetCount,
   int RejectedTargetCount,
   int UniqueWorkoutCount,
-  IReadOnlyList<PremadePlanPhaseView> Phases);
+  IReadOnlyList<PremadePlanPhaseView> Phases,
+  IReadOnlyList<PremadePlanWorkoutView> Workouts,
+  IReadOnlyList<PremadePlanSessionView> Sessions);
 
 public sealed record PremadePlanMaterializeRequest(
   Guid OperationId,

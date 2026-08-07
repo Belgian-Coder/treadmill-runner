@@ -180,6 +180,25 @@ public sealed record PremadePlanCatalogDto(
 
 public sealed record PremadePlanPhaseDto(string Name, int FirstWeek, int LastWeek, int SessionCount);
 
+public sealed record PremadePlanWorkoutDto(
+  string Key,
+  string Name,
+  string? Description,
+  int ExpandedStepCount,
+  double? DurationMinutes,
+  IReadOnlyList<WorkoutBlockRequest> Blocks);
+
+public sealed record PremadePlanSessionAlternativeDto(string WorkoutKey, string Variant, string WorkoutName);
+
+public sealed record PremadePlanSessionDto(
+  int Position,
+  int WeekNumber,
+  int SessionNumber,
+  string Phase,
+  string WorkoutKey,
+  string WorkoutName,
+  IReadOnlyList<PremadePlanSessionAlternativeDto> Alternatives);
+
 public sealed record PremadePlanPreviewDto(
   PremadePlanCatalogDto Template,
   Guid ProfileId,
@@ -192,7 +211,9 @@ public sealed record PremadePlanPreviewDto(
   int NormalizedTargetCount,
   int RejectedTargetCount,
   int UniqueWorkoutCount,
-  IReadOnlyList<PremadePlanPhaseDto> Phases);
+  IReadOnlyList<PremadePlanPhaseDto> Phases,
+  IReadOnlyList<PremadePlanWorkoutDto> Workouts,
+  IReadOnlyList<PremadePlanSessionDto> Sessions);
 
 public sealed record PremadePlanMaterializeRequest(
   Guid OperationId,
