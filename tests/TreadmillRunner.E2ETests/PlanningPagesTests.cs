@@ -569,8 +569,12 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     using JsonDocument document = JsonDocument.Parse(await created.Content.ReadAsStreamAsync());
     Guid workoutId = document.RootElement.GetProperty("workoutId").GetGuid();
 
-    await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/workouts/new?workoutId={workoutId:D}").AbsoluteUri);
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New immutable revision" })).ToBeVisibleAsync();
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/workouts/new?workoutId={workoutId:D}").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New immutable revision" }))
+      .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
     await Expect(Page.Locator(".step-card > summary").Filter(new() { HasText = "Nested repeat block 2" })).ToBeVisibleAsync();
 
     await Page.GetByLabel("Workout name").FillAsync("Nested revision");

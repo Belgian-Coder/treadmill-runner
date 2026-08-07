@@ -1011,7 +1011,7 @@ body.immersive-view { overflow: hidden; }
 .active-runner-picker summary::-webkit-details-marker { display: none; }
 .active-runner-picker summary > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #74e0bd; color: #06212a; font-size: .78rem; font-weight: 900; }
 .active-runner-picker summary strong { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.active-runner-picker__menu { position: absolute; z-index: 80; top: calc(100% + .45rem); right: 0; display: grid; min-width: 13rem; gap: .4rem; padding: .7rem; border: 1px solid #74e0bd55; border-radius: 1rem; background: #0b2630; box-shadow: 0 1rem 2rem #0008; }
+.active-runner-picker__menu { position: absolute; z-index: 80; top: calc(100% + .45rem); right: 0; display: grid; min-width: 13rem; max-height: min(70vh, 24rem); overflow-y: auto; overscroll-behavior: contain; gap: .4rem; padding: .7rem; border: 1px solid #74e0bd55; border-radius: 1rem; background: #0b2630; box-shadow: 0 1rem 2rem #0008; }
 .active-runner-picker__menu > span { color: #9ab6b2; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .active-runner-picker__menu button, .active-runner-picker__menu a { min-height: 44px; padding: .55rem .75rem; border: 1px solid #d9f9f225; border-radius: .75rem; background: #081e27; color: #effff9; text-align: left; text-decoration: none; }
 .active-runner-picker__menu .active-runner-picker__selected { border-color: #74e0bd; background: #174b42; }
