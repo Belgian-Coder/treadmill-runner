@@ -257,7 +257,17 @@ public static class LocalFirstEndpoints
       new LocalHealthComponent("Storage", backup?.Status == "Verified" ? LocalHealthState.Healthy : backup is null ? LocalHealthState.Degraded : LocalHealthState.ActionRequired, backup?.Detail ?? "No owner-selected backup has been verified yet."),
       new LocalHealthComponent("Release", updates.Status.State.ToString() is "Failed" or "RollbackFailed" ? LocalHealthState.ActionRequired : LocalHealthState.Healthy, updates.Status.Message),
     };
-    return Results.Ok(OperationsHealthAggregator.Combine(components));
+    OperationsHealthSummary summary = OperationsHealthAggregator.Combine(components);
+    return Results.Ok(new
+    {
+      State = summary.State.ToString(),
+      Components = summary.Components.Select(static component => new
+      {
+        component.Id,
+        State = component.State.ToString(),
+        component.Detail,
+      }),
+    });
   }
 
   private static async Task<IResult> TryAsync(Func<Task<IResult>> action)

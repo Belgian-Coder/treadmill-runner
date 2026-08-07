@@ -44,6 +44,22 @@ public sealed class OperationsEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Combined_operations_summary_uses_displayable_health_state_names()
+  {
+    using HttpClient client = factory.CreateClient();
+
+    using HttpResponseMessage response = await client.GetAsync("/api/local-first/operations-summary");
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    JsonElement summary = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    Assert.Contains(summary.GetProperty("state").GetString(), new[] { "Healthy", "Degraded", "ActionRequired" });
+    JsonElement[] components = summary.GetProperty("components").EnumerateArray().ToArray();
+    Assert.NotEmpty(components);
+    Assert.All(components, component =>
+      Assert.Contains(component.GetProperty("state").GetString(), new[] { "Healthy", "Degraded", "ActionRequired" }));
+  }
+
+  [Fact]
   public async Task Restore_requires_preview_and_exact_confirmation_then_consumes_token()
   {
     using HttpClient client = factory.CreateClient();

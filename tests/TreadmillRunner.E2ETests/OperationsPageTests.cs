@@ -276,6 +276,9 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operations", Exact = true }))
       .ToBeVisibleAsync();
+    ILocator operationsSummary = Page.GetByRole(AriaRole.Region, new() { Name = "Operations summary", Exact = true });
+    await Expect(operationsSummary).ToContainTextAsync("Service · Healthy");
+    await Expect(operationsSummary.GetByRole(AriaRole.Button, new() { Name = "Try again", Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Open on another device", Exact = true }))
       .ToBeVisibleAsync();
     await Expect(Page.Locator(".app-access-qr")).ToHaveAttributeAsync("src", new System.Text.RegularExpressions.Regex("phone-secure$"));
@@ -300,7 +303,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     ILocator check = Page.GetByRole(AriaRole.Heading, new() { Name = "Signed updates", Exact = true })
       .Locator("xpath=..").GetByRole(AriaRole.Button, new() { Name = "Check now", Exact = true });
     await check.ClickAsync();
-    await Expect(Page.GetByText("The update feed is unavailable or its configuration could not be validated.", new() { Exact = true }))
+    await Expect(Page.Locator("#signed-updates").GetByText("The update feed is unavailable or its configuration could not be validated.", new() { Exact = true }))
       .ToBeVisibleAsync();
     LocatorBoundingBoxResult? checkBox = await check.BoundingBoxAsync();
     Assert.NotNull(checkBox);
