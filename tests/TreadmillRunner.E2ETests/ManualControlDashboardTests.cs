@@ -53,7 +53,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     SeededPlan plan = await SeedPlanAsync(viewport);
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
@@ -361,7 +361,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     };
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
@@ -406,7 +406,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     };
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
@@ -452,7 +452,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     };
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();

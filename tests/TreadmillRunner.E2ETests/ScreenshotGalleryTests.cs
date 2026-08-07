@@ -338,7 +338,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByRole(AriaRole.Alertdialog)).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Alertdialog)).ToContainTextAsync("will be abandoned");
         Assert.Equal(0, Volatile.Read(ref programStartRequests));
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Keep for later", Exact = true }).ClickAsync();
         await Expect(Page.GetByRole(AriaRole.Alertdialog)).ToBeHiddenAsync();
         Assert.Equal(0, Volatile.Read(ref programStartRequests));
         await Page.Locator(".program-card__select").First.ClickAsync();
@@ -510,9 +510,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
 
   private async Task SelectFeaturedRunAsync()
   {
-    ILocator runner = Page.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true });
-    await runner.ClickAsync();
-    await Expect(runner).ToHaveAttributeAsync("aria-checked", "true");
+    await Page.SelectActiveRunnerAsync("Marc");
+    await Page.GetByRole(AriaRole.Button, new() { Name = GalleryScenario.FeaturedWorkoutName, Exact = false }).First.ClickAsync();
     ILocator selectedWorkout = Page.GetByLabel("Selected workout", new() { Exact = true });
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
     await Expect(selectedWorkout)
@@ -553,7 +552,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         Assert.True(await Page.Locator(".program-card").CountAsync() >= 2, "Workout gallery must show populated training plans.");
         await Expect(Page.GetByText("First 5K", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Stronger 10K", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("0 of 3 complete", new() { Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("0 complete · 3 remaining", new() { Exact = true })).ToBeVisibleAsync();
         break;
       case "workout-editor":
         await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync(GalleryScenario.FeaturedWorkoutName);
@@ -619,6 +618,35 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       default:
         throw new ArgumentOutOfRangeException(nameof(fileName), fileName, "Unknown gallery screen.");
     }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Workout_library_and_details_have_populated_showcase_images()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+    Directory.CreateDirectory(directory);
+
+    await Page.SetViewportSizeAsync(1440, 1000);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator featured = Page.Locator(".workout-card").Filter(new() { HasText = GalleryScenario.FeaturedWorkoutName });
+    await Expect(featured).ToBeVisibleAsync();
+    await Expect(featured.GetByText("Intervals", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-026-workout-library.png"), FullPage = true });
+
+    await featured.GetByRole(AriaRole.Button, new() { Name = "View details", Exact = true }).ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Workout structure", Exact = true })).ToBeVisibleAsync();
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-026-workout-details.png"), FullPage = false });
+
+    await Page.SetViewportSizeAsync(440, 956);
+    await AssertNoHorizontalOverflowAsync("workout details", "iPhone 17 Pro Max portrait");
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-026-workout-details-mobile.png"), FullPage = false });
   }
 
   private async Task AssertNoHorizontalOverflowAsync(string fileName, string viewport)

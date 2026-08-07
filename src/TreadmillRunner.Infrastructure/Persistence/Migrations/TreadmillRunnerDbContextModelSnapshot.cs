@@ -1289,7 +1289,7 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Workouts", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Workouts_Kind", "\"Kind\" IN ('Structured', 'ManualTemplate')");
+                            t.HasCheckConstraint("CK_Workouts_Kind", "\"Kind\" IN ('Structured', 'ManualTemplate', 'PlanInternal')");
 
                             t.HasCheckConstraint("CK_Workouts_Name", "length(\"Name\") > 0");
                         });
@@ -1310,6 +1310,33 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("WorkoutPrograms", (string)null);
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramExtraOccurrenceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramRunId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutProgramItemId");
+
+                    b.HasIndex("WorkoutProgramRunId", "Date");
+
+                    b.ToTable("WorkoutProgramExtraOccurrences", (string)null);
                 });
 
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
@@ -1427,6 +1454,16 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("EndedAtUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ScheduleTimeZoneId")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ScheduledStartDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ScheduledWeekdayMask")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -1457,9 +1494,45 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.ToTable("WorkoutProgramRuns", null, t =>
                         {
+                            t.HasCheckConstraint("CK_WorkoutProgramRuns_Schedule", "(\"ScheduledStartDate\" IS NULL AND \"ScheduledWeekdayMask\" = 0 AND \"ScheduleTimeZoneId\" IS NULL) OR (\"ScheduledStartDate\" IS NOT NULL AND \"ScheduledWeekdayMask\" BETWEEN 1 AND 127 AND length(\"ScheduleTimeZoneId\") > 0)");
+
                             t.HasCheckConstraint("CK_WorkoutProgramRuns_Status", "\"Status\" IN ('Active', 'Completed', 'Abandoned')");
 
                             t.HasCheckConstraint("CK_WorkoutProgramRuns_Version", "\"Version\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramScheduleOverrideEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsSkipped")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateOnly?>("TargetDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramRunId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutProgramItemId");
+
+                    b.HasIndex("WorkoutProgramRunId", "WorkoutProgramItemId")
+                        .IsUnique();
+
+                    b.ToTable("WorkoutProgramScheduleOverrides", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkoutProgramScheduleOverrides_Value", "(\"IsSkipped\" = 1 AND \"TargetDate\" IS NULL) OR (\"IsSkipped\" = 0 AND \"TargetDate\" IS NOT NULL)");
                         });
                 });
 
@@ -1893,6 +1966,21 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.Navigation("DeviceEnrollment");
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramExtraOccurrenceEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutProgramItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRunEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutProgramRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
                 {
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRevisionEntity", "WorkoutProgramRevision")
@@ -1938,6 +2026,21 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("WorkoutProgramRevisionId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramScheduleOverrideEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutProgramItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRunEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutProgramRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

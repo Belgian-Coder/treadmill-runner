@@ -49,7 +49,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
       .ToBeVisibleAsync();
     try
     {
-      await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+      await Page.SelectActiveRunnerAsync(plan.ProfileName);
     }
     catch (TimeoutException exception)
     {
@@ -58,9 +58,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
         $"Run page did not hydrate the seeded runner. Browser errors: {string.Join(" | ", browserErrors)}. Body: {body}",
         exception);
     }
-    ILocator selectedRunner = Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true });
-    await Expect(selectedRunner).ToHaveAttributeAsync("aria-checked", "true");
-    await Expect(selectedRunner).ToHaveCSSAsync("background-color", "rgb(23, 75, 66)");
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
 
     await Expect(Page.GetByLabel("Selected runner")).ToHaveTextAsync(plan.ProfileName);
@@ -93,7 +91,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.SetViewportSizeAsync(440, 956);
     await ResetSimulatorAsync();
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
 
     ILocator manualRun = Page.GetByRole(AriaRole.Button, new() { Name = "Manual run", Exact = false });
     await manualRun.ClickAsync();
@@ -166,7 +164,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.RouteAsync("**/hubs/live**", route => route.AbortAsync());
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
     await Expect(Page.Locator(".connection-state")).ToContainTextAsync("retrying", new() { Timeout = 15_000 });
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls" })).ToBeDisabledAsync();
@@ -467,7 +465,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await ResetSimulatorAsync();
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Radio, new() { Name = plan.ProfileName, Exact = true }).ClickAsync();
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
   }
 

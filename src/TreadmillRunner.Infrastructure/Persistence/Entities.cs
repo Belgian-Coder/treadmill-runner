@@ -258,7 +258,29 @@ internal sealed class WorkoutProgramRunEntity
   public string Status { get; set; } = string.Empty;
   public DateTimeOffset StartedAtUtc { get; set; }
   public DateTimeOffset? EndedAtUtc { get; set; }
+  public DateOnly? ScheduledStartDate { get; set; }
+  public int ScheduledWeekdayMask { get; set; }
+  public string? ScheduleTimeZoneId { get; set; }
   public int Version { get; set; }
+}
+
+internal sealed class WorkoutProgramScheduleOverrideEntity
+{
+  public Guid Id { get; set; }
+  public Guid WorkoutProgramRunId { get; set; }
+  public Guid WorkoutProgramItemId { get; set; }
+  public DateOnly? TargetDate { get; set; }
+  public bool IsSkipped { get; set; }
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class WorkoutProgramExtraOccurrenceEntity
+{
+  public Guid Id { get; set; }
+  public Guid WorkoutProgramRunId { get; set; }
+  public Guid WorkoutProgramItemId { get; set; }
+  public DateOnly Date { get; set; }
+  public DateTimeOffset CreatedAtUtc { get; set; }
 }
 
 internal sealed class WorkoutSessionEntity

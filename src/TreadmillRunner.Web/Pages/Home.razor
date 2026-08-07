@@ -248,18 +248,6 @@
         <section class="preflight-grid">
             <article class="selection-card">
                 <p class="eyebrow">Choose today’s run</p>
-                <fieldset class="runner-choice" aria-label="Choose runner">
-                    <legend>Runner</legend>
-                    <div role="radiogroup" aria-label="Choose runner">
-                        @foreach (ProfileView profile in profiles.Where(static profile => !string.IsNullOrWhiteSpace(profile.DisplayName)))
-                        {
-                            <button class="runner-choice__button @(selectedProfileId == profile.Id ? "runner-choice__button--selected" : null)" type="button" role="radio"
-                                    aria-checked="@(selectedProfileId == profile.Id ? "true" : "false")"
-                                    @onclick="() => SelectProfileAsync(profile.Id)">@profile.DisplayName</button>
-                        }
-                    </div>
-                </fieldset>
-
                 @if (selectedProfileId is not null)
                 {
                     <section class="next-run-card" aria-label="Recommended next run">
@@ -306,6 +294,13 @@
                         </section>
                     }
                 }
+                else
+                {
+                    <section class="next-run-card" aria-label="Runner required">
+                        <span class="next-run-card__icon" aria-hidden="true">?</span>
+                        <span class="next-run-card__copy"><small>Runner required</small><strong>Choose who is running</strong><span>Use the runner control in the navigation bar. The app remembers it.</span></span>
+                    </section>
+                }
 
                 <section class="workout-picker" aria-label="Choose workout">
                     <div class="workout-picker__heading"><strong>Workout</strong><span>@VisibleWorkoutChoices.Count available</span></div>
@@ -346,11 +341,28 @@
                                     @if (pendingProgramStart is { } pending && pending.Program.Id == program.Id)
                                     {
                                         <section class="program-start-confirm" role="alertdialog" aria-labelledby="run-program-start-confirm-title">
-                                            <strong id="run-program-start-confirm-title">@(pending.Restart ? $"Restart {program.Name}?" : $"Start {program.Name}?")</strong>
+                                            <strong id="run-program-start-confirm-title">@(pending.Restart ? $"Restart {program.Name} for {SelectedProfileName}?" : $"Start {program.Name} for {SelectedProfileName}?")</strong>
                                             <p>@ProgramStartWarning(pending)</p>
+                                            <div class="program-schedule-fields">
+                                                <label class="field">First training date
+                                                    <input type="date" @bind="programScheduleStartDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" />
+                                                </label>
+                                                <fieldset class="program-training-days">
+                                                    <legend>Choose exactly @RequiredTrainingDays training day(s)</legend>
+                                                    <div>
+                                                        @foreach ((string label, int flag) in ScheduleWeekdays)
+                                                        {
+                                                            <button type="button" aria-pressed="@((programScheduleWeekdayMask & flag) != 0)"
+                                                                    class="@((programScheduleWeekdayMask & flag) != 0 ? "is-selected" : null)"
+                                                                    @onclick="() => ToggleProgramWeekday(flag)">@label</button>
+                                                        }
+                                                    </div>
+                                                </fieldset>
+                                                <p class="field-help">The plan stays in order and appears only on @SelectedProfileName’s calendar.</p>
+                                            </div>
                                             <div class="card-actions">
                                                 <button class="secondary-action compact-action" type="button" @onclick="CancelProgramStart">Cancel</button>
-                                                <button class="primary-action compact-action" type="button" @onclick="ConfirmProgramStartAsync">@ProgramStartConfirmLabel(pending)</button>
+                                                <button class="primary-action compact-action" type="button" disabled="@(!CanConfirmProgramSchedule)" @onclick="ConfirmProgramStartAsync">@ProgramStartConfirmLabel(pending)</button>
                                             </div>
                                         </section>
                                     }
@@ -465,6 +477,19 @@
     private bool isStopPending;
     private bool stopRequestedDuringCommand;
     private PendingProgramStart? pendingProgramStart;
+    private static readonly (string Label, int Flag)[] ScheduleWeekdays =
+    [
+        ("Mon", 1), ("Tue", 2), ("Wed", 4), ("Thu", 8), ("Fri", 16), ("Sat", 32), ("Sun", 64),
+    ];
+    private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
+    private int programScheduleWeekdayMask = 37;
+    private int RequiredTrainingDays => pendingProgramStart is { } pending
+        ? Math.Max(1, pending.Program.Items.Where(static item => item.WeekNumber is not null)
+            .GroupBy(static item => item.WeekNumber).Select(static group => group.Count()).DefaultIfEmpty(3).Max())
+        : 3;
+    private bool CanConfirmProgramSchedule =>
+        Enumerable.Range(0, 7).Count(bit => ((programScheduleWeekdayMask >> bit) & 1) == 1) == RequiredTrainingDays &&
+        (programScheduleWeekdayMask & WeekdayFlag(programScheduleStartDate.DayOfWeek)) != 0;
     private int? startHoldSecondsRemaining;
     private readonly BoundedLiveSeries<LiveChartPoint> liveChartPoints = new(43_200);
     private long renderedLiveChartVersion = -1;
@@ -494,7 +519,7 @@
                     choice.Name.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
                     (choice.Description?.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false));
             }
-            return choices.GroupBy(static choice => choice.RevisionId)
+            return choices.GroupBy(static choice => new { choice.RevisionId, choice.ProgramItemId, choice.SortDate, choice.SelectionSource })
                 .Select(static group => group.First())
                 .OrderBy(static choice => choice.SortDate)
                 .ThenBy(static choice => choice.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -520,7 +545,19 @@
             if (calendar is not null)
             {
                 WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == calendar.WorkoutRevisionId);
-                return new WorkoutChoice(calendar.WorkoutRevisionId, calendar.WorkoutName, summary?.Description, "Today’s calendar", SummaryStats(summary, calendar.RevisionNumber), DateOnly.FromDateTime(DateTime.Today), "Calendar");
+                string context = calendar.Source == "Program"
+                    ? $"{calendar.ScheduleName} · workout {calendar.ProgramPosition} of {calendar.ProgramTotal}"
+                    : "Today’s calendar";
+                return new WorkoutChoice(
+                    calendar.WorkoutRevisionId,
+                    calendar.WorkoutName,
+                    summary?.Description,
+                    context,
+                    calendar.Source == "Program" ? ProgramCalendarStats(calendar) : SummaryStats(summary, calendar.RevisionNumber),
+                    DateOnly.FromDateTime(DateTime.Today),
+                    calendar.Source == "Program" && !calendar.IsRepeat ? "Program" : "Calendar",
+                    calendar.IsRepeat ? null : calendar.ProgramRunId,
+                    calendar.IsRepeat ? null : calendar.ProgramItemId);
             }
             if (CalendarNeedsChoice) return null;
             WorkoutProgramView? active = programs.FirstOrDefault(static program => program.Run is not null && !program.IsComplete && program.NextItemId is not null);
@@ -802,11 +839,22 @@
                 option.WorkoutRevisionId,
                 option.WorkoutName,
                 summary?.Description,
-                day.Date.ToString("ddd d MMM"),
-                SummaryStats(summary, option.RevisionNumber),
+                option.Source == "Program"
+                    ? $"{day.Date:ddd d MMM} · {option.ScheduleName}"
+                    : day.Date.ToString("ddd d MMM"),
+                option.Source == "Program" ? ProgramCalendarStats(option) : SummaryStats(summary, option.RevisionNumber),
                 day.Date,
-                "Calendar");
+                option.Source == "Program" && !option.IsRepeat ? "Program" : "Calendar",
+                option.IsRepeat ? null : option.ProgramRunId,
+                option.IsRepeat ? null : option.ProgramItemId);
         })) ?? Array.Empty<WorkoutChoice>();
+
+    private static string ProgramCalendarStats(CalendarOptionView option)
+    {
+        string phase = string.IsNullOrWhiteSpace(option.Phase) ? "Plan" : option.Phase;
+        string week = option.WeekNumber is { } weekNumber ? $" · week {weekNumber}" : string.Empty;
+        return $"Workout {option.ProgramPosition} of {option.ProgramTotal} · {phase}{week}";
+    }
 
     private IEnumerable<WorkoutChoice> ProgramWorkoutChoices()
     {
@@ -838,7 +886,8 @@
         WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         using HttpResponseMessage response = await Http.PostAsJsonAsync(
             $"api/planning/programs/{program.Id}/{action}",
-            new WorkoutProgramStartRequest(Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version));
+            new WorkoutProgramStartRequest(Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version,
+                programScheduleStartDate, programScheduleWeekdayMask, "Europe/Brussels"));
         actionStatus = response.IsSuccessStatusCode ? $"{program.Name} started." : "The training plan could not be started.";
         if (!response.IsSuccessStatusCode)
         {
@@ -857,9 +906,35 @@
     {
         WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         pendingProgramStart = new PendingProgramStart(program, restart, active);
+        programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
+        programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
     }
 
     private void CancelProgramStart() => pendingProgramStart = null;
+
+    private void ToggleProgramWeekday(int flag)
+    {
+        programScheduleWeekdayMask = (programScheduleWeekdayMask & flag) != 0
+            ? programScheduleWeekdayMask & ~flag
+            : programScheduleWeekdayMask | flag;
+    }
+
+    private static int DefaultWeekdayMask(int count) => count switch
+    {
+        1 => 1,
+        2 => 34,
+        3 => 37,
+        4 => 43,
+        5 => 47,
+        6 => 63,
+        _ => 127,
+    };
+    private static DateOnly NextSelectedDate(DateOnly start, int mask)
+    {
+        while ((mask & WeekdayFlag(start.DayOfWeek)) == 0) start = start.AddDays(1);
+        return start;
+    }
+    private static int WeekdayFlag(DayOfWeek day) => day == DayOfWeek.Sunday ? 64 : 1 << ((int)day - 1);
 
     private async Task ConfirmProgramStartAsync()
     {

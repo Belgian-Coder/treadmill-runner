@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "story": "US-TR-025",
+  "validatedAtUtc": "2026-08-06T18:15:00Z",
+  "baselineCommit": "016d48e2b65c7e251cf2a9365440b0bf56b392a1",
+  "buildFingerprint": "tr-025-working-tree-20260806",
+  "result": "passed",
+  "commands": [
+    {
+      "name": "workflow-plan-check",
+      "command": "user-story-workflow plan-check US-TR-025",
+      "result": "passed",
+      "durationSeconds": 1.0,
+      "summary": "implementation allowed after plan quality and owner approval gates"
+    },
+    {
+      "name": "release-build",
+      "command": "dotnet build TreadmillRunner.slnx -c Release --no-restore",
+      "result": "passed",
+      "durationSeconds": 18.4,
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "name": "focused-core-tests",
+      "command": "dotnet test Core.Tests -c Release --filter WorkoutProgramTests",
+      "result": "passed",
+      "durationSeconds": 2.2,
+      "summary": "14 passed; ordered projection, range stability, progression, and first-date validation"
+    },
+    {
+      "name": "focused-integration-tests",
+      "command": "dotnet test IntegrationTests -c Release --filter PremadePlanEndpointTests|WorkoutProgramEndpointTests|WorkoutProgramStoreTests",
+      "result": "passed",
+      "durationSeconds": 6.1,
+      "summary": "5 passed; profile isolation, hidden internals, durable schedule, and 174 ordered calendar positions"
+    },
+    {
+      "name": "copied-database-migration",
+      "command": "eng/database.ps1 -Action Update -DatabasePath <copied-validation-database>",
+      "result": "passed",
+      "durationSeconds": 6.5,
+      "summary": "all migrations including TR-025 applied to a copied project database"
+    },
+    {
+      "name": "pending-model-check",
+      "command": "dotnet ef migrations has-pending-model-changes",
+      "result": "passed",
+      "durationSeconds": 3.4,
+      "summary": "no model changes since the latest migration"
+    },
+    {
+      "name": "local-quality-gates",
+      "command": "validate_local_quality.py with docs, changed line endings, static analysis, snapshots, and slop scan",
+      "result": "passed",
+      "durationSeconds": 45.1,
+      "summary": "5 of 5 checks passed; raw path-bearing report retained only in ignored validation storage"
+    },
+    {
+      "name": "full-deterministic-validation",
+      "command": "eng/validate.ps1 -Configuration Release",
+      "result": "passed",
+      "durationSeconds": 89.3,
+      "summary": "Release build 0 warnings/errors; 214 non-browser tests passed; public evidence, BLE boundaries, Garmin contract, and Connect IQ static checks passed"
+    },
+    {
+      "name": "full-browser-sweep",
+      "command": "eng/playwright.ps1 -Configuration Release",
+      "result": "resolved",
+      "durationSeconds": 561.2,
+      "summary": "53 passed and 2 adjacent failures identified: long profile-name mobile overflow and a stale Cancel expectation"
+    },
+    {
+      "name": "affected-browser-matrix-after-fixes",
+      "command": "publish E2E host and run PlanningPages responsive theory, ScreenshotGallery screens, and PremadePlanExperienceTests",
+      "result": "passed",
+      "durationSeconds": 246.8,
+      "summary": "15 passed across desktop, tablet, iPhone, populated gallery, two-runner isolation, scheduling, and ordered calendar flow"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "screenshots/showcase/tr-025-profile-plan-schedule.png",
+      "sha256": "2D62A85339BB10E65994BB98B222D163597CDE2846D4229AC358DE1E06E7AB80"
+    },
+    {
+      "path": "screenshots/showcase/tr-025-profile-plan-calendar.png",
+      "sha256": "AAA473D3E4469E341E8A1E6AF7F8866E9BA757DB97585E7AA08D9D9C23D810A7"
+    },
+    {
+      "path": "screenshots/showcase/tr-025-profile-plan-mobile.png",
+      "sha256": "6C00F66177567F41152A81C86EFA20FCCB639B1123084DDDA24B4F62FA67308E"
+    }
+  ],
+  "skipped": [
+    "coverage: no coverage artifact was requested or produced for this story",
+    "mutation testing: not configured for this bounded UI/persistence change",
+    "Connect IQ compilation: monkeyc remains unavailable; unrelated static checks passed",
+    "live treadmill commands and BLE commissioning",
+    "deployment, GitHub tag, or public release",
+    "long soak and power-cycle testing",
+    "pre-release data compatibility conversion by explicit owner decision",
+    "subagent reviews: no agents were started for this story"
+  ]
+}

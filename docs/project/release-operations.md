@@ -197,6 +197,10 @@ From an elevated PowerShell window, install the already verified package into th
 
 This command validates the administrator-pinned certificate, signature, hash, archive paths, size bounds, and required executables before installing the manifest last. It does not activate the release; activation remains the two-step Operations UI flow.
 
+## 2026-08-07 local 1.5.18 activation
+
+Release `1.5.18` was built and signed locally after deterministic validation. The running `1.5.17` service accepted the signed offline bundle only while idle, reported it as staged, and activated it through the normal helper. The restarted service reported `1.5.18`, a changed build fingerprint, HTTP 200 readiness, no active session, and retained planning data. This was a local signed-bundle installation; it did not create a GitHub tag or public release.
+
 ## State meanings
 
 | State | Meaning | Operator action |

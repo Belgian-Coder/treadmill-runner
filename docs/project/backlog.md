@@ -4,7 +4,7 @@ type: delivery-backlog
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-06
+updated: 2026-08-07
 ---
 
 # Story backlog
@@ -46,5 +46,8 @@ All implementation stories use the reusable `user-story-workflow`; no project-sp
 | [TR-022](stories/tr-022-automatic-update-reconnect.md) | Automatically recover and reload the Operations UI after an owner-confirmed update activation | implemented; owner validation on the next signed release pending | Activation remains explicit; automated tests use mocked GET/status responses and never touch the live updater |
 | [TR-023](stories/tr-023-connection-continuity.md) | Gateway-owned browser continuity, guarded BLE reconciliation, and restart tracking recovery | implemented; live interruption behavior remains observational acceptance | Recovery never issues Start or retries an uncertain command; restart requires explicit resume |
 | [TR-024](stories/tr-024-premade-plan-catalog.md) | Profile-scoped premade catalog, neutral 5K/10K/fitness/walking plans, grouped long plans, and public evidence | implemented and deterministically validated | Adding never activates or starts; source material remains read-only and sanitized |
+| [TR-025](stories/tr-025-profile-plan-scheduling.md) | Truly runner-owned premade plans, guided calendar scheduling, and exact ordered progression | completed and validated | Scheduling never prepares a session or starts the treadmill; only the exact completed program item advances |
+| [TR-026](stories/tr-026-workout-summary-explorer.md) | Scannable workout differences, grouped structure details, and ordered session summaries for every training plan | completed and validated | Read-only exploration only; no session preparation or treadmill command |
+| [TR-027](stories/tr-027-plan-schedule-ux.md) | Plan-only workout hygiene, one remembered runner context, and previewed move/skip/restore/repeat calendar actions | completed, validated, and installed as 1.5.18 | Calendar conflicts are visible and never overwrite entries; repeats do not rewind progression or issue commands |
 
 Every story owns acceptance mapping, failing-first tests where practical, deterministic validation, documentation delta, skipped hardware checks, and finish evidence.

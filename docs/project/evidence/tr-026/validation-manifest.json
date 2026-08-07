@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "story": "US-TR-026",
+  "validatedAtUtc": "2026-08-06T18:58:02Z",
+  "baselineCommit": "016d48e2b65c7e251cf2a9365440b0bf56b392a1",
+  "buildFingerprint": "tr-026-working-tree-20260806",
+  "result": "passed",
+  "commands": [
+    {
+      "name": "workflow-plan-check",
+      "command": "user-story-workflow plan-check US-TR-026",
+      "result": "passed",
+      "durationSeconds": 1.6,
+      "summary": "186 plan-quality checks passed and implementation was allowed"
+    },
+    {
+      "name": "release-build",
+      "command": "dotnet build TreadmillRunner.slnx -c Release --no-restore",
+      "result": "passed",
+      "durationSeconds": 18.4,
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "name": "focused-integration",
+      "command": "run the workout revision round-trip integration test in Release",
+      "result": "passed",
+      "durationSeconds": 5.1,
+      "summary": "1 passed; HR interval, mixed-goal, speed-range, and incline-range summaries verified"
+    },
+    {
+      "name": "focused-browser-matrix",
+      "command": "publish the current E2E host and run workout-library, training-plan, and gallery browser scenarios",
+      "result": "passed",
+      "durationSeconds": 46.4,
+      "summary": "3 passed; cards, filters, grouped details, retry, keyboard close, plan sessions, and iPhone layout verified"
+    },
+    {
+      "name": "format-verification",
+      "command": "dotnet format TreadmillRunner.slnx --verify-no-changes --no-restore",
+      "result": "passed",
+      "durationSeconds": 23.9,
+      "summary": "no formatting changes required"
+    },
+    {
+      "name": "full-deterministic-validation",
+      "command": "eng/validate.ps1 -Configuration Release",
+      "result": "passed",
+      "durationSeconds": 85.8,
+      "summary": "Release build passed with 0 warnings/errors; 214 non-browser tests and all deterministic boundary checks passed"
+    },
+    {
+      "name": "local-quality-gates",
+      "command": "validate_local_quality.py with docs, changed line endings, static analysis, snapshots, and slop scan",
+      "result": "passed",
+      "durationSeconds": 41.0,
+      "summary": "5 of 5 quality checks passed; raw reports remain in ignored local validation storage"
+    },
+    {
+      "name": "public-evidence-sanitizer",
+      "command": "eng/validate-public-evidence.ps1",
+      "result": "passed",
+      "durationSeconds": 0.6,
+      "summary": "all public evidence text and showcase file types passed sanitization"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "screenshots/showcase/tr-026-workout-library.png",
+      "sha256": "12CA3E4FF89E96A7DD58CCC9C4CCBB32A3046C83B63F22AF1A03CF8B11EA1CE6"
+    },
+    {
+      "path": "screenshots/showcase/tr-026-workout-details.png",
+      "sha256": "10022D7FF17E4048BAFB59DE8512462CF03D96C6E215117F03585417D5883AD9"
+    },
+    {
+      "path": "screenshots/showcase/tr-026-workout-details-mobile.png",
+      "sha256": "55FE6AA1C3BDB8C8F461328073B7E89F0E812AD8AD599CD3FDFA1FFDCF8165B8"
+    }
+  ],
+  "skipped": [
+    "coverage: no coverage artifact was requested or produced for this read-only UI story",
+    "mutation testing: not configured for this bounded presentation change",
+    "database migration checks: persistence is unchanged",
+    "Connect IQ compilation: unrelated external SDK remains unavailable",
+    "live treadmill commands, BLE commissioning, deployment, GitHub tag, and public release",
+    "long soak and repeated power-cycle testing",
+    "subagent reviews: no agents were started for this story"
+  ]
+}

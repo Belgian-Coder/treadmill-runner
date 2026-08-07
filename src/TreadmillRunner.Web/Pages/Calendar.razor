@@ -3,6 +3,7 @@
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <PageTitle>Calendar · TreadmillRunner</PageTitle>
 
@@ -19,7 +20,7 @@
 
     @if (activeProfileId is null)
     {
-        <section class="planning-panel empty-state"><h2>Choose an active profile first</h2><p>Calendar choices belong to a household profile.</p><a class="primary-action" href="/profiles">Choose profile</a></section>
+        <section class="planning-panel empty-state"><h2>Choose a runner first</h2><p>Use the runner control in the navigation bar. Your choice is remembered across the app.</p><a class="primary-action" href="/profiles">Manage profiles</a></section>
     }
     else
     {
@@ -107,11 +108,16 @@
                                         <div class="calendar-agenda-day__workouts">
                                     @foreach (CalendarOptionView option in agendaDay.Day.Options)
                                     {
-                                        <div class="calendar-option-shell">
+                                        <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
                                             <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(agendaDay.Day, option)" aria-pressed="@option.IsSelected">
-                                                <span>@option.WorkoutName</span><small>@option.ScheduleName · revision @option.RevisionNumber</small>
+                                                <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
                                             </button>
-                                            <button class="calendar-option-manage" type="button" @onclick="() => OpenSessionManager(agendaDay.Date, option)" aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">•••</button>
+                                            @if (!option.IsRepeat)
+                                            {
+                                                <button class="calendar-option-manage" type="button"
+                                                        @onclick="() => OpenOptionManager(agendaDay.Date, option)"
+                                                        aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">•••</button>
+                                            }
                                         </div>
                                     }
                                         </div>
@@ -136,11 +142,14 @@
                                 <div class="calendar-cell__workouts">
                                 @foreach (CalendarOptionView option in day.Options.Take(2))
                                 {
-                                    <div class="calendar-option-shell">
+                                    <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
                                         <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(day, option)" aria-pressed="@option.IsSelected">
-                                            <span>@option.WorkoutName</span><small>r@option.RevisionNumber</small>
+                                            <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Repeat" : option.Source == "Program" ? $"{option.ProgramPosition}/{option.ProgramTotal}" : $"r{option.RevisionNumber}")</small>
                                         </button>
-                                        <button class="calendar-option-manage" type="button" @onclick="() => OpenSessionManager(date, option)" aria-label="Manage @option.WorkoutName on @date.ToString("d MMMM")">•••</button>
+                                        @if (!option.IsRepeat)
+                                        {
+                                            <button class="calendar-option-manage" type="button" @onclick="() => OpenOptionManager(date, option)" aria-label="Manage @option.WorkoutName on @date.ToString("d MMMM")">•••</button>
+                                        }
                                     </div>
                                 }
                                 @if (day.Options.Count > 2)
@@ -154,7 +163,7 @@
                 </div>
                 @if (calendar?.Days.Count is not > 0)
                 {
-                    <p class="empty-state">No workouts are planned this month. Create a weekly schedule to begin.</p>
+                    <p class="empty-state">No workouts are planned this month. Start a training plan or create a weekly schedule.</p>
                 }
             }
         </section>
@@ -266,6 +275,73 @@
     </div>
 }
 
+@if (managedProgramSession is not null)
+{
+    <div id="program-schedule-dialog-backdrop" class="schedule-dialog-backdrop" @onclick="CloseProgramManagerAsync">
+        <section class="schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="program-schedule-dialog-title" @onclick:stopPropagation="true">
+            <div class="panel-heading">
+                <div><p class="eyebrow">@managedProgramSession.PlanName · step @managedProgramSession.Position of @managedProgramSession.Total</p><h2 id="program-schedule-dialog-title">@managedProgramSession.WorkoutName</h2></div>
+                <button class="text-action" type="button" @onclick="CloseProgramManagerAsync" aria-label="Close plan session manager" autofocus>Close</button>
+            </div>
+            <p class="schedule-dialog__summary">Currently planned for <strong>@managedProgramSession.CurrentDate.ToString("dddd d MMMM")</strong>.</p>
+            @if (programPreview is null)
+            {
+                <div id="program-schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                    <label class="field">New or repeat date
+                        <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-366).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(366).ToString("yyyy-MM-dd")" />
+                    </label>
+                    <div class="schedule-choice-grid">
+                        @if (managedProgramSession.IsCompleted)
+                        {
+                            <p class="field-hint schedule-choice-grid__hint">This plan step is completed. Add another attempt without changing its completed status.</p>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Repeat")' disabled="@programActionBusy"><strong>Repeat · keep later dates</strong><span>Add an extra attempt without rewinding completed progress.</span></button>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("RepeatAndShift")' disabled="@programActionBusy"><strong>Repeat · shift the rest</strong><span>Insert an extra attempt and move the remaining incomplete plan forward.</span></button>
+                        }
+                        else
+                        {
+                            <p class="field-hint schedule-choice-grid__hint">This plan step is still incomplete. Reschedule or skip it; a failed attempt never counts as completed.</p>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Later plan dates remain unchanged. A full date may contain two sessions.</span></button>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveFollowing")' disabled="@programActionBusy"><strong>Move this and all following</strong><span>Shift the remaining plan by the same number of days.</span></button>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Skip")' disabled="@programActionBusy"><strong>Skip this session</strong><span>Advance to the next plan step without creating a completed run.</span></button>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Restore")' disabled="@programActionBusy"><strong>Restore original date</strong><span>Remove the saved move or skip for this plan step.</span></button>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div id="program-schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                    <div><p class="eyebrow">Impact preview</p><h3>@ProgramActionTitle(programPreview.Action)</h3></div>
+                    <p class="schedule-dialog__summary">@programPreview.Message</p>
+                    @if (programPreview.Impacts.Count > 0)
+                    {
+                        <dl class="schedule-impact-summary">
+                            <div><dt>Affected</dt><dd>@programPreview.Impacts.Count session(s)</dd></div>
+                            <div><dt>First change</dt><dd>@ImpactDate(programPreview.Impacts[0])</dd></div>
+                            @if (programPreview.Impacts.Count > 1)
+                            {
+                                <div><dt>Last change</dt><dd>@ImpactDate(programPreview.Impacts[^1])</dd></div>
+                            }
+                        </dl>
+                    }
+                    @if (programPreview.CollisionDates.Count > 0)
+                    {
+                        <p class="notice" role="alert"><strong>Double-session warning.</strong> @string.Join(", ", programPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another plan session. Nothing will be overwritten.</p>
+                    }
+                    <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
+                        <button class="secondary-action" type="button" @onclick="ClearProgramPreview" disabled="@programActionBusy">Back</button>
+                        <button class="primary-action" type="button" @onclick="ApplyProgramChangeAsync" disabled="@(!programPreview.CanApply || programActionBusy)">@(programActionBusy ? "Saving…" : "Confirm change")</button>
+                    </div>
+                    @if (!programPreview.CanApply)
+                    {
+                        <p class="field-error" role="alert">No change can be made: @programPreview.Message</p>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+}
+
 @code {
     private static readonly (string Label, int Flag)[] Weekdays =
     [
@@ -276,6 +352,7 @@
     private readonly CalendarSeriesForm series = new();
     private DateOnly visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private Guid? activeProfileId;
+    private List<ProfileView> profiles = [];
     private List<WorkoutSummaryView> workouts = [];
     private List<CalendarSeriesView> calendarSeries = [];
     private CalendarRangeView? calendar;
@@ -287,6 +364,10 @@
     private Guid pendingSeriesOperationId = Guid.NewGuid();
     private readonly Dictionary<DateOnly, Guid> pendingSelectionOperations = [];
     private ManagedSchedule? managedSession;
+    private ManagedProgramSession? managedProgramSession;
+    private WorkoutProgramScheduleChangePreviewView? programPreview;
+    private DateOnly programTargetDate;
+    private bool programActionBusy;
     private DateOnly moveTargetDate;
     private bool scheduleActionBusy;
     private string managerStep = ManagerSteps.Actions;
@@ -314,7 +395,13 @@
         if (firstRender && !initialized)
         {
             initialized = true;
+            profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
             activeProfileId = await ActiveProfile.GetAsync();
+            if (activeProfileId is null && profiles.Count == 1)
+            {
+                activeProfileId = profiles[0].Id;
+                await ActiveProfile.SetAsync(profiles[0].Id);
+            }
             calendarDraftKey = $"{activeProfileId?.ToString("N") ?? "household"}.calendar.new";
             pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
             if (activeProfileId is not null)
@@ -327,16 +414,21 @@
             StateHasChanged();
         }
 
-        if (openModalPending && managedSession is not null)
+        if (openModalPending && (managedSession is not null || managedProgramSession is not null))
         {
             openModalPending = false;
             modalReference = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "schedule-dialog-backdrop", modalReference);
+            await JS.InvokeVoidAsync(
+                "treadmillRunnerView.openModal",
+                managedProgramSession is null ? "schedule-dialog-backdrop" : "program-schedule-dialog-backdrop",
+                modalReference);
         }
-        else if (focusModalStagePending && managedSession is not null)
+        else if (focusModalStagePending && (managedSession is not null || managedProgramSession is not null))
         {
             focusModalStagePending = false;
-            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", "schedule-dialog-stage");
+            await JS.InvokeVoidAsync(
+                "treadmillRunnerView.focusModalStage",
+                managedProgramSession is null ? "schedule-dialog-stage" : "program-schedule-dialog-stage");
         }
     }
 
@@ -456,6 +548,13 @@
             return;
         }
 
+        if (option.Source == "Program")
+        {
+            message = $"{option.WorkoutName} is workout {option.ProgramPosition} of {option.ProgramTotal}. Opening Run.";
+            Navigation.NavigateTo("/");
+            return;
+        }
+
         if (!pendingSelectionOperations.TryGetValue(day.Date, out Guid operationId))
         {
             operationId = Guid.NewGuid();
@@ -471,6 +570,29 @@
             pendingSelectionOperations.Remove(day.Date);
             await ReloadCalendarAsync();
         }
+    }
+
+    private async Task SelectProfileAsync(Guid profileId)
+    {
+        if (activeProfileId == profileId) return;
+        activeProfileId = profileId;
+        await ActiveProfile.SetAsync(profileId);
+        calendarDraftKey = $"{profileId:N}.calendar.new";
+        pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
+        managedSession = null;
+        showSeriesForm = false;
+        loading = true;
+        await ReloadCalendarAsync();
+        loading = false;
+        message = $"Showing {profiles.First(profile => profile.Id == profileId).DisplayName}’s calendar.";
+    }
+
+    private static string CalendarOptionContext(CalendarOptionView option)
+    {
+        if (option.Source != "Program") return $"{option.ScheduleName} · revision {option.RevisionNumber}";
+        string phase = string.IsNullOrWhiteSpace(option.Phase) ? "Plan" : option.Phase;
+        string week = option.WeekNumber is { } weekNumber ? $" · week {weekNumber}" : string.Empty;
+        return $"{option.ScheduleName} · workout {option.ProgramPosition} of {option.ProgramTotal} · {phase}{week}";
     }
 
     private async Task ReloadCalendarAsync()
@@ -508,6 +630,31 @@
         openModalPending = true;
     }
 
+    private void OpenOptionManager(DateOnly date, CalendarOptionView option)
+    {
+        if (option.Source == "Program") OpenProgramSessionManager(date, option);
+        else OpenSessionManager(date, option);
+    }
+
+    private void OpenProgramSessionManager(DateOnly date, CalendarOptionView option)
+    {
+        if (option.ProgramRunId is not { } runId || option.ProgramItemId is not { } itemId ||
+            option.ProgramRunVersion is not { } runVersion || option.ProgramPosition is not { } position ||
+            option.ProgramTotal is not { } total)
+        {
+            message = "This plan schedule changed. Reload the calendar and try again.";
+            return;
+        }
+
+        managedSession = null;
+        managedProgramSession = new ManagedProgramSession(
+            runId, itemId, runVersion, option.ScheduleName, option.WorkoutName, date,
+            option.OriginalDate, position, total, option.IsRepeat, option.ExtraOccurrenceId, option.IsCompleted);
+        programTargetDate = date.AddDays(1);
+        programPreview = null;
+        openModalPending = true;
+    }
+
     private void OpenGroupManager(ScheduleGroupSummary group)
     {
         CalendarSeriesView segment = group.CurrentSegment;
@@ -537,19 +684,109 @@
         managerStep = ManagerSteps.Actions;
     }
 
+    private async Task CloseProgramManagerAsync()
+    {
+        if (programActionBusy) return;
+        await DismissProgramManagerAsync();
+    }
+
+    private async Task DismissProgramManagerAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        modalReference = null;
+        managedProgramSession = null;
+        programPreview = null;
+    }
+
     [JSInvokable]
     public async Task<bool> CloseScheduleManagerFromJs()
     {
-        if (scheduleActionBusy)
+        if (scheduleActionBusy || programActionBusy)
         {
             return false;
         }
 
         modalReference = null;
         managedSession = null;
+        managedProgramSession = null;
+        programPreview = null;
         managerStep = ManagerSteps.Actions;
         await InvokeAsync(StateHasChanged);
         return true;
+    }
+
+    private async Task PreviewProgramChangeAsync(string action)
+    {
+        if (managedProgramSession is null || activeProfileId is null) return;
+        programActionBusy = true;
+        try
+        {
+            DateOnly? target = action is "MoveOne" or "MoveFollowing" or "Repeat" or "RepeatAndShift"
+                ? programTargetDate
+                : null;
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/program-runs/{managedProgramSession.RunId}/schedule/preview",
+                new WorkoutProgramScheduleChangeRequest(
+                    null, activeProfileId.Value, managedProgramSession.ProgramItemId, action, target));
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The schedule preview could not be loaded.";
+                return;
+            }
+            programPreview = await response.Content.ReadFromJsonAsync<WorkoutProgramScheduleChangePreviewView>();
+            focusModalStagePending = true;
+        }
+        finally { programActionBusy = false; }
+    }
+
+    private async Task ApplyProgramChangeAsync()
+    {
+        if (managedProgramSession is null || activeProfileId is null || programPreview is not { CanApply: true }) return;
+        programActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/program-runs/{managedProgramSession.RunId}/schedule/apply",
+                new WorkoutProgramScheduleChangeRequest(
+                    Guid.NewGuid(), activeProfileId.Value, managedProgramSession.ProgramItemId,
+                    programPreview.Action,
+                    programPreview.Action is "MoveOne" or "MoveFollowing" or "Repeat" or "RepeatAndShift" ? programTargetDate : null,
+                    programPreview.RunVersion));
+            if (!response.IsSuccessStatusCode)
+            {
+                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The plan changed after the preview. The calendar was reloaded; open the session and review it again."
+                    : "The plan schedule could not be changed.";
+                await DismissProgramManagerAsync();
+                await ReloadCalendarAsync();
+                return;
+            }
+            WorkoutProgramScheduleChangePreviewView? saved = await response.Content.ReadFromJsonAsync<WorkoutProgramScheduleChangePreviewView>();
+            message = saved?.Message ?? "Plan schedule updated.";
+            await DismissProgramManagerAsync();
+            await ReloadCalendarAsync();
+        }
+        finally { programActionBusy = false; }
+    }
+
+    private void ClearProgramPreview() => programPreview = null;
+
+    private static string ProgramActionTitle(string action) => action switch
+    {
+        "MoveOne" => "Move only this session",
+        "MoveFollowing" => "Move this and all following",
+        "Skip" => "Skip this plan step",
+        "Restore" => "Restore original schedule",
+        "Repeat" => "Add an extra attempt",
+        "RepeatAndShift" => "Insert an extra attempt",
+        _ => "Review schedule change",
+    };
+
+    private static string ImpactDate(WorkoutProgramScheduleImpactView impact)
+    {
+        if (impact.CurrentDate is null && impact.NewDate is { } added) return $"add {added:d MMM}";
+        if (impact.NewDate is null && impact.CurrentDate is { } removed) return $"skip {removed:d MMM}";
+        return $"{impact.CurrentDate:d MMM} → {impact.NewDate:d MMM}";
     }
 
     private async Task MoveManagedSessionAsync(bool moveFollowing)
@@ -850,6 +1087,19 @@
         string WorkoutName,
         DateOnly SourceDate,
         bool IsWholeGroup);
+    private sealed record ManagedProgramSession(
+        Guid RunId,
+        Guid ProgramItemId,
+        int ExpectedRunVersion,
+        string PlanName,
+        string WorkoutName,
+        DateOnly CurrentDate,
+        DateOnly? OriginalDate,
+        int Position,
+        int Total,
+        bool IsRepeat,
+        Guid? ExtraOccurrenceId,
+        bool IsCompleted);
 
     private static class ManagerSteps
     {
@@ -864,7 +1114,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        if (managedSession is not null)
+        if (managedSession is not null || managedProgramSession is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
             catch (JSDisconnectedException) { }

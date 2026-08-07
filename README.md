@@ -10,6 +10,14 @@ The project combines a deterministic simulator with one exact Horizon Omega Z ha
 |---|---|
 | [![Recovered live Control dashboard](screenshots/showcase/tr-023-control-recovered-desktop.png)](screenshots/showcase/tr-023-control-recovered-desktop.png) | [![Premade plan catalog and compatibility preview](screenshots/showcase/tr-024-premade-plan-catalog.png)](screenshots/showcase/tr-024-premade-plan-catalog.png) |
 
+| Workout library | Workout structure |
+|---|---|
+| [![Workout cards with comparable structure and target summaries](screenshots/showcase/tr-026-workout-library.png)](screenshots/showcase/tr-026-workout-library.png) | [![Grouped workout segments and repeat details](screenshots/showcase/tr-026-workout-details.png)](screenshots/showcase/tr-026-workout-details.png) |
+
+| Calendar adjustment preview | iPhone calendar action sheet |
+|---|---|
+| [![Plan move preview with collision warning](screenshots/showcase/tr-027-calendar-move.png)](screenshots/showcase/tr-027-calendar-move.png) | [![Mobile plan adjustment preview](screenshots/showcase/tr-027-calendar-mobile.png)](screenshots/showcase/tr-027-calendar-mobile.png) |
+
 The gateway owns active workout timing if a browser disappears. Browser controls reconnect indefinitely, while BLE and service-restart recovery stay guarded: recovery never sends Start, never replays an uncertain command, and never silently overrides an apparent physical-console change. See the [live-session guide](docs/project/live-session.md) for the exact guarantees.
 
 ## Install on Windows
@@ -65,15 +73,17 @@ Some Omega Z firmware advertisements omit the local name. TreadmillRunner accept
 
 Use the navigation in the simulator UI to create or select a local profile, build a workout, import one, and plan it on the calendar. A saved workout is an immutable revision: editing creates a new revision, so existing calendar choices continue to reference the exact workout that was selected.
 
+Workout cards show the practical differences before selection: structure, expanded segment count, total goal, speed range, incline range, and whether heart-rate control is used. **View details** opens the current revision as a grouped session outline with repeat patterns, ramps, cues, and notes. Training-plan cards expose their complete ordered session list, grouped by phase and week when that metadata exists.
+
 Imports are previewed before anything is saved. The supported import paths are native workout JSON, QDomyos XML, and Garmin FIT workouts. Confirming a preview rechecks the original bounded file; QDomyos files that do not state units require an explicit unit choice.
 
-The calendar supports weekly schedules, alternatives for a day, and skip/add/replace exceptions. Your active profile is local to the browser; a selected calendar alternative is persisted for that profile and date.
+Choose the active runner once from the application header; Run, Workouts, Calendar, History, and editors use that browser-local selection until it is changed. The calendar supports weekly schedules, alternatives for a day, and previewed plan actions. An unfinished plan session can be moved alone, moved with all following sessions, skipped, or restored. A completed but unsatisfactory run can be added as an extra repeat while either keeping later dates or shifting the remainder. If the calendar is full, both sessions remain visible and the preview warns about the collision—nothing is overwritten.
 
-**Workouts → Premade plans** offers 16 profile-scoped 5K, 10K, general-fitness, walking, maintenance, and heart-rate templates. Preview checks runner and treadmill limits before **Add to my training** creates an inactive immutable copy. The 58-week plan remains readable through phase/week groups rather than a flat 174-row editor. See [Premade training plans](docs/project/premade-plans.md).
+**Workouts → Premade plans** offers 16 profile-scoped 5K, 10K, general-fitness, walking, maintenance, and heart-rate templates. Choose a runner, add the plan for that runner, then choose its first date and training days. The ordered sessions appear on only that profile's calendar with plan position, week, and phase; generated plan workouts stay out of the shared workout library. The 58-week plan remains readable through phase/week groups rather than a flat 174-row editor. See [Premade training plans](docs/project/premade-plans.md).
 
 ## Running in the simulator
 
-On the Today page, select a runner and workout, review readiness, take control, and arm the session. Arming never starts a belt. The simulator test action represents measured physical movement; the gateway then owns progression and continues if the browser reloads or disconnects. After completion, save an optional RPE score and note, then open History for persisted charts, zone time, adherence, events, and weekly totals.
+On the Today page, select a workout for the active runner, review readiness, take control, and arm the session. Arming never starts a belt. The simulator test action represents measured physical movement; the gateway then owns progression and continues if the browser reloads or disconnects. After completion, save an optional RPE score and note, then open History for persisted charts, zone time, adherence, events, and weekly totals.
 
 See [the live-session guide](docs/project/live-session.md) for contracts, recovery behavior, and current limitations. The Windows service supports signed check, verify/stage, explicit UI activation, health verification, and automatic rollback. Use the [release operations runbook](docs/project/release-operations.md) to publish, update, rotate trust, or recover a feed.
 

@@ -1,0 +1,77 @@
+@using System.Globalization
+
+<ol class="workout-structure-list @(Depth > 0 ? "workout-structure-list--nested" : null)">
+    @for (int index = 0; index < Blocks.Count; index++)
+    {
+        WorkoutBlockInput block = Blocks[index];
+        if (string.Equals(block.Kind, "repeat", StringComparison.OrdinalIgnoreCase))
+        {
+            <li class="workout-structure-repeat">
+                <div class="workout-structure-repeat__heading">
+                    <span class="workout-segment-number">Repeat</span>
+                    <strong>@block.Repetitions × this pattern</strong>
+                    <small>@ExpandedStepCount(block) expanded segment(s)</small>
+                </div>
+                <WorkoutStructureSummary Blocks="block.Blocks" Depth="@(Depth + 1)" />
+            </li>
+        }
+        else
+        {
+            <li class="workout-structure-step">
+                <span class="workout-segment-number">@(Depth == 0 ? $"Segment {index + 1}" : $"Step {index + 1}")</span>
+                <div class="workout-structure-step__body">
+                    <strong>@GoalLabel(block)</strong>
+                    <span>@SpeedLabel(block)</span>
+                    <span>@InclineLabel(block)</span>
+                    @if (!string.IsNullOrWhiteSpace(block.Cue))
+                    {
+                        <small><b>Cue:</b> @block.Cue</small>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(block.Notes))
+                    {
+                        <small><b>Note:</b> @block.Notes</small>
+                    }
+                </div>
+            </li>
+        }
+    }
+</ol>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WorkoutBlockInput> Blocks { get; set; } = [];
+
+    [Parameter]
+    public int Depth { get; set; }
+
+    private static int ExpandedStepCount(WorkoutBlockInput block)
+    {
+        int nested = block.Blocks.Sum(ExpandedStepCount);
+        return string.Equals(block.Kind, "repeat", StringComparison.OrdinalIgnoreCase)
+            ? checked(nested * block.Repetitions)
+            : 1;
+    }
+
+    private static string GoalLabel(WorkoutBlockInput block) => block.GoalKind.ToLowerInvariant() switch
+    {
+        "distance" => $"{Format(block.GoalValue)} km",
+        _ => $"{Format(block.GoalValue)} min",
+    };
+
+    private static string SpeedLabel(WorkoutBlockInput block) => block.SpeedKind.ToLowerInvariant() switch
+    {
+        "fixed" => $"{Format(block.SpeedStartKph)} km/h",
+        "ramp" => $"{Format(block.SpeedStartKph)} → {Format(block.SpeedEndKph)} km/h",
+        "heartrate" => $"{block.HeartRateMinimumBpm}–{block.HeartRateMaximumBpm} bpm · {Format(block.HeartRateMinimumSpeedKph)}–{Format(block.HeartRateMaximumSpeedKph)} km/h",
+        "heartratezone" => $"Heart-rate Z{block.HeartRateZoneNumber} · {Format(block.HeartRateMinimumSpeedKph)}–{Format(block.HeartRateMaximumSpeedKph)} km/h",
+        _ => "Manual speed",
+    };
+
+    private static string InclineLabel(WorkoutBlockInput block) => block.InclineKind.ToLowerInvariant() switch
+    {
+        "ramp" => $"{Format(block.InclineStartPercent)} → {Format(block.InclineEndPercent)}% incline",
+        _ => $"{Format(block.InclineStartPercent)}% incline",
+    };
+
+    private static string Format(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

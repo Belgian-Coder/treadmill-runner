@@ -131,6 +131,8 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
       "WorkoutProgramRevisions",
       "WorkoutProgramItems",
       "WorkoutProgramRuns",
+      "WorkoutProgramScheduleOverrides",
+      "WorkoutProgramExtraOccurrences",
       "PremadePlanInstallations",
       "ImportAudits",
       "CalendarSeries",

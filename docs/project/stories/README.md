@@ -4,7 +4,7 @@ type: delivery-index
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-06
+updated: 2026-08-07
 ---
 
 # TreadmillRunner stories
@@ -27,3 +27,6 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-022 — Automatic update reconnect](tr-022-automatic-update-reconnect.md)
 - [TR-023 — Daily-use connection continuity](tr-023-connection-continuity.md)
 - [TR-024 — Premade training-plan catalog and public evidence](tr-024-premade-plan-catalog.md)
+- [TR-025 — Profile-owned plan scheduling and ordered progression](tr-025-profile-plan-scheduling.md)
+- [TR-026 — Workout summary and session explorer](tr-026-workout-summary-explorer.md)
+- [TR-027 — Plan schedule UX and global runner context](tr-027-plan-schedule-ux.md)

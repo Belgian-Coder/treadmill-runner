@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,7 @@ public static class WorkoutPlanningEndpoints
   {
     IReadOnlyList<StoredWorkout> workouts = await store.ListAsync(cancellationToken);
     return TypedResults.Ok(workouts
-      .Where(static workout => !workout.IsArchived)
+      .Where(static workout => !workout.IsArchived && workout.Kind != WorkoutKind.PlanInternal)
       .Select(ToSummary)
       .ToArray());
   }
@@ -87,7 +88,8 @@ public static class WorkoutPlanningEndpoints
     {
       ValidateOperationId(request.OperationId);
       WorkoutDefinition definition = CreateDefinition(request);
-      if (!Enum.TryParse(request.Kind, ignoreCase: true, out WorkoutKind workoutKind))
+      if (!Enum.TryParse(request.Kind, ignoreCase: true, out WorkoutKind workoutKind) ||
+          workoutKind == WorkoutKind.PlanInternal)
       {
         throw new ArgumentException("Workout kind must be Structured or ManualTemplate.");
       }
@@ -477,56 +479,187 @@ public static class WorkoutPlanningEndpoints
       workout.LatestRevisionNumber,
       summary.ExpandedStepCount,
       summary.DurationMinutes,
-      workout.LatestCreatedAtUtc);
+      workout.LatestCreatedAtUtc,
+      summary.StructureLabel,
+      summary.GoalLabel,
+      summary.SpeedLabel,
+      summary.InclineLabel,
+      summary.UsesHeartRate);
   }
 
   private static WorkoutStoredJsonSummary ReadStoredSummary(string definitionJson)
   {
     using JsonDocument document = JsonDocument.Parse(definitionJson);
-    (int steps, long durationTicks, bool hasDistance) = CountBlocks(document.RootElement.GetProperty("blocks"));
+    var accumulator = new WorkoutSummaryAccumulator();
+    SummarizeBlocks(document.RootElement.GetProperty("blocks"), 1, accumulator);
     return new WorkoutStoredJsonSummary(
       document.RootElement.TryGetProperty("description", out JsonElement description) &&
         description.ValueKind == JsonValueKind.String
           ? description.GetString()
           : null,
-      steps,
-      hasDistance ? null : TimeSpan.FromTicks(durationTicks).TotalMinutes);
+      accumulator.Steps,
+      accumulator.HasDistance ? null : TimeSpan.FromTicks(accumulator.DurationTicks).TotalMinutes,
+      StructureLabel(accumulator),
+      GoalLabel(accumulator),
+      SpeedLabel(accumulator),
+      InclineLabel(accumulator),
+      accumulator.UsesHeartRate);
   }
 
-  private static (int Steps, long DurationTicks, bool HasDistance) CountBlocks(JsonElement blocks)
+  private static void SummarizeBlocks(JsonElement blocks, int multiplier, WorkoutSummaryAccumulator summary)
   {
-    int steps = 0;
-    long durationTicks = 0;
-    bool hasDistance = false;
     foreach (JsonElement block in blocks.EnumerateArray())
     {
       switch (block.GetProperty("kind").GetString())
       {
         case "step":
-          steps++;
+          summary.Steps = checked(summary.Steps + multiplier);
           JsonElement goal = block.GetProperty("goal");
           if (goal.GetProperty("kind").GetString() == "time")
           {
-            durationTicks = checked(durationTicks + goal.GetProperty("durationTicks").GetInt64());
+            summary.HasTime = true;
+            summary.DurationTicks = checked(summary.DurationTicks + (goal.GetProperty("durationTicks").GetInt64() * multiplier));
           }
           else
           {
-            hasDistance = true;
+            summary.HasDistance = true;
+            summary.DistanceKilometers += goal.GetProperty("kilometers").GetDouble() * multiplier;
           }
+
+          SummarizeSpeed(block.GetProperty("speed"), summary);
+          SummarizeIncline(block.GetProperty("incline"), summary);
 
           break;
         case "repeat":
           int repetitions = block.GetProperty("repetitions").GetInt32();
-          var nested = CountBlocks(block.GetProperty("blocks"));
-          steps = checked(steps + (nested.Steps * repetitions));
-          durationTicks = checked(durationTicks + (nested.DurationTicks * repetitions));
-          hasDistance |= nested.HasDistance;
+          summary.HasRepeat = true;
+          SummarizeBlocks(block.GetProperty("blocks"), checked(multiplier * repetitions), summary);
           break;
       }
     }
-
-    return (steps, durationTicks, hasDistance);
   }
+
+  private static void SummarizeSpeed(JsonElement speed, WorkoutSummaryAccumulator summary)
+  {
+    string kind = speed.GetProperty("kind").GetString() ?? "open";
+    summary.StepRepresentativeSpeeds.Add(kind switch
+    {
+      "fixed" => ReadNumber(speed, "kilometersPerHour"),
+      "ramp" => ReadNumber(speed, "endKilometersPerHour"),
+      "heartRate" or "heartRateZone" => ReadNumber(speed, "initialKilometersPerHour"),
+      _ => null,
+    });
+    switch (kind)
+    {
+      case "open":
+        summary.HasOpenSpeed = true;
+        break;
+      case "fixed":
+        AddRange(summary, ReadNumber(speed, "kilometersPerHour"), ReadNumber(speed, "kilometersPerHour"));
+        break;
+      case "ramp":
+        summary.HasRamp = true;
+        AddRange(summary, ReadNumber(speed, "startKilometersPerHour"), ReadNumber(speed, "endKilometersPerHour"));
+        break;
+      case "heartRate":
+        summary.UsesHeartRate = true;
+        AddRange(summary, ReadNumber(speed, "minimumKilometersPerHour"), ReadNumber(speed, "maximumKilometersPerHour"));
+        summary.MinimumHeartRateBpm = Minimum(summary.MinimumHeartRateBpm, ReadUShort(speed, "minimumBpm"));
+        summary.MaximumHeartRateBpm = Maximum(summary.MaximumHeartRateBpm, ReadUShort(speed, "maximumBpm"));
+        break;
+      case "heartRateZone":
+        summary.UsesHeartRate = true;
+        AddRange(summary, ReadNumber(speed, "minimumKilometersPerHour"), ReadNumber(speed, "maximumKilometersPerHour"));
+        summary.HeartRateZones.Add(ReadInt(speed, "zoneNumber"));
+        break;
+    }
+  }
+
+  private static void SummarizeIncline(JsonElement incline, WorkoutSummaryAccumulator summary)
+  {
+    string kind = incline.GetProperty("kind").GetString() ?? "fixed";
+    if (kind == "ramp")
+    {
+      summary.HasRamp = true;
+      AddInclineRange(summary, ReadNumber(incline, "startPercent"), ReadNumber(incline, "endPercent"));
+      return;
+    }
+
+    double value = ReadNumber(incline, "percent");
+    AddInclineRange(summary, value, value);
+  }
+
+  private static void AddRange(WorkoutSummaryAccumulator summary, double first, double second)
+  {
+    summary.MinimumSpeedKph = Minimum(summary.MinimumSpeedKph, Math.Min(first, second));
+    summary.MaximumSpeedKph = Maximum(summary.MaximumSpeedKph, Math.Max(first, second));
+  }
+
+  private static void AddInclineRange(WorkoutSummaryAccumulator summary, double first, double second)
+  {
+    summary.MinimumInclinePercent = Minimum(summary.MinimumInclinePercent, Math.Min(first, second));
+    summary.MaximumInclinePercent = Maximum(summary.MaximumInclinePercent, Math.Max(first, second));
+  }
+
+  private static double? Minimum(double? current, double value) => current is null ? value : Math.Min(current.Value, value);
+  private static double? Maximum(double? current, double value) => current is null ? value : Math.Max(current.Value, value);
+  private static ushort? Minimum(ushort? current, ushort value) => value == 0 ? current : current is null ? value : Math.Min(current.Value, value);
+  private static ushort? Maximum(ushort? current, ushort value) => value == 0 ? current : current is null ? value : Math.Max(current.Value, value);
+
+  private static string StructureLabel(WorkoutSummaryAccumulator summary)
+  {
+    if (summary.UsesHeartRate) return summary.HasRepeat ? "HR intervals" : "HR adaptive";
+    if (summary.HasRepeat) return "Intervals";
+    if (summary.HasRamp) return "Progression";
+    double[] speeds = summary.StepRepresentativeSpeeds.Where(static speed => speed is not null).Select(static speed => speed!.Value).ToArray();
+    if (speeds.Distinct().Skip(1).Any())
+    {
+      bool nonDecreasing = speeds.Zip(speeds.Skip(1), static (left, right) => right >= left).All(static ordered => ordered);
+      return nonDecreasing && speeds[^1] > speeds[0] ? "Progression" : "Intervals";
+    }
+
+    return summary.Steps == 1 ? "Steady" : "Multi-stage";
+  }
+
+  private static string GoalLabel(WorkoutSummaryAccumulator summary)
+  {
+    if (summary.HasTime && summary.HasDistance) return "Time + distance";
+    if (summary.HasDistance) return $"{Format(summary.DistanceKilometers)} km";
+    return $"{Format(TimeSpan.FromTicks(summary.DurationTicks).TotalMinutes)} min";
+  }
+
+  private static string SpeedLabel(WorkoutSummaryAccumulator summary)
+  {
+    string range = FormatRange(summary.MinimumSpeedKph, summary.MaximumSpeedKph, " km/h");
+    if (summary.HeartRateZones.Count > 0)
+    {
+      int minimum = summary.HeartRateZones.Min;
+      int maximum = summary.HeartRateZones.Max;
+      string zones = minimum == maximum ? $"Z{minimum}" : $"Z{minimum}–Z{maximum}";
+      return $"{zones} · {range}";
+    }
+
+    if (summary.MinimumHeartRateBpm is { } minimumBpm && summary.MaximumHeartRateBpm is { } maximumBpm)
+    {
+      return $"{minimumBpm}–{maximumBpm} bpm · {range}";
+    }
+
+    if (summary.HasOpenSpeed && summary.MinimumSpeedKph is null) return "Manual speed";
+    return summary.HasOpenSpeed ? $"Manual + {range}" : range;
+  }
+
+  private static string InclineLabel(WorkoutSummaryAccumulator summary) =>
+    FormatRange(summary.MinimumInclinePercent, summary.MaximumInclinePercent, "% incline");
+
+  private static string FormatRange(double? minimum, double? maximum, string suffix)
+  {
+    if (minimum is null || maximum is null) return $"No fixed {suffix.Trim()}";
+    return Math.Abs(minimum.Value - maximum.Value) < 0.001
+      ? $"{Format(minimum.Value)}{suffix}"
+      : $"{Format(minimum.Value)}–{Format(maximum.Value)}{suffix}";
+  }
+
+  private static string Format(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
   private static async Task<byte[]> ReadBytesAsync(IFormFile file, CancellationToken cancellationToken)
   {
@@ -765,6 +898,32 @@ public static class WorkoutPlanningEndpoints
   private sealed record WorkoutStoredJsonSummary(
     string? Description,
     int ExpandedStepCount,
-    double? DurationMinutes);
+    double? DurationMinutes,
+    string StructureLabel,
+    string GoalLabel,
+    string SpeedLabel,
+    string InclineLabel,
+    bool UsesHeartRate);
+
+  private sealed class WorkoutSummaryAccumulator
+  {
+    public int Steps { get; set; }
+    public long DurationTicks { get; set; }
+    public double DistanceKilometers { get; set; }
+    public bool HasTime { get; set; }
+    public bool HasDistance { get; set; }
+    public bool HasRepeat { get; set; }
+    public bool HasRamp { get; set; }
+    public bool HasOpenSpeed { get; set; }
+    public bool UsesHeartRate { get; set; }
+    public double? MinimumSpeedKph { get; set; }
+    public double? MaximumSpeedKph { get; set; }
+    public double? MinimumInclinePercent { get; set; }
+    public double? MaximumInclinePercent { get; set; }
+    public ushort? MinimumHeartRateBpm { get; set; }
+    public ushort? MaximumHeartRateBpm { get; set; }
+    public SortedSet<int> HeartRateZones { get; } = [];
+    public List<double?> StepRepresentativeSpeeds { get; } = [];
+  }
   private sealed record WorkoutWriteLocator(Guid WorkoutId, string ContentSha256, DateTimeOffset CreatedAtUtc);
 }

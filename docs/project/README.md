@@ -17,8 +17,6 @@ The [installation guide](../installation.md) is the user/operator starting point
 
 The [story backlog](backlog.md) owns delivery order. Safety- or extension-sensitive acceptance details live in the [story index](stories/README.md).
 
-The project-owned [user-story plan override](workflow-overrides/user-story-workflow/plan.md) adds TreadmillRunner-specific mock-first constraints for sanitized prototype data, safety and disconnected states, responsive evidence, the Blazor production boundary, and separate design and implementation approval.
-
 Operators publishing or installing application updates should use the [release operations runbook](release-operations.md). It documents signing trust, UI activation, rollback, and recovery.
 
 Garmin's supported Training API path, unsupported per-profile completed-activity upload, credential/retry boundaries, duplicate prevention, and removal are documented in [Garmin integrations](garmin-connect.md). The watch source, pairing protocol, SDK validation, physical acceptance, and complete IQ Store submission package are documented in [Connect IQ companion setup and store release](connect-iq-companion.md).

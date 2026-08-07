@@ -118,7 +118,7 @@ public sealed class PremadePlanStore(
         {
           Id = workoutId,
           Name = definition.Title,
-          Kind = nameof(WorkoutKind.Structured),
+          Kind = nameof(WorkoutKind.PlanInternal),
           CreatedAtUtc = now,
           Revisions = [revision],
         });

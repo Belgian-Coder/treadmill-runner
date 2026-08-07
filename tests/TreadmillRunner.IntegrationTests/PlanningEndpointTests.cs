@@ -214,6 +214,11 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
     JsonElement listed = (await client.GetFromJsonAsync<JsonElement[]>("/api/planning/workouts"))!
       .Single(item => item.GetProperty("id").GetGuid() == workoutId);
     Assert.Equal("New revision", listed.GetProperty("description").GetString());
+    Assert.Equal("HR intervals", listed.GetProperty("structureLabel").GetString());
+    Assert.Equal("Time + distance", listed.GetProperty("goalLabel").GetString());
+    Assert.Equal("Z2 · 4–11 km/h", listed.GetProperty("speedLabel").GetString());
+    Assert.Equal("1–4% incline", listed.GetProperty("inclineLabel").GetString());
+    Assert.True(listed.GetProperty("usesHeartRate").GetBoolean());
 
     Guid archiveOperation = Guid.NewGuid();
     using HttpResponseMessage archived = await client.PostAsJsonAsync(

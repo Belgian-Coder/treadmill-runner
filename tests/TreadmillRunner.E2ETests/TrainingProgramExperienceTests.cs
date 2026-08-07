@@ -21,7 +21,12 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     await Expect(Page.Locator(".program-card")).ToHaveCountAsync(2);
     await Expect(Page.GetByText("First 5K", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Stronger 10K", new() { Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.GetByText("0 of 3 complete", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("0 complete · 3 remaining", new() { Exact = true })).ToBeVisibleAsync();
+    ILocator sessionSummaries = Page.Locator(".program-card .template-program-groups > summary");
+    await Expect(sessionSummaries).ToHaveCountAsync(2);
+    await Expect(sessionSummaries.First).ToContainTextAsync("View 3 sessions");
+    await sessionSummaries.First.ClickAsync();
+    await Expect(Page.Locator(".program-card").First.Locator(".program-session-summary-list li")).ToHaveCountAsync(3);
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Edit First 5K", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Edit training plan", Exact = true })).ToBeVisibleAsync();
@@ -60,7 +65,7 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
       });
     });
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri);
-    await Page.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true }).ClickAsync();
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Marc");
     ILocator recommendation = Page.GetByLabel("Recommended next run", new() { Exact = true });
     await Expect(recommendation).ToContainTextAsync("Next for Marc");
     await Expect(recommendation).ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);

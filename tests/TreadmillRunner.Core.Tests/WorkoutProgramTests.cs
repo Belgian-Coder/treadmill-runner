@@ -1,3 +1,4 @@
+using TreadmillRunner.Core.Calendar;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
 
@@ -95,6 +96,21 @@ public sealed class WorkoutProgramTests
   }
 
   [Fact]
+  public void Skipped_items_advance_order_without_becoming_completed()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2), Item(3));
+
+    WorkoutProgramProgress progress = WorkoutProgramProgressCalculator.Calculate(
+      revision,
+      [Result(revision.Items[0], SessionState.Completed)],
+      [revision.Items[1].Id]);
+
+    Assert.Equal(1, progress.CompletedItemCount);
+    Assert.Equal(1, progress.SkippedItemCount);
+    Assert.Equal(revision.Items[2].Id, progress.NextItem?.Id);
+  }
+
+  [Fact]
   public void Single_calendar_workout_takes_priority_over_active_program()
   {
     Guid calendarRevisionId = Guid.NewGuid();
@@ -149,6 +165,83 @@ public sealed class WorkoutProgramTests
 
     Assert.Equal(WorkoutRecommendationKind.Manual, recommendation.Kind);
     Assert.Null(recommendation.WorkoutRevisionId);
+  }
+
+  [Fact]
+  public void Schedule_projects_items_in_exact_order_on_selected_days()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2), Item(3), Item(4));
+    var run = new WorkoutProgramRun(
+      Guid.NewGuid(), Guid.NewGuid(), revision.RevisionId, WorkoutProgramRunStatus.Active,
+      EndedAt, null, 1,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"));
+
+    IReadOnlyList<ScheduledWorkoutProgramItem> scheduled = WorkoutProgramScheduleProjector.Project(
+      revision, run, new DateOnly(2026, 8, 10), new DateOnly(2026, 8, 17));
+
+    Assert.Equal(
+      [new DateOnly(2026, 8, 10), new DateOnly(2026, 8, 12), new DateOnly(2026, 8, 15), new DateOnly(2026, 8, 17)],
+      scheduled.Select(static item => item.Date));
+    Assert.Equal(revision.Items.Select(static item => item.Id), scheduled.Select(static item => item.Item.Id));
+  }
+
+  [Fact]
+  public void Schedule_range_does_not_rebase_item_positions()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2), Item(3), Item(4));
+    var run = new WorkoutProgramRun(
+      Guid.NewGuid(), Guid.NewGuid(), revision.RevisionId, WorkoutProgramRunStatus.Active,
+      EndedAt, null, 1,
+      new WorkoutProgramSchedule(new DateOnly(2026, 8, 10), WeekdayFlags.Monday | WeekdayFlags.Wednesday, "Europe/Brussels"));
+
+    IReadOnlyList<ScheduledWorkoutProgramItem> scheduled = WorkoutProgramScheduleProjector.Project(
+      revision, run, new DateOnly(2026, 8, 17), new DateOnly(2026, 8, 17));
+
+    ScheduledWorkoutProgramItem item = Assert.Single(scheduled);
+    Assert.Equal(3, item.Item.Position);
+  }
+
+  [Fact]
+  public void Full_schedule_applies_sparse_moves_skips_and_extra_attempts_without_reordering_items()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1), Item(2), Item(3));
+    var run = new WorkoutProgramRun(
+      Guid.NewGuid(), Guid.NewGuid(), revision.RevisionId, WorkoutProgramRunStatus.Active,
+      EndedAt, null, 3,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"));
+    Guid extraId = Guid.NewGuid();
+
+    IReadOnlyList<ScheduledWorkoutProgramItem> scheduled = WorkoutProgramScheduleProjector.ProjectAll(
+      revision,
+      run,
+      [
+        new WorkoutProgramScheduleOverride(revision.Items[0].Id, new DateOnly(2026, 8, 11), false),
+        new WorkoutProgramScheduleOverride(revision.Items[1].Id, null, true),
+      ],
+      [new WorkoutProgramExtraOccurrence(extraId, revision.Items[0].Id, new DateOnly(2026, 8, 13))]);
+
+    Assert.Equal([new DateOnly(2026, 8, 11), new DateOnly(2026, 8, 13), new DateOnly(2026, 8, 15)],
+      scheduled.Select(static item => item.Date));
+    Assert.DoesNotContain(scheduled, item => item.Item.Id == revision.Items[1].Id);
+    ScheduledWorkoutProgramItem extra = Assert.Single(scheduled, static item => item.IsRepeat);
+    Assert.Equal(extraId, extra.ExtraOccurrenceId);
+  }
+
+  [Fact]
+  public void Schedule_rejects_a_first_date_that_is_not_a_training_day()
+  {
+    ArgumentException error = Assert.Throws<ArgumentException>(() => new WorkoutProgramSchedule(
+      new DateOnly(2026, 8, 6),
+      WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+      "Europe/Brussels"));
+
+    Assert.Contains("first training date", error.Message, StringComparison.OrdinalIgnoreCase);
   }
 
   private static WorkoutProgramRevision Revision(params WorkoutProgramItem[] items) => new(

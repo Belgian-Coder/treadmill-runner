@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using TreadmillRunner.Core.Workouts;
+using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -58,6 +62,114 @@ public sealed class PremadePlanEndpointTests(PlanningGatewayFactory factory)
 
     JsonElement[] otherPrograms = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={otherProfileId}"))!;
     Assert.DoesNotContain(otherPrograms, item => item.GetProperty("id").GetGuid() == programId);
+
+    // Releases before TR-024 stored generated template workouts as Structured. Proven
+    // template provenance must keep those legacy rows out of the reusable library.
+    using (IServiceScope scope = factory.Services.CreateScope())
+    await using (TreadmillRunnerDbContext context = await scope.ServiceProvider
+      .GetRequiredService<IDbContextFactory<TreadmillRunnerDbContext>>()
+      .CreateDbContextAsync())
+    {
+      Guid[] generatedWorkoutIds = await context.WorkoutProgramItems
+        .Where(item => item.WorkoutProgramRevision.WorkoutProgramId == programId)
+        .Join(context.WorkoutRevisions,
+          item => item.WorkoutRevisionId,
+          revision => revision.Id,
+          (_, revision) => revision.WorkoutId)
+        .Distinct()
+        .ToArrayAsync();
+      await context.Workouts
+        .Where(workout => generatedWorkoutIds.Contains(workout.Id))
+        .ExecuteUpdateAsync(setters => setters.SetProperty(workout => workout.Kind, nameof(WorkoutKind.Structured)));
+    }
+
+    JsonElement[] publicWorkouts = (await client.GetFromJsonAsync<JsonElement[]>("/api/planning/workouts"))!;
+    Assert.DoesNotContain(publicWorkouts, workout =>
+      string.Equals(workout.GetProperty("kind").GetString(), "PlanInternal", StringComparison.Ordinal));
+    Assert.DoesNotContain(publicWorkouts, workout =>
+      workout.TryGetProperty("description", out JsonElement description) &&
+      (description.GetString()?.StartsWith("Premade plan workout", StringComparison.Ordinal) ?? false));
+
+    var scheduleRequest = new
+    {
+      operationId = Guid.NewGuid(),
+      profileId,
+      expectedProgramRevisionId = installed.GetProperty("revisionId").GetGuid(),
+      expectedActiveRunId = (Guid?)null,
+      expectedActiveRunVersion = (int?)null,
+      scheduledStartDate = new DateOnly(2026, 8, 10),
+      scheduledWeekdayMask = 37,
+      scheduleTimeZoneId = "Europe/Brussels",
+    };
+    using HttpResponseMessage wrongOwnerStart = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId}/start",
+      scheduleRequest with { operationId = Guid.NewGuid(), profileId = otherProfileId });
+    Assert.Equal(HttpStatusCode.Forbidden, wrongOwnerStart.StatusCode);
+
+    using HttpResponseMessage startResponse = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId}/start", scheduleRequest);
+    Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
+    JsonElement started = await ReadJsonAsync(startResponse);
+    Assert.Equal("2026-08-10", started.GetProperty("scheduledStartDate").GetString());
+    Assert.Equal(37, started.GetProperty("scheduledWeekdayMask").GetInt32());
+
+    JsonElement calendar = await client.GetFromJsonAsync<JsonElement>(
+      $"/api/planning/calendar/{profileId}?from=2026-08-10&to=2026-08-16");
+    JsonElement[] scheduledDays = calendar.GetProperty("days").EnumerateArray().ToArray();
+    Assert.Equal(["2026-08-10", "2026-08-12", "2026-08-15"],
+      scheduledDays.Select(day => day.GetProperty("date").GetString()));
+    for (int index = 0; index < scheduledDays.Length; index++)
+    {
+      JsonElement option = Assert.Single(scheduledDays[index].GetProperty("options").EnumerateArray());
+      Assert.Equal("Program", option.GetProperty("source").GetString());
+      Assert.Equal(started.GetProperty("id").GetGuid(), option.GetProperty("programRunId").GetGuid());
+      Assert.Equal(index + 1, option.GetProperty("programPosition").GetInt32());
+      Assert.Equal(174, option.GetProperty("programTotal").GetInt32());
+    }
+
+    Guid runId = started.GetProperty("id").GetGuid();
+    Guid firstItemId = installed.GetProperty("items")[0].GetProperty("id").GetGuid();
+    var moveRequest = new
+    {
+      operationId = (Guid?)null,
+      profileId,
+      programItemId = firstItemId,
+      action = "MoveFollowing",
+      targetDate = (DateOnly?)new DateOnly(2026, 8, 11),
+      expectedRunVersion = (int?)null,
+    };
+    JsonElement movePreview = await (await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/preview", moveRequest)).Content.ReadFromJsonAsync<JsonElement>();
+    Assert.True(movePreview.GetProperty("canApply").GetBoolean());
+    Assert.Equal(174, movePreview.GetProperty("impacts").GetArrayLength());
+    int runVersion = movePreview.GetProperty("runVersion").GetInt32();
+    using HttpResponseMessage moveResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/apply",
+      moveRequest with { operationId = Guid.NewGuid(), expectedRunVersion = runVersion });
+    Assert.Equal(HttpStatusCode.OK, moveResponse.StatusCode);
+    JsonElement moved = await ReadJsonAsync(moveResponse);
+    Assert.Equal(runVersion + 1, moved.GetProperty("runVersion").GetInt32());
+
+    JsonElement movedCalendar = await client.GetFromJsonAsync<JsonElement>(
+      $"/api/planning/calendar/{profileId}?from=2026-08-10&to=2026-08-17");
+    Assert.Equal(["2026-08-11", "2026-08-13", "2026-08-16"],
+      movedCalendar.GetProperty("days").EnumerateArray().Take(3).Select(day => day.GetProperty("date").GetString()));
+
+    var skipRequest = moveRequest with
+    {
+      operationId = (Guid?)Guid.NewGuid(),
+      action = "Skip",
+      targetDate = (DateOnly?)null,
+      expectedRunVersion = (int?)moved.GetProperty("runVersion").GetInt32(),
+    };
+    using HttpResponseMessage skipResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/apply", skipRequest);
+    Assert.Equal(HttpStatusCode.OK, skipResponse.StatusCode);
+    JsonElement programAfterSkip = Assert.Single(
+      (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={profileId}"))!,
+      item => item.GetProperty("id").GetGuid() == programId);
+    Assert.Equal(1, programAfterSkip.GetProperty("skippedItemCount").GetInt32());
+    Assert.Equal(installed.GetProperty("items")[1].GetProperty("id").GetGuid(), programAfterSkip.GetProperty("nextItemId").GetGuid());
 
     using HttpResponseMessage freshResponse = await client.PostAsJsonAsync("/api/planning/premade-plans/materialize", request with { operationId = Guid.NewGuid(), freshCopy = true });
     Assert.Equal(HttpStatusCode.Created, freshResponse.StatusCode);

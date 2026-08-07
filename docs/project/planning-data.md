@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: developer-and-operator
-updated: 2026-08-06
+updated: 2026-08-07
 ---
 
 # Planning data and import flow
@@ -37,7 +37,17 @@ TR-003B keeps a training plan separate from a calendar series. A calendar answer
 
 Each runner can have at most one active plan run. Starting another plan or restarting the current plan abandons the previous active run without rewriting its history. Existing runs remain pinned to the plan revision that was started; editing a plan creates a new revision, and only a later restart opts the runner into that revision.
 
+TR-025 makes premade plans strictly profile-owned and gives an active run an optional calendar projection: start date, weekday mask, and time-zone label. The projection walks selected weekdays in date order and assigns contiguous program positions without rebasing when a shorter calendar range is queried. These entries are derived from the immutable run rather than copied into editable calendar series. Generated definitions use the internal `PlanInternal` workout kind and are excluded from ordinary library/manual selectors; only their owning plan exposes them. A schedule identifies the exact program run and item, so repeated definitions still advance one intended position at a time.
+
+TR-027 projects the complete logical plan and stores only sparse per-item moves/skips plus explicit extra occurrences. **Move only** changes one unfinished item; **Move this and following** applies one date offset to the selected and later unfinished items; **Restore** deletes that item's sparse override. **Skip** participates in contiguous progression but is recorded separately from completion. Already-completed items cannot be moved or skipped, but may gain an extra repeat either without changing later dates or while shifting later incomplete items. A full date is not an error: preview reports every resulting double-session date and confirmation adds both choices without replacing either one. Stopped, interrupted, and faulted attempts remain incomplete and are rescheduled instead of repeated.
+
+Extra repeats are calendar choices, not new program positions. Running one does not rewind or double-advance the ordered plan. All mutations carry profile ownership, active-run version, operation ID, request fingerprint, and a durable replay receipt. Existing template-linked workout revisions are treated as plan-internal from their program provenance even when an older row still says `Structured`; this prevents legacy generated definitions from leaking into the standalone library without hiding custom workouts.
+
+The active runner is a browser-local application-shell context. Selecting it once updates Run, Workouts, Calendar, History, and editors; switching runners reloads the current route so no profile-scoped data remains from the prior runner. This is a household convenience context, not authentication or authorization.
+
 A session selected from a plan persists its selection source, plan-run ID, and plan-item ID alongside the exact workout revision. The arm endpoint validates that this is the next expected item and binds the operation ID to that selection. Only a linked session ending `Completed` advances progression. Manual, library, and calendar sessions are unbound; `Stopped`, `Interrupted`, and `Faulted` attempts remain in history but do not advance. A unique completed-item constraint makes advancement idempotent.
+
+TR-026 derives a compact read-only summary from each workout's current canonical revision. It recursively counts expanded segments, totals time and distance goals, identifies steady, interval, progression, multi-stage, and heart-rate structures, and reports the actual speed and incline ranges. The Workouts library can search and filter these derived values. Opening **View details** loads the immutable current revision and renders its steps, cues, notes, ramps, HR directives, and nested repeats without flattening a large repeated pattern. Every training-plan card also exposes its ordered sessions; plans with week or phase metadata remain grouped while custom plans use a concise ordered list. These views do not create, prepare, or mutate a session.
 
 Run recommendation priority is deterministic:
 

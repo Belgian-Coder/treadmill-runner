@@ -56,7 +56,12 @@ public sealed record WorkoutSummaryView(
   int CurrentRevisionNumber,
   int ExpandedStepCount,
   double? DurationMinutes,
-  DateTimeOffset UpdatedAtUtc);
+  DateTimeOffset UpdatedAtUtc,
+  string StructureLabel = "Structured",
+  string GoalLabel = "Mixed goals",
+  string SpeedLabel = "Varied speed",
+  string InclineLabel = "Varied incline",
+  bool UsesHeartRate = false);
 
 public sealed record WorkoutReuseView(
   Guid WorkoutId,
@@ -129,7 +134,10 @@ public sealed record WorkoutProgramRunView(
   string Status,
   DateTimeOffset StartedAtUtc,
   DateTimeOffset? EndedAtUtc,
-  int Version);
+  int Version,
+  DateOnly? ScheduledStartDate = null,
+  int ScheduledWeekdayMask = 0,
+  string? ScheduleTimeZoneId = null);
 
 public sealed record WorkoutProgramView(
   Guid Id,
@@ -147,7 +155,8 @@ public sealed record WorkoutProgramView(
   bool IsComplete,
   string? TemplateId = null,
   string? TemplateVersion = null,
-  Guid? OwnerProfileId = null);
+  Guid? OwnerProfileId = null,
+  int SkippedItemCount = 0);
 
 public sealed record PremadePlanCatalogView(
   string Id,
@@ -208,7 +217,10 @@ public sealed record WorkoutProgramStartRequest(
   Guid ProfileId,
   Guid ExpectedProgramRevisionId,
   Guid? ExpectedActiveRunId,
-  int? ExpectedActiveRunVersion);
+  int? ExpectedActiveRunVersion,
+  DateOnly? ScheduledStartDate = null,
+  int ScheduledWeekdayMask = 0,
+  string? ScheduleTimeZoneId = null);
 
 public sealed record WorkoutRevisionView(
   Guid WorkoutId,
@@ -279,7 +291,19 @@ public sealed record CalendarOptionView(
   string WorkoutName,
   int RevisionNumber,
   int DisplayOrder,
-  bool IsSelected);
+  bool IsSelected,
+  string Source = "Calendar",
+  Guid? ProgramRunId = null,
+  Guid? ProgramItemId = null,
+  int? ProgramPosition = null,
+  int? ProgramTotal = null,
+  int? WeekNumber = null,
+  string? Phase = null,
+  int? ProgramRunVersion = null,
+  bool IsRepeat = false,
+  Guid? ExtraOccurrenceId = null,
+  DateOnly? OriginalDate = null,
+  bool IsCompleted = false);
 
 public sealed record CalendarDayView(DateOnly Date, IReadOnlyList<CalendarOptionView> Options);
 
@@ -310,6 +334,32 @@ public sealed record CalendarSeriesSaveRequest(
   int? ExpectedVersion = null);
 
 public sealed record CalendarSelectionRequest(Guid OperationId, Guid SeriesId, Guid WorkoutRevisionId);
+
+public sealed record WorkoutProgramScheduleChangeRequest(
+  Guid? OperationId,
+  Guid ProfileId,
+  Guid ProgramItemId,
+  string Action,
+  DateOnly? TargetDate,
+  int? ExpectedRunVersion = null);
+
+public sealed record WorkoutProgramScheduleImpactView(
+  Guid ProgramItemId,
+  int Position,
+  DateOnly? CurrentDate,
+  DateOnly? NewDate,
+  bool IsRepeat);
+
+public sealed record WorkoutProgramScheduleChangePreviewView(
+  Guid RunId,
+  Guid ProgramItemId,
+  string Action,
+  int RunVersion,
+  bool CanApply,
+  string Message,
+  IReadOnlyList<WorkoutProgramScheduleImpactView> Impacts,
+  IReadOnlyList<DateOnly> CollisionDates,
+  bool Replayed = false);
 
 public sealed record CalendarSeriesView(
   Guid Id,

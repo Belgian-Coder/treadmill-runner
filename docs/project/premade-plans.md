@@ -9,11 +9,13 @@ updated: 2026-08-06
 
 # Premade training plans
 
-Open **Workouts → Premade plans** after selecting a runner on Run. Search or filter the catalog, select a plan, and review its length, sessions, phases, heart-rate requirements, normalized maximum speed/incline, and compatibility result. **Add to my training** creates an inactive, profile-owned copy. It does not prepare a session, activate a plan, start a belt, or send a treadmill command.
+Open **Workouts → Premade plans**, choose the runner at the top of the page, search or filter the catalog, then review a plan's length, sessions, phases, heart-rate requirements, normalized maximum speed/incline, and compatibility result. **Add for _runner_** creates an inactive copy owned only by that profile. The generated plan workouts are internal building blocks: they do not clutter the shared workout library or manual-workout selector.
 
 The same template version is added only once per runner by default. **Already added** links the catalog state to that durable receipt. Use **Add fresh copy** when a second independent progression is intentional. Existing copies do not change when a catalog template is updated.
 
-Installed premade plans are immutable. The Training plans view groups long plans by phase and week, and expands only the week the runner wants to inspect. Starting or restarting one remains a separate explicit action with the normal confirmation flow.
+After adding, choose the first calendar date and the required training days. **Start plan** activates the ordered progression and projects every session onto that runner's calendar. **Keep for later** leaves the copy inactive. Calendar entries show the plan name, exact position (for example workout 7 of 174), phase, and week; selecting an entry returns to Run with the exact program item rather than a generic workout copy. Only completion of that exact program item advances the plan.
+
+Installed premade plans are immutable and remain profile-scoped. The Training plans view groups long plans by phase and week, and expands only the week the runner wants to inspect. Starting or restarting one remains a separate explicit action with the normal confirmation flow. A second runner adds and schedules their own independent copy, progress, and calendar.
 
 ## Included catalog
 

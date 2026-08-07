@@ -148,24 +148,212 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       {
         new
         {
-          kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = 12.0,
-          speedKind = "fixed", speedStartKph = 5.0, speedEndKph = 0.0, heartRateMinimumBpm = 0,
-          heartRateMaximumBpm = 0, heartRateZoneNumber = 0, heartRateInitialSpeedKph = 0.0,
-          heartRateMinimumSpeedKph = 0.0, heartRateMaximumSpeedKph = 0.0, inclineKind = "fixed",
-          inclineStartPercent = 2.0, inclineEndPercent = 0.0, cue = (string?)null, notes = (string?)null,
+          kind = "repeat", repetitions = 3,
+          blocks = new[]
+          {
+            new
+            {
+              kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = 2.0,
+              speedKind = "fixed", speedStartKph = 5.0, speedEndKph = 0.0, heartRateMinimumBpm = 0,
+              heartRateMaximumBpm = 0, heartRateZoneNumber = 0, heartRateInitialSpeedKph = 0.0,
+              heartRateMinimumSpeedKph = 0.0, heartRateMaximumSpeedKph = 0.0, inclineKind = "fixed",
+              inclineStartPercent = 1.0, inclineEndPercent = 0.0, cue = "Easy", notes = (string?)null,
+            },
+            new
+            {
+              kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = 2.0,
+              speedKind = "fixed", speedStartKph = 7.0, speedEndKph = 0.0, heartRateMinimumBpm = 0,
+              heartRateMaximumBpm = 0, heartRateZoneNumber = 0, heartRateInitialSpeedKph = 0.0,
+              heartRateMinimumSpeedKph = 0.0, heartRateMaximumSpeedKph = 0.0, inclineKind = "fixed",
+              inclineStartPercent = 2.0, inclineEndPercent = 0.0, cue = "Strong", notes = (string?)null,
+            },
+          },
+          goalKind = "time", goalValue = 1.0, speedKind = "open", speedStartKph = 0.0,
+          speedEndKph = 0.0, heartRateMinimumBpm = 0, heartRateMaximumBpm = 0, heartRateZoneNumber = 0,
+          heartRateInitialSpeedKph = 0.0, heartRateMinimumSpeedKph = 0.0, heartRateMaximumSpeedKph = 0.0,
+          inclineKind = "fixed", inclineStartPercent = 0.0, inclineEndPercent = 0.0, cue = (string?)null, notes = (string?)null,
         },
       },
     });
     Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+    Guid workoutId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("workoutId").GetGuid();
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     ILocator card = Page.Locator(".workout-card").Filter(new() { HasText = unique });
     await Expect(card).ToContainTextAsync("Short incline progression for recovery days");
     await Expect(card).ToContainTextAsync("12 min");
+    await Expect(card).ToContainTextAsync("Intervals");
+    await Expect(card).ToContainTextAsync("5–7 km/h");
+    await Expect(card).ToContainTextAsync("1–2% incline");
+    await card.GetByRole(AriaRole.Button, new() { Name = "View details", Exact = true }).ClickAsync();
+    ILocator details = Page.GetByRole(AriaRole.Dialog);
+    await Expect(details).ToBeVisibleAsync();
+    await Expect(details).ToContainTextAsync("3 × this pattern");
+    await Expect(details).ToContainTextAsync("6 expanded segment(s)");
+    await Expect(details).ToContainTextAsync("Easy");
+    await Expect(details).ToContainTextAsync("Strong");
+    await Page.Keyboard.PressAsync("Escape");
+    await Expect(details).ToBeHiddenAsync();
+    await card.GetByRole(AriaRole.Button, new() { Name = "View details", Exact = true }).ClickAsync();
+    await Expect(details).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Close workout details", Exact = true }).ClickAsync();
+    await Expect(details).ToBeHiddenAsync();
+    string revisionRoute = $"**/api/planning/workouts/{workoutId:D}/revisions";
+    await Page.RouteAsync(revisionRoute, route => route.FulfillAsync(new RouteFulfillOptions { Status = 503, Body = "{}", ContentType = "application/json" }));
+    await card.GetByRole(AriaRole.Button, new() { Name = "View details", Exact = true }).ClickAsync();
+    await Expect(details.GetByRole(AriaRole.Alert)).ToContainTextAsync("could not be loaded");
+    await Page.UnrouteAsync(revisionRoute);
+    await details.GetByRole(AriaRole.Button, new() { Name = "Try again", Exact = true }).ClickAsync();
+    await Expect(details).ToContainTextAsync("3 × this pattern");
+    await details.GetByRole(AriaRole.Button, new() { Name = "Close", Exact = true }).ClickAsync();
+    await Expect(details).ToBeHiddenAsync();
+    await Page.GetByLabel("Workout structure filter", new() { Exact = true }).SelectOptionAsync("intervals");
+    await Expect(card).ToBeVisibleAsync();
     await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync("recovery days");
+    await Expect(card).ToBeVisibleAsync();
+    await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync("5–7 km/h");
     await Expect(card).ToBeVisibleAsync();
     await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync("does not exist");
     await Expect(card).ToHaveCountAsync(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Global_runner_and_plan_calendar_changes_use_one_previewed_action_sheet()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    DateOnly plannedDate = new(2026, 8, 10);
+    Guid runId = Guid.NewGuid();
+    Guid itemId = Guid.NewGuid();
+    Guid revisionId = Guid.NewGuid();
+    int applyRequests = 0;
+    await Page.RouteAsync("**/api/planning/calendar/series?*", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = "[]",
+    }));
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/preview", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = JsonSerializer.Serialize(new
+      {
+        runId,
+        programItemId = itemId,
+        action = "MoveOne",
+        runVersion = 4,
+        canApply = true,
+        message = "Only this session will move; later sessions keep their dates. Warning: 1 date will contain more than one session.",
+        impacts = new[] { new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1), isRepeat = false } },
+        collisionDates = new[] { plannedDate.AddDays(1) },
+      }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+    }));
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/apply", async route =>
+    {
+      Interlocked.Increment(ref applyRequests);
+      await route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          runId,
+          programItemId = itemId,
+          action = "MoveOne",
+          runVersion = 5,
+          canApply = true,
+          message = "Only this session moved; later sessions kept their dates.",
+          impacts = Array.Empty<object>(),
+          collisionDates = Array.Empty<DateOnly>(),
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+      });
+    });
+    await Page.RouteAsync("**/api/planning/calendar/*", async route =>
+    {
+      string lastSegment = new Uri(route.Request.Url).AbsolutePath.Split('/').Last();
+      if (!Guid.TryParse(lastSegment, out _))
+      {
+        await route.FallbackAsync();
+        return;
+      }
+      await route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          profileId = scenario.MarcProfileId,
+          from = new DateOnly(2026, 7, 27),
+          to = new DateOnly(2026, 9, 6),
+          days = new[]
+          {
+            new
+            {
+              date = plannedDate,
+              options = new[]
+              {
+                new
+                {
+                  seriesId = runId, scheduleGroupId = runId, scheduleName = "First 5K", workoutRevisionId = revisionId,
+                  workoutName = "Easy foundation", revisionNumber = 1, displayOrder = 0, isSelected = true,
+                  source = "Program", programRunId = runId, programItemId = itemId, programPosition = 2, programTotal = 18,
+                  weekNumber = 1, phase = "Foundation", programRunVersion = 4, isRepeat = false, originalDate = plannedDate,
+                  isCompleted = false,
+                },
+                new
+                {
+                  seriesId = runId, scheduleGroupId = runId, scheduleName = "First 5K", workoutRevisionId = revisionId,
+                  workoutName = "Earlier foundation", revisionNumber = 1, displayOrder = 1, isSelected = false,
+                  source = "Program", programRunId = runId, programItemId = Guid.NewGuid(), programPosition = 1, programTotal = 18,
+                  weekNumber = 1, phase = "Foundation", programRunVersion = 4, isRepeat = false, originalDate = plannedDate,
+                  isCompleted = true,
+                },
+              },
+            },
+          },
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+      });
+    });
+
+    await Page.SetViewportSizeAsync(440, 956);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
+    await Expect(Page.Locator(".profile-context-picker")).ToHaveCountAsync(0);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Marc");
+    await Page.Locator(".calendar-agenda-week").Filter(new() { HasText = "10 Aug" }).Locator("summary").ClickAsync();
+    ILocator manageButton = Page.Locator(".calendar-agenda .calendar-option-manage").First;
+    await Expect(manageButton).ToBeVisibleAsync();
+    await manageButton.ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog).ToContainTextAsync("step 2 of 18");
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToHaveCountAsync(0);
+    await dialog.GetByLabel("New or repeat date").FillAsync("2026-08-11");
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false }).ClickAsync();
+    await Expect(dialog).ToContainTextAsync("Impact preview");
+    await Expect(dialog).ToContainTextAsync("Double-session warning");
+    Assert.Equal(0, applyRequests);
+    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+    Directory.CreateDirectory(showcaseDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(showcaseDirectory, "tr-027-calendar-mobile.png"),
+      FullPage = false,
+    });
+    await Page.SetViewportSizeAsync(1440, 900);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(showcaseDirectory, "tr-027-calendar-move.png"),
+      FullPage = false,
+    });
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true }).ClickAsync();
+    await Expect(dialog).ToBeHiddenAsync();
+    Assert.Equal(1, applyRequests);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Manage Earlier foundation on 10 August", Exact = true }).ClickAsync();
+    await Expect(dialog).ToContainTextAsync("step 1 of 18");
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · shift the rest", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false })).ToHaveCountAsync(0);
   }
 
   [Fact]
@@ -412,9 +600,23 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   private async Task AssertNoOverflowAsync()
   {
-    bool overflow = await Page.EvaluateAsync<bool>(
-      "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1");
-    Assert.False(overflow);
+    string[] offenders = await Page.EvaluateAsync<string[]>("""
+      () => {
+        const width = document.documentElement.clientWidth;
+        if (document.documentElement.scrollWidth <= width + 1) return [];
+        return [...document.querySelectorAll('body *')]
+          .filter(element => {
+            const rect = element.getBoundingClientRect();
+            return rect.right > width + 1 || rect.left < -1;
+          })
+          .slice(0, 8)
+          .map(element => {
+            const rect = element.getBoundingClientRect();
+            return `${element.tagName.toLowerCase()}.${element.className || '-'} left=${rect.left.toFixed(1)} right=${rect.right.toFixed(1)} text=${(element.textContent || '').trim().slice(0, 60)}`;
+          });
+      }
+      """);
+    Assert.True(offenders.Length == 0, $"Horizontal overflow: {string.Join(" | ", offenders)}");
   }
 
   private static async Task AssertTouchTargetsAsync(ILocator controls, string viewport)

@@ -24,6 +24,8 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<WorkoutProgramRevisionEntity> WorkoutProgramRevisions => Set<WorkoutProgramRevisionEntity>();
   internal DbSet<WorkoutProgramItemEntity> WorkoutProgramItems => Set<WorkoutProgramItemEntity>();
   internal DbSet<WorkoutProgramRunEntity> WorkoutProgramRuns => Set<WorkoutProgramRunEntity>();
+  internal DbSet<WorkoutProgramScheduleOverrideEntity> WorkoutProgramScheduleOverrides => Set<WorkoutProgramScheduleOverrideEntity>();
+  internal DbSet<WorkoutProgramExtraOccurrenceEntity> WorkoutProgramExtraOccurrences => Set<WorkoutProgramExtraOccurrenceEntity>();
   internal DbSet<PremadePlanInstallationEntity> PremadePlanInstallations => Set<PremadePlanInstallationEntity>();
   internal DbSet<WorkoutSessionEntity> WorkoutSessions => Set<WorkoutSessionEntity>();
   internal DbSet<SessionSampleEntity> SessionSamples => Set<SessionSampleEntity>();
@@ -351,7 +353,7 @@ public sealed class TreadmillRunnerDbContext(
     workout.ToTable("Workouts", table =>
     {
       table.HasCheckConstraint("CK_Workouts_Name", "length(\"Name\") > 0");
-      table.HasCheckConstraint("CK_Workouts_Kind", "\"Kind\" IN ('Structured', 'ManualTemplate')");
+      table.HasCheckConstraint("CK_Workouts_Kind", "\"Kind\" IN ('Structured', 'ManualTemplate', 'PlanInternal')");
     });
     workout.HasKey(entity => entity.Id);
     workout.Property(entity => entity.Name).HasMaxLength(160);
@@ -534,9 +536,14 @@ public sealed class TreadmillRunnerDbContext(
     {
       table.HasCheckConstraint("CK_WorkoutProgramRuns_Status", "\"Status\" IN ('Active', 'Completed', 'Abandoned')");
       table.HasCheckConstraint("CK_WorkoutProgramRuns_Version", "\"Version\" > 0");
+      table.HasCheckConstraint(
+        "CK_WorkoutProgramRuns_Schedule",
+        "(\"ScheduledStartDate\" IS NULL AND \"ScheduledWeekdayMask\" = 0 AND \"ScheduleTimeZoneId\" IS NULL) OR " +
+        "(\"ScheduledStartDate\" IS NOT NULL AND \"ScheduledWeekdayMask\" BETWEEN 1 AND 127 AND length(\"ScheduleTimeZoneId\") > 0)");
     });
     run.HasKey(entity => entity.Id);
     run.Property(entity => entity.Status).HasMaxLength(20);
+    run.Property(entity => entity.ScheduleTimeZoneId).HasMaxLength(100);
     run.Property(entity => entity.Version).IsConcurrencyToken();
     run.HasIndex(entity => entity.UserProfileId).IsUnique().HasFilter("\"Status\" = 'Active'");
     run.HasIndex(entity => new { entity.UserProfileId, entity.StartedAtUtc });
@@ -547,6 +554,35 @@ public sealed class TreadmillRunnerDbContext(
     run.HasOne<WorkoutProgramRevisionEntity>()
       .WithMany()
       .HasForeignKey(entity => entity.WorkoutProgramRevisionId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    var scheduleOverride = modelBuilder.Entity<WorkoutProgramScheduleOverrideEntity>();
+    scheduleOverride.ToTable("WorkoutProgramScheduleOverrides", table =>
+      table.HasCheckConstraint(
+        "CK_WorkoutProgramScheduleOverrides_Value",
+        "(\"IsSkipped\" = 1 AND \"TargetDate\" IS NULL) OR (\"IsSkipped\" = 0 AND \"TargetDate\" IS NOT NULL)"));
+    scheduleOverride.HasKey(entity => entity.Id);
+    scheduleOverride.HasIndex(entity => new { entity.WorkoutProgramRunId, entity.WorkoutProgramItemId }).IsUnique();
+    scheduleOverride.HasOne<WorkoutProgramRunEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutProgramRunId)
+      .OnDelete(DeleteBehavior.Cascade);
+    scheduleOverride.HasOne<WorkoutProgramItemEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutProgramItemId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    var extraOccurrence = modelBuilder.Entity<WorkoutProgramExtraOccurrenceEntity>();
+    extraOccurrence.ToTable("WorkoutProgramExtraOccurrences");
+    extraOccurrence.HasKey(entity => entity.Id);
+    extraOccurrence.HasIndex(entity => new { entity.WorkoutProgramRunId, entity.Date });
+    extraOccurrence.HasOne<WorkoutProgramRunEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutProgramRunId)
+      .OnDelete(DeleteBehavior.Cascade);
+    extraOccurrence.HasOne<WorkoutProgramItemEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutProgramItemId)
       .OnDelete(DeleteBehavior.Restrict);
   }
 

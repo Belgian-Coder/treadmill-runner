@@ -57,24 +57,28 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
   public async Task<IReadOnlyList<StoredWorkout>> ListAsync(CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    return await context.Workouts.AsNoTracking()
+    var rows = await context.Workouts.AsNoTracking()
       .OrderBy(workout => workout.Name)
       .Select(workout => new
       {
         Workout = workout,
         Latest = workout.Revisions.OrderByDescending(revision => revision.RevisionNumber).First(),
+        IsTemplateInternal = workout.Revisions.Any(revision =>
+          context.WorkoutProgramItems.Any(item =>
+            item.WorkoutRevisionId == revision.Id && item.WorkoutProgramRevision.TemplateId != null)),
       })
-      .Select(item => new StoredWorkout(
+      .ToArrayAsync(cancellationToken);
+    return rows.Select(item => new StoredWorkout(
         item.Workout.Id,
         item.Workout.Name,
-        Enum.Parse<WorkoutKind>(item.Workout.Kind),
+        item.IsTemplateInternal ? WorkoutKind.PlanInternal : Enum.Parse<WorkoutKind>(item.Workout.Kind),
         item.Workout.IsArchived,
         item.Latest.RevisionNumber,
         item.Latest.Id,
         item.Latest.DefinitionJson,
         item.Latest.ContentSha256,
         item.Latest.CreatedAtUtc))
-      .ToListAsync(cancellationToken);
+      .ToArray();
   }
 
   public async Task<IReadOnlyList<StoredWorkoutReuse>> ListReusableAsync(
@@ -102,6 +106,9 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
         session => session.WorkoutRevisionId,
         revision => revision.Id,
         (session, revision) => new { Session = session, Revision = revision })
+      .Where(item => !context.WorkoutProgramItems.Any(programItem =>
+        programItem.WorkoutRevisionId == item.Revision.Id &&
+        programItem.WorkoutProgramRevision.TemplateId != null))
       .Join(
         context.Workouts.AsNoTracking().Where(workout => !workout.IsArchived && workout.Kind == "Structured"),
         item => item.Revision.WorkoutId,

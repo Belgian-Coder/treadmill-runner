@@ -1,0 +1,72 @@
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ActiveProfileState ActiveProfile
+@implements IDisposable
+
+<details class="active-runner-picker">
+    <summary aria-label="Choose active runner">
+        <span aria-hidden="true">@ActiveInitial</span>
+        <strong>@ActiveName</strong>
+    </summary>
+    <div class="active-runner-picker__menu" role="radiogroup" aria-label="Active runner">
+        <span>Running as</span>
+        @if (profiles.Count == 0)
+        {
+            <a href="/profiles">Create a profile</a>
+        }
+        else
+        {
+            @foreach (ProfileView profile in profiles)
+            {
+                <button type="button" role="radio" aria-checked="@(profile.Id == activeProfileId ? "true" : "false")"
+                        data-profile-id="@profile.Id.ToString("D")"
+                        class="@(profile.Id == activeProfileId ? "active-runner-picker__selected" : null)"
+                        @onclick="() => SelectAsync(profile.Id)">@profile.DisplayName</button>
+            }
+        }
+    </div>
+</details>
+
+@code {
+    private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
+    private Guid? activeProfileId;
+    private string ActiveName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "Choose runner";
+    private string ActiveInitial => ActiveName == "Choose runner" ? "?" : ActiveName[..1].ToUpperInvariant();
+
+    protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? [];
+            activeProfileId = await ActiveProfile.GetAsync();
+            if (activeProfileId is not null && profiles.All(profile => profile.Id != activeProfileId))
+            {
+                await ActiveProfile.ClearAsync();
+                activeProfileId = null;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (HttpRequestException) { }
+    }
+
+    private async Task SelectAsync(Guid profileId)
+    {
+        if (profileId == activeProfileId) return;
+        await ActiveProfile.SetAsync(profileId);
+        activeProfileId = profileId;
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(50);
+        Navigation.Refresh(forceReload: true);
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        activeProfileId = profileId;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => ActiveProfile.Changed -= ActiveProfileChanged;
+}

@@ -12,7 +12,8 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
   [Trait("Category", "Browser")]
   public async Task Catalog_preview_materialization_and_grouped_long_plan_work_on_desktop_and_phone()
   {
-    Guid profileId = await CreateDemoProfileAsync();
+    Guid profileId = await CreateDemoProfileAsync("Demo Runner");
+    await CreateDemoProfileAsync("Second Runner");
     await Page.Context.AddInitScriptAsync($"window.localStorage.setItem('treadmillrunner.active-profile', '{profileId:D}');");
     await Page.SetViewportSizeAsync(1180, 820);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
@@ -27,17 +28,22 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await longPlan.ClickAsync();
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("58");
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("174");
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Add to my training", Exact = true })).ToBeEnabledAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Add for Demo Runner", Exact = true })).ToBeEnabledAsync();
     await AssertNoHorizontalOverflowAsync();
     await SaveShowcaseAsync("tr-024-premade-plan-catalog.png");
 
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Add to my training", Exact = true }).ClickAsync();
-    await Expect(Page.GetByText("was added without activating it.", new() { Exact = false })).ToBeVisibleAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Already added", Exact = true })).ToBeDisabledAsync();
-
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Training plans", Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Add for Demo Runner", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Choose the calendar days now", new() { Exact = false })).ToBeVisibleAsync();
     ILocator installed = Page.Locator(".program-card").Filter(new() { HasText = "5K to 10K Distance First" });
+    await Expect(installed).ToContainTextAsync("For Demo Runner");
     await Expect(installed).ToContainTextAsync("174 workouts");
+    ILocator schedule = installed.Locator(".program-start-confirm");
+    await Expect(schedule.GetByText("Choose exactly 3 training day(s)", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(schedule.Locator(".program-training-days button.is-selected")).ToHaveCountAsync(3);
+    await SaveShowcaseAsync("tr-025-profile-plan-schedule.png");
+    await schedule.GetByRole(AriaRole.Button, new() { Name = "Start plan", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("ordered sessions are on the calendar", new() { Exact = false })).ToBeVisibleAsync();
+    await Expect(installed).ToContainTextAsync("Calendar starts");
     await installed.Locator(".template-program-groups > summary").ClickAsync();
     await Expect(installed.GetByText("Foundation", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(installed.GetByText("Distance consolidation", new() { Exact = true })).ToBeVisibleAsync();
@@ -45,21 +51,33 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await Expect(installed.GetByText("Session 1", new() { Exact = true }).First).ToBeVisibleAsync();
     await SaveShowcaseAsync("tr-024-long-plan-grouped.png");
 
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Demo Runner");
+    await Expect(Page.Locator(".calendar-option-shell--program").First).ToContainTextAsync("5K to 10K Distance First");
+    await SaveShowcaseAsync("tr-025-profile-plan-calendar.png");
+
+    await Page.SelectActiveRunnerAsync("Second Runner");
+    await Expect(Page.Locator(".calendar-option-shell--program")).ToHaveCountAsync(0);
+    await Page.SelectActiveRunnerAsync("Demo Runner");
+    await Expect(Page.Locator(".calendar-option-shell--program").First).ToContainTextAsync("5K to 10K Distance First");
+
     await Page.SetViewportSizeAsync(440, 956);
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Premade plans", Exact = true }).ClickAsync();
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Training plans", Exact = true }).ClickAsync();
     await AssertNoHorizontalOverflowAsync();
-    LocatorBoundingBoxResult? firstCard = await Page.Locator(".premade-plan-card").First.BoundingBoxAsync();
+    LocatorBoundingBoxResult? firstCard = await Page.Locator(".program-card").First.BoundingBoxAsync();
     Assert.NotNull(firstCard);
     Assert.True(firstCard.Width >= 44 && firstCard.Height >= 44);
+    await SaveShowcaseAsync("tr-025-profile-plan-mobile.png");
   }
 
-  private async Task<Guid> CreateDemoProfileAsync()
+  private async Task<Guid> CreateDemoProfileAsync(string displayName)
   {
     using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
     using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/profiles", new
     {
       operationId = Guid.NewGuid(),
-      displayName = "Demo Runner",
+      displayName,
       unitSystem = "Metric",
       weightKilograms = 70,
       maximumHeartRateBpm = 190,

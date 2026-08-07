@@ -81,7 +81,12 @@ public sealed record WorkoutSummaryDto(
   int CurrentRevisionNumber,
   int ExpandedStepCount,
   double? DurationMinutes,
-  DateTimeOffset UpdatedAtUtc);
+  DateTimeOffset UpdatedAtUtc,
+  string StructureLabel = "Structured",
+  string GoalLabel = "Mixed goals",
+  string SpeedLabel = "Varied speed",
+  string InclineLabel = "Varied incline",
+  bool UsesHeartRate = false);
 
 public sealed record WorkoutReuseDto(
   Guid WorkoutId,
@@ -120,7 +125,10 @@ public sealed record WorkoutProgramRunDto(
   string Status,
   DateTimeOffset StartedAtUtc,
   DateTimeOffset? EndedAtUtc,
-  int Version);
+  int Version,
+  DateOnly? ScheduledStartDate = null,
+  int ScheduledWeekdayMask = 0,
+  string? ScheduleTimeZoneId = null);
 
 public sealed record WorkoutProgramDto(
   Guid Id,
@@ -138,7 +146,8 @@ public sealed record WorkoutProgramDto(
   bool IsComplete,
   string? TemplateId = null,
   string? TemplateVersion = null,
-  Guid? OwnerProfileId = null);
+  Guid? OwnerProfileId = null,
+  int SkippedItemCount = 0);
 
 public sealed record PremadePlanCatalogDto(
   string Id,
@@ -199,7 +208,10 @@ public sealed record WorkoutProgramStartRequest(
   Guid ProfileId,
   Guid ExpectedProgramRevisionId,
   Guid? ExpectedActiveRunId,
-  int? ExpectedActiveRunVersion);
+  int? ExpectedActiveRunVersion,
+  DateOnly? ScheduledStartDate = null,
+  int ScheduledWeekdayMask = 0,
+  string? ScheduleTimeZoneId = null);
 public sealed record ArchiveWorkoutProgramRequest(Guid OperationId);
 
 public sealed record ArchiveWorkoutRequest(Guid OperationId);
@@ -275,7 +287,19 @@ public sealed record CalendarOptionDto(
   string WorkoutName,
   int RevisionNumber,
   int DisplayOrder,
-  bool IsSelected);
+  bool IsSelected,
+  string Source = "Calendar",
+  Guid? ProgramRunId = null,
+  Guid? ProgramItemId = null,
+  int? ProgramPosition = null,
+  int? ProgramTotal = null,
+  int? WeekNumber = null,
+  string? Phase = null,
+  int? ProgramRunVersion = null,
+  bool IsRepeat = false,
+  Guid? ExtraOccurrenceId = null,
+  DateOnly? OriginalDate = null,
+  bool IsCompleted = false);
 
 public sealed record CalendarDayDto(DateOnly Date, IReadOnlyList<CalendarOptionDto> Options);
 
@@ -291,5 +315,31 @@ public sealed record CalendarOccurrenceDeleteRequest(Guid OperationId, int Expec
 public sealed record CalendarSegmentVersion(Guid SeriesId, int Version);
 
 public sealed record CalendarGroupDeleteRequest(Guid OperationId, IReadOnlyList<CalendarSegmentVersion> ExpectedSegments);
+
+public sealed record WorkoutProgramScheduleChangeRequest(
+  Guid? OperationId,
+  Guid ProfileId,
+  Guid ProgramItemId,
+  string Action,
+  DateOnly? TargetDate,
+  int? ExpectedRunVersion = null);
+
+public sealed record WorkoutProgramScheduleImpactDto(
+  Guid ProgramItemId,
+  int Position,
+  DateOnly? CurrentDate,
+  DateOnly? NewDate,
+  bool IsRepeat);
+
+public sealed record WorkoutProgramScheduleChangePreviewDto(
+  Guid RunId,
+  Guid ProgramItemId,
+  string Action,
+  int RunVersion,
+  bool CanApply,
+  string Message,
+  IReadOnlyList<WorkoutProgramScheduleImpactDto> Impacts,
+  IReadOnlyList<DateOnly> CollisionDates,
+  bool Replayed = false);
 
 public sealed record CalendarRangeDto(Guid ProfileId, DateOnly From, DateOnly To, IReadOnlyList<CalendarDayDto> Days);

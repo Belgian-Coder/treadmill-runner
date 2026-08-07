@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using TreadmillRunner.Core.Calendar;
 using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Infrastructure.Persistence;
 
@@ -196,6 +197,9 @@ public static class WorkoutProgramPlanningEndpoints
       request.ExpectedProgramRevisionId,
       request.ExpectedActiveRunId,
       request.ExpectedActiveRunVersion,
+      request.ScheduledStartDate,
+      request.ScheduledWeekdayMask,
+      request.ScheduleTimeZoneId,
     });
     try
     {
@@ -204,6 +208,9 @@ public static class WorkoutProgramPlanningEndpoints
       if (request.ExpectedProgramRevisionId == Guid.Empty) throw new ArgumentException("Expected program revision ID is required.");
       if (request.ExpectedActiveRunId.HasValue != request.ExpectedActiveRunVersion.HasValue)
         throw new ArgumentException("Expected active run ID and version must be supplied together.");
+      if (request.ScheduledStartDate.HasValue != (request.ScheduledWeekdayMask != 0) ||
+          request.ScheduledStartDate.HasValue != !string.IsNullOrWhiteSpace(request.ScheduleTimeZoneId))
+        throw new ArgumentException("Start date, training days, and time zone must be supplied together.");
       if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
       {
         return Replay(receipt, operationType, fingerprint);
@@ -212,10 +219,29 @@ public static class WorkoutProgramPlanningEndpoints
         ?? throw new KeyNotFoundException();
       if (program.CurrentRevision.RevisionId != request.ExpectedProgramRevisionId)
         throw new DbUpdateConcurrencyException("The training plan revision changed after confirmation was shown.");
+      if (program.CurrentRevision.OwnerProfileId is { } ownerProfileId && ownerProfileId != request.ProfileId)
+        return TypedResults.Problem(
+          title: "This training plan belongs to another runner.",
+          statusCode: StatusCodes.Status403Forbidden);
+      WorkoutProgramSchedule? schedule = request.ScheduledStartDate is { } scheduledStartDate
+        ? new WorkoutProgramSchedule(scheduledStartDate, (WeekdayFlags)request.ScheduledWeekdayMask, request.ScheduleTimeZoneId!)
+        : null;
+      if (schedule is not null && program.CurrentRevision.TemplateId is not null)
+      {
+        int expectedDays = program.CurrentRevision.Items
+          .Where(static item => item.WeekNumber is not null)
+          .GroupBy(static item => item.WeekNumber)
+          .Select(static group => group.Count())
+          .DefaultIfEmpty(1)
+          .Max();
+        if (WorkoutProgramScheduleProjector.CountSelectedDays(schedule.Weekdays) != expectedDays)
+          throw new ArgumentException($"Select exactly {expectedDays} training days for this plan.");
+      }
       DateTimeOffset now = timeProvider.GetUtcNow();
       Guid runId = Guid.NewGuid();
       var expected = new WorkoutProgramRunDto(
-        runId, request.ProfileId, nameof(WorkoutProgramRunStatus.Active), now, null, 1);
+        runId, request.ProfileId, nameof(WorkoutProgramRunStatus.Active), now, null, 1,
+        schedule?.StartDate, (int)(schedule?.Weekdays ?? WeekdayFlags.None), schedule?.TimeZoneId);
       PersistenceWriteOperation operation = WriteOperation(
         request.OperationId, operationType, 200, expected, now, fingerprint);
       WorkoutProgramRun run = await store.StartAsync(
@@ -224,6 +250,7 @@ public static class WorkoutProgramPlanningEndpoints
         request.ExpectedProgramRevisionId,
         request.ExpectedActiveRunId,
         request.ExpectedActiveRunVersion,
+        schedule,
         now,
         operation,
         cancellationToken);
@@ -290,7 +317,8 @@ public static class WorkoutProgramPlanningEndpoints
       progress?.IsComplete ?? false,
       stored.Program.CurrentRevision.TemplateId,
       stored.Program.CurrentRevision.TemplateVersion,
-      stored.Program.CurrentRevision.OwnerProfileId);
+      stored.Program.CurrentRevision.OwnerProfileId,
+      progress?.SkippedItemCount ?? 0);
   }
 
   private static double? DurationMinutes(JsonElement root)
@@ -323,7 +351,8 @@ public static class WorkoutProgramPlanningEndpoints
   }
 
   private static WorkoutProgramRunDto ToDto(WorkoutProgramRun run) => new(
-    run.Id, run.UserProfileId, run.Status.ToString(), run.StartedAtUtc, run.EndedAtUtc, run.Version);
+    run.Id, run.UserProfileId, run.Status.ToString(), run.StartedAtUtc, run.EndedAtUtc, run.Version,
+    run.Schedule?.StartDate, (int)(run.Schedule?.Weekdays ?? WeekdayFlags.None), run.Schedule?.TimeZoneId);
 
   private static void ValidateOperationId(Guid operationId)
   {

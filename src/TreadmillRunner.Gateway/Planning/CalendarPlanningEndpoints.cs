@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Calendar;
+using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Planning;
@@ -19,6 +20,8 @@ public static class CalendarPlanningEndpoints
     group.MapPost("/series/{id:guid}/occurrences/{date}/move", MoveOccurrenceAsync);
     group.MapPost("/series/{id:guid}/occurrences/{date}/delete", DeleteOccurrenceAsync);
     group.MapPost("/series/{id:guid}/delete-group", DeleteGroupAsync);
+    group.MapPost("/program-runs/{runId:guid}/schedule/preview", PreviewProgramScheduleChangeAsync);
+    group.MapPost("/program-runs/{runId:guid}/schedule/apply", ApplyProgramScheduleChangeAsync);
     group.MapGet("/{profileId:guid}", GetEffectiveRangeAsync);
     group.MapPost("/{profileId:guid}/days/{date}/selection", SaveSelectionAsync);
     return endpoints;
@@ -344,6 +347,7 @@ public static class CalendarPlanningEndpoints
     DateOnly from,
     DateOnly to,
     ICalendarStore calendarStore,
+    IWorkoutProgramStore programStore,
     IWorkoutStore workoutStore,
     CancellationToken cancellationToken)
   {
@@ -357,18 +361,28 @@ public static class CalendarPlanningEndpoints
 
     IReadOnlyList<VersionedCalendarSeries> storedSeries = await calendarStore.ListByProfileAsync(profileId, cancellationToken);
     CalendarSeriesDefinition[] definitions = storedSeries.Select(static item => item.Series).ToArray();
+    IReadOnlyList<StoredWorkoutProgramProgress> programs = await programStore.ListAsync(profileId, cancellationToken);
+    var scheduledProgramItems = programs
+      .Where(static program => program.Run is { Status: WorkoutProgramRunStatus.Active, Schedule: not null })
+      .SelectMany(program => WorkoutProgramScheduleProjector
+        .ProjectAll(program.Program.CurrentRevision, program.Run!, program.ScheduleOverrides, program.ExtraOccurrences)
+        .Where(item => item.Date >= from && item.Date <= to)
+        .Select(item => new { Program = program, Scheduled = item }))
+      .GroupBy(static item => item.Scheduled.Date)
+      .ToDictionary(static group => group.Key, static group => group.ToArray());
     var revisionCache = new Dictionary<Guid, StoredWorkoutRevision>();
     List<CalendarDayDto> days = [];
     for (DateOnly date = from; date <= to; date = date.AddDays(1))
     {
       TrainingDaySelection effective = TrainingDaySelectionResolver.ResolveDay(definitions, profileId, date);
-      if (effective.Options.Count == 0)
+      scheduledProgramItems.TryGetValue(date, out var programItems);
+      if (effective.Options.Count == 0 && programItems is null)
       {
         continue;
       }
 
       StoredTrainingDaySelection? selection = await calendarStore.FindSelectionAsync(profileId, date, cancellationToken);
-      var options = new List<CalendarOptionDto>(effective.Options.Count);
+      var options = new List<CalendarOptionDto>(effective.Options.Count + (programItems?.Length ?? 0));
       foreach (TrainingDayOption option in effective.Options)
       {
         if (!revisionCache.TryGetValue(option.WorkoutRevisionId, out StoredWorkoutRevision? revision))
@@ -393,10 +407,106 @@ public static class CalendarPlanningEndpoints
           selection?.CalendarSeriesId == option.SeriesId && selection.WorkoutRevisionId == option.WorkoutRevisionId));
       }
 
+      foreach (var programItem in programItems ?? [])
+      {
+        WorkoutProgramRun run = programItem.Program.Run!;
+        WorkoutProgramItem item = programItem.Scheduled.Item;
+        if (!revisionCache.TryGetValue(item.WorkoutRevisionId, out StoredWorkoutRevision? revision))
+        {
+          revision = await workoutStore.FindRevisionAsync(item.WorkoutRevisionId, cancellationToken);
+          if (revision is null) continue;
+          revisionCache.Add(item.WorkoutRevisionId, revision);
+        }
+        options.Insert(0, new CalendarOptionDto(
+          run.Id,
+          run.Id,
+          programItem.Program.Program.CurrentRevision.Name,
+          item.WorkoutRevisionId,
+          ReadWorkoutTitle(revision.DefinitionJson),
+          revision.RevisionNumber,
+          0,
+          IsSelected: !programItem.Scheduled.IsRepeat,
+          Source: "Program",
+          ProgramRunId: run.Id,
+          ProgramItemId: item.Id,
+          ProgramPosition: item.Position,
+          ProgramTotal: programItem.Program.Program.CurrentRevision.Items.Count,
+          WeekNumber: item.WeekNumber,
+          Phase: item.Phase,
+          ProgramRunVersion: run.Version,
+          IsRepeat: programItem.Scheduled.IsRepeat,
+          ExtraOccurrenceId: programItem.Scheduled.ExtraOccurrenceId,
+          OriginalDate: programItem.Scheduled.OriginalDate,
+          IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true));
+      }
+
       days.Add(new CalendarDayDto(date, options));
     }
 
     return TypedResults.Ok(new CalendarRangeDto(profileId, from, to, days));
+  }
+
+  private static async Task<IResult> PreviewProgramScheduleChangeAsync(
+    Guid runId,
+    WorkoutProgramScheduleChangeRequest request,
+    IWorkoutProgramStore store,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      WorkoutProgramScheduleAction action = ParseScheduleAction(request.Action);
+      WorkoutProgramScheduleChangePreview preview = await store.PreviewScheduleChangeAsync(
+        request.ProfileId, runId, request.ProgramItemId, action, request.TargetDate, cancellationToken);
+      return TypedResults.Ok(ToDto(preview));
+    }
+    catch (ArgumentException exception) { return Validation(exception); }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+  }
+
+  private static async Task<IResult> ApplyProgramScheduleChangeAsync(
+    Guid runId,
+    WorkoutProgramScheduleChangeRequest request,
+    IWorkoutProgramStore store,
+    IOperationReceiptStore receiptStore,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string requestFingerprint = string.Empty;
+    const string operationType = "calendar.program.schedule.change";
+    try
+    {
+      if (request.OperationId is not { } operationId) throw new ArgumentException("OperationId is required.");
+      ValidateOperationId(operationId);
+      if (request.ExpectedRunVersion is not > 0) throw new ArgumentException("ExpectedRunVersion must be greater than zero.");
+      WorkoutProgramScheduleAction action = ParseScheduleAction(request.Action);
+      requestFingerprint = PlanningOperationFingerprint.Compute(new
+      {
+        RunId = runId,
+        request.ProfileId,
+        request.ProgramItemId,
+        Action = action.ToString(),
+        request.TargetDate,
+        request.ExpectedRunVersion,
+      });
+      if (await receiptStore.FindAsync(operationId, cancellationToken) is { } receipt)
+        return Replay(receipt, operationType, requestFingerprint);
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      WorkoutProgramScheduleChangePreview preview = await store.ApplyScheduleChangeAsync(
+        request.ProfileId,
+        runId,
+        request.ProgramItemId,
+        action,
+        request.TargetDate,
+        request.ExpectedRunVersion.Value,
+        WriteOperation(operationId, operationType, StatusCodes.Status200OK, new { }, now, requestFingerprint),
+        cancellationToken);
+      return TypedResults.Ok(ToDto(preview));
+    }
+    catch (ArgumentException exception) { return Validation(exception); }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+    catch (DbUpdateConcurrencyException) { return CalendarConflict(); }
+    catch (OperationReplayException replay) { return Replay(replay, operationType, requestFingerprint); }
+    catch (OperationScopeConflictException) { return OperationConflict(); }
   }
 
   private static async Task<IResult> SaveSelectionAsync(
@@ -579,6 +689,26 @@ public static class CalendarPlanningEndpoints
     using JsonDocument document = JsonDocument.Parse(definitionJson);
     return document.RootElement.GetProperty("title").GetString() ?? "Untitled workout";
   }
+
+  private static WorkoutProgramScheduleAction ParseScheduleAction(string? value)
+  {
+    if (int.TryParse(value, out _) ||
+        !Enum.TryParse(value, ignoreCase: true, out WorkoutProgramScheduleAction action) ||
+        !Enum.IsDefined(action))
+      throw new ArgumentException("Action must be MoveOne, MoveFollowing, Skip, Restore, Repeat, or RepeatAndShift.");
+    return action;
+  }
+
+  private static WorkoutProgramScheduleChangePreviewDto ToDto(WorkoutProgramScheduleChangePreview preview) => new(
+    preview.RunId,
+    preview.ProgramItemId,
+    preview.Action.ToString(),
+    preview.RunVersion,
+    preview.CanApply,
+    preview.Message,
+    preview.Impacts.Select(static impact => new WorkoutProgramScheduleImpactDto(
+      impact.ProgramItemId, impact.Position, impact.CurrentDate, impact.NewDate, impact.IsRepeat)).ToArray(),
+    preview.CollisionDates);
 
   private static void ValidateOperationId(Guid operationId)
   {

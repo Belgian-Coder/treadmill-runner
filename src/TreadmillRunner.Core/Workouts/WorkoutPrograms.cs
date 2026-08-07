@@ -1,3 +1,4 @@
+using TreadmillRunner.Core.Calendar;
 using TreadmillRunner.Core.Sessions;
 
 namespace TreadmillRunner.Core.Workouts;
@@ -6,6 +7,7 @@ public enum WorkoutKind
 {
   Structured,
   ManualTemplate,
+  PlanInternal,
 }
 
 public static class WorkoutProgramLimits
@@ -119,7 +121,135 @@ public sealed record WorkoutProgramRun(
   WorkoutProgramRunStatus Status,
   DateTimeOffset StartedAtUtc,
   DateTimeOffset? EndedAtUtc,
-  int Version);
+  int Version,
+  WorkoutProgramSchedule? Schedule = null);
+
+public sealed record WorkoutProgramSchedule
+{
+  private const WeekdayFlags AllWeekdays = WeekdayFlags.Monday | WeekdayFlags.Tuesday | WeekdayFlags.Wednesday |
+    WeekdayFlags.Thursday | WeekdayFlags.Friday | WeekdayFlags.Saturday | WeekdayFlags.Sunday;
+
+  public WorkoutProgramSchedule(DateOnly startDate, WeekdayFlags weekdays, string timeZoneId)
+  {
+    if (weekdays == WeekdayFlags.None || (weekdays & ~AllWeekdays) != 0)
+      throw new ArgumentOutOfRangeException(nameof(weekdays), "Select at least one valid training day.");
+    if (!weekdays.HasFlag(WorkoutProgramScheduleProjector.ToFlag(startDate.DayOfWeek)))
+      throw new ArgumentException("The first training date must be one of the selected training days.", nameof(startDate));
+    ArgumentException.ThrowIfNullOrWhiteSpace(timeZoneId);
+    if (timeZoneId.Trim().Length > 100) throw new ArgumentException("Time zone ID is too long.", nameof(timeZoneId));
+    StartDate = startDate;
+    Weekdays = weekdays;
+    TimeZoneId = timeZoneId.Trim();
+  }
+
+  public DateOnly StartDate { get; }
+  public WeekdayFlags Weekdays { get; }
+  public string TimeZoneId { get; }
+}
+
+public sealed record ScheduledWorkoutProgramItem(
+  DateOnly Date,
+  WorkoutProgramItem Item,
+  DateOnly? OriginalDate = null,
+  bool IsRepeat = false,
+  Guid? ExtraOccurrenceId = null);
+
+public sealed record WorkoutProgramScheduleOverride(Guid ProgramItemId, DateOnly? TargetDate, bool IsSkipped);
+public sealed record WorkoutProgramExtraOccurrence(Guid Id, Guid ProgramItemId, DateOnly Date);
+
+public enum WorkoutProgramScheduleAction
+{
+  MoveOne,
+  MoveFollowing,
+  Skip,
+  Restore,
+  Repeat,
+  RepeatAndShift,
+}
+
+public static class WorkoutProgramScheduleProjector
+{
+  public static IReadOnlyList<ScheduledWorkoutProgramItem> Project(
+    WorkoutProgramRevision revision,
+    WorkoutProgramRun run,
+    DateOnly from,
+    DateOnly to)
+  {
+    ArgumentNullException.ThrowIfNull(revision);
+    ArgumentNullException.ThrowIfNull(run);
+    if (to < from) throw new ArgumentOutOfRangeException(nameof(to));
+    if (run.Schedule is not { } schedule) return [];
+
+    var result = new List<ScheduledWorkoutProgramItem>();
+    DateOnly cursor = schedule.StartDate;
+    foreach (WorkoutProgramItem item in revision.Items.OrderBy(static item => item.Position))
+    {
+      while (!schedule.Weekdays.HasFlag(ToFlag(cursor.DayOfWeek))) cursor = cursor.AddDays(1);
+      if (cursor > to) break;
+      if (cursor >= from) result.Add(new ScheduledWorkoutProgramItem(cursor, item));
+      cursor = cursor.AddDays(1);
+    }
+    return result;
+  }
+
+  public static IReadOnlyList<ScheduledWorkoutProgramItem> ProjectAll(
+    WorkoutProgramRevision revision,
+    WorkoutProgramRun run,
+    IReadOnlyCollection<WorkoutProgramScheduleOverride>? overrides = null,
+    IReadOnlyCollection<WorkoutProgramExtraOccurrence>? extras = null)
+  {
+    ArgumentNullException.ThrowIfNull(revision);
+    ArgumentNullException.ThrowIfNull(run);
+    if (run.Schedule is not { } schedule) return [];
+    Dictionary<Guid, WorkoutProgramScheduleOverride> overrideMap = (overrides ?? [])
+      .ToDictionary(static item => item.ProgramItemId);
+    var items = new List<ScheduledWorkoutProgramItem>(revision.Items.Count + (extras?.Count ?? 0));
+    DateOnly cursor = schedule.StartDate;
+    foreach (WorkoutProgramItem item in revision.Items.OrderBy(static item => item.Position))
+    {
+      while (!schedule.Weekdays.HasFlag(ToFlag(cursor.DayOfWeek))) cursor = cursor.AddDays(1);
+      DateOnly original = cursor;
+      cursor = cursor.AddDays(1);
+      if (overrideMap.TryGetValue(item.Id, out WorkoutProgramScheduleOverride? scheduleOverride))
+      {
+        if (scheduleOverride.IsSkipped) continue;
+        items.Add(new ScheduledWorkoutProgramItem(scheduleOverride.TargetDate ?? original, item, original));
+      }
+      else
+      {
+        items.Add(new ScheduledWorkoutProgramItem(original, item, original));
+      }
+    }
+
+    Dictionary<Guid, WorkoutProgramItem> itemMap = revision.Items.ToDictionary(static item => item.Id);
+    foreach (WorkoutProgramExtraOccurrence extra in extras ?? [])
+    {
+      if (itemMap.TryGetValue(extra.ProgramItemId, out WorkoutProgramItem? item))
+        items.Add(new ScheduledWorkoutProgramItem(extra.Date, item, null, IsRepeat: true, extra.Id));
+    }
+
+    return items
+      .OrderBy(static item => item.Date)
+      .ThenBy(static item => item.Item.Position)
+      .ThenBy(static item => item.IsRepeat)
+      .ToArray();
+  }
+
+  public static int CountSelectedDays(WeekdayFlags weekdays) =>
+    Enumerable.Range(0, 7).Count(bit => (((int)weekdays >> bit) & 1) == 1);
+
+  public static WeekdayFlags ToFlag(DayOfWeek day) => day switch
+  {
+    DayOfWeek.Monday => WeekdayFlags.Monday,
+    DayOfWeek.Tuesday => WeekdayFlags.Tuesday,
+    DayOfWeek.Wednesday => WeekdayFlags.Wednesday,
+    DayOfWeek.Thursday => WeekdayFlags.Thursday,
+    DayOfWeek.Friday => WeekdayFlags.Friday,
+    DayOfWeek.Saturday => WeekdayFlags.Saturday,
+    DayOfWeek.Sunday => WeekdayFlags.Sunday,
+    _ => throw new ArgumentOutOfRangeException(nameof(day)),
+  };
+}
 
 public sealed record WorkoutProgramSessionResult(Guid ProgramItemId, SessionState State, DateTimeOffset EndedAtUtc);
 
@@ -127,13 +257,15 @@ public sealed record WorkoutProgramProgress(
   int CompletedItemCount,
   int TotalItemCount,
   WorkoutProgramItem? NextItem,
-  bool IsComplete);
+  bool IsComplete,
+  int SkippedItemCount = 0);
 
 public static class WorkoutProgramProgressCalculator
 {
   public static WorkoutProgramProgress Calculate(
     WorkoutProgramRevision revision,
-    IReadOnlyCollection<WorkoutProgramSessionResult> sessions)
+    IReadOnlyCollection<WorkoutProgramSessionResult> sessions,
+    IReadOnlyCollection<Guid>? skippedItemIds = null)
   {
     ArgumentNullException.ThrowIfNull(revision);
     ArgumentNullException.ThrowIfNull(sessions);
@@ -141,16 +273,22 @@ public static class WorkoutProgramProgressCalculator
       .Where(static session => session.State == SessionState.Completed)
       .Select(static session => session.ProgramItemId)
       .ToHashSet();
+    HashSet<Guid> skipped = (skippedItemIds ?? []).ToHashSet();
 
     int completedCount = 0;
     foreach (WorkoutProgramItem item in revision.Items)
     {
-      if (!completed.Contains(item.Id)) break;
+      if (!completed.Contains(item.Id) && !skipped.Contains(item.Id)) break;
       completedCount++;
     }
 
     WorkoutProgramItem? next = completedCount < revision.Items.Count ? revision.Items[completedCount] : null;
-    return new WorkoutProgramProgress(completedCount, revision.Items.Count, next, next is null);
+    return new WorkoutProgramProgress(
+      completedCount - revision.Items.Take(completedCount).Count(item => skipped.Contains(item.Id)),
+      revision.Items.Count,
+      next,
+      next is null,
+      revision.Items.Take(completedCount).Count(item => skipped.Contains(item.Id)));
   }
 }
 
