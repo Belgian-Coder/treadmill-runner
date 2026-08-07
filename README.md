@@ -32,9 +32,9 @@ See the [complete installation guide](docs/installation.md) for first-run enroll
 
 ## Current status
 
-- Story TR-001 is complete: the solution, simulator, live SignalR path, responsive Blazor UI, tests, scripts, and Windows-first documentation are in place.
-- Story TR-003 is complete: local household profiles, immutable workout revisions, preview-first imports, and a recurring training calendar are backed by EF Core/SQLite.
-- Story TR-004 is implemented through the daily simulated run, controller reclaim, one-second history, RPE/note debrief, data-derived charts, HR-zone/adherence analytics, weekly totals, sound preference, and responsive Playwright coverage. Accelerated four-hour cadence/memory proof, a 14,400-write SQLite soak, and loopback p95 targets pass; deployment evidence over normal household Wi-Fi remains pending.
+- TR-001 delivers the solution, simulator, SignalR path, responsive UI, tests, scripts, and Windows-first documentation.
+- TR-003 delivers household profiles, immutable workout revisions, preview-first imports, and an EF Core/SQLite training calendar.
+- TR-004 covers simulated daily runs, controller reclaim, one-second history, debrief, charts, HR analytics, weekly totals, sound, and responsive browser tests. Accelerated cadence/memory, SQLite-write, and loopback-latency checks pass; household Wi-Fi evidence remains pending.
 - Story TR-005 is implemented through local Omega Z/Polar H10 enrollment, structurally read-only BLE reads/subscriptions, explicit FTMS or Omega-vendor telemetry, simultaneous connection/freshness state, and real telemetry composition into the authoritative session engine. Ten power cycles and the 60–90 minute simultaneous read-only soak remain owner-present acceptance.
 - Story TR-006B/C includes portable FTMS control codecs, an isolated serialized non-replayable command connection, operation/lease/session/generation guards, response-plus-fresh-telemetry confirmation, explicit Confirmed/Rejected/Unknown results, Hold-to-start, and the accepted exact-firmware Stage 3 sequence. Pause and vendor motion writes remain disabled pending their separate exact-device gates.
 - Story TR-003B adds persisted ordered 5K/10K/Base/Custom training programs with runner-specific completed-only progression and calendar-first next-run selection.
@@ -42,9 +42,9 @@ See the [complete installation guide](docs/installation.md) for first-run enroll
 - TR-002's read-only Windows adapter can passively scan and perform uncached GATT enumeration. An interactive VM test found nearby advertisers and successfully enumerated a connectable device without pairing, subscribing, or writing.
 - Windows Service Session 0 behavior and exact Omega/Polar simultaneous hardware acceptance remain external gates.
 - No unverified command is enabled, no Unknown outcome is retried, and reconnect expires every pending intent.
-- TR-013 adds separately labelled, disabled-by-default per-profile Garmin FIT upload through a pinned unsupported adapter, with durable duplicate-safe jobs and explicit recovery. Its Connect IQ companion source supports explicit native watch recording and profile/session status for Fenix 8 and Vivoactive 5/6; SDK/simulator/physical-watch/store acceptance remains an external release step.
+- TR-013 adds opt-in per-profile Garmin FIT upload through a pinned unsupported adapter and an explicit-recording Connect IQ companion for Fenix 8 and Vivoactive 5/6. SDK 9.2.0 builds and representative tests pass; layouts, watches, trusted HTTPS, and IQ Store review remain external.
 
-## Developer prerequisites
+## Prerequisites
 
 - Windows 11
 - .NET SDK 10.0.110 or the patch selected by `global.json`
@@ -52,7 +52,7 @@ See the [complete installation guide](docs/installation.md) for first-run enroll
 - Python 3.12 for the deterministic validation harness
 - Node.js/npm for Playwright browser validation
 
-## Developer quick start
+## Quick start
 
 ```powershell
 .\eng\bootstrap.ps1
@@ -60,9 +60,7 @@ See the [complete installation guide](docs/installation.md) for first-run enroll
 .\eng\run-simulator.ps1
 ```
 
-The simulator sets `Persistence__DatabasePath` to the absolute equivalent of
-`.\data\treadmillrunner.db` before launching the gateway. It does not create or migrate the
-database at startup, so the explicit `database.ps1` update above is required for a fresh checkout.
+The simulator uses `.\data\treadmillrunner.db`; a fresh checkout needs the explicit migration command above.
 Open `http://localhost:5180`. Run all deterministic checks with:
 
 ```powershell

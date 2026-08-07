@@ -1,4 +1,4 @@
 project.manifest = manifest.xml
 
-base.sourcePath = source
+base.sourcePath = source;tests
 base.resourcePath = resources

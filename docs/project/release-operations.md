@@ -4,7 +4,7 @@ type: operator-runbook
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-05
+updated: 2026-08-07
 ---
 
 # TreadmillRunner release operations
@@ -13,7 +13,7 @@ This runbook explains how software releases move from source code to the **Opera
 
 ## The release chain
 
-1. `eng/publish-release.ps1` builds an immutable versioned Windows release, embeds a content fingerprint derived from the source revision plus local source changes, writes that provenance to `build-metadata.json`, adds the hash-verified offline Garmin adapter runtime, and proves its credential-free import probe.
+1. `eng/publish-release.ps1` builds an immutable versioned Windows release, embeds a content fingerprint derived from the source revision plus local source changes, writes that provenance to `build-metadata.json`, adds the hash-verified offline Garmin adapter runtime, and proves its credential-free import probe. It byte-preserves reviewed NuGet lock files around EF's migration-bundle command, which otherwise adds temporary runtime sections to tracked locks.
 2. `eng/package-update.ps1` creates a deterministic package ZIP, hashes it, writes and signs the stable manifest, and creates a two-entry signed offline bundle containing that manifest and package.
 3. The elevated service installer pins the public certificate at `%ProgramFiles%\TreadmillRunner\updater\signing.cer`. GitHub Releases is the default discovery transport and the protected ProgramData local folder remains the fallback. Neither source can replace the trust anchor.
 4. **Operations → Check now** obtains one origin-bound release candidate and validates version, channel, schema range, and signature. Its package can only be opened from that same origin.

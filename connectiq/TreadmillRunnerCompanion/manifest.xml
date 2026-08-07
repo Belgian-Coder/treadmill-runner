@@ -18,6 +18,7 @@
     <iq:permissions>
       <iq:uses-permission id="Fit" />
       <iq:uses-permission id="Communications" />
+      <iq:uses-permission id="Sensor" />
     </iq:permissions>
     <iq:languages>
       <iq:language>eng</iq:language>

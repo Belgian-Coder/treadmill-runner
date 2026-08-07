@@ -55,6 +55,7 @@ TestResults/
 *.p12
 *.pem
 *.key
+*.der
 *.pvk
 *.snk
 *.csr

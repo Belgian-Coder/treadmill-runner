@@ -3,7 +3,7 @@
     <settingConfig type="alphaNumeric" required="true" maxLength="32" />
   </setting>
   <setting propertyKey="@Properties.gatewayUrl" title="@Strings.GatewayUrlTitle" prompt="@Strings.GatewayUrlPrompt">
-    <settingConfig type="url" required="false" maxLength="200" />
+    <settingConfig type="url" required="false" />
   </setting>
   <setting propertyKey="@Properties.watchToken" title="@Strings.WatchTokenTitle" prompt="@Strings.WatchTokenPrompt">
     <settingConfig type="password" required="false" maxLength="128" />

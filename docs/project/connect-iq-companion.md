@@ -1,10 +1,10 @@
 ---
 title: Connect IQ companion setup and store release
 type: developer-and-operator-runbook
-status: source-prepared-sdk-acceptance-required
+status: sdk-validated-physical-acceptance-required
 owner: project
 audience: runner-operator-and-developer
-updated: 2026-08-05
+updated: 2026-08-07
 ---
 
 # Connect IQ companion setup and store release
@@ -23,27 +23,38 @@ Garmin Connect receives the saved activity through the watch's normal sync. This
 - One revocable watch binding per TreadmillRunner profile; raw token shown once, SHA-256 only at rest.
 - Fenix 8 43/47 mm AMOLED, Fenix 8 Solar 47/51 mm, Vivoactive 5, and Vivoactive 6 manifest targets.
 - Store copy, privacy disclosure, test matrix, screenshot folder, and submission checklist.
-- Static validation plus representative SDK compilation entry point in `eng/validate-connectiq.ps1`.
+- SDK 9.2.0 compilation for every declared target, with device-sized launcher assets and warnings treated as failures.
+- Three Run No Evil tests on representative Fenix 8 47 mm and Vivoactive 5 simulators.
+- Automatic local discovery of SDK Manager's active SDK, the protected developer key, and the configured Java runtime in `eng/validate-connectiq.ps1`.
 - Save failure remains visible and retains the stopped session for an explicit Select-to-retry action.
+
+## Local SDK acceptance
+
+The release workstation has Connect IQ SDK 9.2.0, Java 21, the Monkey C extension, all declared device packages, and a protected RSA-4096 developer key outside the repository. The key identity, never its contents or path, is recorded in sanitized validation evidence. Back up that key securely: future IQ Store updates to the same app must be signed by the same developer identity.
+
+Run the complete local gate from the repository root:
+
+```powershell
+./eng/validate-connectiq.ps1 -RequireSdk
+```
+
+The script discovers SDK Manager's active SDK and the default protected key under the current user's local application data. Another workstation can pass `-SdkPath`, `-DeveloperKey`, or the `TREADMILLRUNNER_CONNECTIQ_DEVELOPER_KEY` environment variable. It compiles all six manifest products without warnings, builds unit-test programs, starts a private simulator when needed, runs three tests on `fenix847mm` and `vivoactive5`, closes only the simulator it started, and writes reproducible hashes under ignored `artifacts/connectiq/`.
+
+Validated on 2026-08-07:
+
+- Connect IQ Compiler 9.2.0.
+- Warning-free builds: Fenix 8 43/47 mm AMOLED, Fenix 8 Solar 47/51 mm, Vivoactive 5, and Vivoactive 6.
+- Run No Evil: 3/3 passed on Fenix 8 47 mm and 3/3 passed on Vivoactive 5.
+- Static safety contract: explicit watch Select remains the only recording start interaction, and no treadmill command endpoint exists.
 
 ## External work still required before IQ Store availability
 
-This workstation currently has no Connect IQ SDK, `monkeyc`, or Java toolchain, so no `.prg`/`.iq`, simulator screenshots, physical-watch proof, developer signature, or store submission is claimed. These are required release actions, not missing watch-app features.
-
-1. Sign in to Garmin's developer portal and install the current SDK with SDK Manager. The Connect IQ overview reported SDK 9.2.0 on 2026-08-05; verify the current version at execution time.
-2. Install the Monkey C extension for Visual Studio Code.
-3. Generate a developer key and store it in a protected, backed-up location outside this repository.
-4. Run:
-
-   ```powershell
-   ./eng/validate-connectiq.ps1 -DeveloperKey C:\secure\garmin-developer-key.der -RequireSdk
-   ```
-
-5. In the Garmin simulator, run all manifest products and complete `connectiq/TreadmillRunnerCompanion/store/test-matrix.md`.
-6. Test on the owner's exact Fenix 8 and identify/test the second household Vivoactive model. A generic family name is not enough for final compatibility acceptance.
-7. Export the signed `.iq` package with the Monkey C extension's **Export Project** command. Record its SHA-256 and developer key identity in release evidence.
-8. Capture real simulator screenshots, prepare the current required icon dimensions, and complete the submission checklist.
-9. Upload through Garmin's Connect IQ developer dashboard and wait for Garmin review. Record the final listing URL/version only after acceptance.
+1. Run the watch app interactively on all manifest products and complete `connectiq/TreadmillRunnerCompanion/store/test-matrix.md`; automated unit tests do not prove layout or button behavior.
+2. Test on the owner's exact Fenix 8 and identify/test the second household Vivoactive model. A generic family name is not enough for final compatibility acceptance.
+3. Complete paired HTTPS validation after the trusted NUC origin exists.
+4. Export the signed `.iq` package with the Monkey C extension's **Export Project** command. Record its SHA-256 and developer-key identity in release evidence.
+5. Capture simulator screenshots and complete the submission checklist.
+6. Upload through Garmin's Connect IQ developer dashboard and wait for review. Record the listing URL/version only after acceptance.
 
 A Garmin developer account is required to publish to IQ Store. This does not require approval for the Garmin Connect Training API; they are separate programs/surfaces.
 

@@ -31,6 +31,12 @@
           "Microsoft.AspNetCore.SignalR.Client.Core": "10.0.10"
         }
       },
+      "Microsoft.DotNet.HotReload.WebAssembly.Browser": {
+        "type": "Direct",
+        "requested": "[10.0.110, )",
+        "resolved": "10.0.110",
+        "contentHash": "v2QuCGg7GLcuILPU+S57gi2bnLMcROOBFvLjqFKb3fF420eimHOmmZdALkRkd+qMku83SaGLy2bsL8Z1WFWbVw=="
+      },
       "Microsoft.NET.Sdk.WebAssembly.Pack": {
         "type": "Direct",
         "requested": "[10.0.10, )",

@@ -11,15 +11,15 @@ Supported manifest targets are the 43 mm and 47 mm AMOLED Fenix 8, the 47 mm and
 
 ## Build and simulator
 
-Install Garmin's current Connect IQ SDK through SDK Manager and the Monkey C extension for Visual Studio Code. Generate a local developer key and keep it outside source control. From the repository root:
+Install Garmin's current Connect IQ SDK through SDK Manager and the Monkey C extension for Visual Studio Code. Generate a local developer key, keep it outside source control, and back it up securely. From the repository root:
 
 ```powershell
-./eng/validate-connectiq.ps1 -DeveloperKey C:\secure\garmin-developer-key.der -RequireSdk
+./eng/validate-connectiq.ps1 -RequireSdk
 ```
 
-The script performs structural safety checks and compiles representative `fenix847mm` and `vivoactive5` PRGs. Open `monkey.jungle` in the Monkey C extension to run each supported device in the simulator. Verify Ready, recording, elapsed time, stop-and-save, Back protection, standalone state, paired state, and unavailable-gateway state.
+The script discovers SDK Manager's active SDK and the protected local key, performs structural safety checks, compiles all six declared targets warning-free, and runs three Run No Evil tests on representative `fenix847mm` and `vivoactive5` simulators. Pass `-DeveloperKey` or set `TREADMILLRUNNER_CONNECTIQ_DEVELOPER_KEY` on another workstation. Open `monkey.jungle` in the Monkey C extension to inspect every supported layout and verify Ready, recording, elapsed time, stop-and-save, Back protection, standalone state, paired state, and unavailable-gateway state.
 
-Without the SDK, `./eng/validate-connectiq.ps1` performs static preparation checks and explicitly reports that executable and simulator acceptance are pending. A source-only pass is not an IQ Store release.
+Without the SDK, `./eng/validate-connectiq.ps1` performs static preparation checks and explicitly reports that executable acceptance is pending. `-RequireSdk` makes that absence fail. Compiler/unit-test success is still not physical-watch or IQ Store acceptance.
 
 ## Pairing
 

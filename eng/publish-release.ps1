@@ -60,12 +60,26 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Framework-dependent gateway publish failed.' }
 
     $migrationPath = Join-Path $publishPath 'TreadmillRunner.Migrations.exe'
-    dotnet tool run dotnet-ef migrations bundle `
-        --project src\TreadmillRunner.Infrastructure\TreadmillRunner.Infrastructure.csproj `
-        --startup-project src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj `
-        --configuration Release `
-        --output $migrationPath --force --no-build
-    if ($LASTEXITCODE -ne 0) { throw 'Reviewed EF Core migration bundle publish failed.' }
+    # dotnet-ef adds its target RID to project lock files while bundling, even with
+    # --no-build. Preserve the exact reviewed lock state so local release creation
+    # cannot make the next locked restore fail or leave a dirty worktree.
+    $lockSnapshots = @{}
+    foreach ($lockFile in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Recurse -Filter 'packages.lock.json') {
+        $lockSnapshots[$lockFile.FullName] = [System.IO.File]::ReadAllBytes($lockFile.FullName)
+    }
+    try {
+        dotnet tool run dotnet-ef migrations bundle `
+            --project src\TreadmillRunner.Infrastructure\TreadmillRunner.Infrastructure.csproj `
+            --startup-project src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj `
+            --configuration Release `
+            --output $migrationPath --force --no-build
+        if ($LASTEXITCODE -ne 0) { throw 'Reviewed EF Core migration bundle publish failed.' }
+    }
+    finally {
+        foreach ($entry in $lockSnapshots.GetEnumerator()) {
+            [System.IO.File]::WriteAllBytes($entry.Key, $entry.Value)
+        }
+    }
 
     & (Join-Path $PSScriptRoot 'new-garmin-portable-runtime.ps1') -PublishPath $publishPath
     if ($LASTEXITCODE -ne 0) { throw 'Portable Garmin adapter runtime staging failed.' }

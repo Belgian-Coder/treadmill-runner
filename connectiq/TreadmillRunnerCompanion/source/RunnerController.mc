@@ -90,8 +90,7 @@ class RunnerController {
         if (_requestPending) { return; }
         var baseUrl = Application.Properties.getValue("gatewayUrl");
         var token = Application.Properties.getValue("watchToken");
-        if (!(baseUrl instanceof String) || !(token instanceof String) ||
-            !(baseUrl as String).startsWith("https://") || (token as String).length() < 20) {
+        if (!GatewaySettings.isConfigured(baseUrl, token)) {
             _gatewayState = "Standalone";
             return;
         }

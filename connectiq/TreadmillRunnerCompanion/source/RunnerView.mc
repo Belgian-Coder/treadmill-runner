@@ -47,7 +47,7 @@ class RunnerView extends WatchUi.View {
             dc.drawText(width / 2, height * 0.72, Graphics.FONT_SMALL, "Select: retry save", Graphics.TEXT_JUSTIFY_CENTER);
         } else if (_controller.isRecording()) {
             dc.setColor(0xF5C768, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(width / 2, height * 0.50, Graphics.FONT_NUMBER_MEDIUM, formatTime(_controller.elapsedSeconds()), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(width / 2, height * 0.50, Graphics.FONT_NUMBER_MEDIUM, RunnerFormatting.elapsed(_controller.elapsedSeconds()), Graphics.TEXT_JUSTIFY_CENTER);
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             dc.drawText(width / 2, height * 0.72, Graphics.FONT_SMALL, "Select: stop + save", Graphics.TEXT_JUSTIFY_CENTER);
         } else {
@@ -60,9 +60,4 @@ class RunnerView extends WatchUi.View {
         dc.drawText(width / 2, height * 0.84, Graphics.FONT_XTINY, _controller.gatewayState(), Graphics.TEXT_JUSTIFY_CENTER);
     }
 
-    private function formatTime(total as Number) as String {
-        var minutes = total / 60;
-        var seconds = total % 60;
-        return minutes.format("%02d") + ":" + seconds.format("%02d");
-    }
 }

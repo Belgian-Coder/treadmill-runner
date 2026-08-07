@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "story": "TR-013",
+  "validatedAt": "2026-08-07",
+  "sdk": "Connect IQ Compiler 9.2.0",
+  "command": "eng/validate-connectiq.ps1 -RequireSdk",
+  "durationSeconds": 41.2,
+  "result": "passed",
+  "developerKeyIdentitySha256": "390D4D0A3159ADADA7CC142EFCBAB4D79F6B59B3D3D7E1F1FF875A4615E7238D",
+  "builds": [
+    {
+      "device": "fenix843mm",
+      "bytes": 103436,
+      "sha256": "74AED6C2B678A5A1B57738C2F48718D920F759EDE442AE280A529152C1FCBE84"
+    },
+    {
+      "device": "fenix847mm",
+      "bytes": 106156,
+      "sha256": "A1E2584147FE4BAFAA515DA8EDEDA7FCA46AC7CC7FF47AE078BCC08778C168AA"
+    },
+    {
+      "device": "fenix8solar47mm",
+      "bytes": 97676,
+      "sha256": "7ABBEC4DC5B4CA5D1628F4B36371B4EE95EBC0D81C231425E4DFA17C5004BBE2"
+    },
+    {
+      "device": "fenix8solar51mm",
+      "bytes": 97676,
+      "sha256": "D910E7F137A5FB21B2479A66BDC127EDFB80EECDCC3982022A67AF4B0BB22E45"
+    },
+    {
+      "device": "vivoactive5",
+      "bytes": 105164,
+      "sha256": "9B5A03935261004D9598E635E9596481F4CA1C37BAFACB4396BEBFF5FFF17C75"
+    },
+    {
+      "device": "vivoactive6",
+      "bytes": 102668,
+      "sha256": "E509E74FDF1D886E41DB9C4450C26FF8C032AF497304996D097815B9DB59BCD4"
+    }
+  ],
+  "simulatorTests": [
+    {
+      "device": "fenix847mm",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0
+    },
+    {
+      "device": "vivoactive5",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0
+    }
+  ],
+  "repositoryValidation": {
+    "command": "eng/validate.ps1 -Configuration Release",
+    "durationSeconds": 155.6,
+    "result": "passed",
+    "buildWarnings": 0,
+    "buildErrors": 0
+  },
+  "releasePackagingLockProof": {
+    "command": "eng/publish-release.ps1 -Version 0.0.0",
+    "durationSeconds": 69.8,
+    "result": "passed",
+    "sourceLockFilesPreserved": 5,
+    "externalPublish": false
+  },
+  "unsupportedClaims": [
+    "interactive-layout-acceptance",
+    "physical-watch-acceptance",
+    "trusted-https-pairing",
+    "iq-package-export",
+    "iq-store-acceptance"
+  ]
+}

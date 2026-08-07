@@ -1,5 +1,6 @@
 import Toybox.Application;
 import Toybox.Lang;
+import Toybox.WatchUi;
 
 class TreadmillRunnerApp extends Application.AppBase {
     private var _controller as RunnerController?;
@@ -12,7 +13,7 @@ class TreadmillRunnerApp extends Application.AppBase {
         _controller = new RunnerController();
     }
 
-    function getInitialView() as Array<Views or InputDelegates> {
+    function getInitialView() as [Views] or [Views, InputDelegates] {
         if (_controller == null) {
             _controller = new RunnerController();
         }
