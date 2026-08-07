@@ -52,11 +52,20 @@ Validated on 2026-08-07:
 1. Run the watch app interactively on all manifest products and complete `connectiq/TreadmillRunnerCompanion/store/test-matrix.md`; automated unit tests do not prove layout or button behavior.
 2. Test on the owner's exact Fenix 8 and identify/test the second household Vivoactive model. A generic family name is not enough for final compatibility acceptance.
 3. Complete paired HTTPS validation after the trusted NUC origin exists.
-4. Export the signed `.iq` package with the Monkey C extension's **Export Project** command. Record its SHA-256 and developer-key identity in release evidence.
-5. Capture simulator screenshots and complete the submission checklist.
-6. Upload through Garmin's Connect IQ developer dashboard and wait for review. Record the listing URL/version only after acceptance.
+4. Capture simulator screenshots and complete the submission checklist.
+5. Upload through Garmin's Connect IQ developer dashboard and wait for review. Record the listing URL/version only after acceptance.
 
 A Garmin developer account is required to publish to IQ Store. This does not require approval for the Garmin Connect Training API; they are separate programs/surfaces.
+
+The signed multi-device `.iq` export is automated. Run:
+
+```powershell
+./eng/package-connectiq.ps1
+```
+
+The command first runs the complete SDK validation, then creates `artifacts/connectiq/release/TreadmillRunnerCompanion.iq` and a sanitized JSON manifest containing its SHA-256, source commit, SDK version, product list, and developer-key fingerprint. The private key remains outside the repository and its path is not written to evidence.
+
+The simulator can prove compilation and pure logic automatically, but it cannot honestly certify that text looks good to a person or that the owner's physical buttons, optical HR sensor, FIT save, phone sync, and trusted household HTTPS route behave correctly. Those observations and the final IQ Store upload remain explicit owner acceptance steps.
 
 ## Pair and operate
 

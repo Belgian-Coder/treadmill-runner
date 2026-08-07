@@ -19,6 +19,12 @@ Install Garmin's current Connect IQ SDK through SDK Manager and the Monkey C ext
 
 The script discovers SDK Manager's active SDK and the protected local key, performs structural safety checks, compiles all six declared targets warning-free, and runs three Run No Evil tests on representative `fenix847mm` and `vivoactive5` simulators. Pass `-DeveloperKey` or set `TREADMILLRUNNER_CONNECTIQ_DEVELOPER_KEY` on another workstation. Open `monkey.jungle` in the Monkey C extension to inspect every supported layout and verify Ready, recording, elapsed time, stop-and-save, Back protection, standalone state, paired state, and unavailable-gateway state.
 
+Create the signed multi-device store package and its sanitized hash manifest with:
+
+```powershell
+./eng/package-connectiq.ps1
+```
+
 Without the SDK, `./eng/validate-connectiq.ps1` performs static preparation checks and explicitly reports that executable acceptance is pending. `-RequireSdk` makes that absence fail. Compiler/unit-test success is still not physical-watch or IQ Store acceptance.
 
 ## Pairing
@@ -36,4 +42,4 @@ Garmin's web-request API requires HTTPS. A plain `http://192.168.x.x` NUC addres
 
 ## Release and store preparation
 
-The `store` folder contains the listing copy, privacy disclosure, test matrix, and submission checklist. Store publishing requires a Garmin developer account, a local signing/developer key, exported `.iq` package, compatible-device simulator evidence, listing graphics/screenshots, and Garmin review. Follow [the repository runbook](../../docs/project/connect-iq-companion.md); do not call the app published until Garmin accepts the submitted package.
+The `store` folder contains the listing copy, privacy disclosure, test matrix, and submission checklist. Store publishing requires a Garmin developer account, a local signing/developer key, compatible-device simulator evidence, listing graphics/screenshots, and Garmin review. Follow [the repository runbook](../../docs/project/connect-iq-companion.md); do not call the app published until Garmin accepts the submitted package.

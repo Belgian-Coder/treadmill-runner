@@ -15,7 +15,8 @@ updated: 2026-08-07
 - Result: all six device builds passed without warnings; both representative simulator suites passed 3/3.
 - Repository gate: locked restore, formatting/analyzers, public-evidence scan, watch validation, BLE boundaries, zero-warning Release build, and every non-browser test passed.
 - Release hygiene: a complete unsigned local packaging proof preserved all five source NuGet lock files byte-for-byte after migration-bundle creation.
+- Connect IQ packaging: the automated local export produced one signed six-product `.iq` and a sanitized hash manifest; nothing was uploaded or published.
 - Safety: watch recording still requires explicit Select; the companion contains no treadmill command route.
-- Remaining external gates: interactive layouts, exact household watches, trusted HTTPS pairing, signed `.iq` export, store assets/submission, and Garmin review.
+- Remaining external gates: interactive layouts, exact household watches, trusted HTTPS pairing, store assets/submission, and Garmin review.
 
 The first context-audit attempt exposed an unrelated README context-budget drift. The README was shortened without raising or weakening the configured budget, after which the TR-013 workflow context refreshed successfully.

@@ -16,4 +16,4 @@ This sanitized packet closes the compiler and automated simulator portion of TR-
 - [Validation manifest](validation-manifest.json)
 - [Resolved failures](failure-summary.md)
 
-The evidence proves warning-free SDK 9.2.0 builds for every declared target and passing Run No Evil tests on representative Fenix 8 and Vivoactive devices. It does not claim interactive layout, physical-watch, trusted-HTTPS, `.iq` export, IQ Store submission, or Garmin review acceptance.
+The evidence proves warning-free SDK 9.2.0 builds for every declared target, passing Run No Evil tests on representative Fenix 8 and Vivoactive devices, and an automated local signed `.iq` export. It does not claim interactive layout, physical-watch, trusted-HTTPS, IQ Store submission, or Garmin review acceptance.

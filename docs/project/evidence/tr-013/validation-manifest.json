@@ -67,11 +67,20 @@
     "sourceLockFilesPreserved": 5,
     "externalPublish": false
   },
+  "connectIqPackageExport": {
+    "command": "eng/package-connectiq.ps1",
+    "durationSeconds": 48.8,
+    "result": "passed",
+    "package": "TreadmillRunnerCompanion.iq",
+    "bytes": 74846,
+    "sha256": "D2A80DB30AD873E24DF1C9E95CB63203D33B47EDFB655866F16196D5A1215C79",
+    "products": 6,
+    "externalPublish": false
+  },
   "unsupportedClaims": [
     "interactive-layout-acceptance",
     "physical-watch-acceptance",
     "trusted-https-pairing",
-    "iq-package-export",
     "iq-store-acceptance"
   ]
 }
