@@ -18,6 +18,10 @@ The project combines a deterministic simulator with one exact Horizon Omega Z ha
 |---|---|
 | [![Plan move preview with collision warning](screenshots/showcase/tr-027-calendar-move.png)](screenshots/showcase/tr-027-calendar-move.png) | [![Mobile plan adjustment preview](screenshots/showcase/tr-027-calendar-mobile.png)](screenshots/showcase/tr-027-calendar-mobile.png) |
 
+| Simplified phone Run view | Change future training days |
+|---|---|
+| [![Simplified daily Run view with pre-run checks](screenshots/showcase/tr-029-simplified-run-iphone.png)](screenshots/showcase/tr-029-simplified-run-iphone.png) | [![Preview of future workout date changes](screenshots/showcase/tr-030-training-days-preview.png)](screenshots/showcase/tr-030-training-days-preview.png) |
+
 The gateway owns active workout timing if a browser disappears. Browser controls reconnect indefinitely, while BLE and service-restart recovery stay guarded: recovery never sends Start, never replays an uncertain command, and never silently overrides an apparent physical-console change. See the [live-session guide](docs/project/live-session.md) for the exact guarantees.
 
 ## Install on Windows
@@ -78,6 +82,8 @@ Workout cards show the practical differences before selection: structure, expand
 Imports are previewed before anything is saved. The supported import paths are native workout JSON, QDomyos XML, and Garmin FIT workouts. Confirming a preview rechecks the original bounded file; QDomyos files that do not state units require an explicit unit choice.
 
 Choose the active runner once from the application header; Run, Workouts, Calendar, History, and editors use that browser-local selection until it is changed. The calendar supports weekly schedules, alternatives for a day, and previewed plan actions. An unfinished plan session can be moved alone, moved with all following sessions, skipped, or restored. A completed but unsatisfactory run can be added as an extra repeat while either keeping later dates or shifting the remainder. If the calendar is full, both sessions remain visible and the preview warns about the collision—nothing is overwritten.
+
+For an active training plan, **Change training days** replaces its default weekdays and reschedules only eligible future generated sessions after an exact preview. Completed runs, skips, repeats, one-off moves, and earlier sessions remain anchored. Confirmation is profile- and version-guarded, and a collision remains visible as two sessions on the same day rather than silently replacing either one.
 
 **Workouts → Premade plans** offers 16 profile-scoped 5K, 10K, general-fitness, walking, maintenance, and heart-rate templates. Choose a runner, add the plan for that runner, then choose its first date and training days. The ordered sessions appear on only that profile's calendar with plan position, week, and phase; generated plan workouts stay out of the shared workout library. The 58-week plan remains readable through phase/week groups rather than a flat 174-row editor. See [Premade training plans](docs/project/premade-plans.md).
 

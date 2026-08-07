@@ -20,4 +20,13 @@ internal static class RunnerSelection
       profileId);
     await Assertions.Expect(summary).ToContainTextAsync(displayName);
   }
+
+  public static async Task OpenRunChoicesAsync(this IPage page)
+  {
+    ILocator choices = page.Locator("details.choose-another-run");
+    await Assertions.Expect(choices).ToBeVisibleAsync();
+    if (await choices.GetAttributeAsync("open") is null)
+      await choices.Locator("summary").ClickAsync();
+    await Assertions.Expect(choices).ToHaveAttributeAsync("open", "");
+  }
 }

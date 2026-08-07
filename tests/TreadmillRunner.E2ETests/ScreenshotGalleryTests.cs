@@ -494,7 +494,6 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
   {
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await SelectFeaturedRunAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(new Regex("/control$"));
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
@@ -511,6 +510,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
   private async Task SelectFeaturedRunAsync()
   {
     await Page.SelectActiveRunnerAsync("Marc");
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = GalleryScenario.FeaturedWorkoutName, Exact = false }).First.ClickAsync();
     ILocator selectedWorkout = Page.GetByLabel("Selected workout", new() { Exact = true });
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
@@ -527,7 +527,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
           .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
         await Expect(Page.Locator(".readiness-list li")).Not.ToHaveCountAsync(0);
-        await Expect(Page.GetByText("Run again", new() { Exact = true }).First).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Run a recent workout again", new() { Exact = true }).First).ToBeVisibleAsync();
         break;
       case "control":
         await Expect(Page.GetByLabel("Heart rate")).ToContainTextAsync("132");
@@ -552,7 +552,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         Assert.True(await Page.Locator(".program-card").CountAsync() >= 2, "Workout gallery must show populated training plans.");
         await Expect(Page.GetByText("First 5K", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Stronger 10K", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("0 complete · 3 remaining", new() { Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.Locator(".program-card").Filter(new() { HasText = "First 5K" }))
+          .ToContainTextAsync("0 complete · 3 remaining");
         break;
       case "workout-editor":
         await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync(GalleryScenario.FeaturedWorkoutName);

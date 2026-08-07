@@ -304,6 +304,114 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
     Assert.Equal(repeated.RunVersion, shiftPreview.RunVersion);
   }
 
+  [Fact]
+  public async Task Default_day_change_previews_and_reschedules_only_future_generated_sessions()
+  {
+    UserProfile runner = await CreateProfileAsync("Rhythm runner");
+    StoredWorkoutRevision workout = await CreateWorkoutAsync("Foundation", 6);
+    WorkoutProgramRevision revision = ProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1,
+      workout.Id, workout.Id, workout.Id, workout.Id, workout.Id, workout.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"),
+      Now, Op("program.start"));
+    await SaveTerminalSessionAsync(
+      runner,
+      workout,
+      SessionState.Completed,
+      new WorkoutSessionSelection(WorkoutSelectionSource.Program, run.Id, revision.Items[0].Id));
+    WorkoutProgramScheduleChangePreview moved = await store.ApplyScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[1].Id, WorkoutProgramScheduleAction.MoveOne,
+      new DateOnly(2026, 8, 18), run.Version, Op("program.schedule.move"));
+    WorkoutProgramScheduleChangePreview skipped = await store.ApplyScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[2].Id, WorkoutProgramScheduleAction.Skip,
+      null, moved.RunVersion, Op("program.schedule.skip"));
+    WorkoutProgramScheduleChangePreview repeated = await store.ApplyScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[0].Id, WorkoutProgramScheduleAction.Repeat,
+      new DateOnly(2026, 8, 14), skipped.RunVersion, Op("program.schedule.repeat"));
+
+    WeekdayFlags newDays = WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday;
+    WorkoutProgramDefaultDaysPreview preview = await store.PreviewDefaultDaysChangeAsync(
+      runner.Id, run.Id, newDays, new DateOnly(2026, 8, 10), new DateOnly(2026, 8, 4));
+
+    Assert.True(preview.CanApply);
+    Assert.Equal(repeated.RunVersion, preview.RunVersion);
+    Assert.Equal(3, preview.Impacts.Count);
+    Assert.Equal(
+      [new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 20), new DateOnly(2026, 8, 23)],
+      preview.Impacts.Select(static impact => impact.NewDate));
+    Assert.Equal([new DateOnly(2026, 8, 18)], preview.CollisionDates);
+    Assert.Equal(4, preview.PreservedExceptionCount);
+    Assert.Equal(64, preview.Revision.Length);
+
+    WorkoutProgramDefaultDaysPreview applied = await store.ApplyDefaultDaysChangeAsync(
+      runner.Id,
+      run.Id,
+      newDays,
+      preview.EffectiveDate,
+      new DateOnly(2026, 8, 4),
+      preview.RunVersion,
+      preview.Revision,
+      Op("program.default-days.change"));
+    Assert.Equal(preview.RunVersion + 1, applied.RunVersion);
+
+    StoredWorkoutProgramProgress progress = Assert.Single(await store.ListAsync(runner.Id));
+    Assert.Equal(newDays, progress.Run!.Schedule!.Weekdays);
+    IReadOnlyList<ScheduledWorkoutProgramItem> projected = WorkoutProgramScheduleProjector.ProjectAll(
+      revision, progress.Run, progress.ScheduleOverrides, progress.ExtraOccurrences);
+    Assert.Contains(projected, item => item.Item.Id == revision.Items[0].Id && !item.IsRepeat && item.Date == new DateOnly(2026, 8, 10));
+    Assert.Contains(projected, item => item.Item.Id == revision.Items[0].Id && item.IsRepeat && item.Date == new DateOnly(2026, 8, 14));
+    Assert.Contains(projected, item => item.Item.Id == revision.Items[1].Id && item.Date == new DateOnly(2026, 8, 18));
+    Assert.DoesNotContain(projected, item => item.Item.Id == revision.Items[2].Id);
+    Assert.Contains(projected, item => item.Item.Id == revision.Items[5].Id && item.Date == new DateOnly(2026, 8, 23));
+  }
+
+  [Fact]
+  public async Task Default_day_change_rejects_invalid_counts_past_dates_and_stale_previews()
+  {
+    UserProfile runner = await CreateProfileAsync("Guarded rhythm runner");
+    StoredWorkoutRevision workout = await CreateWorkoutAsync("Easy", 6);
+    WorkoutProgramRevision revision = ProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1, workout.Id, workout.Id, workout.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"),
+      Now, Op("program.start"));
+
+    WorkoutProgramDefaultDaysPreview wrongCount = await store.PreviewDefaultDaysChangeAsync(
+      runner.Id, run.Id, WeekdayFlags.Tuesday, new DateOnly(2026, 8, 10), new DateOnly(2026, 8, 4));
+    Assert.False(wrongCount.CanApply);
+    Assert.Contains("exactly 3", wrongCount.Message);
+    WorkoutProgramDefaultDaysPreview past = await store.PreviewDefaultDaysChangeAsync(
+      runner.Id, run.Id, WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday,
+      new DateOnly(2026, 8, 3), new DateOnly(2026, 8, 4));
+    Assert.False(past.CanApply);
+
+    WorkoutProgramDefaultDaysPreview preview = await store.PreviewDefaultDaysChangeAsync(
+      runner.Id, run.Id, WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday,
+      new DateOnly(2026, 8, 10), new DateOnly(2026, 8, 4));
+    await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => store.ApplyDefaultDaysChangeAsync(
+      runner.Id,
+      run.Id,
+      WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday,
+      preview.EffectiveDate,
+      new DateOnly(2026, 8, 4),
+      preview.RunVersion,
+      new string('0', 64),
+      Op("program.default-days.change")));
+  }
+
   private async Task<UserProfile> CreateProfileAsync(string displayName)
   {
     var profile = new UserProfile(

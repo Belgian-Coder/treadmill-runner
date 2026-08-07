@@ -5,6 +5,7 @@ using TreadmillRunner.Web;
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.Services.AddScoped<ClientRuntimeState>();
+builder.Services.AddScoped(_ => TimeProvider.System);
 builder.Services.AddScoped(services => new HttpClient(new ClientBuildFingerprintHandler(services.GetRequiredService<ClientRuntimeState>())
 {
   InnerHandler = new HttpClientHandler(),
@@ -14,6 +15,8 @@ builder.Services.AddScoped(services => new HttpClient(new ClientBuildFingerprint
 });
 builder.Services.AddScoped(static services => new ActiveProfileState(
   services.GetRequiredService<Microsoft.JSInterop.IJSRuntime>()));
+builder.Services.AddScoped<TreadmillRunner.Web.Live.GatewayConnectionSupervisor>();
+builder.Services.AddScoped<TreadmillRunner.Web.Live.ControlFocusState>();
 
 await builder.Build().RunAsync();
 

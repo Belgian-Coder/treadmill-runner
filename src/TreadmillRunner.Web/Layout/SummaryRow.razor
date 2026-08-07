@@ -1,0 +1,8 @@
+<article class="summary-row @CssClass">
+    @ChildContent
+</article>
+
+@code {
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

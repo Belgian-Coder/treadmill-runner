@@ -201,6 +201,8 @@ This command validates the administrator-pinned certificate, signature, hash, ar
 
 Release `1.5.18` was built and signed locally after deterministic validation. The running `1.5.17` service accepted the signed offline bundle only while idle, reported it as staged, and activated it through the normal helper. The restarted service reported `1.5.18`, a changed build fingerprint, HTTP 200 readiness, no active session, and retained planning data. This was a local signed-bundle installation; it did not create a GitHub tag or public release.
 
+Release `1.5.19` combined TR-028, TR-029, and TR-030. The local deterministic gate passed locked restore, formatting and analyzers, a zero-warning Release build, 453 non-browser tests, public-evidence sanitization, Garmin adapter checks, Connect IQ static validation, and BLE ownership checks; 57 browser cases passed in bounded groups. The running `1.5.18` service accepted the exact signed offline bundle while idle, returned `Staged`, accepted one activation request, became temporarily unavailable during promotion, and returned healthy as `1.5.19` with build fingerprint `77484de2900de8c9`. The service path points at the immutable `1.5.19` release, the update state is `Current`, the application entry document is `no-store`, and existing profile/plan data remains readable. No treadmill command, GitHub tag, or public release was created.
+
 ## State meanings
 
 | State | Meaning | Operator action |

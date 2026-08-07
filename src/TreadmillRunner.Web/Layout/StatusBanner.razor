@@ -1,0 +1,10 @@
+<section class="runtime-banner @CssClass" role="@Role" aria-live="@Live">
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public string Role { get; set; } = "status";
+    [Parameter] public string Live { get; set; } = "polite";
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

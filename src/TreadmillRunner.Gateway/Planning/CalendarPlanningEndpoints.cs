@@ -22,6 +22,8 @@ public static class CalendarPlanningEndpoints
     group.MapPost("/series/{id:guid}/delete-group", DeleteGroupAsync);
     group.MapPost("/program-runs/{runId:guid}/schedule/preview", PreviewProgramScheduleChangeAsync);
     group.MapPost("/program-runs/{runId:guid}/schedule/apply", ApplyProgramScheduleChangeAsync);
+    group.MapPost("/program-runs/{runId:guid}/default-days/preview", PreviewDefaultDaysChangeAsync);
+    group.MapPost("/program-runs/{runId:guid}/default-days/apply", ApplyDefaultDaysChangeAsync);
     group.MapGet("/{profileId:guid}", GetEffectiveRangeAsync);
     group.MapPost("/{profileId:guid}/days/{date}/selection", SaveSelectionAsync);
     return endpoints;
@@ -437,7 +439,8 @@ public static class CalendarPlanningEndpoints
           IsRepeat: programItem.Scheduled.IsRepeat,
           ExtraOccurrenceId: programItem.Scheduled.ExtraOccurrenceId,
           OriginalDate: programItem.Scheduled.OriginalDate,
-          IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true));
+          IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true,
+          ProgramWeekdayMask: (int?)run.Schedule?.Weekdays));
       }
 
       days.Add(new CalendarDayDto(date, options));
@@ -501,6 +504,77 @@ public static class CalendarPlanningEndpoints
         WriteOperation(operationId, operationType, StatusCodes.Status200OK, new { }, now, requestFingerprint),
         cancellationToken);
       return TypedResults.Ok(ToDto(preview));
+    }
+    catch (ArgumentException exception) { return Validation(exception); }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+    catch (DbUpdateConcurrencyException) { return CalendarConflict(); }
+    catch (OperationReplayException replay) { return Replay(replay, operationType, requestFingerprint); }
+    catch (OperationScopeConflictException) { return OperationConflict(); }
+  }
+
+  private static async Task<IResult> PreviewDefaultDaysChangeAsync(
+    Guid runId,
+    WorkoutProgramDefaultDaysRequest request,
+    IWorkoutProgramStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      DateOnly today = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
+      WorkoutProgramDefaultDaysPreview preview = await store.PreviewDefaultDaysChangeAsync(
+        request.ProfileId,
+        runId,
+        (WeekdayFlags)request.WeekdayMask,
+        request.EffectiveDate,
+        today,
+        cancellationToken);
+      return TypedResults.Ok(ToDto(preview));
+    }
+    catch (ArgumentException exception) { return Validation(exception); }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+  }
+
+  private static async Task<IResult> ApplyDefaultDaysChangeAsync(
+    Guid runId,
+    WorkoutProgramDefaultDaysRequest request,
+    IWorkoutProgramStore store,
+    IOperationReceiptStore receiptStore,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    string requestFingerprint = string.Empty;
+    const string operationType = "calendar.program.default-days.change";
+    try
+    {
+      if (request.OperationId is not { } operationId) throw new ArgumentException("OperationId is required.");
+      ValidateOperationId(operationId);
+      if (request.ExpectedRunVersion is not > 0) throw new ArgumentException("ExpectedRunVersion must be greater than zero.");
+      ArgumentException.ThrowIfNullOrWhiteSpace(request.ExpectedRevision);
+      requestFingerprint = PlanningOperationFingerprint.Compute(new
+      {
+        RunId = runId,
+        request.ProfileId,
+        request.WeekdayMask,
+        request.EffectiveDate,
+        request.ExpectedRunVersion,
+        request.ExpectedRevision,
+      });
+      if (await receiptStore.FindAsync(operationId, cancellationToken) is { } receipt)
+        return Replay(receipt, operationType, requestFingerprint);
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      DateOnly today = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
+      WorkoutProgramDefaultDaysPreview outcome = await store.ApplyDefaultDaysChangeAsync(
+        request.ProfileId,
+        runId,
+        (WeekdayFlags)request.WeekdayMask,
+        request.EffectiveDate,
+        today,
+        request.ExpectedRunVersion.Value,
+        request.ExpectedRevision,
+        WriteOperation(operationId, operationType, StatusCodes.Status200OK, new { }, now, requestFingerprint),
+        cancellationToken);
+      return TypedResults.Ok(ToDto(outcome));
     }
     catch (ArgumentException exception) { return Validation(exception); }
     catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
@@ -709,6 +783,20 @@ public static class CalendarPlanningEndpoints
     preview.Impacts.Select(static impact => new WorkoutProgramScheduleImpactDto(
       impact.ProgramItemId, impact.Position, impact.CurrentDate, impact.NewDate, impact.IsRepeat)).ToArray(),
     preview.CollisionDates);
+
+  private static WorkoutProgramDefaultDaysPreviewDto ToDto(WorkoutProgramDefaultDaysPreview preview) => new(
+    preview.RunId,
+    preview.RunVersion,
+    preview.CurrentWeekdayMask,
+    preview.NewWeekdayMask,
+    preview.EffectiveDate,
+    preview.CanApply,
+    preview.Message,
+    preview.Revision,
+    preview.Impacts.Select(static impact => new WorkoutProgramDefaultDaysImpactDto(
+      impact.ProgramItemId, impact.Position, impact.CurrentDate, impact.NewDate)).ToArray(),
+    preview.CollisionDates,
+    preview.PreservedExceptionCount);
 
   private static void ValidateOperationId(Guid operationId)
   {

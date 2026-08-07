@@ -11,6 +11,7 @@
 @inject IJSRuntime JS
 @inject ActiveProfileState ActiveProfile
 @inject ClientRuntimeState Runtime
+@inject GatewayConnectionSupervisor Gateway
 
 <PageTitle>TreadmillRunner</PageTitle>
 
@@ -272,14 +273,14 @@
                         </span>
                         @if (!CalendarNeedsChoice && RecommendedChoice is { } recommended)
                         {
-                            <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(recommended)">Select</button>
+                            <button class="primary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(recommended)">Choose</button>
                         }
                     </section>
 
                     @if (RecentReusableRuns.Count > 0)
                     {
-                        <section class="quick-reuse" aria-label="Reuse a recent workout">
-                            <div class="workout-picker__heading"><strong>Run again</strong><span>Recent completed workouts</span></div>
+                        <details class="quick-reuse" aria-label="Reuse a recent workout">
+                            <summary>Run a recent workout again</summary>
                             <div class="quick-reuse__list">
                                 @foreach (WorkoutReuseView recent in RecentReusableRuns.Take(3))
                                 {
@@ -291,7 +292,7 @@
                                     </button>
                                 }
                             </div>
-                        </section>
+                        </details>
                     }
                 }
                 else
@@ -302,6 +303,9 @@
                     </section>
                 }
 
+                <details class="choose-another-run">
+                    <summary>Choose another run</summary>
+                    <div class="choose-another-run__content">
                 <section class="workout-picker" aria-label="Choose workout">
                     <div class="workout-picker__heading"><strong>Workout</strong><span>@VisibleWorkoutChoices.Count available</span></div>
                     <button class="workout-choice-card workout-choice-card--manual" type="button"
@@ -388,6 +392,8 @@
                         }
                     </div>
                 </section>
+                    </div>
+                    </details>
                 <dl class="selection-summary">
                     <div><dt>Selected runner</dt><dd aria-label="Selected runner">@SelectedProfileName</dd></div>
                     <div><dt>Selected workout</dt><dd aria-label="Selected workout">@SelectedWorkoutName</dd></div>
@@ -396,8 +402,7 @@
                 </dl>
                 <div class="preflight-actions">
                     <p>Only one screen can control the treadmill at a time.</p>
-                    <button class="primary-action touch-action" type="button" @onclick="TakeControlAsync" disabled="@(!CanTakeControl)">Enable controls</button>
-                    <button class="touch-action" type="button" @onclick="ArmAsync" disabled="@(!CanArm)">Prepare run</button>
+                    <button class="primary-action touch-action" type="button" @onclick="PrepareSelectedRunAsync" disabled="@(!CanTakeControl)">Prepare run</button>
                     <span role="status" class="action-status">@actionStatus</span>
                 </div>
             </article>
@@ -436,15 +441,8 @@
 </div>
 
 @code {
-    private const string HolderStorageKey = "treadmillrunner.controller-holder";
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
-    private HubConnection? hubConnection;
-    private CancellationTokenSource? heartbeatCancellation;
-    private CancellationTokenSource? connectionCancellation;
     private CancellationTokenSource? startHoldCancellation;
-    private Task? heartbeatTask;
-    private Task? connectionTask;
-    private bool isForcingHubRestart;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
     private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
@@ -462,12 +460,16 @@
     private string workoutSearch = string.Empty;
     private PreflightSnapshot? preflight;
     private ActiveSessionSnapshot? session;
-    private ControlLease? lease;
-    private string holderId = string.Empty;
-    private string connectionStatus = "Connecting to gateway";
-    private bool liveStateConnected;
-    private bool wantsControl;
-    private string controlStatus = "Observer";
+    private ControlLease? lease => Gateway.Current.Lease;
+    private string holderId => Gateway.HolderId;
+    private string connectionStatus => Gateway.Current.ConnectionPhase switch
+    {
+        GatewayClientConnectionPhase.Connected => "Gateway ready",
+        GatewayClientConnectionPhase.Starting => "Connecting to gateway",
+        _ => "Gateway unavailable · retrying",
+    };
+    private bool liveStateConnected => Gateway.Current.IsConnected;
+    private string controlStatus => lease is null ? "Observer" : "Controller";
     private string actionStatus = "Select a runner and workout.";
     private int? perceivedEffort;
     private string? runNote;
@@ -567,7 +569,7 @@
         }
     }
     private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
-    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected;
+    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected && Gateway.Current.ControlsBlockedReason is null;
     private bool CanTakeControl => ClientReady && preflight?.IsReady == true;
     private bool CanArm => ClientReady && lease is not null && preflight?.IsReady == true;
     private bool CanStart => ClientReady && lease is not null && session is
@@ -607,25 +609,18 @@
 
     protected override async Task OnInitializedAsync()
     {
-        holderId = await JS.InvokeAsync<string?>("localStorage.getItem", HolderStorageKey) ?? string.Empty;
         soundEnabled = string.Equals(
             await JS.InvokeAsync<string?>("localStorage.getItem", SoundStorageKey),
             "true",
             StringComparison.OrdinalIgnoreCase);
-        if (string.IsNullOrWhiteSpace(holderId))
-        {
-            holderId = Guid.NewGuid().ToString("N");
-            await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
-        }
-
-        connectionStatus = "Connecting to live updates";
+        Gateway.ConnectionChanged += GatewayConnectionChanged;
+        Gateway.SessionChanged += GatewaySessionChanged;
+        Gateway.LeaseChanged += GatewayLeaseChanged;
         try
         {
+            await Gateway.EnsureStartedAsync();
             await ReloadRunSelectionDataAsync();
-            using HttpResponseMessage activeSessionResponse = await Http.GetAsync("api/live/session");
-            session = activeSessionResponse.StatusCode == System.Net.HttpStatusCode.NoContent
-                ? null
-                : await activeSessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            session = Gateway.Current.Session;
             if (session is not null)
             {
                 AppendLiveChartPoint(session);
@@ -638,9 +633,7 @@
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
-            lease = null;
-            liveStateConnected = false;
-            connectionStatus = "Gateway unavailable · retrying";
+            actionStatus = "Gateway unavailable; reconnecting automatically.";
         }
     }
 
@@ -667,40 +660,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
-            .WithAutomaticReconnect(new IndefiniteHubRetryPolicy())
-            .Build();
-        hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async incoming =>
-        {
-            int? previousStepIndex = session?.CurrentStep?.Index;
-            session = incoming;
-            AppendLiveChartPoint(incoming);
-            if (incoming.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
-            {
-                Navigation.NavigateTo("/control", replace: true);
-                return;
-            }
-            actionStatus = incoming.Live.SessionState switch
-            {
-                SessionState.ArmedWaitingForPhysicalStart => "Waiting for physical treadmill movement",
-                SessionState.Running => "Gateway is following the measured treadmill movement.",
-                SessionState.PausedWaitingForPhysicalResume => "Paused — resume from the physical treadmill console.",
-                SessionState.Completed => actionStatus == "Run saved" ? actionStatus : "Run completed.",
-                _ => actionStatus,
-            };
-            if (soundEnabled && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
-            {
-                await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
-            }
-            await InvokeAsync(StateHasChanged);
-        });
-        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting to gateway", false);
-        hubConnection.Reconnected += _ => RecoverAfterGatewayReconnectAsync();
-        hubConnection.Closed += _ => RestartHubAfterCloseAsync();
-        connectionCancellation = new CancellationTokenSource();
-        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
-        _ = connectionTask;
+        await Gateway.EnsureStartedAsync();
     }
 
     private async Task SelectProfileAsync(Guid profileId)
@@ -992,82 +952,54 @@
 
     private async Task TakeControlAsync(bool restoring)
     {
-        HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/acquire", new { holderId });
-        if (response.IsSuccessStatusCode)
+        ControlLease? acquired = await Gateway.RequestControlAsync(restoring);
+        if (acquired is not null)
         {
-            lease = await response.Content.ReadFromJsonAsync<ControlLease>();
-            controlStatus = restoring ? "Controller restored" : "Controller ready";
-            actionStatus = controlStatus;
-            StartHeartbeat();
-            wantsControl = true;
+            actionStatus = restoring ? "Controller restored" : "Controller ready";
         }
         else
         {
-            controlStatus = "Observer";
-            actionStatus = "Another browser currently controls manual actions.";
+            actionStatus = Gateway.Current.ControlsBlockedReason ?? "Another browser currently controls manual actions.";
         }
     }
 
-    private async Task StartHubUntilConnectedAsync(CancellationToken cancellationToken)
+    private void GatewayConnectionChanged()
     {
-        int attempt = 0;
-        while (!cancellationToken.IsCancellationRequested && hubConnection is { State: HubConnectionState.Disconnected })
+        if (!Gateway.Current.IsConnected)
+            actionStatus = Gateway.Current.ControlsBlockedReason ?? "Live updates interrupted; the treadmill may still be moving.";
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void GatewayLeaseChanged()
+    {
+        if (Gateway.Current.Lease is null && Gateway.Current.WantsControl)
+            actionStatus = Gateway.Current.ControlsBlockedReason ?? "Controller access is being restored.";
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void GatewaySessionChanged()
+    {
+        int? previousStepIndex = session?.CurrentStep?.Index;
+        ActiveSessionSnapshot? incoming = Gateway.Current.Session;
+        session = incoming;
+        if (incoming is not null) AppendLiveChartPoint(incoming);
+        _ = InvokeAsync(async () =>
         {
-            try
+            if (incoming?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
             {
-                await hubConnection.StartAsync(cancellationToken);
-                await RecoverAfterGatewayReconnectAsync();
+                Navigation.NavigateTo("/control", replace: true);
                 return;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            if (incoming is not null)
             {
-                await SetConnectionAsync("Gateway unavailable · retrying", false);
-                TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
-                await Task.Delay(delay, cancellationToken);
+                actionStatus = incoming.Live.SessionState == SessionState.Completed && actionStatus != "Run saved"
+                    ? "Run completed."
+                    : actionStatus;
+                if (soundEnabled && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
+                    await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
             }
-        }
-    }
-
-    private async Task RecoverAfterGatewayReconnectAsync()
-    {
-        if (hubConnection?.State != HubConnectionState.Connected)
-        {
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            return;
-        }
-        await Runtime.CheckAsync(Http);
-        heartbeatCancellation?.Cancel();
-        lease = null;
-        isManualCommandPending = false;
-        isStopPending = false;
-        await ReloadRunSelectionDataAsync();
-        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
-        session = response.StatusCode == System.Net.HttpStatusCode.NoContent
-            ? null
-            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
-        if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
-        {
-            Navigation.NavigateTo("/control", replace: true);
-            return;
-        }
-        if (hubConnection.State != HubConnectionState.Connected)
-        {
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            return;
-        }
-        if (wantsControl && !Runtime.UpdateRequired) await TakeControlAsync(restoring: true);
-        await SetConnectionAsync("Gateway ready", true);
-    }
-
-    private async Task RestartHubAfterCloseAsync()
-    {
-        await SetConnectionAsync("Gateway unavailable · retrying", false);
-        if (isForcingHubRestart) return;
-        if (connectionCancellation?.IsCancellationRequested != false) return;
-        if (connectionTask is { IsCompleted: false }) return;
-        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
-        _ = connectionTask;
+            StateHasChanged();
+        });
     }
 
     private async Task ArmAsync()
@@ -1096,6 +1028,17 @@
         {
             actionStatus = "The workout could not be armed.";
         }
+    }
+
+    private async Task PrepareSelectedRunAsync()
+    {
+        if (!CanTakeControl) return;
+        if (lease is null)
+        {
+            await TakeControlAsync();
+            if (lease is null) return;
+        }
+        await ArmAsync();
     }
 
     private async Task AdjustInclineAsync(double adjustmentPercent)
@@ -1199,10 +1142,8 @@
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            lease = null;
-            controlStatus = "Observer";
             actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            await Gateway.RefreshAuthoritativeStateAsync();
         }
         finally
         {
@@ -1364,89 +1305,6 @@
         return values.Count == 0 ? null : string.Join(" · ", values);
     }
 
-    private void StartHeartbeat()
-    {
-        heartbeatCancellation?.Cancel();
-        heartbeatCancellation?.Dispose();
-        heartbeatCancellation = new CancellationTokenSource();
-        heartbeatTask = RenewLeaseAsync(heartbeatCancellation.Token);
-    }
-
-    private async Task RenewLeaseAsync(CancellationToken cancellationToken)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                ControlLease? currentLease = lease;
-                if (currentLease is null) return;
-                using HttpResponseMessage response = await Http.PostAsJsonAsync(
-                    "api/live/lease/heartbeat",
-                    currentLease,
-                    cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    lease = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    lease = null;
-                    controlStatus = "Observer";
-                    actionStatus = "Controller lease expired. Take control again to use manual actions.";
-                    await InvokeAsync(StateHasChanged);
-                    return;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Page disposal or a replacement heartbeat loop owns the expected cancellation.
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            lease = null;
-            controlStatus = "Observer";
-            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            await RecoverAfterHeartbeatFailureAsync(cancellationToken);
-        }
-    }
-
-    private async Task RecoverAfterHeartbeatFailureAsync(CancellationToken cancellationToken)
-    {
-        int attempt = 0;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await Runtime.CheckAsync(Http, cancellationToken);
-                if (Runtime.IsConnected && hubConnection?.State == HubConnectionState.Connected)
-                {
-                    await RecoverAfterGatewayReconnectAsync();
-                    return;
-                }
-                if (Runtime.IsConnected && attempt >= 2 && hubConnection is not null)
-                {
-                    isForcingHubRestart = true;
-                    try { await hubConnection.StopAsync(cancellationToken); }
-                    finally { isForcingHubRestart = false; }
-                    connectionTask = StartHubUntilConnectedAsync(cancellationToken);
-                    await connectionTask;
-                    if (hubConnection.State == HubConnectionState.Connected) return;
-                }
-            }
-            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-            {
-                // The next bounded attempt reloads authoritative server and lease state.
-            }
-
-            TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
-            try { await Task.Delay(delay, cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-        }
-    }
-
     private async Task SaveDebriefAsync()
     {
         if (session is null) return;
@@ -1602,30 +1460,14 @@
         _ => "check-waiting",
     };
 
-    private async Task SetConnectionAsync(string status, bool connected)
-    {
-        liveStateConnected = connected;
-        connectionStatus = status;
-        await InvokeAsync(StateHasChanged);
-    }
-
     public async ValueTask DisposeAsync()
     {
         startHoldCancellation?.Cancel();
-        heartbeatCancellation?.Cancel();
-        connectionCancellation?.Cancel();
-        if (heartbeatTask is not null)
-        {
-            await heartbeatTask;
-        }
-        heartbeatCancellation?.Dispose();
-        if (connectionTask is not null)
-        {
-            try { await connectionTask; } catch (OperationCanceledException) { }
-        }
-        connectionCancellation?.Dispose();
         startHoldCancellation?.Dispose();
-        if (hubConnection is not null) await hubConnection.DisposeAsync();
+        Gateway.ConnectionChanged -= GatewayConnectionChanged;
+        Gateway.SessionChanged -= GatewaySessionChanged;
+        Gateway.LeaseChanged -= GatewayLeaseChanged;
+        await Task.CompletedTask;
     }
 
     private sealed record LiveChartPoint(

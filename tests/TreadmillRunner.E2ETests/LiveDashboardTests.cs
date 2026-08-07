@@ -42,7 +42,7 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
     }
 
     ILocator preflightControls = Page.Locator(".preflight-actions button");
-    await Expect(preflightControls).ToHaveCountAsync(2);
+    await Expect(preflightControls).ToHaveCountAsync(1);
     for (int index = 0; index < await preflightControls.CountAsync(); index++)
     {
       ILocator control = preflightControls.Nth(index);

@@ -284,9 +284,61 @@
                 <button class="text-action" type="button" @onclick="CloseProgramManagerAsync" aria-label="Close plan session manager" autofocus>Close</button>
             </div>
             <p class="schedule-dialog__summary">Currently planned for <strong>@managedProgramSession.CurrentDate.ToString("dddd d MMMM")</strong>.</p>
-            @if (programPreview is null)
+            @if (changingProgramDays)
+            {
+                <div id="program-schedule-dialog-stage" class="schedule-dialog-stage default-days-stage" aria-live="polite" tabindex="-1">
+                    <div><p class="eyebrow">Weekly rhythm</p><h3>Change training days</h3></div>
+                    @if (defaultDaysPreview is null)
+                    {
+                        <p class="schedule-dialog__summary">Choose exactly <strong>@RequiredProgramTrainingDays</strong> days. Completed runs, skips, repeats, and sessions you moved individually stay where they are.</p>
+                        <div class="weekday-picker default-days-picker" role="group" aria-label="New default training days">
+                            @foreach ((string label, int flag) in Weekdays)
+                            {
+                                <button type="button" aria-pressed="@(((programWeekdayMask & flag) != 0).ToString().ToLowerInvariant())" @onclick="() => ToggleProgramWeekday(flag)">@label</button>
+                            }
+                        </div>
+                        <label class="field">Apply from
+                            <input type="date" @bind="programEffectiveDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" />
+                        </label>
+                        <p class="field-help">Current days: @FormatWeekdayMask(managedProgramSession.WeekdayMask). The preview shows every generated future session that will move and any dates containing two sessions.</p>
+                        <div class="schedule-dialog-actions">
+                            <button class="secondary-action" type="button" @onclick="CancelDefaultDaysChange" disabled="@programActionBusy">Back</button>
+                            <button class="primary-action" type="button" @onclick="PreviewDefaultDaysChangeAsync" disabled="@(!CanPreviewDefaultDays || programActionBusy)">@(programActionBusy ? "Checking…" : "Preview new schedule")</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="schedule-dialog__summary">@defaultDaysPreview.Message</p>
+                        <dl class="schedule-impact-summary">
+                            <div><dt>New days</dt><dd>@FormatWeekdayMask(defaultDaysPreview.NewWeekdayMask)</dd></div>
+                            <div><dt>Sessions moving</dt><dd>@defaultDaysPreview.Impacts.Count</dd></div>
+                            <div><dt>Preserved</dt><dd>@defaultDaysPreview.PreservedExceptionCount</dd></div>
+                        </dl>
+                        <ol class="default-days-impact-list" aria-label="Future workout date changes">
+                            @foreach (WorkoutProgramDefaultDaysImpactView impact in defaultDaysPreview.Impacts)
+                            {
+                                <li><span>Session @impact.Position</span><strong>@impact.CurrentDate.ToString("d MMM") → @impact.NewDate.ToString("d MMM")</strong></li>
+                            }
+                        </ol>
+                        @if (defaultDaysPreview.CollisionDates.Count > 0)
+                        {
+                            <p class="notice" role="alert"><strong>Double-session warning.</strong> @string.Join(", ", defaultDaysPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another session. Nothing is overwritten.</p>
+                        }
+                        <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
+                            <button class="secondary-action" type="button" @onclick="ClearDefaultDaysPreview" disabled="@programActionBusy">Back</button>
+                            <button class="primary-action" type="button" @onclick="ApplyDefaultDaysChangeAsync" disabled="@(!defaultDaysPreview.CanApply || programActionBusy)">@(programActionBusy ? "Rescheduling…" : "Confirm all future changes")</button>
+                        </div>
+                        @if (!defaultDaysPreview.CanApply)
+                        {
+                            <p class="field-error" role="alert">No change can be made: @defaultDaysPreview.Message</p>
+                        }
+                    }
+                </div>
+            }
+            else if (programPreview is null)
             {
                 <div id="program-schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
+                    <button class="secondary-action change-training-days" type="button" @onclick="StartDefaultDaysChange">Change training days</button>
                     <label class="field">New or repeat date
                         <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-366).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(366).ToString("yyyy-MM-dd")" />
                     </label>
@@ -366,6 +418,10 @@
     private ManagedSchedule? managedSession;
     private ManagedProgramSession? managedProgramSession;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
+    private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
+    private bool changingProgramDays;
+    private int programWeekdayMask;
+    private DateOnly programEffectiveDate = DateOnly.FromDateTime(DateTime.Today);
     private DateOnly programTargetDate;
     private bool programActionBusy;
     private DateOnly moveTargetDate;
@@ -377,6 +433,13 @@
     private string? calendarDraftKey;
     private string? pendingCalendarDraft;
     private CancellationTokenSource? calendarDraftDebounce;
+    private int RequiredProgramTrainingDays => managedProgramSession is null
+        ? 0
+        : Weekdays.Count(day => (managedProgramSession.WeekdayMask & day.Flag) != 0);
+    private bool CanPreviewDefaultDays => managedProgramSession is not null &&
+        programWeekdayMask != managedProgramSession.WeekdayMask &&
+        Weekdays.Count(day => (programWeekdayMask & day.Flag) != 0) == RequiredProgramTrainingDays &&
+        programEffectiveDate >= DateOnly.FromDateTime(DateTime.Today);
 
     private IReadOnlyList<ScheduleGroupSummary> ScheduleGroups => calendarSeries
         .GroupBy(static item => item.ScheduleGroupId)
@@ -640,7 +703,7 @@
     {
         if (option.ProgramRunId is not { } runId || option.ProgramItemId is not { } itemId ||
             option.ProgramRunVersion is not { } runVersion || option.ProgramPosition is not { } position ||
-            option.ProgramTotal is not { } total)
+            option.ProgramTotal is not { } total || option.ProgramWeekdayMask is not { } weekdayMask)
         {
             message = "This plan schedule changed. Reload the calendar and try again.";
             return;
@@ -649,7 +712,7 @@
         managedSession = null;
         managedProgramSession = new ManagedProgramSession(
             runId, itemId, runVersion, option.ScheduleName, option.WorkoutName, date,
-            option.OriginalDate, position, total, option.IsRepeat, option.ExtraOccurrenceId, option.IsCompleted);
+            option.OriginalDate, position, total, option.IsRepeat, option.ExtraOccurrenceId, option.IsCompleted, weekdayMask);
         programTargetDate = date.AddDays(1);
         programPreview = null;
         openModalPending = true;
@@ -696,6 +759,8 @@
         modalReference = null;
         managedProgramSession = null;
         programPreview = null;
+        defaultDaysPreview = null;
+        changingProgramDays = false;
     }
 
     [JSInvokable]
@@ -710,6 +775,8 @@
         managedSession = null;
         managedProgramSession = null;
         programPreview = null;
+        defaultDaysPreview = null;
+        changingProgramDays = false;
         managerStep = ManagerSteps.Actions;
         await InvokeAsync(StateHasChanged);
         return true;
@@ -770,6 +837,102 @@
     }
 
     private void ClearProgramPreview() => programPreview = null;
+
+    private void StartDefaultDaysChange()
+    {
+        if (managedProgramSession is null) return;
+        changingProgramDays = true;
+        programWeekdayMask = managedProgramSession.WeekdayMask;
+        programEffectiveDate = DateOnly.FromDateTime(DateTime.Today);
+        defaultDaysPreview = null;
+        focusModalStagePending = true;
+    }
+
+    private void CancelDefaultDaysChange()
+    {
+        changingProgramDays = false;
+        defaultDaysPreview = null;
+        focusModalStagePending = true;
+    }
+
+    private void ToggleProgramWeekday(int flag)
+    {
+        if (defaultDaysPreview is not null) return;
+        programWeekdayMask = (programWeekdayMask & flag) != 0
+            ? programWeekdayMask & ~flag
+            : programWeekdayMask | flag;
+    }
+
+    private async Task PreviewDefaultDaysChangeAsync()
+    {
+        if (managedProgramSession is null || activeProfileId is null || !CanPreviewDefaultDays) return;
+        programActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/program-runs/{managedProgramSession.RunId}/default-days/preview",
+                new
+                {
+                    operationId = (Guid?)null,
+                    profileId = activeProfileId.Value,
+                    weekdayMask = programWeekdayMask,
+                    effectiveDate = programEffectiveDate,
+                    expectedRunVersion = (int?)null,
+                    expectedRevision = (string?)null,
+                });
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The training-day preview could not be loaded.";
+                return;
+            }
+            defaultDaysPreview = await response.Content.ReadFromJsonAsync<WorkoutProgramDefaultDaysPreviewView>();
+            focusModalStagePending = true;
+        }
+        finally { programActionBusy = false; }
+    }
+
+    private async Task ApplyDefaultDaysChangeAsync()
+    {
+        if (managedProgramSession is null || activeProfileId is null || defaultDaysPreview is not { CanApply: true } preview) return;
+        programActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/calendar/program-runs/{managedProgramSession.RunId}/default-days/apply",
+                new
+                {
+                    operationId = Guid.NewGuid(),
+                    profileId = activeProfileId.Value,
+                    weekdayMask = preview.NewWeekdayMask,
+                    effectiveDate = preview.EffectiveDate,
+                    expectedRunVersion = preview.RunVersion,
+                    expectedRevision = preview.Revision,
+                });
+            if (!response.IsSuccessStatusCode)
+            {
+                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The plan changed after the preview. Review the new training days again."
+                    : "The future plan could not be rescheduled.";
+                defaultDaysPreview = null;
+                await ReloadCalendarAsync();
+                return;
+            }
+            WorkoutProgramDefaultDaysPreviewView? saved = await response.Content.ReadFromJsonAsync<WorkoutProgramDefaultDaysPreviewView>();
+            message = saved?.Message ?? "Future workouts rescheduled.";
+            await DismissProgramManagerAsync();
+            await ReloadCalendarAsync();
+        }
+        finally { programActionBusy = false; }
+    }
+
+    private void ClearDefaultDaysPreview()
+    {
+        defaultDaysPreview = null;
+        focusModalStagePending = true;
+    }
+
+    private static string FormatWeekdayMask(int mask) => string.Join(", ",
+        Weekdays.Where(day => (mask & day.Flag) != 0).Select(static day => day.Label));
 
     private static string ProgramActionTitle(string action) => action switch
     {
@@ -1099,7 +1262,8 @@
         int Total,
         bool IsRepeat,
         Guid? ExtraOccurrenceId,
-        bool IsCompleted);
+        bool IsCompleted,
+        int WeekdayMask);
 
     private static class ManagerSteps
     {

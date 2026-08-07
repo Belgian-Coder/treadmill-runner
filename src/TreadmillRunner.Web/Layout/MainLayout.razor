@@ -4,6 +4,7 @@
 @inject IJSRuntime JS
 @inject HttpClient Http
 @inject TreadmillRunner.Web.ClientRuntimeState Runtime
+@inject GatewayConnectionSupervisor Gateway
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
@@ -42,17 +43,17 @@
 <main id="main-content" class="app-shell" tabindex="-1">
     @if (Runtime.UpdateRequired)
     {
-        <section class="runtime-banner runtime-banner--update" role="alert">
+        <StatusBanner CssClass="runtime-banner--update" Role="alert" Live="assertive">
             <span><strong>Update ready</strong> — reload before continuing.</span>
             <button type="button" @onclick="ReloadAsync">Reload</button>
-        </section>
+        </StatusBanner>
     }
     else if (!Runtime.IsConnected)
     {
-        <section class="runtime-banner" role="alert">
+        <StatusBanner Role="alert" Live="assertive">
             <strong>Live updates unavailable — the treadmill may still be moving.</strong>
             <span>Use the physical console or physical Stop if needed. Reconnecting automatically; dashboard controls remain disabled.</span>
-        </section>
+        </StatusBanner>
     }
     @Body
 </main>
@@ -71,11 +72,13 @@
     {
         if (!firstRender) return;
         Runtime.Changed += RuntimeChanged;
+        Gateway.ConnectionChanged += GatewayConnectionChanged;
         await JS.InvokeVoidAsync("treadmillRunnerView.initializeAutoHideHeader", "site-header");
         selfReference = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("treadmillRunnerRuntime.initialize", selfReference);
         monitorCancellation = new CancellationTokenSource();
         await Runtime.CheckAsync(Http, monitorCancellation.Token);
+        await Gateway.EnsureStartedAsync(monitorCancellation.Token);
         _ = MonitorVersionAsync(monitorCancellation.Token);
     }
 
@@ -94,11 +97,13 @@
     }
 
     private void RuntimeChanged() => _ = InvokeAsync(StateHasChanged);
+    private void GatewayConnectionChanged() => _ = InvokeAsync(StateHasChanged);
     private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reloadNow", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
 
     public async ValueTask DisposeAsync()
     {
         Runtime.Changed -= RuntimeChanged;
+        Gateway.ConnectionChanged -= GatewayConnectionChanged;
         monitorCancellation?.Cancel();
         try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeAutoHideHeader"); }
         catch (JSDisconnectedException) { }

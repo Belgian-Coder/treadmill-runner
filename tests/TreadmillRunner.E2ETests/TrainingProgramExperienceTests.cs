@@ -69,10 +69,11 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     ILocator recommendation = Page.GetByLabel("Recommended next run", new() { Exact = true });
     await Expect(recommendation).ToContainTextAsync("Next for Marc");
     await Expect(recommendation).ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
-    await recommendation.GetByRole(AriaRole.Button, new() { Name = "Select", Exact = true }).ClickAsync();
+    await recommendation.GetByRole(AriaRole.Button, new() { Name = "Choose", Exact = true }).ClickAsync();
     await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
       .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
 
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Training plans", Exact = true }).ClickAsync();
     ILocator first5K = Page.Locator(".run-program-card").Filter(new() { HasText = "First 5K" });
     await Expect(first5K).ToContainTextAsync("0/3 complete");

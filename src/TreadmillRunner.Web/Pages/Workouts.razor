@@ -79,14 +79,14 @@
             }
             else if (FilteredWorkouts.Count == 0)
             {
-                <div class="empty-state"><p>@(workouts.Count == 0 ? "Your library is empty." : "No workouts match these filters.")</p><a class="primary-action" href="/workouts/new">Build a workout</a></div>
+                <EmptyState><p>@(workouts.Count == 0 ? "Your library is empty." : "No workouts match these filters.")</p><a class="primary-action" href="/workouts/new">Build a workout</a></EmptyState>
             }
             else
             {
                 <div class="workout-grid">
                     @foreach (WorkoutSummaryView workout in FilteredWorkouts)
                     {
-                        <article class="workout-card">
+                        <SummaryRow CssClass="workout-card">
                             <div><p class="eyebrow">Revision @workout.CurrentRevisionNumber</p><h3>@workout.Name</h3></div>
                             <p class="workout-description">@(string.IsNullOrWhiteSpace(workout.Description) ? "No description yet." : workout.Description)</p>
                             <div class="workout-card__labels" aria-label="Workout type">
@@ -101,8 +101,13 @@
                             </dl>
                             <div class="card-actions">
                                 <button class="secondary-action" type="button" @onclick="() => OpenWorkoutDetailsAsync(workout)">View details</button>
-                                <a class="secondary-action" href="@RevisionHref(workout)">New revision</a>
-                                <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(workout)">Archive</button>
+                                <details class="card-overflow">
+                                    <summary aria-label="More actions for @workout.Name">More</summary>
+                                    <div>
+                                        <a class="secondary-action" href="@RevisionHref(workout)">New revision</a>
+                                        <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(workout)">Archive</button>
+                                    </div>
+                                </details>
                             </div>
                             @if (pendingArchive is { Kind: ArchiveKind.Workout } pending && pending.Id == workout.Id)
                             {
@@ -115,7 +120,7 @@
                                     </div>
                                 </section>
                             }
-                        </article>
+                        </SummaryRow>
                     }
                 </div>
             }
@@ -143,7 +148,7 @@
                 }
                 else if (FilteredPrograms.Count == 0)
                 {
-                    <div class="empty-state"><p>No training plans match this view.</p><button class="primary-action" type="button" @onclick="NewProgram">Create a plan</button></div>
+                    <EmptyState><p>No training plans match this view.</p><button class="primary-action" type="button" @onclick="NewProgram">Create a plan</button></EmptyState>
                 }
                 else
                 {
@@ -169,7 +174,16 @@
                                     {
                                         <button class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart")</button>
                                     }
-                                    <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(program)">Archive</button>
+                                    <details class="card-overflow">
+                                        <summary aria-label="More actions for @program.Name">More</summary>
+                                        <div>
+                                            @if (program.Run?.ScheduledStartDate is not null)
+                                            {
+                                                <a class="secondary-action" href="/calendar">Calendar &amp; training days</a>
+                                            }
+                                            <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(program)">Archive</button>
+                                        </div>
+                                    </details>
                                 </div>
                                 <details class="template-program-groups">
                                     <summary>View @program.Items.Count sessions</summary>
@@ -422,8 +436,7 @@
 
 @if (selectedWorkoutDetails is not null)
 {
-    <div id="workout-details-backdrop" class="schedule-dialog-backdrop workout-details-backdrop" @onclick="CloseWorkoutDetailsAsync">
-        <section class="schedule-dialog workout-details-dialog" role="dialog" aria-modal="true" aria-labelledby="workout-details-title" @onclick:stopPropagation="true">
+    <DetailSheet BackdropId="workout-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog" LabelledBy="workout-details-title" OnDismiss="CloseWorkoutDetailsAsync">
             <header class="workout-details-header">
                 <div>
                     <p class="eyebrow">@selectedWorkoutDetails.StructureLabel · Revision @selectedWorkoutDetails.CurrentRevisionNumber</p>
@@ -459,8 +472,7 @@
                 <button class="secondary-action" type="button" @onclick="CloseWorkoutDetailsAsync">Close</button>
                 <a class="primary-action" href="@RevisionHref(selectedWorkoutDetails)">Create new revision</a>
             </div>
-        </section>
-    </div>
+    </DetailSheet>
 }
 
 @code {

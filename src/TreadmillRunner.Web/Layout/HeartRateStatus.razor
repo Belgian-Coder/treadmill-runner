@@ -1,7 +1,5 @@
-@implements IAsyncDisposable
-
-@inject HttpClient Http
-@inject NavigationManager Navigation
+@implements IDisposable
+@inject GatewayConnectionSupervisor Gateway
 
 <a class="global-hr-status @StatusClass"
    href="/devices"
@@ -33,7 +31,6 @@
     [Parameter] public bool Compact { get; set; }
 
     private static readonly TimeSpan FreshnessLimit = TimeSpan.FromSeconds(5);
-    private HubConnection? hubConnection;
     private string? sensorName;
     private DeviceConnectionState sensorState = DeviceConnectionState.Disconnected;
     private ushort? heartRateBpm;
@@ -43,56 +40,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            DeviceTelemetrySnapshot? snapshot = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
-            if (snapshot is not null)
-            {
-                sensorName = snapshot.HeartRate.DisplayName;
-                sensorState = snapshot.HeartRate.State;
-                heartRateBpm = snapshot.HeartRateBpm;
-                heartRateAge = snapshot.HeartRateAge;
-                sensorKind = snapshot.SelectedHeartRateDeviceKind;
-            }
-        }
-        catch (HttpRequestException)
-        {
-            gatewayAvailable = false;
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
-
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
-            .WithAutomaticReconnect()
-            .Build();
-        hubConnection.On<LiveSnapshot>("snapshot", incoming =>
-        {
-            gatewayAvailable = true;
-            sensorName = incoming.HeartRateDeviceName;
-            sensorState = incoming.HeartRateConnectionState;
-            heartRateBpm = incoming.HeartRateBpm;
-            heartRateAge = incoming.HeartRateTelemetryAge;
-            sensorKind = incoming.HeartRateDeviceKind;
-            return InvokeAsync(StateHasChanged);
-        });
-        hubConnection.Reconnecting += _ => SetGatewayAvailabilityAsync(false);
-        hubConnection.Reconnected += _ => SetGatewayAvailabilityAsync(true);
-        hubConnection.Closed += _ => SetGatewayAvailabilityAsync(false);
-
-        try
-        {
-            await hubConnection.StartAsync();
-            gatewayAvailable = true;
-        }
-        catch (HttpRequestException)
-        {
-            gatewayAvailable = false;
-            await InvokeAsync(StateHasChanged);
-        }
+        Gateway.HeartRateChanged += GatewayHeartRateChanged;
+        Gateway.ConnectionChanged += GatewayConnectionChanged;
+        await Gateway.EnsureStartedAsync();
+        ApplyGatewayState();
     }
 
     private bool HasSensor => !string.IsNullOrWhiteSpace(sensorName);
@@ -162,19 +113,33 @@
         ? $"Pulse sensor status: {PrimaryText}. {SecondaryText}."
         : $"Pulse sensor status: {PrimaryText}. {KindLabel}: {sensorName}.";
 
-    private Task SetGatewayAvailabilityAsync(bool available)
+    private void GatewayHeartRateChanged()
     {
-        gatewayAvailable = available;
-        if (!available)
-        {
-            heartRateBpm = null;
-            heartRateAge = null;
-        }
-        return InvokeAsync(StateHasChanged);
+        ApplyGatewayState();
+        _ = InvokeAsync(StateHasChanged);
     }
 
-    public async ValueTask DisposeAsync()
+    private void GatewayConnectionChanged()
     {
-        if (hubConnection is not null) await hubConnection.DisposeAsync();
+        ApplyGatewayState();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyGatewayState()
+    {
+        gatewayAvailable = Gateway.Current.IsConnected;
+        LiveSnapshot? incoming = Gateway.Current.Live;
+        if (incoming is null) return;
+        sensorName = incoming.HeartRateDeviceName;
+        sensorState = incoming.HeartRateConnectionState;
+        heartRateBpm = incoming.HeartRateBpm;
+        heartRateAge = incoming.HeartRateTelemetryAge;
+        sensorKind = incoming.HeartRateDeviceKind;
+    }
+
+    public void Dispose()
+    {
+        Gateway.HeartRateChanged -= GatewayHeartRateChanged;
+        Gateway.ConnectionChanged -= GatewayConnectionChanged;
     }
 }

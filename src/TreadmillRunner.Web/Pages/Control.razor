@@ -9,15 +9,22 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ClientRuntimeState Runtime
+@inject GatewayConnectionSupervisor Gateway
+@inject ControlFocusState FocusState
 
 <PageTitle>@DashboardTitle · TreadmillRunner</PageTitle>
 
-<section id="control-dashboard" class="control-page" aria-labelledby="control-title">
+<section id="control-dashboard" class="control-page control-page--@FocusClass" aria-labelledby="control-title">
     <header class="dashboard-header control-page__header">
         <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
         <div class="control-header-actions">
             <span class="connection-state" role="status">@connectionStatus</span>
             <HeartRateStatus Compact="true" />
+            <div class="control-focus-switcher" role="group" aria-label="Dashboard focus">
+                <button type="button" aria-pressed="@Pressed(ControlFocusMode.Balanced)" @onclick="() => SetFocus(ControlFocusMode.Balanced)">Balanced</button>
+                <button type="button" aria-pressed="@Pressed(ControlFocusMode.Chart)" @onclick="() => SetFocus(ControlFocusMode.Chart)">Chart</button>
+                <button type="button" aria-pressed="@Pressed(ControlFocusMode.Controls)" @onclick="() => SetFocus(ControlFocusMode.Controls)">Controls</button>
+            </div>
             <span class="wake-lock-indicator @WakeLockIndicatorClass" role="status" aria-live="polite" aria-label="@WakeLockAccessibleLabel" title="@WakeLockAccessibleLabel">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <rect x="4" y="4" width="16" height="12" rx="2" />
@@ -86,7 +93,7 @@
             </section>
         }
 
-        <section class="control-console-grid @(!liveStateConnected ? "control-console-grid--stale" : null)" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
+        <section class="control-console-grid control-console-grid--@FocusClass @(!liveStateConnected ? "control-console-grid--stale" : null)" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
             <aside class="control-rail control-rail--speed" aria-labelledby="speed-control-title">
                 <span class="eyebrow">Target speed</span>
                 <h2 id="speed-control-title">@session.RequestedSpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></h2>
@@ -110,12 +117,12 @@
                     <article aria-label="Elapsed time"><span>Time</span><strong>@FormatElapsed(session.Live.Elapsed)</strong></article>
                 </section>
 
-                <section class="control-live-chart @(isChartFocused ? "control-live-chart--focused" : null)" aria-labelledby="control-chart-title">
+                <section class="control-live-chart @(focusMode == ControlFocusMode.Chart ? "control-live-chart--focused" : null)" aria-labelledby="control-chart-title">
                     <div class="control-chart-heading">
                         <div><span class="eyebrow">This run</span><h2 id="control-chart-title">Live progress</h2></div>
                         <div class="control-chart-actions">
                             <span title="@session.WorkoutTitle">@session.WorkoutTitle</span>
-                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(isChartFocused ? "Collapse live graph" : "Expand live graph")" title="@(isChartFocused ? "Collapse graph" : "Expand graph")"><span aria-hidden="true">@(isChartFocused ? "↙" : "↗")</span></button>
+                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Collapse graph" : "Expand graph")"><span aria-hidden="true">@(focusMode == ControlFocusMode.Chart ? "↙" : "↗")</span></button>
                         </div>
                     </div>
                     <div class="chart-plot-grid chart-plot-grid--dual">
@@ -244,30 +251,28 @@
 </section>
 
 @code {
-    private const string HolderStorageKey = "treadmillrunner.controller-holder";
     private static readonly double[] PopularSpeeds = [5.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0];
     private static readonly double[] PopularInclines = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
     private BoundedLiveSeries<ControlChartPoint> chartPoints = new(43_200);
-    private HubConnection? hubConnection;
-    private CancellationTokenSource? heartbeatCancellation;
-    private CancellationTokenSource? connectionCancellation;
     private CancellationTokenSource? startHoldCancellation;
-    private Task? heartbeatTask;
-    private Task? connectionTask;
-    private bool isForcingHubRestart;
     private DotNetObjectReference<Control>? wakeLockReference;
     private ActiveSessionSnapshot? session;
-    private ControlLease? lease;
-    private string holderId = string.Empty;
-    private string connectionStatus = "Connecting";
-    private bool liveStateConnected;
-    private bool wantsControl = true;
-    private string controlStatus = "Observer";
+    private ControlLease? lease => Gateway.Current.Lease;
+    private string holderId => Gateway.HolderId;
+    private string connectionStatus => Gateway.Current.ConnectionPhase switch
+    {
+        GatewayClientConnectionPhase.Connected => "Gateway ready",
+        GatewayClientConnectionPhase.Starting => "Connecting",
+        _ => "Gateway unavailable · retrying",
+    };
+    private bool liveStateConnected => Gateway.Current.IsConnected;
+    private string controlStatus => lease is null ? "Observer" : "Controller";
     private string actionStatus = "Waiting for an active session.";
     private bool isTakingControl;
     private bool isManualCommandPending;
     private bool isStopPending;
-    private bool isChartFocused;
+    private ControlFocusMode focusMode = ControlFocusMode.Balanced;
+    private string FocusClass => focusMode.ToString().ToLowerInvariant();
     private bool stopRequestedDuringCommand;
     private bool hasRendered;
     private WakeLockStatusView? wakeLockStatus;
@@ -279,7 +284,7 @@
 
     private bool HasUnknownOutcome => session?.LastCommandResult?.Disposition == TreadmillCommandDisposition.Unknown;
     private bool HasController => lease is not null;
-    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected;
+    private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected && Gateway.Current.ControlsBlockedReason is null;
     private bool CanStart => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
         CanStartRemotely: true,
@@ -356,31 +361,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        holderId = await JS.InvokeAsync<string?>("localStorage.getItem", HolderStorageKey) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(holderId))
-        {
-            holderId = Guid.NewGuid().ToString("N");
-            await JS.InvokeVoidAsync("localStorage.setItem", HolderStorageKey, holderId);
-        }
-
-        wantsControl = true;
-        connectionStatus = "Connecting to live updates";
+        Gateway.ConnectionChanged += GatewayConnectionChanged;
+        Gateway.SessionChanged += GatewaySessionChanged;
+        Gateway.LeaseChanged += GatewayLeaseChanged;
         try
         {
-            await RefreshSessionAsync();
-            if (session is null || IsTerminal(session.Live.SessionState))
+            await Gateway.EnsureStartedAsync();
+            session = Gateway.Current.Session;
+            if (session is not null && IsTerminal(session.Live.SessionState))
             {
                 Navigation.NavigateTo("/", replace: true);
                 return;
             }
 
-            await HydrateChartAsync(session.SessionId);
+            if (session is not null)
+            {
+                focusMode = FocusState.ForSession(session.SessionId);
+                await HydrateChartAsync(session.SessionId);
+            }
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
-            lease = null;
-            connectionStatus = "Gateway unavailable · retrying";
-            liveStateConnected = false;
+            actionStatus = "Gateway unavailable; reconnecting automatically.";
         }
     }
 
@@ -390,28 +392,7 @@
         hasRendered = true;
         wakeLockReference = DotNetObjectReference.Create(this);
         await UpdateWakeLockAsync();
-        hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/hubs/live"))
-            .WithAutomaticReconnect(new IndefiniteHubRetryPolicy())
-            .Build();
-        hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", async snapshot =>
-        {
-            session = snapshot;
-            AppendChartPoint(snapshot);
-            await UpdateWakeLockAsync();
-            if (IsTerminal(snapshot.Live.SessionState))
-            {
-                Navigation.NavigateTo("/", replace: true);
-                return;
-            }
-            await InvokeAsync(StateHasChanged);
-        });
-        hubConnection.Reconnecting += _ => SetConnectionAsync("Reconnecting", false);
-        hubConnection.Reconnected += _ => RecoverAfterGatewayReconnectAsync();
-        hubConnection.Closed += _ => RestartHubAfterCloseAsync();
-        connectionCancellation = new CancellationTokenSource();
-        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
-        _ = connectionTask;
+        if (Gateway.Current.WantsControl is false) await TakeControlAsync(restoring: true);
     }
 
     private Task TakeControlAsync() => TakeControlAsync(restoring: false);
@@ -422,27 +403,19 @@
         isTakingControl = true;
         try
         {
-            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/acquire", new { holderId });
-            if (response.IsSuccessStatusCode)
+            ControlLease? acquired = await Gateway.RequestControlAsync(restoring);
+            if (acquired is not null)
             {
-                lease = await response.Content.ReadFromJsonAsync<ControlLease>();
-                controlStatus = restoring ? "Controller restored" : "Controller";
                 actionStatus = restoring ? "Controller access restored." : "Direct controls are ready.";
-                StartHeartbeat();
-                wantsControl = true;
             }
             else
             {
-                lease = null;
-                controlStatus = "Observer";
-                actionStatus = "Another browser currently controls manual actions.";
+                actionStatus = Gateway.Current.ControlsBlockedReason ?? "Another browser currently controls manual actions.";
             }
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            lease = null;
             actionStatus = "Manual controls are unavailable because the gateway connection was interrupted.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
         }
         finally
         {
@@ -450,62 +423,45 @@
         }
     }
 
-    private async Task StartHubUntilConnectedAsync(CancellationToken cancellationToken)
+    private void GatewayConnectionChanged()
     {
-        int attempt = 0;
-        while (!cancellationToken.IsCancellationRequested && hubConnection is { State: HubConnectionState.Disconnected })
+        if (!Gateway.Current.IsConnected)
+            actionStatus = Gateway.Current.ControlsBlockedReason ?? "Live updates interrupted; the treadmill may still be moving.";
+        _ = InvokeAsync(() =>
         {
-            try
-            {
-                await hubConnection.StartAsync(cancellationToken);
-                await RecoverAfterGatewayReconnectAsync();
-                return;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                await SetConnectionAsync("Gateway unavailable · retrying", false);
-                TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
-                await Task.Delay(delay, cancellationToken);
-            }
-        }
+            if (Gateway.Current.IsConnected && Gateway.Current.Session is null)
+                Navigation.NavigateTo("/", replace: true);
+            else
+                StateHasChanged();
+        });
     }
 
-    private async Task RecoverAfterGatewayReconnectAsync()
+    private void GatewayLeaseChanged()
     {
-        if (hubConnection?.State != HubConnectionState.Connected)
-        {
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            return;
-        }
-        await Runtime.CheckAsync(Http);
-        heartbeatCancellation?.Cancel();
-        lease = null;
-        isManualCommandPending = false;
-        isStopPending = false;
-        await RefreshSessionAsync();
-        if (session is null || IsTerminal(session.Live.SessionState))
-        {
-            Navigation.NavigateTo("/", replace: true);
-            return;
-        }
-        if (hubConnection.State != HubConnectionState.Connected)
-        {
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            return;
-        }
-        if (wantsControl && !Runtime.UpdateRequired) await TakeControlAsync(restoring: true);
-        await SetConnectionAsync("Gateway ready", true);
+        if (Gateway.Current.Lease is null && Gateway.Current.WantsControl)
+            actionStatus = Gateway.Current.ControlsBlockedReason ?? "Controller access is being restored.";
+        else if (Gateway.Current.Lease is not null && Gateway.Current.WantsControl)
+            actionStatus = "Controller access restored.";
+        _ = InvokeAsync(StateHasChanged);
     }
 
-    private async Task RestartHubAfterCloseAsync()
+    private void GatewaySessionChanged()
     {
-        await SetConnectionAsync("Gateway unavailable · retrying", false);
-        if (isForcingHubRestart) return;
-        if (connectionCancellation?.IsCancellationRequested != false) return;
-        if (connectionTask is { IsCompleted: false }) return;
-        connectionTask = StartHubUntilConnectedAsync(connectionCancellation.Token);
-        _ = connectionTask;
+        ActiveSessionSnapshot? incoming = Gateway.Current.Session;
+        session = incoming;
+        if (incoming is not null)
+        {
+            focusMode = FocusState.ForSession(incoming.SessionId);
+            AppendChartPoint(incoming);
+        }
+        _ = InvokeAsync(async () =>
+        {
+            await UpdateWakeLockAsync();
+            if (incoming is null || IsTerminal(incoming.Live.SessionState))
+                Navigation.NavigateTo("/", replace: true);
+            else
+                StateHasChanged();
+        });
     }
 
     private string RecoveryHeading => session?.RecoveryState switch
@@ -562,9 +518,8 @@
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            lease = null;
             actionStatus = "Planned controls remain paused because the gateway connection was interrupted.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            await Gateway.RefreshAuthoritativeStateAsync();
         }
         finally
         {
@@ -715,10 +670,8 @@
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            lease = null;
-            controlStatus = "Observer";
             actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
+            await Gateway.RefreshAuthoritativeStateAsync();
         }
         finally
         {
@@ -743,7 +696,16 @@
     }
     private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
     private Task ResumeAsync() => SendCommandAsync(TreadmillCommandKind.Start);
-    private void ToggleChartFocus() => isChartFocused = !isChartFocused;
+    private void ToggleChartFocus() => SetFocus(
+        focusMode == ControlFocusMode.Chart ? ControlFocusMode.Balanced : ControlFocusMode.Chart);
+
+    private void SetFocus(ControlFocusMode selected)
+    {
+        focusMode = selected;
+        if (session is not null) FocusState.Set(session.SessionId, selected);
+    }
+
+    private string Pressed(ControlFocusMode mode) => (focusMode == mode).ToString().ToLowerInvariant();
 
     private async Task SendCommandAsync(TreadmillCommandKind kind)
     {
@@ -1074,93 +1036,6 @@
         ? elapsed.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
         : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);
 
-    private void StartHeartbeat()
-    {
-        heartbeatCancellation?.Cancel();
-        heartbeatCancellation?.Dispose();
-        heartbeatCancellation = new CancellationTokenSource();
-        heartbeatTask = RenewLeaseAsync(heartbeatCancellation.Token);
-    }
-
-    private async Task RenewLeaseAsync(CancellationToken cancellationToken)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                ControlLease? currentLease = lease;
-                if (currentLease is null) return;
-                using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/lease/heartbeat", currentLease, cancellationToken);
-                if (response.IsSuccessStatusCode)
-                {
-                    lease = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    lease = null;
-                    controlStatus = "Observer";
-                    actionStatus = "Controller lease expired. Take control again to use manual actions.";
-                    await InvokeAsync(StateHasChanged);
-                    return;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Page disposal or a replacement heartbeat loop owns the expected cancellation.
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            lease = null;
-            controlStatus = "Observer";
-            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
-            await SetConnectionAsync("Gateway unavailable · retrying", false);
-            await RecoverAfterHeartbeatFailureAsync(cancellationToken);
-        }
-    }
-
-    private async Task RecoverAfterHeartbeatFailureAsync(CancellationToken cancellationToken)
-    {
-        int attempt = 0;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await Runtime.CheckAsync(Http, cancellationToken);
-                if (Runtime.IsConnected && hubConnection?.State == HubConnectionState.Connected)
-                {
-                    await RecoverAfterGatewayReconnectAsync();
-                    return;
-                }
-                if (Runtime.IsConnected && attempt >= 2 && hubConnection is not null)
-                {
-                    isForcingHubRestart = true;
-                    try { await hubConnection.StopAsync(cancellationToken); }
-                    finally { isForcingHubRestart = false; }
-                    connectionTask = StartHubUntilConnectedAsync(cancellationToken);
-                    await connectionTask;
-                    if (hubConnection.State == HubConnectionState.Connected) return;
-                }
-            }
-            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-            {
-                // The next bounded attempt reloads authoritative server and lease state.
-            }
-
-            TimeSpan delay = TimeSpan.FromSeconds(Math.Min(10, Math.Max(1, 1 << Math.Min(attempt++, 3))));
-            try { await Task.Delay(delay, cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-        }
-    }
-
-    private async Task SetConnectionAsync(string status, bool connected)
-    {
-        liveStateConnected = connected;
-        connectionStatus = status;
-        await InvokeAsync(StateHasChanged);
-    }
-
     private static bool IsWithinRange(double target, TreadmillOperatingRange? range) => range is null ||
         ((decimal)target >= range.Minimum && (decimal)target <= range.Maximum);
 
@@ -1203,17 +1078,10 @@
         wakeLockReference?.Dispose();
         wakeLockReference = null;
         startHoldCancellation?.Cancel();
-        heartbeatCancellation?.Cancel();
-        connectionCancellation?.Cancel();
-        if (heartbeatTask is not null) await heartbeatTask;
-        heartbeatCancellation?.Dispose();
-        if (connectionTask is not null)
-        {
-            try { await connectionTask; } catch (OperationCanceledException) { }
-        }
-        connectionCancellation?.Dispose();
         startHoldCancellation?.Dispose();
-        if (hubConnection is not null) await hubConnection.DisposeAsync();
+        Gateway.ConnectionChanged -= GatewayConnectionChanged;
+        Gateway.SessionChanged -= GatewaySessionChanged;
+        Gateway.LeaseChanged -= GatewayLeaseChanged;
         if (hasRendered)
         {
             try { await JS.InvokeAsync<string>("treadmillRunnerView.clearImmersiveView", "control-dashboard"); }

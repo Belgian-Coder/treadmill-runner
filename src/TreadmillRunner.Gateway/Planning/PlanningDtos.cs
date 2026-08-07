@@ -299,7 +299,8 @@ public sealed record CalendarOptionDto(
   bool IsRepeat = false,
   Guid? ExtraOccurrenceId = null,
   DateOnly? OriginalDate = null,
-  bool IsCompleted = false);
+  bool IsCompleted = false,
+  int? ProgramWeekdayMask = null);
 
 public sealed record CalendarDayDto(DateOnly Date, IReadOnlyList<CalendarOptionDto> Options);
 
@@ -340,6 +341,34 @@ public sealed record WorkoutProgramScheduleChangePreviewDto(
   string Message,
   IReadOnlyList<WorkoutProgramScheduleImpactDto> Impacts,
   IReadOnlyList<DateOnly> CollisionDates,
+  bool Replayed = false);
+
+public sealed record WorkoutProgramDefaultDaysRequest(
+  Guid? OperationId,
+  Guid ProfileId,
+  int WeekdayMask,
+  DateOnly EffectiveDate,
+  int? ExpectedRunVersion = null,
+  string? ExpectedRevision = null);
+
+public sealed record WorkoutProgramDefaultDaysImpactDto(
+  Guid ProgramItemId,
+  int Position,
+  DateOnly CurrentDate,
+  DateOnly NewDate);
+
+public sealed record WorkoutProgramDefaultDaysPreviewDto(
+  Guid RunId,
+  int RunVersion,
+  int CurrentWeekdayMask,
+  int NewWeekdayMask,
+  DateOnly EffectiveDate,
+  bool CanApply,
+  string Message,
+  string Revision,
+  IReadOnlyList<WorkoutProgramDefaultDaysImpactDto> Impacts,
+  IReadOnlyList<DateOnly> CollisionDates,
+  int PreservedExceptionCount,
   bool Replayed = false);
 
 public sealed record CalendarRangeDto(Guid ProfileId, DateOnly From, DateOnly To, IReadOnlyList<CalendarDayDto> Days);

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "story": "US-TR-028",
+  "validatedAtUtc": "2026-08-07T02:51:16Z",
+  "baselineCommit": "4a9bb8b",
+  "buildFingerprint": "77484de2900de8c9",
+  "result": "passed",
+  "commands": [
+    { "name": "workflow-plan-check", "result": "passed", "summary": "194 plan-quality checks passed" },
+    { "name": "deterministic-release-validation", "result": "passed", "summary": "Locked restore, formatting/analyzers, Garmin contract, public evidence, Connect IQ static checks, BLE ownership checks, zero-warning Release build, and 453 non-browser tests passed" },
+    { "name": "bounded-browser-validation", "result": "passed", "summary": "57 browser cases passed across bounded groups, including prolonged reconnect, active-session reload, single WebSocket ownership, heartbeat recovery, and responsive live dashboards" },
+    { "name": "changed-file-security-review", "result": "passed", "summary": "27 changed files scanned; five path-pattern matches were manually confirmed as static documentation links or compile-time project references, with zero actionable findings" },
+    { "name": "signed-local-installation", "result": "passed", "summary": "Signed 1.5.19 bundle staged while idle, one activation was accepted, and the restarted service returned HTTP 200 with the expected version and fingerprint" }
+  ],
+  "release": {
+    "version": "1.5.19",
+    "offlineBundleSha256": "406F12BF1AB141A8E9C930BE4D58BCF52CF3F88D5757FD0955701041FFCC03D9",
+    "installed": true,
+    "githubPublished": false
+  },
+  "skipped": [
+    "treadmill movement and BLE commands",
+    "long-duration tests and power cycles",
+    "GitHub tag and public release",
+    "Connect IQ compiler/simulator acceptance because monkeyc is not installed",
+    "independent subagent reviews because no subagents were requested"
+  ]
+}

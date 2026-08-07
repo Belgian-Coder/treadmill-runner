@@ -44,6 +44,13 @@ public sealed class ClientRuntimeState
     Changed?.Invoke();
   }
 
+  public void SetConnected(bool connected)
+  {
+    if (IsConnected == connected) return;
+    IsConnected = connected;
+    Changed?.Invoke();
+  }
+
   public sealed record SystemVersionView(string ReleaseVersion, string BuildFingerprint, DateTimeOffset ServiceStartedAtUtc);
 }
 

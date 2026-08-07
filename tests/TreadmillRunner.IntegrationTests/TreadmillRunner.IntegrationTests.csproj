@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj" />
+    <ProjectReference Include="..\..\src\TreadmillRunner.Web\TreadmillRunner.Web.csproj" />
   </ItemGroup>
 
 </Project>

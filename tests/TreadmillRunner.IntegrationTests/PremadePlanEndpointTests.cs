@@ -189,6 +189,102 @@ public sealed class PremadePlanEndpointTests(PlanningGatewayFactory factory)
   }
 
   [Fact]
+  public async Task Default_training_days_preview_and_apply_are_profile_scoped_idempotent_and_collision_safe()
+  {
+    using HttpClient client = factory.CreateClient();
+    Guid profileId = await CreateProfileAsync(client, includeAllZones: true);
+    Guid otherProfileId = await CreateProfileAsync(client, includeAllZones: true);
+    var materializeRequest = new
+    {
+      operationId = Guid.NewGuid(),
+      profileId,
+      templateId = "getting-started",
+      templateVersion = "1.0.0",
+      freshCopy = false,
+    };
+    using HttpResponseMessage materializeResponse = await client.PostAsJsonAsync(
+      "/api/planning/premade-plans/materialize", materializeRequest);
+    Assert.Equal(HttpStatusCode.Created, materializeResponse.StatusCode);
+    Guid programId = (await ReadJsonAsync(materializeResponse)).GetProperty("programId").GetGuid();
+    JsonElement program = Assert.Single(
+      (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={profileId}"))!,
+      item => item.GetProperty("id").GetGuid() == programId);
+
+    using HttpResponseMessage startResponse = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId}/start",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        expectedProgramRevisionId = program.GetProperty("revisionId").GetGuid(),
+        expectedActiveRunId = (Guid?)null,
+        expectedActiveRunVersion = (int?)null,
+        scheduledStartDate = new DateOnly(2026, 8, 10),
+        scheduledWeekdayMask = 37,
+        scheduleTimeZoneId = "Europe/Brussels",
+      });
+    Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
+    JsonElement started = await ReadJsonAsync(startResponse);
+    Guid runId = started.GetProperty("id").GetGuid();
+
+    var previewRequest = new
+    {
+      operationId = (Guid?)null,
+      profileId,
+      weekdayMask = 42,
+      effectiveDate = new DateOnly(2026, 8, 10),
+      expectedRunVersion = (int?)null,
+      expectedRevision = (string?)null,
+    };
+    using HttpResponseMessage wrongOwnerPreview = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/default-days/preview",
+      previewRequest with { profileId = otherProfileId });
+    Assert.Equal(HttpStatusCode.NotFound, wrongOwnerPreview.StatusCode);
+
+    using HttpResponseMessage previewResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/default-days/preview", previewRequest);
+    Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+    JsonElement preview = await ReadJsonAsync(previewResponse);
+    Assert.True(preview.GetProperty("canApply").GetBoolean());
+    Assert.Equal(37, preview.GetProperty("currentWeekdayMask").GetInt32());
+    Assert.Equal(42, preview.GetProperty("newWeekdayMask").GetInt32());
+    Assert.NotEmpty(preview.GetProperty("impacts").EnumerateArray());
+
+    JsonElement beforeApply = await client.GetFromJsonAsync<JsonElement>(
+      $"/api/planning/calendar/{profileId}?from=2026-08-10&to=2026-08-16");
+    Assert.Equal("2026-08-10", beforeApply.GetProperty("days")[0].GetProperty("date").GetString());
+
+    Guid operationId = Guid.NewGuid();
+    var applyRequest = previewRequest with
+    {
+      operationId = (Guid?)operationId,
+      expectedRunVersion = (int?)preview.GetProperty("runVersion").GetInt32(),
+      expectedRevision = preview.GetProperty("revision").GetString(),
+    };
+    using HttpResponseMessage applyResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/default-days/apply", applyRequest);
+    Assert.Equal(HttpStatusCode.OK, applyResponse.StatusCode);
+    JsonElement applied = await ReadJsonAsync(applyResponse);
+    Assert.Equal(preview.GetProperty("runVersion").GetInt32() + 1, applied.GetProperty("runVersion").GetInt32());
+
+    using HttpResponseMessage replayResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/default-days/apply", applyRequest);
+    Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+    JsonElement replay = await ReadJsonAsync(replayResponse);
+    Assert.Equal(applied.GetProperty("runVersion").GetInt32(), replay.GetProperty("runVersion").GetInt32());
+
+    using HttpResponseMessage conflictResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/default-days/apply",
+      applyRequest with { weekdayMask = 44 });
+    Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+
+    JsonElement afterApply = await client.GetFromJsonAsync<JsonElement>(
+      $"/api/planning/calendar/{profileId}?from=2026-08-10&to=2026-08-16");
+    Assert.Equal(["2026-08-11", "2026-08-13", "2026-08-15"],
+      afterApply.GetProperty("days").EnumerateArray().Take(3).Select(day => day.GetProperty("date").GetString()));
+  }
+
+  [Fact]
   public async Task Preview_resolves_profile_zones_and_blocks_missing_heart_rate_zone()
   {
     using HttpClient client = factory.CreateClient();

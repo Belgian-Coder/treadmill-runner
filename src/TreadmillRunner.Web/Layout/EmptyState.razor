@@ -1,0 +1,10 @@
+<div class="empty-state @CssClass" role="@Role" aria-live="@Live">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public string? Role { get; set; }
+    [Parameter] public string? Live { get; set; }
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

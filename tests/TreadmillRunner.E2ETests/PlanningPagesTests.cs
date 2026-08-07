@@ -228,6 +228,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Guid itemId = Guid.NewGuid();
     Guid revisionId = Guid.NewGuid();
     int applyRequests = 0;
+    int defaultDaysApplyRequests = 0;
     await Page.RouteAsync("**/api/planning/calendar/series?*", route => route.FulfillAsync(new()
     {
       Status = 200,
@@ -270,6 +271,52 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
       });
     });
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/default-days/preview", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = JsonSerializer.Serialize(new
+      {
+        runId,
+        runVersion = 4,
+        currentWeekdayMask = 37,
+        newWeekdayMask = 42,
+        effectiveDate = plannedDate,
+        canApply = true,
+        message = "16 future sessions will move. Completed and individually adjusted sessions stay unchanged.",
+        revision = "preview-revision",
+        impacts = new[]
+        {
+          new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1) },
+          new { programItemId = Guid.NewGuid(), position = 3, currentDate = plannedDate.AddDays(2), newDate = plannedDate.AddDays(3) },
+        },
+        collisionDates = new[] { plannedDate.AddDays(3) },
+        preservedExceptionCount = 2,
+      }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+    }));
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/default-days/apply", async route =>
+    {
+      Interlocked.Increment(ref defaultDaysApplyRequests);
+      await route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          runId,
+          runVersion = 5,
+          currentWeekdayMask = 37,
+          newWeekdayMask = 42,
+          effectiveDate = plannedDate,
+          canApply = true,
+          message = "Future generated sessions now use Tuesday, Thursday, and Saturday.",
+          revision = "preview-revision",
+          impacts = Array.Empty<object>(),
+          collisionDates = Array.Empty<DateOnly>(),
+          preservedExceptionCount = 2,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+      });
+    });
     await Page.RouteAsync("**/api/planning/calendar/*", async route =>
     {
       string lastSegment = new Uri(route.Request.Url).AbsolutePath.Split('/').Last();
@@ -300,7 +347,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
                   workoutName = "Easy foundation", revisionNumber = 1, displayOrder = 0, isSelected = true,
                   source = "Program", programRunId = runId, programItemId = itemId, programPosition = 2, programTotal = 18,
                   weekNumber = 1, phase = "Foundation", programRunVersion = 4, isRepeat = false, originalDate = plannedDate,
-                  isCompleted = false,
+                  isCompleted = false, programWeekdayMask = 37,
                 },
                 new
                 {
@@ -308,7 +355,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
                   workoutName = "Earlier foundation", revisionNumber = 1, displayOrder = 1, isSelected = false,
                   source = "Program", programRunId = runId, programItemId = Guid.NewGuid(), programPosition = 1, programTotal = 18,
                   weekNumber = 1, phase = "Foundation", programRunVersion = 4, isRepeat = false, originalDate = plannedDate,
-                  isCompleted = true,
+                  isCompleted = true, programWeekdayMask = 37,
                 },
               },
             },
@@ -328,13 +375,37 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     ILocator dialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(dialog).ToContainTextAsync("step 2 of 18");
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToHaveCountAsync(0);
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Change training days", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Change training days", Exact = true })).ToBeVisibleAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Mon", Exact = true }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Tue", Exact = true }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true }).ClickAsync();
+    await Expect(dialog).ToContainTextAsync("Sessions moving");
+    await Expect(dialog).ToContainTextAsync("Double-session warning");
+    Assert.Equal(0, defaultDaysApplyRequests);
+    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+    Directory.CreateDirectory(showcaseDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(showcaseDirectory, "tr-030-training-days-preview.png"),
+      FullPage = false,
+    });
+    await Page.SetViewportSizeAsync(1440, 900);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(showcaseDirectory, "tr-030-training-days-preview-desktop.png"),
+      FullPage = false,
+    });
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm all future changes", Exact = true }).ClickAsync();
+    await Expect(dialog).ToBeHiddenAsync();
+    Assert.Equal(1, defaultDaysApplyRequests);
+    manageButton = Page.Locator(".calendar-option-manage:visible").First;
+    await manageButton.ClickAsync();
     await dialog.GetByLabel("New or repeat date").FillAsync("2026-08-11");
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("Impact preview");
     await Expect(dialog).ToContainTextAsync("Double-session warning");
     Assert.Equal(0, applyRequests);
-    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(showcaseDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
       Path = Path.Combine(showcaseDirectory, "tr-027-calendar-mobile.png"),

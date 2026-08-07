@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TreadmillRunner.Core.Calendar;
@@ -38,6 +40,25 @@ public sealed record WorkoutProgramScheduleChangePreview(
   IReadOnlyList<WorkoutProgramScheduleImpact> Impacts,
   IReadOnlyList<DateOnly> CollisionDates);
 
+public sealed record WorkoutProgramDefaultDaysImpact(
+  Guid ProgramItemId,
+  int Position,
+  DateOnly CurrentDate,
+  DateOnly NewDate);
+
+public sealed record WorkoutProgramDefaultDaysPreview(
+  Guid RunId,
+  int RunVersion,
+  int CurrentWeekdayMask,
+  int NewWeekdayMask,
+  DateOnly EffectiveDate,
+  bool CanApply,
+  string Message,
+  string Revision,
+  IReadOnlyList<WorkoutProgramDefaultDaysImpact> Impacts,
+  IReadOnlyList<DateOnly> CollisionDates,
+  int PreservedExceptionCount);
+
 public interface IWorkoutProgramStore
 {
   Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListAsync(Guid? userProfileId = null, CancellationToken cancellationToken = default);
@@ -50,6 +71,8 @@ public interface IWorkoutProgramStore
   Task<(WorkoutProgramRun Run, WorkoutProgramItem Item)?> ValidateSelectionAsync(Guid userProfileId, Guid runId, Guid itemId, Guid workoutRevisionId, CancellationToken cancellationToken = default);
   Task<WorkoutProgramScheduleChangePreview> PreviewScheduleChangeAsync(Guid userProfileId, Guid runId, Guid itemId, WorkoutProgramScheduleAction action, DateOnly? targetDate, CancellationToken cancellationToken = default);
   Task<WorkoutProgramScheduleChangePreview> ApplyScheduleChangeAsync(Guid userProfileId, Guid runId, Guid itemId, WorkoutProgramScheduleAction action, DateOnly? targetDate, int expectedRunVersion, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
+  Task<WorkoutProgramDefaultDaysPreview> PreviewDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, CancellationToken cancellationToken = default);
+  Task<WorkoutProgramDefaultDaysPreview> ApplyDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, int expectedRunVersion, string expectedRevision, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
 }
 
 public sealed class WorkoutProgramStore(
@@ -358,6 +381,181 @@ public sealed class WorkoutProgramStore(
     {
       ScheduleChangeGate.Release();
     }
+  }
+
+  public async Task<WorkoutProgramDefaultDaysPreview> PreviewDefaultDaysChangeAsync(
+    Guid userProfileId,
+    Guid runId,
+    WeekdayFlags weekdays,
+    DateOnly effectiveDate,
+    DateOnly today,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await BuildDefaultDaysPreviewAsync(
+      context, userProfileId, runId, weekdays, effectiveDate, today, cancellationToken);
+  }
+
+  public async Task<WorkoutProgramDefaultDaysPreview> ApplyDefaultDaysChangeAsync(
+    Guid userProfileId,
+    Guid runId,
+    WeekdayFlags weekdays,
+    DateOnly effectiveDate,
+    DateOnly today,
+    int expectedRunVersion,
+    string expectedRevision,
+    PersistenceWriteOperation operation,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(expectedRevision);
+    await ScheduleChangeGate.WaitAsync(cancellationToken);
+    try
+    {
+      await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+      await PersistenceReceipts.ThrowIfCompletedAsync(context, operation, cancellationToken);
+      await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+      WorkoutProgramDefaultDaysPreview preview = await BuildDefaultDaysPreviewAsync(
+        context, userProfileId, runId, weekdays, effectiveDate, today, cancellationToken);
+      if (!preview.CanApply) throw new ArgumentException(preview.Message, nameof(weekdays));
+      if (preview.RunVersion != expectedRunVersion || !string.Equals(preview.Revision, expectedRevision, StringComparison.Ordinal))
+        throw new DbUpdateConcurrencyException("The training-day preview is no longer current. Review it again.");
+
+      WorkoutProgramRunEntity run = await context.WorkoutProgramRuns
+        .SingleAsync(candidate => candidate.Id == runId && candidate.UserProfileId == userProfileId, cancellationToken);
+      if (run.Version != expectedRunVersion)
+        throw new DbUpdateConcurrencyException("The training plan changed after the preview was shown.");
+
+      WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
+        .Include(revision => revision.Items)
+        .SingleAsync(revision => revision.Id == run.WorkoutProgramRevisionId, cancellationToken);
+      WorkoutProgramRevision revision = MapRevision(revisionEntity);
+      WorkoutProgramRun currentRun = MapRun(run);
+      IReadOnlyList<WorkoutProgramScheduleOverride> overrides = await LoadOverridesAsync(context, runId, cancellationToken);
+      IReadOnlyList<WorkoutProgramExtraOccurrence> extras = await LoadExtrasAsync(context, runId, cancellationToken);
+      IReadOnlyList<ScheduledWorkoutProgramItem> current = WorkoutProgramScheduleProjector.ProjectAll(
+        revision, currentRun, overrides, extras);
+      HashSet<Guid> impactedIds = preview.Impacts.Select(static impact => impact.ProgramItemId).ToHashSet();
+      HashSet<Guid> existingOverrideIds = overrides.Select(static item => item.ProgramItemId).ToHashSet();
+
+      foreach (ScheduledWorkoutProgramItem occurrence in current.Where(static item => !item.IsRepeat))
+      {
+        if (impactedIds.Contains(occurrence.Item.Id)) continue;
+        if (!existingOverrideIds.Contains(occurrence.Item.Id))
+          await UpsertOverrideAsync(context, runId, occurrence.Item.Id, occurrence.Date, false, operation.CreatedAtUtc, cancellationToken);
+      }
+      foreach (WorkoutProgramDefaultDaysImpact impact in preview.Impacts)
+        await UpsertOverrideAsync(context, runId, impact.ProgramItemId, impact.NewDate, false, operation.CreatedAtUtc, cancellationToken);
+
+      DateOnly validStart = NextSelectedDate(run.ScheduledStartDate!.Value, weekdays);
+      run.ScheduledStartDate = validStart;
+      run.ScheduledWeekdayMask = (int)weekdays;
+      run.Version++;
+      WorkoutProgramDefaultDaysPreview outcome = preview with { RunVersion = run.Version };
+      await PersistenceReceipts.SaveAsync(
+        context,
+        contextFactory,
+        operation with { OutcomeJson = JsonSerializer.Serialize(outcome, ScheduleReceiptJsonOptions) },
+        cancellationToken);
+      await transaction.CommitAsync(cancellationToken);
+      return outcome;
+    }
+    finally
+    {
+      ScheduleChangeGate.Release();
+    }
+  }
+
+  private static async Task<WorkoutProgramDefaultDaysPreview> BuildDefaultDaysPreviewAsync(
+    TreadmillRunnerDbContext context,
+    Guid userProfileId,
+    Guid runId,
+    WeekdayFlags weekdays,
+    DateOnly effectiveDate,
+    DateOnly today,
+    CancellationToken cancellationToken)
+  {
+    WorkoutProgramRunEntity runEntity = await context.WorkoutProgramRuns.AsNoTracking()
+      .SingleOrDefaultAsync(run => run.Id == runId && run.UserProfileId == userProfileId, cancellationToken)
+      ?? throw new KeyNotFoundException($"Training plan run {runId} was not found for this runner.");
+    WeekdayFlags currentWeekdays = (WeekdayFlags)runEntity.ScheduledWeekdayMask;
+    if (runEntity.Status != nameof(WorkoutProgramRunStatus.Active) || runEntity.ScheduledStartDate is null)
+      return Blocked("Only an active scheduled training plan can change its default days.");
+    if (effectiveDate < today) return Blocked("Choose today or a future effective date.");
+    if ((int)weekdays is <= 0 or > 127) return Blocked("Select valid training weekdays.");
+    int requiredDays = WorkoutProgramScheduleProjector.CountSelectedDays(currentWeekdays);
+    if (WorkoutProgramScheduleProjector.CountSelectedDays(weekdays) != requiredDays)
+      return Blocked($"Select exactly {requiredDays} training day(s).");
+    if (weekdays == currentWeekdays) return Blocked("Choose a different weekly training rhythm.");
+
+    WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
+      .Include(revision => revision.Items)
+      .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
+    WorkoutProgramRevision revision = MapRevision(revisionEntity);
+    WorkoutProgramRun run = MapRun(runEntity);
+    IReadOnlyList<WorkoutProgramScheduleOverride> overrides = await LoadOverridesAsync(context, runId, cancellationToken);
+    IReadOnlyList<WorkoutProgramExtraOccurrence> extras = await LoadExtrasAsync(context, runId, cancellationToken);
+    IReadOnlyList<ScheduledWorkoutProgramItem> effective = WorkoutProgramScheduleProjector.ProjectAll(
+      revision, run, overrides, extras);
+    HashSet<Guid> completed = (await LoadCompletedItemIdsAsync(context, runId, cancellationToken)).ToHashSet();
+    HashSet<Guid> explicitOverrides = overrides.Select(static item => item.ProgramItemId).ToHashSet();
+    ScheduledWorkoutProgramItem[] eligible = effective
+      .Where(item => !item.IsRepeat && item.Date >= effectiveDate &&
+        !completed.Contains(item.Item.Id) && !explicitOverrides.Contains(item.Item.Id))
+      .OrderBy(static item => item.Item.Position)
+      .ToArray();
+    if (eligible.Length == 0) return Blocked("No future generated sessions are eligible; completed runs and explicit exceptions are preserved.");
+
+    var impacts = new List<WorkoutProgramDefaultDaysImpact>(eligible.Length);
+    DateOnly firstEligibleDate = eligible[0].Date > effectiveDate ? eligible[0].Date : effectiveDate;
+    DateOnly cursor = NextSelectedDate(firstEligibleDate, weekdays);
+    foreach (ScheduledWorkoutProgramItem occurrence in eligible)
+    {
+      impacts.Add(new(occurrence.Item.Id, occurrence.Item.Position, occurrence.Date, cursor));
+      cursor = NextSelectedDate(cursor.AddDays(1), weekdays);
+    }
+    HashSet<Guid> affectedIds = impacts.Select(static impact => impact.ProgramItemId).ToHashSet();
+    HashSet<DateOnly> occupied = effective
+      .Where(item => item.IsRepeat || !affectedIds.Contains(item.Item.Id))
+      .Select(static item => item.Date)
+      .ToHashSet();
+    DateOnly[] collisions = impacts.Where(impact => occupied.Contains(impact.NewDate))
+      .Select(static impact => impact.NewDate).Distinct().Order().ToArray();
+    int preserved = effective.Count(item => item.IsRepeat || completed.Contains(item.Item.Id) || explicitOverrides.Contains(item.Item.Id) || item.Date < effectiveDate)
+      + overrides.Count(static item => item.IsSkipped);
+    string revisionValue = ComputeDefaultDaysRevision(
+      runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, impacts, collisions);
+    string message = $"{impacts.Count} future session(s) will move to the new weekly rhythm. {preserved} completed, earlier, repeated, or explicitly adjusted occurrence(s) stay unchanged.";
+    if (collisions.Length > 0) message += $" {collisions.Length} date(s) will contain more than one session; nothing is overwritten.";
+    return new(runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, true,
+      message, revisionValue, impacts, collisions, preserved);
+
+    WorkoutProgramDefaultDaysPreview Blocked(string reason) => new(
+      runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, false,
+      reason, string.Empty, [], [], 0);
+  }
+
+  private static DateOnly NextSelectedDate(DateOnly date, WeekdayFlags weekdays)
+  {
+    DateOnly candidate = date;
+    while (!weekdays.HasFlag(WorkoutProgramScheduleProjector.ToFlag(candidate.DayOfWeek)))
+      candidate = candidate.AddDays(1);
+    return candidate;
+  }
+
+  private static string ComputeDefaultDaysRevision(
+    Guid runId,
+    int version,
+    int currentMask,
+    int newMask,
+    DateOnly effectiveDate,
+    IReadOnlyList<WorkoutProgramDefaultDaysImpact> impacts,
+    IReadOnlyList<DateOnly> collisions)
+  {
+    string canonical = string.Join('|',
+      runId.ToString("N"), version, currentMask, newMask, effectiveDate.ToString("yyyy-MM-dd"),
+      string.Join(';', impacts.Select(static impact => $"{impact.ProgramItemId:N}:{impact.Position}:{impact.CurrentDate:yyyy-MM-dd}:{impact.NewDate:yyyy-MM-dd}")),
+      string.Join(';', collisions.Select(static date => date.ToString("yyyy-MM-dd"))));
+    return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
   }
 
   private static async Task<WorkoutProgramScheduleChangePreview> BuildSchedulePreviewAsync(

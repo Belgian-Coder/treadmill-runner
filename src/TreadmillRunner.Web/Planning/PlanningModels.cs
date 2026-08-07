@@ -303,7 +303,8 @@ public sealed record CalendarOptionView(
   bool IsRepeat = false,
   Guid? ExtraOccurrenceId = null,
   DateOnly? OriginalDate = null,
-  bool IsCompleted = false);
+  bool IsCompleted = false,
+  int? ProgramWeekdayMask = null);
 
 public sealed record CalendarDayView(DateOnly Date, IReadOnlyList<CalendarOptionView> Options);
 
@@ -359,6 +360,26 @@ public sealed record WorkoutProgramScheduleChangePreviewView(
   string Message,
   IReadOnlyList<WorkoutProgramScheduleImpactView> Impacts,
   IReadOnlyList<DateOnly> CollisionDates,
+  bool Replayed = false);
+
+public sealed record WorkoutProgramDefaultDaysImpactView(
+  Guid ProgramItemId,
+  int Position,
+  DateOnly CurrentDate,
+  DateOnly NewDate);
+
+public sealed record WorkoutProgramDefaultDaysPreviewView(
+  Guid RunId,
+  int RunVersion,
+  int CurrentWeekdayMask,
+  int NewWeekdayMask,
+  DateOnly EffectiveDate,
+  bool CanApply,
+  string Message,
+  string Revision,
+  IReadOnlyList<WorkoutProgramDefaultDaysImpactView> Impacts,
+  IReadOnlyList<DateOnly> CollisionDates,
+  int PreservedExceptionCount,
   bool Replayed = false);
 
 public sealed record CalendarSeriesView(

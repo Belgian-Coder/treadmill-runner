@@ -25,6 +25,24 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     int height)
   {
     var browserErrors = new ConcurrentQueue<string>();
+    object liveSocketSync = new();
+    int activeLiveSockets = 0;
+    int maximumLiveSockets = 0;
+    Page.WebSocket += (_, socket) =>
+    {
+      if (socket.Url.Contains("/hubs/live", StringComparison.OrdinalIgnoreCase))
+      {
+        lock (liveSocketSync)
+        {
+          activeLiveSockets++;
+          maximumLiveSockets = Math.Max(maximumLiveSockets, activeLiveSockets);
+        }
+        socket.Close += (_, _) =>
+        {
+          lock (liveSocketSync) activeLiveSockets--;
+        };
+      }
+    };
     Page.PageError += (_, error) => browserErrors.Enqueue(error);
     Page.Console += (_, message) =>
     {
@@ -54,8 +72,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
@@ -95,6 +113,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Technical session details", new() { Exact = true })).Not.ToHaveAttributeAsync("open", "");
     await Expect(Page.Locator(".site-header .global-hr-status")).ToHaveCountAsync(0);
     await Expect(Page.Locator(".control-header-actions .global-hr-status")).ToBeVisibleAsync();
+    lock (liveSocketSync) Assert.Equal(1, maximumLiveSockets);
     if (width == 440)
     {
       await Expect(Page.Locator(".control-header-actions .global-hr-status__copy")).ToBeVisibleAsync();
@@ -105,6 +124,35 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(fullscreenButton).ToHaveTextAsync("⛶");
     await Expect(Page.GetByLabel("Control safety notice", new() { Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByText("Physical movement detected", new() { Exact = true })).ToHaveCountAsync(0);
+
+    ILocator focusGroup = Page.GetByRole(AriaRole.Group, new() { Name = "Dashboard focus", Exact = true });
+    ILocator balancedFocus = focusGroup.GetByRole(AriaRole.Button, new() { Name = "Balanced", Exact = true });
+    ILocator chartFocus = focusGroup.GetByRole(AriaRole.Button, new() { Name = "Chart", Exact = true });
+    ILocator controlsFocus = focusGroup.GetByRole(AriaRole.Button, new() { Name = "Controls", Exact = true });
+    await Expect(focusGroup.GetByRole(AriaRole.Button)).ToHaveCountAsync(3);
+    await Expect(balancedFocus).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+      new System.Text.RegularExpressions.Regex("control-page--balanced"));
+    foreach (ILocator focusButton in new[] { balancedFocus, chartFocus, controlsFocus })
+    {
+      LocatorBoundingBoxResult? box = await focusButton.BoundingBoxAsync();
+      Assert.NotNull(box);
+      Assert.True(box.Width >= 44 && box.Height >= 44,
+        $"Dashboard focus target was smaller than 44px at the {viewport} viewport.");
+    }
+    await controlsFocus.ClickAsync();
+    await Expect(controlsFocus).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+      new System.Text.RegularExpressions.Regex("control-page--controls"));
+    await chartFocus.ClickAsync();
+    await Expect(chartFocus).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+      new System.Text.RegularExpressions.Regex("control-page--chart"));
+    if (width == 440)
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true }).ClickAsync();
+    else
+      await balancedFocus.ClickAsync();
+    await Expect(balancedFocus).ToHaveAttributeAsync("aria-pressed", "true");
 
     LocatorBoundingBoxResult? speedRail = await Page.Locator(".control-rail--speed").BoundingBoxAsync();
     LocatorBoundingBoxResult? center = await Page.GetByLabel("Live control center", new() { Exact = true }).BoundingBoxAsync();
@@ -196,6 +244,33 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       FullPage = false,
     });
 
+    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+    Directory.CreateDirectory(showcaseDirectory);
+    if (viewport is "desktop" or "iphone17-pro-max" or "iphone17-pro-max-landscape")
+    {
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(showcaseDirectory, $"tr-029-control-balanced-{viewport}.png"),
+        FullPage = false,
+      });
+    }
+    if (viewport == "desktop")
+    {
+      await controlsFocus.ClickAsync();
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(showcaseDirectory, "tr-029-control-controls-focus-desktop.png"),
+        FullPage = false,
+      });
+      await chartFocus.ClickAsync();
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(showcaseDirectory, "tr-029-control-chart-focus-desktop.png"),
+        FullPage = false,
+      });
+      await balancedFocus.ClickAsync();
+    }
+
     if (viewport == "iphone17-pro-max")
     {
       ILocator expandGraph = Page.GetByRole(AriaRole.Button, new() { Name = "Expand live graph", Exact = true });
@@ -213,6 +288,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       await Page.ScreenshotAsync(new PageScreenshotOptions
       {
         Path = Path.Combine(galleryDirectory, "control-chart-focused-iphone17-pro-max.png"),
+        FullPage = false,
+      });
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(showcaseDirectory, "tr-029-control-chart-focus-iphone17-pro-max.png"),
         FullPage = false,
       });
       await Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true }).ClickAsync();
@@ -362,8 +442,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
 
     ILocator start = Page.GetByRole(AriaRole.Button, new()
@@ -407,8 +487,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
     ILocator start = Page.GetByRole(AriaRole.Button, new()
     {
@@ -453,8 +533,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Enable controls", Exact = true }).ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
@@ -496,7 +576,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   private async Task<SeededPlan> SeedPlanAsync(string scenario)
   {
     string suffix = $"{scenario}-{Guid.NewGuid():N}"[..(scenario.Length + 9)];
-    string profileName = $"Control runner {suffix}";
+    string profileName = $"Alex {Guid.NewGuid():N}"[..10];
     string workoutName = $"Control run {suffix}";
     using HttpClient client = CreateClient();
     using HttpResponseMessage profileResponse = await client.PostAsJsonAsync("/api/planning/profiles", new

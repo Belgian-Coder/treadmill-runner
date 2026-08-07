@@ -1,0 +1,14 @@
+<div id="@BackdropId" class="schedule-dialog-backdrop @BackdropClass" @onclick="OnDismiss">
+    <section class="schedule-dialog @CssClass" role="dialog" aria-modal="true" aria-labelledby="@LabelledBy" @onclick:stopPropagation="true">
+        @ChildContent
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string BackdropId { get; set; } = default!;
+    [Parameter, EditorRequired] public string LabelledBy { get; set; } = default!;
+    [Parameter] public string? BackdropClass { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

@@ -30,3 +30,6 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-025 — Profile-owned plan scheduling and ordered progression](tr-025-profile-plan-scheduling.md)
 - [TR-026 — Workout summary and session explorer](tr-026-workout-summary-explorer.md)
 - [TR-027 — Plan schedule UX and global runner context](tr-027-plan-schedule-ux.md)
+- [TR-028 — Single browser connection and live-run confidence](tr-028-single-browser-connection.md)
+- [TR-029 — Whole-app responsive UX consolidation](tr-029-whole-app-ux.md)
+- [TR-030 — Reschedule future workouts after changing training days](tr-030-default-training-days.md)
