@@ -413,34 +413,40 @@ public static class CalendarPlanningEndpoints
       {
         WorkoutProgramRun run = programItem.Program.Run!;
         WorkoutProgramItem item = programItem.Scheduled.Item;
-        if (!revisionCache.TryGetValue(item.WorkoutRevisionId, out StoredWorkoutRevision? revision))
+        IEnumerable<(Guid RevisionId, int DisplayOrder)> choices = item.Alternatives
+          .Select(static alternative => (alternative.WorkoutRevisionId, alternative.DisplayOrder))
+          .Prepend((item.WorkoutRevisionId, 0));
+        foreach ((Guid revisionId, int displayOrder) in choices.Reverse())
         {
-          revision = await workoutStore.FindRevisionAsync(item.WorkoutRevisionId, cancellationToken);
-          if (revision is null) continue;
-          revisionCache.Add(item.WorkoutRevisionId, revision);
+          if (!revisionCache.TryGetValue(revisionId, out StoredWorkoutRevision? revision))
+          {
+            revision = await workoutStore.FindRevisionAsync(revisionId, cancellationToken);
+            if (revision is null) continue;
+            revisionCache.Add(revisionId, revision);
+          }
+          options.Insert(0, new CalendarOptionDto(
+            run.Id,
+            run.Id,
+            programItem.Program.Program.CurrentRevision.Name,
+            revisionId,
+            ReadWorkoutTitle(revision.DefinitionJson),
+            revision.RevisionNumber,
+            displayOrder,
+            IsSelected: !programItem.Scheduled.IsRepeat && item.Alternatives.Count == 0,
+            Source: "Program",
+            ProgramRunId: run.Id,
+            ProgramItemId: item.Id,
+            ProgramPosition: item.Position,
+            ProgramTotal: programItem.Program.Program.CurrentRevision.Items.Count,
+            WeekNumber: item.WeekNumber,
+            Phase: item.Phase,
+            ProgramRunVersion: run.Version,
+            IsRepeat: programItem.Scheduled.IsRepeat,
+            ExtraOccurrenceId: programItem.Scheduled.ExtraOccurrenceId,
+            OriginalDate: programItem.Scheduled.OriginalDate,
+            IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true,
+            ProgramWeekdayMask: (int?)run.Schedule?.Weekdays));
         }
-        options.Insert(0, new CalendarOptionDto(
-          run.Id,
-          run.Id,
-          programItem.Program.Program.CurrentRevision.Name,
-          item.WorkoutRevisionId,
-          ReadWorkoutTitle(revision.DefinitionJson),
-          revision.RevisionNumber,
-          0,
-          IsSelected: !programItem.Scheduled.IsRepeat,
-          Source: "Program",
-          ProgramRunId: run.Id,
-          ProgramItemId: item.Id,
-          ProgramPosition: item.Position,
-          ProgramTotal: programItem.Program.Program.CurrentRevision.Items.Count,
-          WeekNumber: item.WeekNumber,
-          Phase: item.Phase,
-          ProgramRunVersion: run.Version,
-          IsRepeat: programItem.Scheduled.IsRepeat,
-          ExtraOccurrenceId: programItem.Scheduled.ExtraOccurrenceId,
-          OriginalDate: programItem.Scheduled.OriginalDate,
-          IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true,
-          ProgramWeekdayMask: (int?)run.Schedule?.Weekdays));
       }
 
       days.Add(new CalendarDayDto(date, options));

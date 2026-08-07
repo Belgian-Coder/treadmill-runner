@@ -16,6 +16,7 @@ using System.Globalization;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Gateway.Updates;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Gateway.Household;
 using Microsoft.AspNetCore.DataProtection;
 using TreadmillRunner.Core.System;
 using TreadmillRunner.Web;
@@ -87,6 +88,10 @@ builder.Services.AddSingleton<IDatabaseIntegrityCoordinator>(static services =>
 // This startup pass intentionally runs before any background worker that writes the database.
 builder.Services.AddHostedService(static services => services.GetRequiredService<DatabaseIntegrityCoordinator>());
 builder.Services.AddScoped<IProfileStore, ProfileStore>();
+builder.Services.AddScoped<ILocalFirstExperienceStore, LocalFirstExperienceStore>();
+builder.Services.AddSingleton<LocalBackupWorker>();
+builder.Services.AddSingleton<ILocalBackupCoordinator>(static services => services.GetRequiredService<LocalBackupWorker>());
+builder.Services.AddHostedService(static services => services.GetRequiredService<LocalBackupWorker>());
 builder.Services.AddScoped<IWorkoutStore, WorkoutStore>();
 builder.Services.AddScoped<IWorkoutSetImportStore, WorkoutSetImportStore>();
 builder.Services.AddScoped<ICalendarStore, CalendarStore>();
@@ -310,6 +315,7 @@ app.MapBleDiagnostics();
 app.MapDeviceEnrollments();
 app.MapTreadmillMaintenance();
 app.MapProfilePlanning();
+app.MapLocalFirstExperience();
 app.MapWorkoutPlanning();
 app.MapWorkoutSetPlanning();
 app.MapCalendarPlanning();

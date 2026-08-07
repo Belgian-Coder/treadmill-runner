@@ -192,6 +192,10 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
     JsonElement[] revisions = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/workouts/{workoutId}/revisions"))!;
     Assert.Equal("distance", revisions[0].GetProperty("blocks")[0].GetProperty("goalKind").GetString());
     Assert.Equal("repeat", revisions[0].GetProperty("blocks")[1].GetProperty("kind").GetString());
+    Guid firstRevisionId = revisions[0].GetProperty("revisionId").GetGuid();
+    JsonElement revisionById = (await client.GetFromJsonAsync<JsonElement>($"/api/planning/workouts/revisions/{firstRevisionId}"));
+    Assert.Equal(workoutId, revisionById.GetProperty("workoutId").GetGuid());
+    Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/planning/workouts/revisions/{Guid.NewGuid()}")).StatusCode);
 
     Guid appendOperation = Guid.NewGuid();
     var appendRequest = new

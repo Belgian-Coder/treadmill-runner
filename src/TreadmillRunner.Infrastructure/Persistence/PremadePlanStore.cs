@@ -141,8 +141,25 @@ public sealed class PremadePlanStore(
           WeekNumber = session.WeekNumber,
           SessionNumber = session.SessionNumber,
           Phase = session.Phase,
+          Alternatives = session.AlternativeVariants.Select((alternative, index) =>
+          {
+            WorkoutDefinition alternativeDefinition = request.WorkoutsByKey[alternative.WorkoutKey];
+            WorkoutRevisionEntity alternativeRevision = revisionByHash[WorkoutDefinitionCanonicalizer.ComputeSha256(alternativeDefinition)];
+            return new WorkoutProgramItemAlternativeEntity
+            {
+              Id = Guid.NewGuid(),
+              WorkoutProgramItemId = Guid.Empty,
+              WorkoutRevisionId = alternativeRevision.Id,
+              DisplayOrder = index + 1,
+              Variant = alternative.Variant,
+            };
+          }).ToList(),
         });
       }
+
+      foreach (WorkoutProgramItemEntity item in itemEntities)
+        foreach (WorkoutProgramItemAlternativeEntity alternative in item.Alternatives)
+          alternative.WorkoutProgramItemId = item.Id;
 
       var coreRevision = new WorkoutProgramRevision(
         programId,
@@ -152,7 +169,9 @@ public sealed class PremadePlanStore(
         request.Template.Description,
         request.Template.Goal,
         itemEntities.Select(item => new WorkoutProgramItem(
-          item.Id, item.WorkoutRevisionId, item.Position, item.WeekNumber, item.SessionNumber, item.Phase)).ToArray(),
+          item.Id, item.WorkoutRevisionId, item.Position, item.WeekNumber, item.SessionNumber, item.Phase,
+          item.Alternatives.Select(alternative => new WorkoutProgramAlternative(
+            alternative.WorkoutRevisionId, alternative.DisplayOrder, alternative.Variant)).ToArray())).ToArray(),
         request.Template.Id,
         request.Template.Version,
         request.UserProfileId);

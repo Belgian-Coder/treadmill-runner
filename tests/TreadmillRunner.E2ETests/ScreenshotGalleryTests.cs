@@ -122,11 +122,37 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
 
       if (fileName == "calendar")
       {
-        await Page.GetByRole(AriaRole.Button, new() { Name = "New schedule", Exact = true }).ClickAsync();
-        await Expect(Page.Locator("label.field").Filter(new() { HasTextRegex = new Regex("^Primary workout") }).Locator("select"))
-          .ToContainTextAsync($"{GalleryScenario.FeaturedWorkoutName} · r1");
+        await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions
+        {
+          WaitUntil = WaitUntilState.NetworkIdle,
+        });
+        await PreparePopulatedScreenAsync(fileName, scenario);
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What do you want to plan?", Exact = true })).ToBeVisibleAsync();
+        await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
+        ILocator workoutResults = Page.GetByLabel("Available workouts", new() { Exact = true });
+        await Expect(workoutResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
+        await workoutResults.Locator(".schedule-source-card").ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Save schedule", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.Locator("body")).Not.ToContainTextAsync("@workout.CurrentRevisionNumber");
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Close editor", Exact = true }).ClickAsync();
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "calendar-planner-workout-tablet.png"),
+          FullPage = true,
+        });
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Training plan", Exact = true }).ClickAsync();
+        await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
+        ILocator planResults = Page.GetByLabel("Available training plans", new() { Exact = true });
+        await Expect(planResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
+        await planResults.Locator(".schedule-source-card").ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Schedule Stronger 10K", Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Starting this plan abandons the active plan", new() { Exact = false })).ToBeVisibleAsync();
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "calendar-planner-plan-tablet.png"),
+          FullPage = true,
+        });
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Close planner", Exact = true }).ClickAsync();
         await Page.ScreenshotAsync(new PageScreenshotOptions
         {
           Path = Path.Combine(galleryDirectory, "calendar-schedules-tablet.png"),
@@ -179,6 +205,33 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       }
       if (fileName == "calendar")
       {
+        await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions
+        {
+          WaitUntil = WaitUntilState.NetworkIdle,
+        });
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true }).ClickAsync();
+        await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
+        ILocator mobileWorkoutResults = Page.GetByLabel("Available workouts", new() { Exact = true });
+        await Expect(mobileWorkoutResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
+        await mobileWorkoutResults.Locator(".schedule-source-card").ClickAsync();
+        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone workout planner");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "calendar-planner-workout-iphone17-pro-max.png"),
+          FullPage = true,
+        });
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Training plan", Exact = true }).ClickAsync();
+        await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
+        ILocator mobilePlanResults = Page.GetByLabel("Available training plans", new() { Exact = true });
+        await Expect(mobilePlanResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
+        await mobilePlanResults.Locator(".schedule-source-card").ClickAsync();
+        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone plan planner");
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, "calendar-planner-plan-iphone17-pro-max.png"),
+          FullPage = true,
+        });
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Close planner", Exact = true }).ClickAsync();
         int moveMutationRequests = 0;
         Page.Request += (_, request) =>
         {
@@ -279,7 +332,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(1);
         await periodFilter.SelectOptionAsync("30");
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(0);
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Clear filters", Exact = true }).ClickAsync();
+        await Page.GetByLabel("Filter running history", new() { Exact = true })
+          .GetByRole(AriaRole.Button, new() { Name = "Clear filters", Exact = true }).ClickAsync();
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(3);
         await Page.GetByRole(AriaRole.Button, new() { Name = "Tests", Exact = true }).ClickAsync();
         await Expect(Page.Locator(".history-card")).ToHaveCountAsync(1);
@@ -532,7 +586,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       case "control":
         await Expect(Page.GetByLabel("Heart rate")).ToContainTextAsync("132");
         await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToContainTextAsync("4.5");
-        await Expect(Page.GetByLabel("Measured incline", new() { Exact = true })).ToContainTextAsync("0.5");
+        await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true }).Locator("article")).ToHaveCountAsync(3);
+        await Expect(Page.Locator(".control-rail--incline")).ToContainTextAsync("0.5");
         await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByLabel("Elapsed time axis", new() { Exact = true })).ToContainTextAsync("0:00");
         ILocator liveSpeedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
@@ -602,7 +657,10 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         Assert.Equal(2, await Page.Locator(".profile-row").CountAsync());
         await Expect(Page.Locator(".profile-row--active")).ToContainTextAsync("Marc");
         await Expect(Page.GetByLabel("Maximum heart rate", new() { Exact = true })).ToHaveValueAsync("206");
-        await Expect(Page.Locator(".advanced-settings")).Not.ToHaveAttributeAsync("open", "");
+        ILocator advancedSections = Page.Locator(".advanced-settings");
+        await Expect(advancedSections).ToHaveCountAsync(2);
+        await Expect(advancedSections.Nth(0)).Not.ToHaveAttributeAsync("open", "");
+        await Expect(advancedSections.Nth(1)).Not.ToHaveAttributeAsync("open", "");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("disabled by default");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToContainTextAsync("never starts the treadmill");
         break;
@@ -648,6 +706,50 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Page.SetViewportSizeAsync(440, 956);
     await AssertNoHorizontalOverflowAsync("workout details", "iPhone 17 Pro Max portrait");
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-026-workout-details-mobile.png"), FullPage = false });
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Calendar_and_history_items_open_complete_read_only_detail_sheets()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+    Directory.CreateDirectory(directory);
+
+    await Page.SetViewportSizeAsync(1440, 1000);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator calendarItem = Page.Locator(".calendar-option:visible").First;
+    await Expect(calendarItem).ToBeVisibleAsync();
+    await calendarItem.ClickAsync();
+    ILocator calendarDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(calendarDialog.GetByRole(AriaRole.Heading, new() { Name = "Planned graph", Exact = true })).ToBeVisibleAsync();
+    await Expect(calendarDialog.GetByRole(AriaRole.Heading, new() { Name = "All planned changes", Exact = true })).ToBeVisibleAsync();
+    Assert.True(await calendarDialog.GetByRole(AriaRole.Region, new() { Name = "All planned workout changes", Exact = true }).Locator("tbody tr").CountAsync() > 0);
+    await Expect(calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
+    await Expect(calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Send this session to Garmin", Exact = true })).ToBeVisibleAsync();
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-calendar-workout-details.png"), FullPage = false });
+    await calendarDialog.GetByRole(AriaRole.Button, new() { Name = "Close calendar workout details", Exact = true }).ClickAsync();
+    await Expect(calendarDialog).ToBeHiddenAsync();
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator historyItem = Page.Locator(".history-card").First;
+    await Expect(historyItem).ToBeVisibleAsync();
+    await historyItem.ClickAsync();
+    ILocator historyDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(historyDialog.GetByRole(AriaRole.Heading, new() { Name = "Live graph", Exact = true })).ToBeVisibleAsync();
+    await Expect(historyDialog.GetByRole(AriaRole.Heading, new() { Name = "All recorded changes", Exact = true })).ToBeVisibleAsync();
+    await Expect(historyDialog.GetByRole(AriaRole.Region, new() { Name = "All recorded session changes", Exact = true }).Locator("tbody tr")).Not.ToHaveCountAsync(0);
+    await Expect(historyDialog.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new Regex("^M"));
+    await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
+    await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })).ToHaveCountAsync(0);
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details.png"), FullPage = false });
+
+    await Page.SetViewportSizeAsync(440, 956);
+    await AssertNoHorizontalOverflowAsync("history session details", "iPhone 17 Pro Max portrait");
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details-mobile.png"), FullPage = false });
   }
 
   private async Task AssertNoHorizontalOverflowAsync(string fileName, string viewport)

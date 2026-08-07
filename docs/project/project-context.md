@@ -4,14 +4,14 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-06
+updated: 2026-08-07
 ---
 
 # Project context
 
 ## Purpose and current milestone
 
-Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-001 is the simulator foundation, TR-003/003B provide local planning and ordered programs, TR-004 provides the authoritative runner flow, TR-005 adds real read-only telemetry, TR-006B/C add fail-closed FTMS control, TR-007 provides recovery and signed UI updates, TR-015 adds origin-bound GitHub Releases and signed offline update import, TR-017 adds fast reuse and local reliability, TR-021 adds test-session hygiene, stale-client blocking, browser-local drafts, an installable network-only phone shell, and treadmill maintenance tracking, TR-022 makes an owner-confirmed update recover and reload its Operations page automatically, TR-023 adds guarded browser/BLE/service continuity, and TR-024 adds a profile-scoped immutable premade-plan catalog. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; Pause and vendor motion remain disabled.
+Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-031 adds profile-owned large-text/high-contrast displays and cues, tiered readiness, exact-revision comparisons, deterministic progression receipts, goals/trends, owner-selected verified backup rotation, combined local health, and confirmation-only sensor-assisted quick start. It adds no service provider, cloud account, or mandatory internet dependency. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; Pause and vendor motion remain disabled.
 
 ## Load first
 
@@ -47,6 +47,9 @@ When producing a Release WebAssembly publish, use `eng/clean-wasm-publish.ps1 -C
 - The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery.
 - A single controller lease renews every five seconds and expires after fifteen seconds; observers remain read-only. Browser reload can reclaim manual control without owning the workout timer.
 - History includes a data-derived planned/requested/measured chart, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note.
+- Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.
+- Completed sessions can be compared only with the same immutable workout revision. Local trend calculations exclude simulator/system-test sessions, and deterministic progression suggestions require an explicit acceptance/rejection receipt without changing a plan.
+- Owner-selected absolute local/UNC backup policies create rotating copies that pass an isolated full SQLite integrity check while the live session is idle. Operations combines service, database, BLE, storage, and release status.
 - Startup restores tracking only for a running hardware session with a bounded checkpoint and the same enrolled treadmill. Fresh movement must appear within 30 seconds and planned controls remain suspended until explicit resume; otherwise the session is interrupted. Volatile single-use intents cover accepted Start/Stop/speed/incline with explicit expiry/lease/session/generation guards and response-plus-fresh-telemetry confirmation. Unknown outcomes suspend automation and are never retried.
 - See [Simulated live session](live-session.md). Accelerated four-hour cadence/memory, 14,400 one-second SQLite writes, and loopback latency targets passed on the earlier baseline. Formal normal-Wi-Fi latency measurement is not a release check; command and telemetry timestamps remain available for diagnosing practical issues. Signed GitHub/local checks, expected-version staging, pinned-key offline bundle import, UI activation, health verification, and rollback are implemented. GitHub metadata is transport only; the installed public certificate and signed manifest remain authoritative.
 

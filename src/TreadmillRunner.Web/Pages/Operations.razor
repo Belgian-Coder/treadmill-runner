@@ -16,6 +16,34 @@
 
     @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
 
+    @if (operationsSummaryLoading)
+    {
+        <section class="panel-card operations-summary-card" aria-labelledby="operations-summary-title" aria-busy="true">
+            <div class="panel-heading"><div><p class="eyebrow">One local view</p><h2 id="operations-summary-title">Operations summary</h2></div><span>Loading</span></div>
+            <p class="muted" role="status">Loading local health components…</p>
+        </section>
+    }
+    else if (operationsSummary is { } summary)
+    {
+        <section class="panel-card operations-summary-card" aria-labelledby="operations-summary-title">
+            <div class="panel-heading"><div><p class="eyebrow">One local view</p><h2 id="operations-summary-title">Operations summary</h2></div><span>@summary.State</span></div>
+            <dl class="zone-list">
+                @foreach (HealthComponentModel component in summary.Components)
+                {
+                    <div><dt>@component.Id · @component.State</dt><dd>@component.Detail</dd></div>
+                }
+            </dl>
+        </section>
+    }
+    else
+    {
+        <section class="panel-card operations-summary-card" aria-labelledby="operations-summary-title">
+            <div class="panel-heading"><div><p class="eyebrow">One local view</p><h2 id="operations-summary-title">Operations summary</h2></div><span>Unavailable</span></div>
+            <p class="notice" role="status">The combined summary is temporarily unavailable. The detailed local checks below can still be reviewed.</p>
+            <button class="secondary-action" type="button" @onclick="LoadOperationsSummaryAsync">Try again</button>
+        </section>
+    }
+
     <section class="panel-card app-access-card" aria-labelledby="app-access-title">
         <div class="panel-heading">
             <div><p class="eyebrow">Private Wi-Fi</p><h2 id="app-access-title">Open on another device</h2></div>
@@ -62,9 +90,9 @@
     <section class="panel-card" aria-labelledby="database-health-title">
         <div class="panel-heading">
             <div><p class="eyebrow">Local data</p><h2 id="database-health-title">Database health</h2></div>
-            <span class="sensor-badge">@(databaseStatus?.State ?? "Loading")</span>
+            <span class="sensor-badge">@(databaseLoading ? "Loading" : databaseStatus?.State ?? "Unavailable")</span>
         </div>
-        <p role="status">@(databaseStatus?.Message ?? "Loading the latest integrity result…")</p>
+        <p role="status">@(databaseLoading ? "Loading the latest integrity result…" : databaseStatus?.Message ?? "Database health is temporarily unavailable. Use Check now to retry while the app is idle.")</p>
         @if (databaseStatus is { } database)
         {
             <dl class="zone-list" aria-label="Database integrity status">
@@ -87,10 +115,46 @@
                 <p class="field-hint">Passive WAL checkpoint, SQLite optimization, stale integrity-temp cleanup, full validation, and verified backup rotation. Destructive recovery is never automatic.</p>
             </details>
         }
-        <button class="secondary-action" type="button" @onclick="CheckDatabaseAsync" disabled="@databaseBusy">
+        <button class="secondary-action" type="button" @onclick="CheckDatabaseAsync" disabled="@(databaseBusy || databaseLoading)">
             @(databaseBusy ? "Checking…" : "Check now")
         </button>
         <p class="field-hint">Runs only while idle. Safe maintenance is limited to integrity checks, a passive WAL checkpoint, optimization, stale temporary-file cleanup, and a verified last-known-good backup.</p>
+    </section>
+
+    <section class="panel-card backup-policy-card" aria-labelledby="local-backup-title" aria-busy="@(backupLoading || backupBusy)">
+        <div class="panel-heading"><div><p class="eyebrow">Rotating recovery copies</p><h2 id="local-backup-title">Local backup policy</h2></div><span>Local / UNC only</span></div>
+        <div class="form-grid">
+            <label class="field field--wide">Destination folder<input @bind="backupDestination" placeholder="D:\Backups\TreadmillRunner or \\server\share" disabled="@backupLoading" /></label>
+            <label class="field">Backup interval (hours)<input type="number" min="1" max="168" @bind="backupIntervalHours" disabled="@backupLoading" /></label>
+            <label class="field">Copies to retain<input type="number" min="2" max="60" @bind="backupRetentionCount" disabled="@backupLoading" /></label>
+            <label class="check-field"><input type="checkbox" @bind="backupEnabled" disabled="@backupLoading" /> <span>Scheduled backups enabled</span></label>
+        </div>
+        <div class="controls-card backup-policy-actions">
+            <button class="secondary-action" type="button" @onclick="SaveBackupPolicyAsync" disabled="@(backupBusy || backupLoading)">@(backupBusy ? "Working…" : "Save policy")</button>
+            <button class="secondary-action" type="button" @onclick="VerifyBackupNowAsync" disabled="@(backupBusy || backupLoading || backupPolicyId is null || !backupEnabled)">Verify now</button>
+        </div>
+        @if (backupLoading)
+        {
+            <p class="muted" role="status">Loading the saved local backup policy…</p>
+        }
+        else if (backupPolicyId is null)
+        {
+            <p class="field-hint">Enter an absolute local or UNC destination and save the policy before verification is available.</p>
+        }
+        else if (!backupEnabled)
+        {
+            <p class="field-hint">Enable and save scheduled backups before creating a verified recovery copy.</p>
+        }
+        <p class="field-hint">Each copy is opened separately and receives a full SQLite integrity check before rotation. Production data is never replaced by a verification drill.</p>
+        @if (backupVerifications.FirstOrDefault() is { } verification)
+        {
+            <dl class="zone-list">
+                <div><dt>Last result</dt><dd>@verification.Status</dd></div>
+                <div><dt>Completed</dt><dd>@FormatTimestamp(verification.CompletedAtUtc)</dd></div>
+                <div><dt>Size</dt><dd>@(verification.BackupBytes / 1024d / 1024d).ToString("0.00") MiB</dd></div>
+                <div><dt>Detail</dt><dd>@verification.Detail</dd></div>
+            </dl>
+        }
     </section>
 
     <details class="panel-card advanced-settings">
@@ -109,8 +173,9 @@
         <summary>Restore from backup</summary>
         <p>Select a TreadmillRunner backup (.trb; legacy .db is also accepted). Nothing is replaced until its preview is shown and you confirm.</p>
         <label class="file-field">Backup file
-            <InputFile OnChange="PreviewRestoreAsync" accept=".trb,.db,application/vnd.treadmillrunner.backup,application/vnd.sqlite3" />
+            <InputFile OnChange="PreviewRestoreAsync" accept=".trb,.db,application/vnd.treadmillrunner.backup,application/vnd.sqlite3" disabled="@restoreBusy" />
         </label>
+        @if (restoreBusy) { <p class="muted" role="status">@(restorePreview is null ? "Checking the selected backup…" : "Restoring and validating the local database…")</p> }
         @if (restorePreview is { } preview)
         {
             <dl class="zone-list">
@@ -119,7 +184,8 @@
                 <div><dt>Workouts</dt><dd>@preview.GetProperty("workoutCount").GetInt32()</dd></div>
                 <div><dt>Sessions</dt><dd>@preview.GetProperty("sessionCount").GetInt32()</dd></div>
             </dl>
-            <button class="danger-action touch-action" type="button" @onclick="ConfirmRestoreAsync">Confirm restore</button>
+            <p class="field-hint">Confirming replaces the local database with this reviewed backup. A pre-restore copy is retained for rollback if validation fails.</p>
+            <button class="danger-action touch-action" type="button" @onclick="ConfirmRestoreAsync" disabled="@restoreBusy">@(restoreBusy ? "Restoring…" : "Restore this backup")</button>
         }
     </details>
 
@@ -185,7 +251,20 @@
     private CancellationTokenSource? activationRecoveryCancellation;
     private bool disposed;
     private DatabaseIntegrityStatusModel? databaseStatus;
+    private bool databaseLoading = true;
     private bool databaseBusy;
+    private OperationsSummaryModel? operationsSummary;
+    private bool operationsSummaryLoading = true;
+    private Guid? backupPolicyId;
+    private int backupPolicyVersion;
+    private string backupDestination = string.Empty;
+    private int backupIntervalHours = 24;
+    private int backupRetentionCount = 7;
+    private bool backupEnabled;
+    private bool backupBusy;
+    private bool backupLoading = true;
+    private IReadOnlyList<BackupVerificationModel> backupVerifications = [];
+    private bool restoreBusy;
 
     private AppAccessCandidateModel? SelectedAccessCandidate => access?.Candidates
         .FirstOrDefault(candidate => candidate.Id == selectedAccessCandidateId) ?? access?.Candidates.FirstOrDefault();
@@ -195,19 +274,105 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync());
+        await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync(), LoadBackupPolicyAsync(), LoadOperationsSummaryAsync());
+    }
+
+    private async Task LoadOperationsSummaryAsync()
+    {
+        operationsSummaryLoading = true;
+        try { operationsSummary = await Http.GetFromJsonAsync<OperationsSummaryModel>("api/local-first/operations-summary"); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { operationsSummary = null; }
+        finally { operationsSummaryLoading = false; }
+    }
+
+    private async Task LoadBackupPolicyAsync()
+    {
+        backupLoading = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("api/local-first/backup-policy");
+            if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NoContent)
+            {
+                message = "Local backup status is temporarily unavailable.";
+                return;
+            }
+            if (response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NoContent)
+            {
+                BackupPolicyModel? saved = await response.Content.ReadFromJsonAsync<BackupPolicyModel>();
+                if (saved is not null)
+                {
+                    backupPolicyId = saved.Id;
+                    backupPolicyVersion = saved.Version;
+                    backupDestination = saved.Policy.DestinationPath;
+                    backupIntervalHours = saved.Policy.IntervalHours;
+                    backupRetentionCount = saved.Policy.RetentionCount;
+                    backupEnabled = saved.Policy.Enabled;
+                }
+            }
+            backupVerifications = await Http.GetFromJsonAsync<BackupVerificationModel[]>("api/local-first/backup-verifications?take=10") ?? [];
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { message = "Local backup status is temporarily unavailable."; }
+        finally { backupLoading = false; }
+    }
+
+    private async Task SaveBackupPolicyAsync()
+    {
+        backupBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PutAsJsonAsync("api/local-first/backup-policy", new
+            {
+                Id = backupPolicyId,
+                DestinationPath = backupDestination,
+                IntervalHours = backupIntervalHours,
+                RetentionCount = backupRetentionCount,
+                Enabled = backupEnabled,
+                ExpectedVersion = backupPolicyId is null ? (int?)null : backupPolicyVersion,
+            });
+            if (response.IsSuccessStatusCode)
+            {
+                BackupPolicyModel? saved = await response.Content.ReadFromJsonAsync<BackupPolicyModel>();
+                if (saved is not null) { backupPolicyId = saved.Id; backupPolicyVersion = saved.Version; }
+                message = backupEnabled ? "Local backup policy saved and scheduled backups enabled." : "Local backup policy saved with scheduled backups disabled.";
+                await LoadOperationsSummaryAsync();
+            }
+            else message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                ? "The backup policy changed elsewhere. Reload Operations and try again."
+                : "The backup policy was rejected. Use an absolute local or UNC folder, 1–168 hours, and 2–60 copies.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            message = "The backup policy could not reach the local gateway. No changes were saved.";
+        }
+        finally { backupBusy = false; }
+    }
+
+    private async Task VerifyBackupNowAsync()
+    {
+        backupBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/local-first/backup-verifications", new { });
+            message = response.IsSuccessStatusCode ? "A verified local recovery copy was created." : "Backup verification is waiting for an idle session or writable destination.";
+            await LoadBackupPolicyAsync();
+            await LoadOperationsSummaryAsync();
+        }
+        catch (HttpRequestException) { message = "Backup verification could not reach the local gateway."; }
+        finally { backupBusy = false; }
     }
 
     private async Task LoadDatabaseStatusAsync()
     {
+        databaseLoading = true;
         try
         {
             databaseStatus = await Http.GetFromJsonAsync<DatabaseIntegrityStatusModel>("api/operations/database/status");
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
             databaseStatus = null;
         }
+        finally { databaseLoading = false; }
     }
 
     private async Task CheckDatabaseAsync()
@@ -267,31 +432,52 @@
     private async Task PreviewRestoreAsync(InputFileChangeEventArgs args)
     {
         restorePreview = null;
-        await using Stream input = args.File.OpenReadStream(MaximumRestoreBytes);
-        using var content = new StreamContent(input);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.sqlite3");
-        content.Headers.ContentLength = args.File.Size;
-        using HttpResponseMessage response = await Http.PostAsync("api/operations/restore/preview", content);
-        if (response.IsSuccessStatusCode)
+        restoreBusy = true;
+        try
         {
-            restorePreview = await response.Content.ReadFromJsonAsync<JsonElement>();
-            message = "Restore preview is ready. Review the counts before confirming.";
+            await using Stream input = args.File.OpenReadStream(MaximumRestoreBytes);
+            using var content = new StreamContent(input);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.sqlite3");
+            content.Headers.ContentLength = args.File.Size;
+            using HttpResponseMessage response = await Http.PostAsync("api/operations/restore/preview", content);
+            if (response.IsSuccessStatusCode)
+            {
+                restorePreview = await response.Content.ReadFromJsonAsync<JsonElement>();
+                message = "Restore preview is ready. Review the identity and counts before replacing local data.";
+            }
+            else message = "The selected backup could not be previewed. No local data was changed.";
         }
-        else message = "The selected backup could not be previewed.";
+        catch (Exception exception) when (exception is IOException or HttpRequestException or TaskCanceledException or JsonException or ArgumentException)
+        {
+            message = args.File.Size > MaximumRestoreBytes
+                ? "The selected backup is larger than the 256 MiB restore limit. No local data was changed."
+                : "The selected backup could not be read or the local gateway is unavailable. No local data was changed.";
+        }
+        finally { restoreBusy = false; }
     }
 
     private async Task ConfirmRestoreAsync()
     {
         if (restorePreview is not { } preview) return;
-        using HttpResponseMessage response = await Http.PostAsJsonAsync("api/operations/restore/confirm", new
+        restoreBusy = true;
+        try
         {
-            token = preview.GetProperty("token").GetGuid(),
-            confirmation = "RESTORE",
-        });
-        message = response.IsSuccessStatusCode
-            ? "Restore completed and the live database passed integrity validation."
-            : "Restore failed; the pre-restore database was retained or rolled back.";
-        restorePreview = null;
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/operations/restore/confirm", new
+            {
+                token = preview.GetProperty("token").GetGuid(),
+                confirmation = "RESTORE",
+            });
+            message = response.IsSuccessStatusCode
+                ? "Restore completed and the live database passed integrity validation."
+                : "Restore failed; the pre-restore database was retained or rolled back.";
+            if (response.IsSuccessStatusCode) restorePreview = null;
+            await Task.WhenAll(LoadDatabaseStatusAsync(), LoadOperationsSummaryAsync());
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
+        {
+            message = "Restore confirmation was interrupted. The gateway retains or rolls back to the pre-restore database; check database health before trying again.";
+        }
+        finally { restoreBusy = false; }
     }
 
     private async Task CheckUpdateAsync()
@@ -548,6 +734,12 @@
         DateTimeOffset? NextCheckAtUtc,
         bool RecoveryRequired,
         IReadOnlyList<string> Issues);
+
+    private sealed record BackupPolicyValue(string DestinationPath, int IntervalHours, int RetentionCount, bool Enabled);
+    private sealed record BackupPolicyModel(Guid Id, BackupPolicyValue Policy, int Version, DateTimeOffset UpdatedAtUtc);
+    private sealed record BackupVerificationModel(Guid Id, Guid PolicyId, string BackupPath, string Status, string Detail, long BackupBytes, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc);
+    private sealed record HealthComponentModel(string Id, string State, string Detail);
+    private sealed record OperationsSummaryModel(string State, IReadOnlyList<HealthComponentModel> Components);
 
     private const long UpdateManagerMaximumBundleBytes = (1024L * 1024 * 1024) + (2L * 1024 * 1024);
 

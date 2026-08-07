@@ -87,7 +87,7 @@
                     @foreach (WorkoutSummaryView workout in FilteredWorkouts)
                     {
                         <SummaryRow CssClass="workout-card">
-                            <div><p class="eyebrow">Revision @workout.CurrentRevisionNumber</p><h3>@workout.Name</h3></div>
+                            <div><p class="eyebrow">Revision @workout.CurrentRevisionNumber</p><h3><button class="workout-card__details-link" type="button" @onclick="() => OpenWorkoutDetailsAsync(workout)">@workout.Name</button></h3></div>
                             <p class="workout-description">@(string.IsNullOrWhiteSpace(workout.Description) ? "No description yet." : workout.Description)</p>
                             <div class="workout-card__labels" aria-label="Workout type">
                                 <span>@workout.StructureLabel</span>
@@ -140,6 +140,7 @@
                             <button type="button" aria-pressed="@(programCategory == category ? "true" : "false")" @onclick="() => programCategory = category">@category</button>
                         }
                     </div>
+                    <button class="secondary-action" type="button" @onclick="ClearProgramFilters" disabled="@(!HasProgramFilters)">Clear filters</button>
                 </div>
 
                 @if (loading)
@@ -201,7 +202,13 @@
                                                             <ol>
                                                                 @foreach (WorkoutProgramItemView item in week.OrderBy(item => item.SessionNumber).ThenBy(item => item.Position))
                                                                 {
-                                                                    <li><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></li>
+                                                                    <li>
+                                                                        <button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item)"><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button>
+                                                                        @foreach (WorkoutProgramAlternativeView alternative in item.Alternatives ?? [])
+                                                                        {
+                                                                            <button class="program-session-detail program-session-detail--alternative" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item, alternative)"><span>Alternative</span><strong>@alternative.WorkoutName</strong><small>@DurationLabel(alternative.DurationMinutes)</small></button>
+                                                                        }
+                                                                    </li>
                                                                 }
                                                             </ol>
                                                         </details>
@@ -215,7 +222,7 @@
                                         <ol class="program-session-summary-list">
                                             @foreach (WorkoutProgramItemView item in program.Items.OrderBy(static item => item.Position))
                                             {
-                                                <li><span>Session @item.Position</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></li>
+                                                <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item)"><span>Session @item.Position</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button></li>
                                             }
                                         </ol>
                                     }
@@ -381,6 +388,7 @@
                     <label class="field">Sessions per week
                         <select @bind="premadeFrequency"><option value="All">Any frequency</option><option value="3">3 per week</option><option value="4">4 per week</option></select>
                     </label>
+                    <button class="secondary-action" type="button" @onclick="ClearPremadeFilters" disabled="@(!HasPremadeFilters)">Clear filters</button>
                 </div>
                 @if (loading)
                 {
@@ -434,25 +442,32 @@
     }
 </div>
 
-@if (selectedWorkoutDetails is not null)
+@if (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
 {
     <DetailSheet BackdropId="workout-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog" LabelledBy="workout-details-title" OnDismiss="CloseWorkoutDetailsAsync">
             <header class="workout-details-header">
                 <div>
-                    <p class="eyebrow">@selectedWorkoutDetails.StructureLabel · Revision @selectedWorkoutDetails.CurrentRevisionNumber</p>
-                    <h2 id="workout-details-title">@selectedWorkoutDetails.Name</h2>
+                    <p class="eyebrow">@DetailEyebrow</p>
+                    <h2 id="workout-details-title">@DetailName</h2>
                 </div>
                 <button class="icon-action" type="button" aria-label="Close workout details" autofocus @onclick="CloseWorkoutDetailsAsync">×</button>
             </header>
-            <p class="workout-description">@(string.IsNullOrWhiteSpace(selectedWorkoutDetails.Description) ? "No description yet." : selectedWorkoutDetails.Description)</p>
-            <dl class="workout-details-overview" aria-label="Workout overview">
+            <p class="workout-description">@DetailDescription</p>
+            @if (selectedWorkoutDetails is not null)
+            {
+              <dl class="workout-details-overview" aria-label="Workout overview">
                 <div><dt>Structure</dt><dd>@selectedWorkoutDetails.StructureLabel</dd></div>
                 <div><dt>Goal</dt><dd>@selectedWorkoutDetails.GoalLabel</dd></div>
                 <div><dt>Expanded segments</dt><dd>@selectedWorkoutDetails.ExpandedStepCount</dd></div>
                 <div><dt>Speed control</dt><dd>@selectedWorkoutDetails.SpeedLabel</dd></div>
                 <div><dt>Incline</dt><dd>@selectedWorkoutDetails.InclineLabel</dd></div>
                 <div><dt>Heart rate</dt><dd>@(selectedWorkoutDetails.UsesHeartRate ? "Used for speed control" : "Not required")</dd></div>
-            </dl>
+              </dl>
+            }
+            else
+            {
+              <dl class="workout-details-overview" aria-label="Plan workout overview"><div><dt>Source</dt><dd>Training plan</dd></div><div><dt>Revision</dt><dd>@selectedDetailRevisionNumber</dd></div><div><dt>Action</dt><dd>Viewing only</dd></div></dl>
+            }
             <section class="workout-details-structure" aria-labelledby="workout-structure-title">
                 <div class="panel-heading"><div><h3 id="workout-structure-title">Workout structure</h3><span class="field-help">Repeats stay grouped so the pattern remains easy to scan.</span></div></div>
                 @if (workoutDetailsLoading)
@@ -466,11 +481,15 @@
                 else if (selectedWorkoutRevision is not null)
                 {
                     <WorkoutStructureSummary Blocks="selectedWorkoutRevision.Blocks" />
+                    <WorkoutPlanDetails Blocks="selectedWorkoutRevision.Blocks" IdPrefix="workout-library-detail" />
                 }
             </section>
             <div class="card-actions workout-details-actions">
                 <button class="secondary-action" type="button" @onclick="CloseWorkoutDetailsAsync">Close</button>
-                <a class="primary-action" href="@RevisionHref(selectedWorkoutDetails)">Create new revision</a>
+                @if (selectedWorkoutDetails is not null)
+                {
+                    <a class="primary-action" href="@RevisionHref(selectedWorkoutDetails)">Create new revision</a>
+                }
             </div>
     </DetailSheet>
 }
@@ -517,11 +536,22 @@
     private PremadePlanPreviewView? premadePreview;
     private bool premadeBusy;
     private WorkoutSummaryView? selectedWorkoutDetails;
+    private string? selectedPlanWorkoutName;
+    private string? selectedPlanWorkoutContext;
+    private Guid? selectedDetailRevisionId;
+    private int selectedDetailRevisionNumber;
     private WorkoutRevisionView? selectedWorkoutRevision;
     private bool workoutDetailsLoading;
     private string? workoutDetailsError;
     private bool openWorkoutDetailsPending;
     private DotNetObjectReference<Workouts>? workoutDetailsModalReference;
+    private string DetailName => selectedWorkoutDetails?.Name ?? selectedPlanWorkoutName ?? "Workout";
+    private string DetailEyebrow => selectedWorkoutDetails is not null
+        ? $"{selectedWorkoutDetails.StructureLabel} · Revision {selectedWorkoutDetails.CurrentRevisionNumber}"
+        : $"{selectedPlanWorkoutContext} · Revision {selectedDetailRevisionNumber}";
+    private string DetailDescription => selectedWorkoutDetails is not null
+        ? (string.IsNullOrWhiteSpace(selectedWorkoutDetails.Description) ? "No description yet." : selectedWorkoutDetails.Description)
+        : "Immutable workout choice from this training-plan session. Opening these details does not select or start it.";
     private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
     private int programScheduleWeekdayMask = 37;
     private string ActiveProfileName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "selected runner";
@@ -573,6 +603,9 @@
         .ToArray();
 
     private bool HasFilters => !string.IsNullOrWhiteSpace(searchText) || durationFilter != "all" || structureFilter != "all" || sortOrder != "updated";
+    private bool HasProgramFilters => !string.IsNullOrWhiteSpace(programSearch) || programCategory != "All";
+    private bool HasPremadeFilters => !string.IsNullOrWhiteSpace(premadeSearch) || premadeGoal != "All" ||
+        premadeExperience != "All" || premadeHeartRate != "All" || premadeDuration != "All" || premadeFrequency != "All";
     private bool CanSaveProgram => !string.IsNullOrWhiteSpace(programDraft.Name) && !string.IsNullOrWhiteSpace(programDraft.Category) && programDraft.Items.Count > 0;
     private string ProgramDurationLabel
     {
@@ -591,7 +624,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (openWorkoutDetailsPending && selectedWorkoutDetails is not null)
+        if (openWorkoutDetailsPending && (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null))
         {
             openWorkoutDetailsPending = false;
             workoutDetailsModalReference = DotNetObjectReference.Create(this);
@@ -702,6 +735,16 @@
         _ => true,
     };
     private void ClearFilters() { searchText = string.Empty; durationFilter = "all"; structureFilter = "all"; sortOrder = "updated"; }
+    private void ClearProgramFilters() { programSearch = string.Empty; programCategory = "All"; }
+    private void ClearPremadeFilters()
+    {
+        premadeSearch = string.Empty;
+        premadeGoal = "All";
+        premadeExperience = "All";
+        premadeHeartRate = "All";
+        premadeDuration = "All";
+        premadeFrequency = "All";
+    }
 
     private async Task NewProgram()
     {
@@ -907,6 +950,10 @@
     private async Task OpenWorkoutDetailsAsync(WorkoutSummaryView workout)
     {
         selectedWorkoutDetails = workout;
+        selectedPlanWorkoutName = null;
+        selectedPlanWorkoutContext = null;
+        selectedDetailRevisionId = workout.CurrentRevisionId;
+        selectedDetailRevisionNumber = workout.CurrentRevisionNumber;
         selectedWorkoutRevision = null;
         workoutDetailsError = null;
         workoutDetailsLoading = true;
@@ -915,15 +962,58 @@
         await LoadWorkoutDetailsAsync();
     }
 
+    private async Task OpenProgramWorkoutDetailsAsync(
+        string workoutName,
+        Guid workoutRevisionId,
+        int workoutRevisionNumber,
+        string context)
+    {
+        selectedWorkoutDetails = null;
+        selectedPlanWorkoutName = workoutName;
+        selectedPlanWorkoutContext = context;
+        selectedDetailRevisionId = workoutRevisionId;
+        selectedDetailRevisionNumber = workoutRevisionNumber;
+        selectedWorkoutRevision = null;
+        workoutDetailsError = null;
+        workoutDetailsLoading = true;
+        openWorkoutDetailsPending = true;
+        await InvokeAsync(StateHasChanged);
+        await LoadWorkoutDetailsAsync();
+    }
+
+    private Task OpenProgramWorkoutDetailsAsync(WorkoutProgramView program, WorkoutProgramItemView item) =>
+        OpenProgramWorkoutDetailsAsync(
+            item.WorkoutName,
+            item.WorkoutRevisionId,
+            item.WorkoutRevisionNumber,
+            $"{program.Name} · Week {item.WeekNumber ?? 1} · Session {item.SessionNumber ?? item.Position}");
+
+    private Task OpenProgramWorkoutDetailsAsync(
+        WorkoutProgramView program,
+        WorkoutProgramItemView item,
+        WorkoutProgramAlternativeView alternative) =>
+        OpenProgramWorkoutDetailsAsync(
+            alternative.WorkoutName,
+            alternative.WorkoutRevisionId,
+            alternative.WorkoutRevisionNumber,
+            $"{program.Name} · Week {item.WeekNumber ?? 1} · Session {item.SessionNumber ?? item.Position} · {VariantLabel(alternative.Variant)}");
+
     private async Task LoadWorkoutDetailsAsync()
     {
-        if (selectedWorkoutDetails is not { } workout) return;
+        if (selectedDetailRevisionId is not { } revisionId) return;
         workoutDetailsLoading = true;
         workoutDetailsError = null;
         try
         {
-            List<WorkoutRevisionView> revisions = await Http.GetFromJsonAsync<List<WorkoutRevisionView>>($"api/planning/workouts/{workout.Id:D}/revisions") ?? [];
-            selectedWorkoutRevision = revisions.FirstOrDefault(revision => revision.RevisionId == workout.CurrentRevisionId);
+            if (selectedWorkoutDetails is { } workout)
+            {
+                List<WorkoutRevisionView> revisions = await Http.GetFromJsonAsync<List<WorkoutRevisionView>>($"api/planning/workouts/{workout.Id:D}/revisions") ?? [];
+                selectedWorkoutRevision = revisions.FirstOrDefault(revision => revision.RevisionId == revisionId);
+            }
+            else
+            {
+                selectedWorkoutRevision = await Http.GetFromJsonAsync<WorkoutRevisionView>($"api/planning/workouts/revisions/{revisionId:D}");
+            }
             if (selectedWorkoutRevision is null)
             {
                 workoutDetailsError = "The current workout revision is no longer available. Reload the library and try again.";
@@ -946,6 +1036,10 @@
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         workoutDetailsModalReference = null;
         selectedWorkoutDetails = null;
+        selectedPlanWorkoutName = null;
+        selectedPlanWorkoutContext = null;
+        selectedDetailRevisionId = null;
+        selectedDetailRevisionNumber = 0;
         selectedWorkoutRevision = null;
         workoutDetailsError = null;
         workoutDetailsLoading = false;
@@ -956,6 +1050,10 @@
     {
         workoutDetailsModalReference = null;
         selectedWorkoutDetails = null;
+        selectedPlanWorkoutName = null;
+        selectedPlanWorkoutContext = null;
+        selectedDetailRevisionId = null;
+        selectedDetailRevisionNumber = 0;
         selectedWorkoutRevision = null;
         workoutDetailsError = null;
         workoutDetailsLoading = false;
@@ -1062,6 +1160,12 @@
         $"{program.Category} plan. Next: {NextWorkoutLabel(program)}. {ProgramProgress(program)}.";
     private static double ProgramProgressPercent(WorkoutProgramView program) => program.Items.Count == 0 ? 0 : Math.Clamp((program.CompletedItemCount + program.SkippedItemCount) * 100d / program.Items.Count, 0, 100);
     private static string DurationLabel(double? minutes) => minutes is null ? "Distance" : $"{minutes:0} min";
+    private static string VariantLabel(string variant) => variant switch
+    {
+        "hr-alternative" => "Heart-rate option",
+        "fixed-fallback" => "Fixed-speed option",
+        _ => variant.Replace('-', ' '),
+    };
     private static string RevisionHref(WorkoutSummaryView workout) => $"/workouts/new?workoutId={workout.Id:D}&name={Uri.EscapeDataString(workout.Name)}";
 
     private sealed class ProgramDraft
@@ -1081,7 +1185,7 @@
     {
         programDraftDebounce?.Cancel();
         programDraftDebounce?.Dispose();
-        if (selectedWorkoutDetails is not null)
+        if (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
             catch (JSDisconnectedException) { }

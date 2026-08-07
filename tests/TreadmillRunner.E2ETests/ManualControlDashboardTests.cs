@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Playwright;
 using Microsoft.Playwright.Xunit;
 
@@ -15,6 +16,154 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     { "tablet", 1180, 820 },
     { "desktop", 1920, 1080 },
   };
+
+  public static TheoryData<string, string, int, int> ReadabilityViewports => new()
+  {
+    { "LargeText", "phone-portrait", 390, 844 },
+    { "LargeText", "phone-landscape", 844, 390 },
+    { "LargeText", "tablet", 1180, 820 },
+    { "LargeText", "desktop", 1920, 1080 },
+    { "HighContrast", "phone-portrait", 390, 844 },
+    { "HighContrast", "phone-landscape", 844, 390 },
+    { "HighContrast", "tablet", 1180, 820 },
+    { "HighContrast", "desktop", 1920, 1080 },
+  };
+
+  [Theory]
+  [MemberData(nameof(ReadabilityViewports))]
+  [Trait("Category", "Browser")]
+  public async Task Runner_readability_preferences_render_without_overflow(
+    string displayStyle,
+    string viewport,
+    int width,
+    int height)
+  {
+    await Page.SetViewportSizeAsync(width, height);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync($"{displayStyle}-{viewport}");
+    await SavePreferencesAsync(plan.ProfileId, displayStyle);
+
+    try
+    {
+      await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await Page.SelectActiveRunnerAsync(plan.ProfileName);
+      await Page.OpenRunChoicesAsync();
+      await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
+      await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
+        .ToBeVisibleAsync();
+      await SetPhysicalMotionAsync(1.2, 0.5);
+
+      await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+      await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })).ToBeEnabledAsync();
+      await Expect(Page.Locator(".control-command-status")).Not.ToHaveTextAsync("Waiting for an active session.");
+      await SetSimulatedHeartRateAsync(132);
+      await Expect(Page.Locator(".control-header-actions .global-hr-status")).ToContainTextAsync("132");
+      string expectedClass = displayStyle == "LargeText" ? "control-page--largetext" : "control-page--highcontrast";
+      await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+        new System.Text.RegularExpressions.Regex(expectedClass));
+      await Expect(Page.Locator(".control-primary-metrics article")).ToHaveCountAsync(3);
+
+      bool hasHorizontalOverflow = await Page.EvaluateAsync<bool>(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1");
+      Assert.False(hasHorizontalOverflow, $"{displayStyle} overflowed horizontally at {width}x{height}.");
+
+      if (displayStyle == "LargeText")
+      {
+        await Expect(Page.Locator(".control-live-chart")).ToHaveCSSAsync("display", "none");
+        double metricFontSize = await Page.Locator(".control-primary-metrics strong").First.EvaluateAsync<double>(
+          "element => Number.parseFloat(getComputedStyle(element).fontSize)");
+        Assert.True(metricFontSize >= 29,
+          $"Large-text metrics must remain conspicuously readable at {width}x{height}; actual {metricFontSize}px.");
+      }
+      else
+      {
+        await Expect(Page.Locator("#control-dashboard")).ToHaveCSSAsync("background-color", "rgb(0, 0, 0)");
+        await Expect(Page.Locator(".control-primary-metrics article").First).ToHaveCSSAsync("border-top-width", "2px");
+        await Expect(Page.Locator(".control-primary-metrics article").First).ToHaveCSSAsync("color", "rgb(255, 255, 255)");
+      }
+
+      ILocator stop = Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true });
+      LocatorBoundingBoxResult? stopBox = await stop.BoundingBoxAsync();
+      Assert.NotNull(stopBox);
+      Assert.True(stopBox.Width >= 44 && stopBox.Height >= 44,
+        $"Stop must retain a 44px target in {displayStyle} at {width}x{height}: {stopBox}.");
+      if (width <= 844)
+      {
+        Assert.True(stopBox.Y >= 0 && stopBox.Y + stopBox.Height <= height + 1,
+          $"Stop must remain visible in {displayStyle} at {width}x{height}: {stopBox}.");
+      }
+
+      string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
+      Directory.CreateDirectory(showcaseDirectory);
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(showcaseDirectory, $"tr-031-control-{displayStyle.ToLowerInvariant()}-{viewport}.png"),
+        FullPage = false,
+      });
+    }
+    finally
+    {
+      await ResetSimulatorAsync();
+    }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Local_first_surfaces_remain_usable_when_nonlocal_network_is_blocked()
+  {
+    var externalRequests = new ConcurrentQueue<string>();
+    await Page.RouteAsync("**/*", route =>
+    {
+      if (Uri.TryCreate(route.Request.Url, UriKind.Absolute, out Uri? uri) &&
+          uri.Scheme is "http" or "https" && !uri.IsLoopback)
+      {
+        externalRequests.Enqueue(route.Request.Url);
+        return route.AbortAsync("internetdisconnected");
+      }
+
+      return route.ContinueAsync();
+    });
+    Page.WebSocket += (_, socket) =>
+    {
+      if (Uri.TryCreate(socket.Url, UriKind.Absolute, out Uri? uri) && !uri.IsLoopback)
+        externalRequests.Enqueue(socket.Url);
+    };
+
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync("offline-local-first");
+    await SavePreferencesAsync(plan.ProfileId, "LargeText");
+
+    try
+    {
+      foreach ((string path, string heading) in new[]
+      {
+        ("/profiles", "Profiles"),
+        ("/history", "History"),
+        ("/operations", "Operations"),
+      })
+      {
+        await Page.GotoAsync(new Uri(gateway.BaseAddress, path).AbsoluteUri,
+          new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = heading, Exact = true })).ToBeVisibleAsync();
+      }
+
+      await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await Page.SelectActiveRunnerAsync(plan.ProfileName);
+      await Page.OpenRunChoicesAsync();
+      await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
+      await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true })).ToBeVisibleAsync();
+      await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+        new System.Text.RegularExpressions.Regex("control-page--largetext"));
+
+      Assert.Empty(externalRequests);
+    }
+    finally
+    {
+      await ResetSimulatorAsync();
+    }
+  }
 
   [Theory]
   [MemberData(nameof(Viewports))]
@@ -88,7 +237,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await SetPhysicalMotionAsync(1.2, 0.5);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToContainTextAsync("4.5");
-    await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToContainTextAsync("0.5");
+    await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("0.5");
     await Expect(Page.GetByRole(AriaRole.Group, new() { Name = "Speed presets", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Group, new() { Name = "Incline presets", Exact = true })).ToBeVisibleAsync();
     foreach (string speed in new[] { "5.0", "7.0", "7.5", "8.0", "8.5", "9.0", "9.5", "10.0" })
@@ -573,6 +722,16 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
   }
 
+  private async Task SetSimulatedHeartRateAsync(ushort beatsPerMinute)
+  {
+    using HttpClient client = CreateClient();
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/live/simulator/heart-rate", new
+    {
+      beatsPerMinute,
+    });
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+  }
+
   private async Task<SeededPlan> SeedPlanAsync(string scenario)
   {
     string suffix = $"{scenario}-{Guid.NewGuid():N}"[..(scenario.Length + 9)];
@@ -591,6 +750,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       expectedVersion = (int?)null,
     });
     Assert.Equal(HttpStatusCode.Created, profileResponse.StatusCode);
+    JsonElement createdProfile = await profileResponse.Content.ReadFromJsonAsync<JsonElement>();
 
     using HttpResponseMessage workoutResponse = await client.PostAsJsonAsync("/api/planning/workouts", new
     {
@@ -661,10 +821,31 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       },
     });
     Assert.Equal(HttpStatusCode.Created, workoutResponse.StatusCode);
-    return new SeededPlan(profileName, workoutName);
+    return new SeededPlan(createdProfile.GetProperty("id").GetGuid(), profileName, workoutName);
+  }
+
+  private async Task SavePreferencesAsync(Guid profileId, string displayStyle)
+  {
+    using HttpClient client = CreateClient();
+    using HttpResponseMessage response = await client.PutAsJsonAsync($"/api/local-first/profiles/{profileId}/preferences", new
+    {
+      displayStyle,
+      primaryMetrics = new[] { "Speed", "HeartRate", "ElapsedTime" },
+      cues = new
+      {
+        stepChanges = true,
+        heartRateDeparture = true,
+        halfway = true,
+        connectionProblems = true,
+        completion = true,
+        volumePercent = 60,
+      },
+      expectedVersion = 0,
+    });
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
   }
 
   private HttpClient CreateClient() => new() { BaseAddress = gateway.BaseAddress };
 
-  private sealed record SeededPlan(string ProfileName, string WorkoutName);
+  private sealed record SeededPlan(Guid ProfileId, string ProfileName, string WorkoutName);
 }

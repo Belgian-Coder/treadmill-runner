@@ -126,7 +126,16 @@ public sealed record WorkoutProgramItemView(
   double? DurationMinutes,
   int? WeekNumber = null,
   int? SessionNumber = null,
-  string? Phase = null);
+  string? Phase = null,
+  IReadOnlyList<WorkoutProgramAlternativeView>? Alternatives = null);
+
+public sealed record WorkoutProgramAlternativeView(
+  Guid WorkoutRevisionId,
+  int DisplayOrder,
+  string Variant,
+  string WorkoutName,
+  int WorkoutRevisionNumber,
+  double? DurationMinutes);
 
 public sealed record WorkoutProgramRunView(
   Guid Id,
@@ -168,6 +177,7 @@ public sealed record PremadePlanCatalogView(
   int Weeks,
   int SessionsPerWeek,
   int SessionCount,
+  int VariantCount,
   int MaximumDurationMinutes,
   double MaximumSpeedKph,
   double MaximumInclinePercent,
@@ -221,6 +231,22 @@ public sealed record WorkoutProgramStartRequest(
   DateOnly? ScheduledStartDate = null,
   int ScheduledWeekdayMask = 0,
   string? ScheduleTimeZoneId = null);
+
+public sealed record WorkoutProgramClearUpcomingView(
+  Guid RunId,
+  Guid UserProfileId,
+  int RunVersion,
+  int UpcomingSessionCount,
+  DateOnly? FirstDate,
+  DateOnly? LastDate,
+  bool CanApply,
+  string Message);
+
+public sealed record WorkoutProgramClearUpcomingRequest(
+  Guid OperationId,
+  Guid ProfileId,
+  int ExpectedRunVersion,
+  DateOnly Today);
 
 public sealed record WorkoutRevisionView(
   Guid WorkoutId,

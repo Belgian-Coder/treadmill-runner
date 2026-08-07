@@ -10,12 +10,30 @@
 <div class="planning-page">
     <header class="planning-hero">
         <div><p class="eyebrow">Training rhythm</p><h1>Calendar</h1><p>Plan recurring runs, then move one session or shift everything that follows.</p></div>
-        <button class="primary-action" type="button" @onclick="ToggleSeriesForm">@(showSeriesForm ? "Close editor" : "New schedule")</button>
+        <div class="form-actions">
+            @if (ActiveScheduledProgram is not null)
+            {
+                <button class="secondary-action danger-action" type="button" disabled="@clearUpcomingBusy" @onclick="RequestClearUpcomingAsync">Clear upcoming plan</button>
+            }
+            <button class="primary-action" type="button" @onclick="ToggleSeriesForm">@(showSeriesForm ? "Close planner" : "Plan training")</button>
+        </div>
     </header>
 
     @if (!string.IsNullOrEmpty(message))
     {
         <p class="notice" role="status">@message</p>
+    }
+
+    @if (clearUpcomingPreview is not null)
+    {
+        <section class="planning-panel destructive-confirmation" role="alertdialog" aria-labelledby="clear-upcoming-title" aria-describedby="clear-upcoming-description">
+            <div><p class="eyebrow">Selected runner</p><h2 id="clear-upcoming-title">Remove all upcoming plan sessions?</h2></div>
+            <p id="clear-upcoming-description">@clearUpcomingPreview.Message Completed workouts and the runner profile stay intact.</p>
+            <div class="form-actions">
+                <button class="secondary-action" type="button" disabled="@clearUpcomingBusy" @onclick="CancelClearUpcoming">Keep sessions</button>
+                <button class="primary-action danger-action" type="button" disabled="@clearUpcomingBusy" @onclick="ConfirmClearUpcomingAsync">@(clearUpcomingBusy ? "Removing…" : $"Remove {clearUpcomingPreview.UpcomingSessionCount} sessions")</button>
+            </div>
+        </section>
     }
 
     @if (activeProfileId is null)
@@ -27,7 +45,67 @@
         @if (showSeriesForm)
         {
             <section class="planning-panel" aria-labelledby="series-title">
-                <div class="panel-heading"><h2 id="series-title">Weekly schedule</h2><span>Europe/Brussels</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">Start with the training</p><h2 id="series-title">What do you want to plan?</h2></div><span>@ActiveProfileName</span></div>
+                <div class="category-chips" role="group" aria-label="Training source">
+                    <button type="button" aria-pressed="@(scheduleSource == "workout" ? "true" : "false")" @onclick='() => SelectScheduleSource("workout")'>Workout</button>
+                    <button type="button" aria-pressed="@(scheduleSource == "plan" ? "true" : "false")" @onclick='() => SelectScheduleSource("plan")'>Training plan</button>
+                </div>
+                <label class="field field--search schedule-source-search">Search @(scheduleSource == "workout" ? "workouts" : "training plans")
+                    <input type="search" @bind="scheduleSearch" @bind:event="oninput" placeholder="Name or description" />
+                </label>
+
+                @if (scheduleSource == "plan")
+                {
+                    <div class="schedule-source-results" aria-label="Available training plans">
+                        @foreach (WorkoutProgramView program in FilteredSchedulePrograms)
+                        {
+                            <button class="schedule-source-card @(pendingCalendarProgram?.Id == program.Id ? "is-selected" : null)" type="button" @onclick="() => SelectProgramForSchedule(program)">
+                                <span><strong>@program.Name</strong><small>@program.Category · @program.Items.Count sessions</small></span>
+                                <small>@(program.Run is null ? "Select" : program.Run.Status == "Active" ? "Active" : program.Run.Status)</small>
+                            </button>
+                        }
+                    </div>
+                    @if (FilteredSchedulePrograms.Count == 0)
+                    {
+                        <p class="empty-state">No training plans match. <a href="/workouts">Browse or create training plans</a>.</p>
+                    }
+                    @if (pendingCalendarProgram is { } selectedProgram)
+                    {
+                        <section class="schedule-source-setup" aria-labelledby="plan-schedule-title">
+                            <h3 id="plan-schedule-title">Schedule @selectedProgram.Name</h3>
+                            <label class="field">First training date<input type="date" @bind="programScheduleStartDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" /></label>
+                            <fieldset class="program-training-days"><legend>Choose exactly @RequiredTrainingDays training day(s)</legend><div>
+                                @foreach ((string label, int flag) in Weekdays)
+                                {
+                                    <button type="button" aria-pressed="@((programScheduleWeekdayMask & flag) != 0)" class="@((programScheduleWeekdayMask & flag) != 0 ? "is-selected" : null)" @onclick="() => TogglePlanWeekday(flag)">@label</button>
+                                }
+                            </div></fieldset>
+                            @if (ActiveProgram is { } active)
+                            {
+                                <p class="notice">@(active.Id == selectedProgram.Id ? "This restarts the active plan from its first session." : $"Starting this plan abandons the active plan “{active.Name}”.") Completed history stays intact.</p>
+                            }
+                            <div class="form-actions"><button class="primary-action" type="button" disabled="@(!CanConfirmProgramSchedule || savingProgramSchedule)" @onclick="ConfirmProgramScheduleAsync">@(savingProgramSchedule ? "Scheduling…" : ActiveProgram?.Id == selectedProgram.Id ? "Restart and schedule plan" : "Start and schedule plan")</button></div>
+                        </section>
+                    }
+                }
+                else
+                {
+                    <div class="schedule-source-results" aria-label="Available workouts">
+                        @foreach (WorkoutSummaryView workout in FilteredScheduleWorkouts)
+                        {
+                            <button class="schedule-source-card @(series.PrimaryRevisionId == workout.CurrentRevisionId ? "is-selected" : null)" type="button" @onclick="() => SelectWorkoutForSchedule(workout)">
+                                <span><strong>@workout.Name</strong><small>@workout.StructureLabel · @DurationLabel(workout.DurationMinutes)</small></span><small>r@(workout.CurrentRevisionNumber)</small>
+                            </button>
+                        }
+                    </div>
+                    @if (FilteredScheduleWorkouts.Count == 0)
+                    {
+                        <p class="empty-state">No workouts match. <a href="/workouts/new">Create a workout</a>.</p>
+                    }
+                }
+
+                @if (scheduleSource == "workout" && series.PrimaryRevisionId is not null)
+                {
                 <EditForm Model="series" OnValidSubmit="SaveSeriesAsync" FormName="calendar-series-form" @oninput="QueueCalendarDraftSave" @onchange="QueueCalendarDraftSave">
                     @if (pendingCalendarDraft is not null)
                     {
@@ -38,7 +116,6 @@
                         <label class="field">Starts<input @bind="series.StartDate" type="date" required /></label>
                         <label class="field">Ends (optional)<input @bind="series.EndDate" type="date" /></label>
                         <label class="field">Repeat every (weeks)<input @bind="series.IntervalWeeks" type="number" min="1" max="52" /></label>
-                        <label class="field">Primary workout<select @bind="series.PrimaryRevisionId" required><option value="">Choose workout</option>@foreach (WorkoutSummaryView workout in workouts){<option value="@workout.CurrentRevisionId">@workout.Name · r@(workout.CurrentRevisionNumber)</option>}</select></label>
                         <label class="field">Alternative<select @bind="series.AlternativeRevisionId"><option value="">None</option>@foreach (WorkoutSummaryView workout in workouts){<option value="@workout.CurrentRevisionId">@workout.Name · r@(workout.CurrentRevisionNumber)</option>}</select></label>
                     </div>
                     <fieldset class="weekday-picker"><legend>Training days</legend>
@@ -57,6 +134,7 @@
                     </details>
                     <div class="form-actions"><button class="primary-action" type="submit" disabled="@savingSeries">@(savingSeries ? "Saving…" : "Save schedule")</button></div>
                 </EditForm>
+                }
             </section>
         }
 
@@ -109,7 +187,7 @@
                                     @foreach (CalendarOptionView option in agendaDay.Day.Options)
                                     {
                                         <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(agendaDay.Day, option)" aria-pressed="@option.IsSelected">
+                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(agendaDay.Day, option)" aria-label="View details for @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">
                                                 <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
                                             </button>
                                             @if (!option.IsRepeat)
@@ -143,7 +221,7 @@
                                 @foreach (CalendarOptionView option in day.Options.Take(2))
                                 {
                                     <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="(MouseEventArgs _) => SelectDayAsync(day, option)" aria-pressed="@option.IsSelected">
+                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(day, option)" aria-label="View details for @option.WorkoutName on @date.ToString("d MMMM")">
                                             <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Repeat" : option.Source == "Program" ? $"{option.ProgramPosition}/{option.ProgramTotal}" : $"r{option.RevisionNumber}")</small>
                                         </button>
                                         @if (!option.IsRepeat)
@@ -394,6 +472,47 @@
     </div>
 }
 
+@if (selectedCalendarDetail is not null)
+{
+    <DetailSheet BackdropId="calendar-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog calendar-details-dialog" LabelledBy="calendar-details-title" OnDismiss="CloseCalendarDetailsAsync">
+        <header class="workout-details-header">
+            <div>
+                <p class="eyebrow">@selectedCalendarDetail.Option.ScheduleName · @selectedCalendarDetail.Date.ToString("dddd d MMMM")</p>
+                <h2 id="calendar-details-title">@selectedCalendarDetail.Option.WorkoutName</h2>
+            </div>
+            <button class="icon-action" type="button" aria-label="Close calendar workout details" autofocus @onclick="CloseCalendarDetailsAsync">×</button>
+        </header>
+        <dl class="workout-details-overview" aria-label="Scheduled workout overview">
+            <div><dt>Date</dt><dd>@selectedCalendarDetail.Date.ToString("d MMM yyyy")</dd></div>
+            <div><dt>Source</dt><dd>@(selectedCalendarDetail.Option.Source == "Program" ? "Training plan" : "Calendar schedule")</dd></div>
+            <div><dt>Revision</dt><dd>@selectedCalendarDetail.Option.RevisionNumber</dd></div>
+            <div><dt>Schedule</dt><dd>@selectedCalendarDetail.Option.ScheduleName</dd></div>
+            <div><dt>Day choice</dt><dd>@(selectedCalendarDetail.Option.IsSelected ? "Selected" : "Alternative")</dd></div>
+            <div><dt>Recorded data</dt><dd>Not run yet</dd></div>
+        </dl>
+        @if (calendarDetailsLoading)
+        {
+            <p class="empty-state" role="status">Loading the immutable workout revision…</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(calendarDetailsError))
+        {
+            <div class="empty-state" role="alert"><p>@calendarDetailsError</p><button class="secondary-action" type="button" @onclick="RetryCalendarDetailsAsync">Try again</button></div>
+        }
+        else if (selectedCalendarRevision is not null)
+        {
+            <WorkoutPlanDetails Blocks="selectedCalendarRevision.Blocks" IdPrefix="calendar-workout-detail" />
+        }
+        <div class="card-actions workout-details-actions">
+            <button class="secondary-action" type="button" @onclick="CloseCalendarDetailsAsync">Close</button>
+            <button class="secondary-action" type="button" disabled="@(garminSyncBusy || calendarDetailsLoading || selectedCalendarRevision is null)" @onclick="SyncCalendarSessionToGarminAsync">@(garminSyncBusy ? "Sending…" : "Send this session to Garmin")</button>
+            @if (selectedCalendarDetail.Option.Source != "Program" && !selectedCalendarDetail.Option.IsSelected)
+            {
+                <button class="primary-action" type="button" disabled="@calendarSelectionBusy" @onclick="SelectCalendarDetailAsync">@(calendarSelectionBusy ? "Saving…" : "Choose for this day")</button>
+            }
+        </div>
+    </DetailSheet>
+}
+
 @code {
     private static readonly (string Label, int Flag)[] Weekdays =
     [
@@ -406,17 +525,32 @@
     private Guid? activeProfileId;
     private List<ProfileView> profiles = [];
     private List<WorkoutSummaryView> workouts = [];
+    private List<WorkoutProgramView> programs = [];
     private List<CalendarSeriesView> calendarSeries = [];
     private CalendarRangeView? calendar;
     private bool initialized;
     private bool loading = true;
     private bool showSeriesForm;
     private bool savingSeries;
+    private string scheduleSource = "workout";
+    private string scheduleSearch = string.Empty;
+    private WorkoutProgramView? pendingCalendarProgram;
+    private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
+    private int programScheduleWeekdayMask = 37;
+    private bool savingProgramSchedule;
+    private bool clearUpcomingBusy;
+    private WorkoutProgramClearUpcomingView? clearUpcomingPreview;
     private string? message;
     private Guid pendingSeriesOperationId = Guid.NewGuid();
     private readonly Dictionary<DateOnly, Guid> pendingSelectionOperations = [];
     private ManagedSchedule? managedSession;
     private ManagedProgramSession? managedProgramSession;
+    private CalendarDetailSelection? selectedCalendarDetail;
+    private WorkoutRevisionView? selectedCalendarRevision;
+    private bool calendarDetailsLoading;
+    private bool calendarSelectionBusy;
+    private bool garminSyncBusy;
+    private string? calendarDetailsError;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
     private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
     private bool changingProgramDays;
@@ -440,6 +574,31 @@
         programWeekdayMask != managedProgramSession.WeekdayMask &&
         Weekdays.Count(day => (programWeekdayMask & day.Flag) != 0) == RequiredProgramTrainingDays &&
         programEffectiveDate >= DateOnly.FromDateTime(DateTime.Today);
+    private WorkoutProgramView? ActiveScheduledProgram => programs.FirstOrDefault(static program =>
+        program.Run is { Status: "Active", ScheduledStartDate: not null });
+    private WorkoutProgramView? ActiveProgram => programs.FirstOrDefault(static program => program.Run is { Status: "Active" });
+    private string ActiveProfileName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "selected runner";
+    private IReadOnlyList<WorkoutSummaryView> FilteredScheduleWorkouts => workouts
+        .Where(workout => string.IsNullOrWhiteSpace(scheduleSearch) ||
+            workout.Name.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ||
+            (workout.Description?.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
+        .OrderBy(static workout => workout.Name, StringComparer.CurrentCultureIgnoreCase)
+        .ToArray();
+    private IReadOnlyList<WorkoutProgramView> FilteredSchedulePrograms => programs
+        .Where(program => !program.IsArchived && (string.IsNullOrWhiteSpace(scheduleSearch) ||
+            program.Name.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ||
+            (program.Description?.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ?? false) ||
+            program.Category.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase)))
+        .OrderByDescending(static program => program.Run is { Status: "Active" })
+        .ThenBy(static program => program.Name, StringComparer.CurrentCultureIgnoreCase)
+        .ToArray();
+    private int RequiredTrainingDays => pendingCalendarProgram is { } program
+        ? Math.Max(1, program.Items.Where(static item => item.WeekNumber is not null)
+            .GroupBy(static item => item.WeekNumber).Select(static group => group.Count()).DefaultIfEmpty(3).Max())
+        : 3;
+    private bool CanConfirmProgramSchedule => pendingCalendarProgram is not null &&
+        CountSelectedWeekdays(programScheduleWeekdayMask) == RequiredTrainingDays &&
+        (programScheduleWeekdayMask & WeekdayFlag(programScheduleStartDate.DayOfWeek)) != 0;
 
     private IReadOnlyList<ScheduleGroupSummary> ScheduleGroups => calendarSeries
         .GroupBy(static item => item.ScheduleGroupId)
@@ -477,13 +636,15 @@
             StateHasChanged();
         }
 
-        if (openModalPending && (managedSession is not null || managedProgramSession is not null))
+        if (openModalPending && (managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null))
         {
             openModalPending = false;
             modalReference = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync(
                 "treadmillRunnerView.openModal",
-                managedProgramSession is null ? "schedule-dialog-backdrop" : "program-schedule-dialog-backdrop",
+                selectedCalendarDetail is not null
+                    ? "calendar-details-backdrop"
+                    : managedProgramSession is null ? "schedule-dialog-backdrop" : "program-schedule-dialog-backdrop",
                 modalReference);
         }
         else if (focusModalStagePending && (managedSession is not null || managedProgramSession is not null))
@@ -495,7 +656,66 @@
         }
     }
 
-    private void ToggleSeriesForm() => showSeriesForm = !showSeriesForm;
+    private void ToggleSeriesForm()
+    {
+        showSeriesForm = !showSeriesForm;
+        if (!showSeriesForm) { scheduleSearch = string.Empty; pendingCalendarProgram = null; }
+    }
+
+    private void SelectScheduleSource(string source)
+    {
+        scheduleSource = source;
+        scheduleSearch = string.Empty;
+        pendingCalendarProgram = null;
+    }
+
+    private void SelectWorkoutForSchedule(WorkoutSummaryView workout)
+    {
+        series.PrimaryRevisionId = workout.CurrentRevisionId;
+        if (series.Name == "Weekly rhythm" || string.IsNullOrWhiteSpace(series.Name)) series.Name = workout.Name;
+    }
+
+    private void SelectProgramForSchedule(WorkoutProgramView program)
+    {
+        pendingCalendarProgram = program;
+        programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
+        programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
+    }
+
+    private void TogglePlanWeekday(int flag) => programScheduleWeekdayMask = (programScheduleWeekdayMask & flag) != 0
+        ? programScheduleWeekdayMask & ~flag
+        : programScheduleWeekdayMask | flag;
+
+    private async Task ConfirmProgramScheduleAsync()
+    {
+        if (activeProfileId is not { } profileId || pendingCalendarProgram is not { } program || !CanConfirmProgramSchedule) return;
+        savingProgramSchedule = true;
+        try
+        {
+            WorkoutProgramView? active = ActiveProgram;
+            string action = active?.Id == program.Id ? "restart" : "start";
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/programs/{program.Id:D}/{action}",
+                new WorkoutProgramStartRequest(
+                    Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version,
+                    programScheduleStartDate, programScheduleWeekdayMask, "Europe/Brussels"));
+            if (response.IsSuccessStatusCode)
+            {
+                message = $"{program.Name} is scheduled for {ActiveProfileName}.";
+                pendingCalendarProgram = null;
+                showSeriesForm = false;
+                await ReloadCalendarAsync();
+            }
+            else
+            {
+                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The active plan changed. Reloaded the latest plans; review and try again."
+                    : "The training plan could not be scheduled.";
+                await ReloadCalendarAsync();
+            }
+        }
+        finally { savingProgramSchedule = false; }
+    }
 
     private void ToggleWeekday(int flag, ChangeEventArgs args)
     {
@@ -604,18 +824,18 @@
         pendingCalendarDraft = null;
     }
 
-    private async Task SelectDayAsync(CalendarDayView day, CalendarOptionView option)
+    private async Task<bool> SelectDayAsync(CalendarDayView day, CalendarOptionView option)
     {
         if (activeProfileId is null)
         {
-            return;
+            return false;
         }
 
         if (option.Source == "Program")
         {
             message = $"{option.WorkoutName} is workout {option.ProgramPosition} of {option.ProgramTotal}. Opening Run.";
             Navigation.NavigateTo("/");
-            return;
+            return true;
         }
 
         if (!pendingSelectionOperations.TryGetValue(day.Date, out Guid operationId))
@@ -633,6 +853,91 @@
             pendingSelectionOperations.Remove(day.Date);
             await ReloadCalendarAsync();
         }
+        return response.IsSuccessStatusCode;
+    }
+
+    private async Task OpenCalendarDetailsAsync(CalendarDayView day, CalendarOptionView option)
+    {
+        selectedCalendarDetail = new CalendarDetailSelection(day.Date, day, option);
+        selectedCalendarRevision = null;
+        calendarDetailsError = null;
+        calendarDetailsLoading = true;
+        openModalPending = true;
+        await InvokeAsync(StateHasChanged);
+        await LoadCalendarDetailsAsync();
+    }
+
+    private async Task LoadCalendarDetailsAsync()
+    {
+        if (selectedCalendarDetail is not { } detail) return;
+        calendarDetailsLoading = true;
+        calendarDetailsError = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync($"api/planning/workouts/revisions/{detail.Option.WorkoutRevisionId:D}");
+            selectedCalendarRevision = response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<WorkoutRevisionView>()
+                : null;
+            if (selectedCalendarRevision is null) calendarDetailsError = "This immutable workout revision is no longer available.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            calendarDetailsError = "The workout details could not be loaded from the local gateway.";
+        }
+        finally { calendarDetailsLoading = false; }
+    }
+
+    private Task RetryCalendarDetailsAsync() => LoadCalendarDetailsAsync();
+
+    private async Task SyncCalendarSessionToGarminAsync()
+    {
+        if (activeProfileId is not { } profileId || selectedCalendarDetail is not { } detail) return;
+        garminSyncBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/integrations/garmin/profiles/{profileId:D}/sessions",
+                new { date = detail.Date, workoutRevisionId = detail.Option.WorkoutRevisionId });
+            if (response.IsSuccessStatusCode)
+            {
+                message = "This calendar session is queued for Garmin Connect.";
+                await CloseCalendarDetailsAsync();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                message = "Connect this runner to Garmin on Profiles before sending a calendar session.";
+            }
+            else
+            {
+                message = "This session could not be sent to Garmin. Reload the calendar and try again.";
+            }
+        }
+        catch (HttpRequestException)
+        {
+            message = "Garmin Connect could not be reached right now.";
+        }
+        finally { garminSyncBusy = false; }
+    }
+
+    private async Task SelectCalendarDetailAsync()
+    {
+        if (selectedCalendarDetail is not { } detail) return;
+        calendarSelectionBusy = true;
+        try
+        {
+            if (await SelectDayAsync(detail.Day, detail.Option)) await CloseCalendarDetailsAsync();
+        }
+        finally { calendarSelectionBusy = false; }
+    }
+
+    private async Task CloseCalendarDetailsAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        modalReference = null;
+        selectedCalendarDetail = null;
+        selectedCalendarRevision = null;
+        calendarDetailsError = null;
+        calendarDetailsLoading = false;
     }
 
     private async Task SelectProfileAsync(Guid profileId)
@@ -643,6 +948,7 @@
         calendarDraftKey = $"{profileId:N}.calendar.new";
         pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
         managedSession = null;
+        clearUpcomingPreview = null;
         showSeriesForm = false;
         loading = true;
         await ReloadCalendarAsync();
@@ -666,9 +972,54 @@
             $"api/planning/calendar/series?profileId={activeProfileId}");
         Task<CalendarRangeView?> rangeTask = Http.GetFromJsonAsync<CalendarRangeView>(
             $"api/planning/calendar/{activeProfileId}?from={rangeStart:yyyy-MM-dd}&to={rangeEnd:yyyy-MM-dd}");
-        await Task.WhenAll(seriesTask, rangeTask);
+        Task<List<WorkoutProgramView>?> programsTask = Http.GetFromJsonAsync<List<WorkoutProgramView>>(
+            $"api/planning/programs?profileId={activeProfileId}");
+        await Task.WhenAll(seriesTask, rangeTask, programsTask);
         calendarSeries = await seriesTask ?? [];
         calendar = await rangeTask;
+        programs = await programsTask ?? [];
+    }
+
+    private async Task RequestClearUpcomingAsync()
+    {
+        if (activeProfileId is not { } profileId || ActiveScheduledProgram?.Run is not { } run) return;
+        clearUpcomingBusy = true;
+        try
+        {
+            clearUpcomingPreview = await Http.GetFromJsonAsync<WorkoutProgramClearUpcomingView>(
+                $"api/planning/programs/runs/{run.Id:D}/clear-upcoming/preview?profileId={profileId:D}&today={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}");
+        }
+        catch (HttpRequestException)
+        {
+            message = "Upcoming plan sessions could not be checked right now.";
+        }
+        finally { clearUpcomingBusy = false; }
+    }
+
+    private void CancelClearUpcoming() => clearUpcomingPreview = null;
+
+    private async Task ConfirmClearUpcomingAsync()
+    {
+        if (activeProfileId is not { } profileId || clearUpcomingPreview is not { CanApply: true } preview) return;
+        clearUpcomingBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/planning/programs/runs/{preview.RunId:D}/clear-upcoming",
+                new WorkoutProgramClearUpcomingRequest(
+                    Guid.NewGuid(), profileId, preview.RunVersion, DateOnly.FromDateTime(DateTime.Today)));
+            if (!response.IsSuccessStatusCode)
+            {
+                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The training plan changed. Reloaded the latest schedule; review it and try again."
+                    : "Upcoming plan sessions could not be removed.";
+                return;
+            }
+            clearUpcomingPreview = null;
+            await ReloadCalendarAsync();
+            message = "All upcoming training-plan sessions were removed. Completed workouts and the runner profile were preserved.";
+        }
+        finally { clearUpcomingBusy = false; }
     }
 
     private void OpenSessionManager(DateOnly date, CalendarOptionView option)
@@ -774,6 +1125,10 @@
         modalReference = null;
         managedSession = null;
         managedProgramSession = null;
+        selectedCalendarDetail = null;
+        selectedCalendarRevision = null;
+        calendarDetailsError = null;
+        calendarDetailsLoading = false;
         programPreview = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
@@ -1084,6 +1439,25 @@
         return $"Recurring from {group.StartDate:d MMM yyyy}{end}";
     }
 
+    private static string DurationLabel(double? minutes) => minutes is null ? "Distance based" : $"{minutes:0} min";
+    private static int CountSelectedWeekdays(int mask) => Enumerable.Range(0, 7).Count(bit => ((mask >> bit) & 1) == 1);
+    private static DateOnly NextSelectedDate(DateOnly start, int mask)
+    {
+        while ((mask & WeekdayFlag(start.DayOfWeek)) == 0) start = start.AddDays(1);
+        return start;
+    }
+    private static int WeekdayFlag(DayOfWeek day) => day == DayOfWeek.Sunday ? 64 : 1 << ((int)day - 1);
+    private static int DefaultWeekdayMask(int count) => count switch
+    {
+        1 => 1,
+        2 => 34,
+        3 => 37,
+        4 => 43,
+        5 => 47,
+        6 => 63,
+        _ => 127,
+    };
+
     private async Task DismissManagerAfterActionAsync()
     {
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
@@ -1234,6 +1608,7 @@
         DateOnly? ExceptionDate, string ExceptionKind);
 
     private sealed record CalendarAgendaDay(DateOnly Date, CalendarDayView Day);
+    private sealed record CalendarDetailSelection(DateOnly Date, CalendarDayView Day, CalendarOptionView Option);
     private sealed record CalendarAgendaWeek(DateOnly Start, DateOnly End, IReadOnlyList<CalendarAgendaDay> Days, int WorkoutCount);
     private sealed record ScheduleGroupSummary(
         Guid Id,
@@ -1278,7 +1653,7 @@
 
     public async ValueTask DisposeAsync()
     {
-        if (managedSession is not null || managedProgramSession is not null)
+        if (managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
             catch (JSDisconnectedException) { }

@@ -18,6 +18,24 @@ public static class WorkoutProgramLimits
   public const int MaximumItems = 1_000;
 }
 
+public sealed record WorkoutProgramAlternative
+{
+  public WorkoutProgramAlternative(Guid workoutRevisionId, int displayOrder, string variant)
+  {
+    if (workoutRevisionId == Guid.Empty) throw new ArgumentException("Workout revision ID is required.", nameof(workoutRevisionId));
+    if (displayOrder < 1) throw new ArgumentOutOfRangeException(nameof(displayOrder));
+    ArgumentException.ThrowIfNullOrWhiteSpace(variant);
+    if (variant.Trim().Length > 40) throw new ArgumentException("Variant label is too long.", nameof(variant));
+    WorkoutRevisionId = workoutRevisionId;
+    DisplayOrder = displayOrder;
+    Variant = variant.Trim();
+  }
+
+  public Guid WorkoutRevisionId { get; }
+  public int DisplayOrder { get; }
+  public string Variant { get; }
+}
+
 public sealed record WorkoutProgramItem
 {
   public WorkoutProgramItem(
@@ -26,7 +44,8 @@ public sealed record WorkoutProgramItem
     int position,
     int? weekNumber = null,
     int? sessionNumber = null,
-    string? phase = null)
+    string? phase = null,
+    IReadOnlyList<WorkoutProgramAlternative>? alternatives = null)
   {
     if (id == Guid.Empty) throw new ArgumentException("Program item ID is required.", nameof(id));
     if (workoutRevisionId == Guid.Empty) throw new ArgumentException("Workout revision ID is required.", nameof(workoutRevisionId));
@@ -34,12 +53,18 @@ public sealed record WorkoutProgramItem
     if (weekNumber is < 1) throw new ArgumentOutOfRangeException(nameof(weekNumber));
     if (sessionNumber is < 1) throw new ArgumentOutOfRangeException(nameof(sessionNumber));
     if (phase?.Trim().Length > 80) throw new ArgumentException("Program phase is too long.", nameof(phase));
+    WorkoutProgramAlternative[] normalizedAlternatives = (alternatives ?? []).OrderBy(static option => option.DisplayOrder).ToArray();
+    if (normalizedAlternatives.Any(option => option.WorkoutRevisionId == workoutRevisionId) ||
+        normalizedAlternatives.Select(static option => option.WorkoutRevisionId).Distinct().Count() != normalizedAlternatives.Length ||
+        normalizedAlternatives.Select(static option => option.DisplayOrder).Distinct().Count() != normalizedAlternatives.Length)
+      throw new ArgumentException("Program alternatives must have unique revisions/orders and cannot repeat the primary revision.", nameof(alternatives));
     Id = id;
     WorkoutRevisionId = workoutRevisionId;
     Position = position;
     WeekNumber = weekNumber;
     SessionNumber = sessionNumber;
     Phase = string.IsNullOrWhiteSpace(phase) ? null : phase.Trim();
+    Alternatives = normalizedAlternatives;
   }
 
   public Guid Id { get; }
@@ -48,6 +73,10 @@ public sealed record WorkoutProgramItem
   public int? WeekNumber { get; }
   public int? SessionNumber { get; }
   public string? Phase { get; }
+  public IReadOnlyList<WorkoutProgramAlternative> Alternatives { get; }
+
+  public bool AllowsWorkoutRevision(Guid workoutRevisionId) =>
+    WorkoutRevisionId == workoutRevisionId || Alternatives.Any(option => option.WorkoutRevisionId == workoutRevisionId);
 }
 
 public sealed class WorkoutProgramRevision

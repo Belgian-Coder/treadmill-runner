@@ -18,6 +18,7 @@ public static class WorkoutPlanningEndpoints
     RouteGroupBuilder group = endpoints.MapGroup("/api/planning/workouts");
     group.MapGet("/", ListAsync);
     group.MapGet("/reuse", ListReuseAsync);
+    group.MapGet("/revisions/{revisionId:guid}", GetRevisionAsync);
     group.MapGet("/{id:guid}/revisions", ListRevisionsAsync);
     group.MapPost("/", CreateAsync);
     group.MapPost("/{id:guid}/revisions", AppendRevisionAsync);
@@ -74,6 +75,17 @@ public static class WorkoutPlanningEndpoints
   {
     IReadOnlyList<StoredWorkoutRevision> revisions = await store.ListRevisionsAsync(id, cancellationToken);
     return TypedResults.Ok(revisions.Select(ToRevisionDto).ToArray());
+  }
+
+  private static async Task<IResult> GetRevisionAsync(
+    Guid revisionId,
+    IWorkoutStore store,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutRevision? revision = await store.FindRevisionAsync(revisionId, cancellationToken);
+    return revision is null
+      ? TypedResults.NotFound()
+      : TypedResults.Ok(ToRevisionDto(revision));
   }
 
   private static async Task<IResult> CreateAsync(

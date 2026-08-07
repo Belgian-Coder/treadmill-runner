@@ -10,33 +10,33 @@
   "builds": [
     {
       "device": "fenix843mm",
-      "bytes": 103436,
-      "sha256": "74AED6C2B678A5A1B57738C2F48718D920F759EDE442AE280A529152C1FCBE84"
+      "bytes": 103420,
+      "sha256": "949C3CCFBB369DFA38CB13FFB75E00900C2967103F61304E68CFAA813D1050AA"
     },
     {
       "device": "fenix847mm",
-      "bytes": 106156,
-      "sha256": "A1E2584147FE4BAFAA515DA8EDEDA7FCA46AC7CC7FF47AE078BCC08778C168AA"
+      "bytes": 106140,
+      "sha256": "08FED9A35C30A0233C8055046378C1AF0533403841EE381F26315F040D47FD0D"
     },
     {
       "device": "fenix8solar47mm",
-      "bytes": 97676,
-      "sha256": "7ABBEC4DC5B4CA5D1628F4B36371B4EE95EBC0D81C231425E4DFA17C5004BBE2"
+      "bytes": 97660,
+      "sha256": "10F89121201A4CCDD324E6AEB103AEE15169997AF47E75A7374CF89F7E129E09"
     },
     {
       "device": "fenix8solar51mm",
-      "bytes": 97676,
-      "sha256": "D910E7F137A5FB21B2479A66BDC127EDFB80EECDCC3982022A67AF4B0BB22E45"
+      "bytes": 97660,
+      "sha256": "F4578A4BF6C1131286341881EB0A0D1529A541F51D981D998CB11F0491714DE1"
     },
     {
       "device": "vivoactive5",
-      "bytes": 105164,
-      "sha256": "9B5A03935261004D9598E635E9596481F4CA1C37BAFACB4396BEBFF5FFF17C75"
+      "bytes": 105148,
+      "sha256": "B2A6007AE993BC2278090AAE668B6FD6481D2C6749B6C56B567555D257E73AE5"
     },
     {
       "device": "vivoactive6",
-      "bytes": 102668,
-      "sha256": "E509E74FDF1D886E41DB9C4450C26FF8C032AF497304996D097815B9DB59BCD4"
+      "bytes": 102652,
+      "sha256": "0032ADC21660A741BDBF4AD12BA925D64E8368C226A38F9A71278AB53A9ACA95"
     }
   ],
   "simulatorTests": [
@@ -55,7 +55,7 @@
   ],
   "repositoryValidation": {
     "command": "eng/validate.ps1 -Configuration Release",
-    "durationSeconds": 155.6,
+    "durationSeconds": 137.8,
     "result": "passed",
     "buildWarnings": 0,
     "buildErrors": 0
@@ -69,16 +69,16 @@
   },
   "connectIqPackageExport": {
     "command": "eng/package-connectiq.ps1",
-    "durationSeconds": 48.8,
+    "durationSeconds": 46.5,
     "result": "passed",
     "package": "TreadmillRunnerCompanion.iq",
-    "bytes": 74846,
-    "sha256": "D2A80DB30AD873E24DF1C9E95CB63203D33B47EDFB655866F16196D5A1215C79",
+    "bytes": 74915,
+    "sha256": "C170443202745D119378EB604C138E56955D81532936D74CB2F1CA6E483F78D7",
     "products": 6,
     "externalPublish": false
   },
   "unsupportedClaims": [
-    "interactive-layout-acceptance",
+    "all-target-interactive-layout-acceptance",
     "physical-watch-acceptance",
     "trusted-https-pairing",
     "iq-store-acceptance"

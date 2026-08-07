@@ -45,6 +45,22 @@ public sealed class WorkoutProgramTests
   }
 
   [Fact]
+  public void Program_item_accepts_distinct_alternatives_for_the_same_progression_slot()
+  {
+    Guid primary = Guid.NewGuid();
+    Guid heartRate = Guid.NewGuid();
+    var item = new WorkoutProgramItem(
+      Guid.NewGuid(), primary, 1, 11, 1, "Foundation",
+      [new WorkoutProgramAlternative(heartRate, 1, "hr-alternative")]);
+
+    Assert.True(item.AllowsWorkoutRevision(primary));
+    Assert.True(item.AllowsWorkoutRevision(heartRate));
+    Assert.False(item.AllowsWorkoutRevision(Guid.NewGuid()));
+    Assert.Throws<ArgumentException>(() => new WorkoutProgramItem(
+      Guid.NewGuid(), primary, 1, alternatives: [new WorkoutProgramAlternative(primary, 1, "duplicate")]));
+  }
+
+  [Fact]
   public void Progress_counts_only_consecutive_completed_items()
   {
     WorkoutProgramRevision revision = Revision(

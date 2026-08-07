@@ -34,7 +34,6 @@ public sealed class GarminSyncWorker(
         {
           try
           {
-            await ReconcileAsync(stoppingToken);
             await ProcessAvailableAsync(stoppingToken);
           }
           finally
@@ -56,21 +55,6 @@ public sealed class GarminSyncWorker(
       timeout.CancelAfter(ReconcileInterval);
       try { await _wake.Reader.ReadAsync(timeout.Token); }
       catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested) { }
-    }
-  }
-
-  internal async Task ReconcileAsync(CancellationToken cancellationToken)
-  {
-    if (!provider.IsConfigured) return;
-    using IServiceScope scope = scopeFactory.CreateScope();
-    IProfileStore profiles = scope.ServiceProvider.GetRequiredService<IProfileStore>();
-    IGarminStore scopedStore = scope.ServiceProvider.GetRequiredService<IGarminStore>();
-    GarminSyncCatalog catalog = scope.ServiceProvider.GetRequiredService<GarminSyncCatalog>();
-    foreach (VersionedUserProfile profile in await profiles.ListAsync(cancellationToken))
-    {
-      if (profile.IsArchived || await scopedStore.FindLinkAsync(profile.Profile.Id, cancellationToken) is null) continue;
-      IReadOnlyList<GarminSyncDocument> documents = await catalog.BuildAsync(profile.Profile.Id, cancellationToken);
-      await scopedStore.EnqueueAsync(profile.Profile.Id, documents, timeProvider.GetUtcNow(), cancellationToken);
     }
   }
 

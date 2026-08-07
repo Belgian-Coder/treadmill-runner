@@ -118,14 +118,20 @@ public static class PremadePlanPlanningEndpoints
     var targets = new List<WorkoutTargetEvaluation>();
     foreach (PremadePlanSessionTemplate session in template.Sessions)
     {
-      if (workouts.ContainsKey(session.WorkoutKey)) continue;
-      WorkoutCapabilityResult result = WorkoutCapabilityPolicy.Evaluate(
-        PremadePlanCatalog.BuildWorkout(session),
-        capabilities?.SpeedRange,
-        capabilities?.InclineRange,
-        profile.MaximumSpeedKph);
-      workouts.Add(session.WorkoutKey, result.Definition);
-      targets.AddRange(result.Targets);
+      IEnumerable<(string Key, WorkoutDefinition Definition)> variants =
+        session.AlternativeVariants.Select(static variant => (variant.WorkoutKey, variant.Definition))
+          .Prepend((session.WorkoutKey, PremadePlanCatalog.BuildWorkout(session)));
+      foreach ((string key, WorkoutDefinition definition) in variants)
+      {
+        if (workouts.ContainsKey(key)) continue;
+        WorkoutCapabilityResult result = WorkoutCapabilityPolicy.Evaluate(
+          definition,
+          capabilities?.SpeedRange,
+          capabilities?.InclineRange,
+          profile.MaximumSpeedKph);
+        workouts.Add(key, result.Definition);
+        targets.AddRange(result.Targets);
+      }
     }
     bool validTargets = targets.All(static target => target.Disposition != WorkoutTargetDisposition.Rejected);
     string message = !heartRateReady
@@ -186,6 +192,7 @@ public static class PremadePlanPlanningEndpoints
       template.Weeks,
       template.SessionsPerWeek,
       template.SessionCount,
+      template.VariantCount,
       template.MaximumDurationMinutes,
       template.MaximumSpeedKph,
       template.MaximumInclinePercent,

@@ -1,6 +1,8 @@
 @page "/history"
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>History · TreadmillRunner</PageTitle>
 
@@ -15,12 +17,54 @@
         <button type="button" class="@(showTests ? "primary-action" : "secondary-action")" aria-pressed="@(showTests.ToString().ToLowerInvariant())" @onclick="() => SetTestModeAsync(true)">Tests</button>
     </div>
 
-    @if (sessions.Count == 0)
+    @if (loading)
+    {
+        <p class="empty-state" role="status">Loading this runner’s local history…</p>
+    }
+    else if (profileId is null)
+    {
+        <div class="empty-state">
+            <p>Choose a runner before viewing personal history, trends, and goals.</p>
+            <a class="primary-action" href="/profiles">Choose a runner</a>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <div class="empty-state" role="alert">
+            <p>@loadError</p>
+            <button class="secondary-action" type="button" @onclick="LoadAsync">Try again</button>
+        </div>
+    }
+    else if (sessions.Count == 0)
     {
         <p class="empty-state">@(showTests ? "No system-test activities are stored for this runner." : "No completed sessions for the selected runner yet.")</p>
     }
     else
     {
+        @if (!showTests && insights is { } local)
+        {
+            <section class="weekly-summary-panel" aria-label="Personal local trends and goals">
+                <div class="weekly-summary-heading"><strong>Personal trends · completed runs</strong><span>Simulator and system-test sessions are excluded.</span></div>
+                <div class="weekly-summary trend-summary">
+                    <article><span>Last 7 days</span><strong>@local.WeeklyTrends.CompletedSessions runs · @local.WeeklyTrends.DistanceKilometers.ToString("0.00") km</strong></article>
+                    <article><span>Last 30 days</span><strong>@local.MonthlyTrends.CompletedSessions runs · @local.MonthlyTrends.Duration.ToString(@"hh\:mm\:ss")</strong></article>
+                    <article><span>All completed</span><strong>@local.Trends.DistanceKilometers.ToString("0.00") km</strong></article>
+                    <article><span>Distance record</span><strong>@local.Trends.LongestDistanceKilometers.ToString("0.00") km</strong></article>
+                </div>
+                @if (local.Trends.IncompleteTelemetrySessions > 0)
+                {
+                    <p class="field-hint">@local.Trends.IncompleteTelemetrySessions completed run(s) contain incomplete telemetry; totals retain the recorded values without estimation.</p>
+                }
+                @if (local.Goals.Any(static goal => goal.Enabled))
+                {
+                    <p class="field-hint"><strong>Local goals:</strong> @string.Join(" · ", local.Goals.Where(static goal => goal.Enabled).Select(static goal => $"{goal.TargetValue:0.#} {goal.Kind.ToLowerInvariant()} {goal.Period.ToLowerInvariant()}"))</p>
+                }
+            </section>
+        }
+        @if (!showTests && summaryUnavailable)
+        {
+            <p class="notice" role="status">Runs are available, but personal trend or weekly summaries could not be loaded from the local gateway.</p>
+        }
         @if (!showTests && weekly is not null)
         {
             <section class="weekly-summary-panel" aria-label="This week's completed running">
@@ -53,13 +97,14 @@
                     <option value="all">All time</option>
                 </select>
             </label>
+            <button class="secondary-action" type="button" @onclick="ClearFilters" disabled="@(!HasFilters)">Clear filters</button>
             <span class="history-result-count" role="status">@FilteredSessions.Count @(showTests ? (FilteredSessions.Count == 1 ? "test" : "tests") : (FilteredSessions.Count == 1 ? "run" : "runs"))</span>
         </section>
         <div class="history-list">
             @foreach (SessionSummary item in FilteredSessions)
             {
-                <article class="history-card">
-                    <div><span class="status-chip">@(item.Origin == SessionOrigin.SystemTest ? "System test" : item.Status)</span><h2><a href="/history/@item.SessionId">@item.WorkoutTitle</a></h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p></div>
+                <article class="history-card history-card--interactive" role="button" tabindex="0" aria-label="View details for @item.WorkoutTitle" @onclick="() => OpenSessionDetailsAsync(item)" @onkeydown="args => OpenSessionDetailsFromKeyAsync(args, item)">
+                    <div><span class="status-chip">@(item.Origin == SessionOrigin.SystemTest ? "System test" : item.Status)</span><h2>@item.WorkoutTitle</h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p><span class="history-card__hint">View graph and all changes</span></div>
                     <dl>
                         <div><dt>Time</dt><dd>@item.Duration.ToString(@"hh\:mm\:ss")</dd></div>
                         <div><dt>Distance</dt><dd>@item.DistanceKilometers.ToString("0.00") km</dd></div>
@@ -77,14 +122,51 @@
     }
 </section>
 
+@if (selectedSummary is not null)
+{
+    <DetailSheet BackdropId="history-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog session-details-dialog" LabelledBy="history-details-title" OnDismiss="CloseSessionDetailsAsync">
+        <header class="workout-details-header">
+            <div><p class="eyebrow">@selectedSummary.Status · @selectedSummary.UserProfileName</p><h2 id="history-details-title">@selectedSummary.WorkoutTitle</h2></div>
+            <button class="icon-action" type="button" aria-label="Close session details" autofocus @onclick="CloseSessionDetailsAsync">×</button>
+        </header>
+        @if (sessionDetailsLoading)
+        {
+            <p class="empty-state" role="status">Loading the stored session, graph, and changes…</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(sessionDetailsError))
+        {
+            <div class="empty-state" role="alert"><p>@sessionDetailsError</p><button class="secondary-action" type="button" @onclick="RetrySessionDetailsAsync">Try again</button></div>
+        }
+        else if (selectedSession is not null)
+        {
+            <SessionSnapshotDetails Session="selectedSession" IdPrefix="history-popup" />
+        }
+        <div class="card-actions workout-details-actions">
+            <button class="secondary-action" type="button" @onclick="CloseSessionDetailsAsync">Close</button>
+            <a class="primary-action" href="/history/@selectedSummary.SessionId">Open full session page</a>
+        </div>
+    </DetailSheet>
+}
+
 @code {
     private IReadOnlyList<SessionSummary> sessions = Array.Empty<SessionSummary>();
     private WeeklySessionTotals? weekly;
+    private LocalInsightsView? insights;
     private string searchText = string.Empty;
     private string statusFilter = "all";
     private string periodFilter = "30";
+    private bool HasFilters => !string.IsNullOrWhiteSpace(searchText) || statusFilter != "all" || periodFilter != "30";
     private bool showTests;
     private Guid? profileId;
+    private bool loading = true;
+    private bool summaryUnavailable;
+    private string? loadError;
+    private SessionSummary? selectedSummary;
+    private StoredWorkoutSessionView? selectedSession;
+    private bool sessionDetailsLoading;
+    private bool sessionDetailsOpenPending;
+    private string? sessionDetailsError;
+    private DotNetObjectReference<History>? sessionDetailsModalReference;
 
     private IReadOnlyList<SessionSummary> FilteredSessions
     {
@@ -117,6 +199,74 @@
         await LoadAsync();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!sessionDetailsOpenPending || selectedSummary is null) return;
+        sessionDetailsOpenPending = false;
+        sessionDetailsModalReference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "history-details-backdrop", sessionDetailsModalReference);
+    }
+
+    private async Task OpenSessionDetailsAsync(SessionSummary summary)
+    {
+        selectedSummary = summary;
+        selectedSession = null;
+        sessionDetailsError = null;
+        sessionDetailsLoading = true;
+        sessionDetailsOpenPending = true;
+        await InvokeAsync(StateHasChanged);
+        await LoadSessionDetailsAsync();
+    }
+
+    private Task OpenSessionDetailsFromKeyAsync(KeyboardEventArgs args, SessionSummary summary)
+    {
+        return args.Key is "Enter" or " " ? OpenSessionDetailsAsync(summary) : Task.CompletedTask;
+    }
+
+    private async Task LoadSessionDetailsAsync()
+    {
+        if (selectedSummary is not { } summary) return;
+        sessionDetailsLoading = true;
+        sessionDetailsError = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync($"api/history/{summary.SessionId:D}");
+            selectedSession = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<StoredWorkoutSessionView>() : null;
+            if (selectedSession is null) sessionDetailsError = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                ? "This local session was not found. It may have been deleted."
+                : "The stored session details could not be loaded.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            sessionDetailsError = "The session details could not be loaded from the local gateway. No stored data was changed.";
+        }
+        finally { sessionDetailsLoading = false; }
+    }
+
+    private Task RetrySessionDetailsAsync() => LoadSessionDetailsAsync();
+
+    private async Task CloseSessionDetailsAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        sessionDetailsModalReference = null;
+        selectedSummary = null;
+        selectedSession = null;
+        sessionDetailsError = null;
+        sessionDetailsLoading = false;
+    }
+
+    [JSInvokable]
+    public async Task<bool> CloseScheduleManagerFromJs()
+    {
+        sessionDetailsModalReference = null;
+        selectedSummary = null;
+        selectedSession = null;
+        sessionDetailsError = null;
+        sessionDetailsLoading = false;
+        await InvokeAsync(StateHasChanged);
+        return true;
+    }
+
     private async Task SetTestModeAsync(bool value)
     {
         if (showTests == value) return;
@@ -126,11 +276,42 @@
 
     private async Task LoadAsync()
     {
-        if (profileId is not { } selected) return;
-        sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={selected}&take=5000&includeTests={showTests.ToString().ToLowerInvariant()}")
-            ?? Array.Empty<SessionSummary>();
-        if (!showTests)
-            weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={selected}");
+        loading = true;
+        loadError = null;
+        summaryUnavailable = false;
+        sessions = Array.Empty<SessionSummary>();
+        weekly = null;
+        insights = null;
+        if (profileId is not { } selected)
+        {
+            loading = false;
+            return;
+        }
+        try
+        {
+            sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={selected}&take=5000&includeTests={showTests.ToString().ToLowerInvariant()}")
+                ?? Array.Empty<SessionSummary>();
+            if (!showTests)
+            {
+                try
+                {
+                    weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={selected}");
+                    insights = await Http.GetFromJsonAsync<LocalInsightsView>($"api/local-first/profiles/{selected}/insights");
+                }
+                catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+                {
+                    summaryUnavailable = true;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            loadError = "History could not be loaded from the local gateway. No stored data was changed.";
+        }
+        finally
+        {
+            loading = false;
+        }
     }
 
     private static string HeartRateLabel(SessionSummary session)
@@ -146,5 +327,19 @@
         searchText = string.Empty;
         statusFilter = "all";
         periodFilter = "30";
+    }
+
+    private sealed record LocalInsightsView(LocalTrendView Trends, LocalTrendView WeeklyTrends, LocalTrendView MonthlyTrends, IReadOnlyList<LocalGoalView> Goals);
+    private sealed record LocalTrendView(Guid ProfileId, int CompletedSessions, TimeSpan Duration, double DistanceKilometers, int IncompleteTelemetrySessions, double LongestDistanceKilometers, TimeSpan LongestDuration, int? HighestAverageHeartRateBpm);
+    private sealed record LocalGoalView(Guid Id, Guid ProfileId, string Kind, string Period, double TargetValue, bool Enabled, int Version, DateTimeOffset UpdatedAtUtc);
+
+    public async ValueTask DisposeAsync()
+    {
+        if (selectedSummary is not null)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
+            catch (JSDisconnectedException) { }
+        }
+        sessionDetailsModalReference = null;
     }
 }

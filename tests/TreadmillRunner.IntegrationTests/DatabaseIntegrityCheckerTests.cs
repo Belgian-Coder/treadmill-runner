@@ -89,6 +89,29 @@ public sealed class DatabaseIntegrityCheckerTests : IAsyncLifetime
     Assert.True(check.IsHealthy);
   }
 
+  [Fact]
+  public async Task Verified_backup_rotation_retains_current_and_configured_history_only()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateMigratedFactoryAsync();
+    string root = Path.Combine(_directory, "rotation");
+    Directory.CreateDirectory(root);
+    for (int index = 0; index < 5; index++)
+    {
+      string oldPath = Path.Combine(root, $"integrity-last-known-good-old-{index}.db");
+      await File.WriteAllTextAsync(oldPath, "old backup fixture");
+      File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow.AddDays(-10).AddMinutes(index));
+    }
+    var service = new VerifiedDatabaseBackupService(factory, TimeProvider.System);
+
+    VerifiedDatabaseBackup current = await service.CreateAsync(root, retentionCount: 3);
+
+    string[] retained = Directory.GetFiles(root, "integrity-last-known-good-*.db");
+    Assert.Equal(3, retained.Length);
+    Assert.Contains(retained, path => string.Equals(
+      Path.GetFileName(path), current.FileName, StringComparison.OrdinalIgnoreCase));
+    Assert.Empty(Directory.EnumerateFiles(root, "integrity-backup-*.tmp"));
+  }
+
   private async Task<IDbContextFactory<TreadmillRunnerDbContext>> CreateMigratedFactoryAsync()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);

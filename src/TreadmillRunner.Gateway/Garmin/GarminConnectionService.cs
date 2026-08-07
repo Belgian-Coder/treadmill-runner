@@ -20,7 +20,7 @@ public sealed record GarminConnectionStatus(
   int SyncedItems);
 
 public sealed record GarminConnectStart(Uri AuthorizationUrl, DateTimeOffset ExpiresAtUtc);
-public sealed record GarminManualSyncResult(int Added, int Retried);
+public sealed record GarminSessionSyncResult(int Added);
 
 public sealed class GarminConnectionService(
   IGarminStore store,
@@ -109,25 +109,20 @@ public sealed class GarminConnectionService(
       null,
       1);
     await store.ConnectAsync(link, timeProvider.GetUtcNow(), cancellationToken);
-    await EnqueueAllAsync(saved.UserProfileId, cancellationToken);
     return saved.UserProfileId;
   }
 
-  public async Task<int> EnqueueAllAsync(Guid profileId, CancellationToken cancellationToken)
+  public async Task<GarminSessionSyncResult> EnqueueSessionAsync(
+    Guid profileId,
+    DateOnly date,
+    Guid workoutRevisionId,
+    CancellationToken cancellationToken)
   {
-    IReadOnlyList<GarminSyncDocument> documents = await catalog.BuildAsync(profileId, cancellationToken);
+    IReadOnlyList<GarminSyncDocument> documents = await catalog.BuildSessionAsync(
+      profileId, date, workoutRevisionId, cancellationToken);
     int added = await store.EnqueueAsync(profileId, documents, timeProvider.GetUtcNow(), cancellationToken);
     worker.Wake();
-    return added;
-  }
-
-  public async Task<GarminManualSyncResult> RetryFailedAndEnqueueAllAsync(Guid profileId, CancellationToken cancellationToken)
-  {
-    DateTimeOffset now = timeProvider.GetUtcNow();
-    int retried = await store.ResetRetryableTerminalFailuresAsync(profileId, GarminSyncWorker.MaximumAttempts, now, cancellationToken);
-    int added = await EnqueueAllAsync(profileId, cancellationToken);
-    if (retried > 0) worker.Wake();
-    return new GarminManualSyncResult(added, retried);
+    return new GarminSessionSyncResult(added);
   }
 
   public Task<bool> DisconnectAsync(Guid profileId, CancellationToken cancellationToken) =>

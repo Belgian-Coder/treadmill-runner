@@ -59,6 +59,16 @@ public sealed record WorkoutProgramDefaultDaysPreview(
   IReadOnlyList<DateOnly> CollisionDates,
   int PreservedExceptionCount);
 
+public sealed record WorkoutProgramClearUpcomingPreview(
+  Guid RunId,
+  Guid UserProfileId,
+  int RunVersion,
+  int UpcomingSessionCount,
+  DateOnly? FirstDate,
+  DateOnly? LastDate,
+  bool CanApply,
+  string Message);
+
 public interface IWorkoutProgramStore
 {
   Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListAsync(Guid? userProfileId = null, CancellationToken cancellationToken = default);
@@ -73,6 +83,8 @@ public interface IWorkoutProgramStore
   Task<WorkoutProgramScheduleChangePreview> ApplyScheduleChangeAsync(Guid userProfileId, Guid runId, Guid itemId, WorkoutProgramScheduleAction action, DateOnly? targetDate, int expectedRunVersion, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<WorkoutProgramDefaultDaysPreview> PreviewDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, CancellationToken cancellationToken = default);
   Task<WorkoutProgramDefaultDaysPreview> ApplyDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, int expectedRunVersion, string expectedRevision, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
+  Task<WorkoutProgramClearUpcomingPreview> PreviewClearUpcomingAsync(Guid userProfileId, Guid runId, DateOnly today, CancellationToken cancellationToken = default);
+  Task<WorkoutProgramClearUpcomingPreview> ClearUpcomingAsync(Guid userProfileId, Guid runId, DateOnly today, int expectedRunVersion, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
 }
 
 public sealed class WorkoutProgramStore(
@@ -295,13 +307,68 @@ public sealed class WorkoutProgramStore(
     if (runEntity is null) return null;
     WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
       .Include(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives)
       .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
     WorkoutProgramRevision revision = MapRevision(revisionEntity);
     WorkoutProgramProgress progress = await CalculateProgressAsync(context, revision, runEntity.Id, cancellationToken);
     WorkoutProgramItem? next = progress.NextItem;
-    return next is not null && next.Id == itemId && next.WorkoutRevisionId == workoutRevisionId
+    return next is not null && next.Id == itemId && next.AllowsWorkoutRevision(workoutRevisionId)
       ? (MapRun(runEntity), next)
       : null;
+  }
+
+  public async Task<WorkoutProgramClearUpcomingPreview> PreviewClearUpcomingAsync(
+    Guid userProfileId,
+    Guid runId,
+    DateOnly today,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await BuildClearUpcomingPreviewAsync(context, userProfileId, runId, today, cancellationToken);
+  }
+
+  public async Task<WorkoutProgramClearUpcomingPreview> ClearUpcomingAsync(
+    Guid userProfileId,
+    Guid runId,
+    DateOnly today,
+    int expectedRunVersion,
+    PersistenceWriteOperation operation,
+    CancellationToken cancellationToken = default)
+  {
+    await ScheduleChangeGate.WaitAsync(cancellationToken);
+    try
+    {
+      await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+      await PersistenceReceipts.ThrowIfCompletedAsync(context, operation, cancellationToken);
+      await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+      WorkoutProgramClearUpcomingPreview preview = await BuildClearUpcomingPreviewAsync(
+        context, userProfileId, runId, today, cancellationToken);
+      if (!preview.CanApply) throw new ArgumentException(preview.Message, nameof(runId));
+      WorkoutProgramRunEntity run = await context.WorkoutProgramRuns.SingleAsync(candidate =>
+        candidate.Id == runId && candidate.UserProfileId == userProfileId, cancellationToken);
+      if (run.Version != expectedRunVersion || preview.RunVersion != expectedRunVersion)
+        throw new DbUpdateConcurrencyException("The active training plan changed after the clear preview was shown.");
+      run.Status = nameof(WorkoutProgramRunStatus.Abandoned);
+      run.EndedAtUtc = operation.CreatedAtUtc;
+      run.Version++;
+      WorkoutProgramClearUpcomingPreview outcome = preview with
+      {
+        RunVersion = run.Version,
+        CanApply = false,
+        Message = $"Removed {preview.UpcomingSessionCount} upcoming training session(s). Completed history was preserved.",
+      };
+      await PersistenceReceipts.SaveAsync(
+        context,
+        contextFactory,
+        operation with { OutcomeJson = JsonSerializer.Serialize(outcome, ScheduleReceiptJsonOptions) },
+        cancellationToken);
+      await transaction.CommitAsync(cancellationToken);
+      return outcome;
+    }
+    finally
+    {
+      ScheduleChangeGate.Release();
+    }
   }
 
   public async Task<WorkoutProgramScheduleChangePreview> PreviewScheduleChangeAsync(
@@ -427,6 +494,7 @@ public sealed class WorkoutProgramStore(
 
       WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
         .Include(revision => revision.Items)
+        .ThenInclude(item => item.Alternatives)
         .SingleAsync(revision => revision.Id == run.WorkoutProgramRevisionId, cancellationToken);
       WorkoutProgramRevision revision = MapRevision(revisionEntity);
       WorkoutProgramRun currentRun = MapRun(run);
@@ -489,6 +557,7 @@ public sealed class WorkoutProgramStore(
 
     WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
       .Include(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives)
       .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
     WorkoutProgramRevision revision = MapRevision(revisionEntity);
     WorkoutProgramRun run = MapRun(runEntity);
@@ -574,6 +643,7 @@ public sealed class WorkoutProgramStore(
       return Blocked("Only an active scheduled training plan can be adjusted.");
     WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
       .Include(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives)
       .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
     WorkoutProgramRevision revision = MapRevision(revisionEntity);
     WorkoutProgramItem? selectedItem = revision.Items.SingleOrDefault(item => item.Id == itemId);
@@ -727,17 +797,58 @@ public sealed class WorkoutProgramStore(
       .Select(session => session.WorkoutProgramItemId!.Value)
       .ToHashSetAsync(cancellationToken);
 
+  private static async Task<WorkoutProgramClearUpcomingPreview> BuildClearUpcomingPreviewAsync(
+    TreadmillRunnerDbContext context,
+    Guid userProfileId,
+    Guid runId,
+    DateOnly today,
+    CancellationToken cancellationToken)
+  {
+    WorkoutProgramRunEntity? runEntity = await context.WorkoutProgramRuns.AsNoTracking()
+      .SingleOrDefaultAsync(run => run.Id == runId && run.UserProfileId == userProfileId, cancellationToken);
+    if (runEntity is null)
+      throw new KeyNotFoundException("The selected runner's training plan was not found.");
+    if (runEntity.Status != nameof(WorkoutProgramRunStatus.Active) || runEntity.ScheduledStartDate is null)
+      return new WorkoutProgramClearUpcomingPreview(
+        runId, userProfileId, runEntity.Version, 0, null, null, false,
+        "Only an active scheduled training plan has upcoming sessions to clear.");
+    WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
+      .Include(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives)
+      .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
+    WorkoutProgramRevision revision = MapRevision(revisionEntity);
+    IReadOnlyList<WorkoutProgramScheduleOverride> overrides = await LoadOverridesAsync(context, runId, cancellationToken);
+    IReadOnlyList<WorkoutProgramExtraOccurrence> extras = await LoadExtrasAsync(context, runId, cancellationToken);
+    ScheduledWorkoutProgramItem[] upcoming = WorkoutProgramScheduleProjector.ProjectAll(
+        revision, MapRun(runEntity), overrides, extras)
+      .Where(item => item.Date >= today)
+      .ToArray();
+    return new WorkoutProgramClearUpcomingPreview(
+      runId,
+      userProfileId,
+      runEntity.Version,
+      upcoming.Length,
+      upcoming.FirstOrDefault()?.Date,
+      upcoming.LastOrDefault()?.Date,
+      true,
+      upcoming.Length == 0
+        ? "This active plan has no dated sessions from today onward; clearing it will still end the active plan."
+        : $"Clear {upcoming.Length} upcoming session(s) from {upcoming[0].Date:d MMM yyyy} through {upcoming[^1].Date:d MMM yyyy}?");
+  }
+
   private static IQueryable<WorkoutProgramEntity> ProgramQuery(TreadmillRunnerDbContext context) =>
     context.WorkoutPrograms
       .Include(program => program.Revisions)
-      .ThenInclude(revision => revision.Items);
+      .ThenInclude(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives);
 
   private static async Task ValidateWorkoutReferencesAsync(
     TreadmillRunnerDbContext context,
     WorkoutProgramRevision revision,
     CancellationToken cancellationToken)
   {
-    Guid[] requested = revision.Items.Select(static item => item.WorkoutRevisionId).Distinct().ToArray();
+    Guid[] requested = revision.Items.SelectMany(static item =>
+      item.Alternatives.Select(static option => option.WorkoutRevisionId).Prepend(item.WorkoutRevisionId)).Distinct().ToArray();
     int found = await context.WorkoutRevisions.CountAsync(candidate =>
       requested.Contains(candidate.Id) && candidate.Workout.Kind == nameof(WorkoutKind.Structured), cancellationToken);
     if (found != requested.Length) throw new ArgumentException("One or more workout revisions were not found.", nameof(revision));
@@ -791,6 +902,14 @@ public sealed class WorkoutProgramStore(
       WeekNumber = item.WeekNumber,
       SessionNumber = item.SessionNumber,
       Phase = item.Phase,
+      Alternatives = item.Alternatives.Select(option => new WorkoutProgramItemAlternativeEntity
+      {
+        Id = Guid.NewGuid(),
+        WorkoutProgramItemId = item.Id,
+        WorkoutRevisionId = option.WorkoutRevisionId,
+        DisplayOrder = option.DisplayOrder,
+        Variant = option.Variant,
+      }).ToList(),
     }).ToList(),
   };
 
@@ -812,7 +931,9 @@ public sealed class WorkoutProgramStore(
     entity.Category,
     entity.Items.OrderBy(static item => item.Position)
       .Select(item => new WorkoutProgramItem(
-        item.Id, item.WorkoutRevisionId, item.Position, item.WeekNumber, item.SessionNumber, item.Phase)).ToArray(),
+        item.Id, item.WorkoutRevisionId, item.Position, item.WeekNumber, item.SessionNumber, item.Phase,
+        item.Alternatives.OrderBy(static option => option.DisplayOrder)
+          .Select(option => new WorkoutProgramAlternative(option.WorkoutRevisionId, option.DisplayOrder, option.Variant)).ToArray())).ToArray(),
     entity.TemplateId,
     entity.TemplateVersion,
     entity.OwnerProfileId);
@@ -843,7 +964,7 @@ public static class WorkoutProgramCanonicalizer
       revision.TemplateVersion ?? string.Empty,
       revision.OwnerProfileId?.ToString("D") ?? string.Empty,
       string.Join(',', revision.Items.OrderBy(static item => item.Position).Select(static item =>
-        $"{item.WorkoutRevisionId:D}:{item.WeekNumber}:{item.SessionNumber}:{item.Phase}")),
+        $"{item.WorkoutRevisionId:D}:{item.WeekNumber}:{item.SessionNumber}:{item.Phase}:{string.Join(';', item.Alternatives.Select(static option => $"{option.WorkoutRevisionId:D}:{option.DisplayOrder}:{option.Variant}"))}")),
     });
     return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
   }

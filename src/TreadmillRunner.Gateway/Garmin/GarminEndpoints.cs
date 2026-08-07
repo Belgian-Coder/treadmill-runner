@@ -7,7 +7,7 @@ public static class GarminEndpoints
     RouteGroupBuilder group = endpoints.MapGroup("/api/integrations/garmin");
     group.MapGet("/profiles/{profileId:guid}/status", GetStatusAsync);
     group.MapPost("/profiles/{profileId:guid}/connect", StartConnectAsync);
-    group.MapPost("/profiles/{profileId:guid}/sync", SyncNowAsync);
+    group.MapPost("/profiles/{profileId:guid}/sessions", SyncSessionAsync);
     group.MapPost("/profiles/{profileId:guid}/disconnect", DisconnectAsync);
     group.MapGet("/callback", CompleteConnectAsync);
     return endpoints;
@@ -67,21 +67,30 @@ public static class GarminEndpoints
     }
   }
 
-  private static async Task<IResult> SyncNowAsync(
+  private static async Task<IResult> SyncSessionAsync(
     Guid profileId,
+    GarminSessionSyncRequest request,
     GarminConnectionService service,
     CancellationToken cancellationToken)
   {
     GarminConnectionStatus status = await service.GetStatusAsync(profileId, cancellationToken);
     if (!status.Connected) return TypedResults.Conflict(new { error = "Connect a Garmin account before syncing." });
-    GarminManualSyncResult result = await service.RetryFailedAndEnqueueAllAsync(profileId, cancellationToken);
-    int queued = result.Added + result.Retried;
-    return Results.Accepted(value: new
+    try
     {
-      added = result.Added,
-      retried = result.Retried,
-      message = queued == 0 ? "Everything is already queued or synchronized." : $"Queued {queued} Garmin item(s).",
-    });
+      GarminSessionSyncResult result = await service.EnqueueSessionAsync(
+        profileId, request.Date, request.WorkoutRevisionId, cancellationToken);
+      return Results.Accepted(value: new
+      {
+        added = result.Added,
+        message = result.Added == 0
+          ? "This session is already queued or synchronized."
+          : "This calendar session is queued for Garmin Connect.",
+      });
+    }
+    catch (KeyNotFoundException exception)
+    {
+      return TypedResults.NotFound(new { error = exception.Message });
+    }
   }
 
   private static async Task<IResult> DisconnectAsync(
@@ -93,3 +102,5 @@ public static class GarminEndpoints
     return removed ? TypedResults.NoContent() : TypedResults.NotFound();
   }
 }
+
+public sealed record GarminSessionSyncRequest(DateOnly Date, Guid WorkoutRevisionId);

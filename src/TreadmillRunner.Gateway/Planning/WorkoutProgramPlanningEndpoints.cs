@@ -19,6 +19,8 @@ public static class WorkoutProgramPlanningEndpoints
     group.MapPost("/{id:guid}/archive", ArchiveAsync);
     group.MapPost("/{id:guid}/start", StartAsync);
     group.MapPost("/{id:guid}/restart", RestartAsync);
+    group.MapGet("/runs/{runId:guid}/clear-upcoming/preview", PreviewClearUpcomingAsync);
+    group.MapPost("/runs/{runId:guid}/clear-upcoming", ClearUpcomingAsync);
     return endpoints;
   }
 
@@ -180,6 +182,58 @@ public static class WorkoutProgramPlanningEndpoints
     CancellationToken cancellationToken) => StartOrRestartAsync(
       id, request, restart: true, store, receiptStore, timeProvider, cancellationToken);
 
+  private static async Task<IResult> PreviewClearUpcomingAsync(
+    Guid runId,
+    Guid profileId,
+    DateOnly today,
+    IWorkoutProgramStore store,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      return TypedResults.Ok(await store.PreviewClearUpcomingAsync(profileId, runId, today, cancellationToken));
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+  }
+
+  private static async Task<IResult> ClearUpcomingAsync(
+    Guid runId,
+    WorkoutProgramClearUpcomingRequest request,
+    IWorkoutProgramStore store,
+    IOperationReceiptStore receiptStore,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    const string operationType = "program.run.clear-upcoming";
+    string fingerprint = PlanningOperationFingerprint.Compute(new
+    {
+      RunId = runId,
+      request.ProfileId,
+      request.ExpectedRunVersion,
+      request.Today,
+    });
+    try
+    {
+      ValidateOperationId(request.OperationId);
+      if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
+        return Replay(receipt, operationType, fingerprint);
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      WorkoutProgramClearUpcomingPreview result = await store.ClearUpcomingAsync(
+        request.ProfileId,
+        runId,
+        request.Today,
+        request.ExpectedRunVersion,
+        WriteOperation(request.OperationId, operationType, 200, new { }, now, fingerprint),
+        cancellationToken);
+      return TypedResults.Ok(result);
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
+    catch (ArgumentException exception) { return Validation(exception); }
+    catch (DbUpdateConcurrencyException exception) { return TypedResults.Conflict(new { message = exception.Message }); }
+    catch (OperationReplayException replay) { return Replay(replay.Receipt, operationType, fingerprint); }
+    catch (OperationScopeConflictException) { return OperationConflict(); }
+  }
+
   private static async Task<IResult> StartOrRestartAsync(
     Guid id,
     WorkoutProgramStartRequest request,
@@ -289,6 +343,20 @@ public static class WorkoutProgramPlanningEndpoints
         ?? throw new ArgumentException($"Workout revision {item.WorkoutRevisionId} was not found.");
       using JsonDocument json = JsonDocument.Parse(revision.DefinitionJson);
       string name = json.RootElement.GetProperty("title").GetString() ?? "Workout";
+      var alternatives = new List<WorkoutProgramAlternativeDto>(item.Alternatives.Count);
+      foreach (WorkoutProgramAlternative alternative in item.Alternatives)
+      {
+        StoredWorkoutRevision alternativeRevision = await workoutStore.FindRevisionAsync(alternative.WorkoutRevisionId, cancellationToken)
+          ?? throw new ArgumentException($"Workout revision {alternative.WorkoutRevisionId} was not found.");
+        using JsonDocument alternativeJson = JsonDocument.Parse(alternativeRevision.DefinitionJson);
+        alternatives.Add(new WorkoutProgramAlternativeDto(
+          alternative.WorkoutRevisionId,
+          alternative.DisplayOrder,
+          alternative.Variant,
+          alternativeJson.RootElement.GetProperty("title").GetString() ?? "Workout",
+          alternativeRevision.RevisionNumber,
+          DurationMinutes(alternativeJson.RootElement)));
+      }
       items.Add(new WorkoutProgramItemDto(
         item.Id,
         item.WorkoutRevisionId,
@@ -298,7 +366,8 @@ public static class WorkoutProgramPlanningEndpoints
         DurationMinutes(json.RootElement),
         item.WeekNumber,
         item.SessionNumber,
-        item.Phase));
+        item.Phase,
+        alternatives));
     }
     WorkoutProgramProgress? progress = stored.Progress;
     return new WorkoutProgramDto(

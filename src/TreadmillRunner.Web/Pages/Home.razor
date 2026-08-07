@@ -1,5 +1,6 @@
 @page "/"
 @using TreadmillRunner.Core.Workouts
+@using TreadmillRunner.Core.Household
 
 @using System.Globalization
 @using System.Text
@@ -246,6 +247,14 @@
             </aside>
         }
 
+        @if (quickStart?.Suggestion is { RequiresConfirmation: true, SuggestedProfileId: { } suggested } && suggested != selectedProfileId)
+        {
+            <aside class="maintenance-advisory" role="status" aria-labelledby="quick-start-title">
+                <p id="quick-start-title"><strong>Is @QuickStartProfileName running?</strong> A fresh assigned heart-rate sensor matches this runner. Nothing changes until you confirm.</p>
+                <button class="secondary-action compact-action" type="button" @onclick="() => ConfirmQuickStartAsync(suggested)">Use @QuickStartProfileName and review run</button>
+            </aside>
+        }
+
         <section class="preflight-grid">
             <article class="selection-card">
                 <p class="eyebrow">Choose today’s run</p>
@@ -409,6 +418,15 @@
 
             <details class="readiness-card" open>
                 <summary><span>Pre-run checks</span><strong>@(preflight is null ? "Select a run" : preflight.IsReady ? "Ready" : "Needs attention")</strong></summary>
+                @if (preflight is { } readiness)
+                {
+                    <div class="weekly-summary readiness-summary" aria-label="Readiness levels">
+                        <article><span>Safe to record</span><strong>@(CanRecord(readiness) ? "Ready" : "Blocked")</strong></article>
+                        <article><span>Manual control</span><strong>@(CanUseManualControl(readiness) ? "Ready" : "Unavailable")</strong></article>
+                        <article><span>Planned automation</span><strong>@(CanUsePlannedAutomation(readiness) ? "Ready" : "Unavailable")</strong></article>
+                    </div>
+                    <p class="field-hint">These checks never start the treadmill or send a motion command. Physical controls remain authoritative.</p>
+                }
                 <ul class="readiness-list">
                     @foreach (PreflightCheck check in preflight?.Checks ?? Array.Empty<PreflightCheck>())
                     {
@@ -459,6 +477,7 @@
     private string workoutSource = "library";
     private string workoutSearch = string.Empty;
     private PreflightSnapshot? preflight;
+    private QuickStartView? quickStart;
     private ActiveSessionSnapshot? session;
     private ControlLease? lease => Gateway.Current.Lease;
     private string holderId => Gateway.HolderId;
@@ -474,6 +493,7 @@
     private int? perceivedEffort;
     private string? runNote;
     private bool soundEnabled;
+    private RunCuePreferences cuePreferences = RunCuePreferences.Default;
     private int liveSpeedAxisMaximum = 10;
     private bool isManualCommandPending;
     private bool isStopPending;
@@ -499,6 +519,7 @@
     private readonly List<TimeSpan> liveOverrideMarkers = [];
 
     private string SelectedProfileName => profiles.FirstOrDefault(item => item.Id == selectedProfileId)?.DisplayName ?? "Not selected";
+    private string QuickStartProfileName => string.IsNullOrWhiteSpace(quickStart?.ProfileName) ? "this runner" : quickStart.ProfileName;
     private string SelectedWorkoutName => selectedWorkoutLabel ??
         workouts.FirstOrDefault(item => item.CurrentRevisionId == selectedRevisionId)?.Name ?? "Not selected";
     private WorkoutSummaryView? ManualWorkout => workouts
@@ -571,6 +592,9 @@
     private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
     private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected && Gateway.Current.ControlsBlockedReason is null;
     private bool CanTakeControl => ClientReady && preflight?.IsReady == true;
+    private static bool CanRecord(PreflightSnapshot value) => value.UserProfileId != Guid.Empty && value.WorkoutRevisionId != Guid.Empty;
+    private static bool CanUseManualControl(PreflightSnapshot value) => value.IsReady && value.CanStopRemotely && (value.CanSetSpeedRemotely || value.CanSetInclineRemotely);
+    private static bool CanUsePlannedAutomation(PreflightSnapshot value) => value.IsReady && value.CanSetSpeedRemotely && value.CanSetInclineRemotely && value.TargetEvaluations.All(static target => target.Disposition != WorkoutTargetDisposition.Rejected);
     private bool CanArm => ClientReady && lease is not null && preflight?.IsReady == true;
     private bool CanStart => ClientReady && lease is not null && session is
     {
@@ -649,9 +673,11 @@
         catch (JsonException) { maintenance = null; }
         profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
         workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
+        quickStart = await Http.GetFromJsonAsync<QuickStartView>("api/local-first/quick-start");
         selectedProfileId = await ActiveProfile.GetAsync();
         if (selectedProfileId is not null)
         {
+            await LoadCuePreferencesAsync(selectedProfileId.Value);
             await LoadProfilePlanningAsync();
             await ApplyRecommendationAsync();
         }
@@ -672,8 +698,17 @@
         selectedProgramRunId = null;
         selectedProgramItemId = null;
         await ActiveProfile.SetAsync(profileId);
+        await LoadCuePreferencesAsync(profileId);
         await LoadProfilePlanningAsync();
         await ApplyRecommendationAsync();
+    }
+
+    private async Task ConfirmQuickStartAsync(Guid profileId)
+    {
+        string profileName = QuickStartProfileName;
+        await SelectProfileAsync(profileId);
+        actionStatus = $"{profileName} selected. Review the runner and workout before preparing the run.";
+        quickStart = null;
     }
 
     private async Task SelectWorkoutAsync(WorkoutChoice choice)
@@ -939,6 +974,9 @@
         : $"{workout.ExpandedStepCount} steps · {(workout.DurationMinutes is null ? "Distance-based" : $"{workout.DurationMinutes:0} min")}";
 
     private sealed record PendingProgramStart(WorkoutProgramView Program, bool Restart, WorkoutProgramView? Active);
+    private sealed record ExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
+    private sealed record QuickStartSuggestionView(Guid? SuggestedProfileId, string Reason, bool RequiresConfirmation);
+    private sealed record QuickStartView(QuickStartSuggestionView Suggestion, string? ProfileName);
 
     private async Task RefreshPreflightAsync()
     {
@@ -946,6 +984,19 @@
             ? await Http.GetFromJsonAsync<PreflightSnapshot>($"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}")
             : null;
         actionStatus = preflight?.IsReady == true ? "Gateway ready — take control when you are prepared." : "Complete the pre-run checks.";
+    }
+
+    private async Task LoadCuePreferencesAsync(Guid profileId)
+    {
+        try
+        {
+            ExperienceView? value = await Http.GetFromJsonAsync<ExperienceView>($"api/local-first/profiles/{profileId}/preferences");
+            if (selectedProfileId == profileId && value is not null) cuePreferences = value.Preferences.Cues;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            cuePreferences = RunCuePreferences.Default;
+        }
     }
 
     private Task TakeControlAsync() => TakeControlAsync(restoring: false);
@@ -995,8 +1046,8 @@
                 actionStatus = incoming.Live.SessionState == SessionState.Completed && actionStatus != "Run saved"
                     ? "Run completed."
                     : actionStatus;
-                if (soundEnabled && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
-                    await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+                if (soundEnabled && cuePreferences.StepChanges && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
+                    await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent);
             }
             StateHasChanged();
         });
@@ -1128,7 +1179,7 @@
             {
                 startHoldSecondsRemaining = remaining;
                 actionStatus = $"Keep holding — Start in {remaining}.";
-                if (soundEnabled) await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+                if (soundEnabled) await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent);
                 await InvokeAsync(StateHasChanged);
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             }
@@ -1322,7 +1373,7 @@
         await JS.InvokeVoidAsync("localStorage.setItem", SoundStorageKey, soundEnabled ? "true" : "false");
         if (soundEnabled)
         {
-            await JS.InvokeVoidAsync("treadmillRunnerSound.playCue");
+            await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent);
         }
 
         actionStatus = soundEnabled ? "Sound cues enabled for this browser." : "Sound cues disabled.";

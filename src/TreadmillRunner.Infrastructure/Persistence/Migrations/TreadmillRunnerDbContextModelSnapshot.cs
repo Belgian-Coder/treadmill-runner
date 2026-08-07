@@ -17,6 +17,53 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.BackupVerificationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("BackupBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BackupPath")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LocalBackupPolicyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocalBackupPolicyId", "CompletedAtUtc");
+
+                    b.ToTable("BackupVerifications", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BackupVerifications_Bytes", "\"BackupBytes\" >= 0");
+
+                            t.HasCheckConstraint("CK_BackupVerifications_Status", "\"Status\" IN ('Verified', 'Failed')");
+
+                            t.HasCheckConstraint("CK_BackupVerifications_Time", "\"CompletedAtUtc\" >= \"StartedAtUtc\"");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.BleReliabilityIncidentEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -871,6 +918,97 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.ToTable("ImportAudits", (string)null);
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.LocalBackupPolicyEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DestinationPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("IntervalHours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RetentionCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LocalBackupPolicies", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalBackupPolicies_Interval", "\"IntervalHours\" >= 1 AND \"IntervalHours\" <= 168");
+
+                            t.HasCheckConstraint("CK_LocalBackupPolicies_Retention", "\"RetentionCount\" >= 2 AND \"RetentionCount\" <= 60");
+
+                            t.HasCheckConstraint("CK_LocalBackupPolicies_Version", "\"Version\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.LocalGoalEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("TargetValue")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserProfileId", "Kind", "Period")
+                        .IsUnique();
+
+                    b.ToTable("LocalGoals", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_LocalGoals_Kind", "\"Kind\" IN ('Sessions', 'Minutes', 'Distance', 'PlanCompletion')");
+
+                            t.HasCheckConstraint("CK_LocalGoals_Period", "\"Period\" IN ('Weekly', 'Monthly', 'Plan')");
+
+                            t.HasCheckConstraint("CK_LocalGoals_Target", "\"TargetValue\" > 0");
+
+                            t.HasCheckConstraint("CK_LocalGoals_Version", "\"Version\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.OperationReceiptEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -960,6 +1098,138 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_PremadePlanInstallations_TemplateId", "length(\"TemplateId\") > 0");
 
                             t.HasCheckConstraint("CK_PremadePlanInstallations_TemplateVersion", "length(\"TemplateVersion\") > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.ProgressionRecommendationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AlgorithmVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("WorkoutSessionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkoutSessionId");
+
+                    b.HasIndex("UserProfileId", "WorkoutSessionId")
+                        .IsUnique();
+
+                    b.ToTable("ProgressionRecommendations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProgressionRecommendations_Action", "\"Action\" IN ('Maintain', 'Repeat', 'Reduce', 'Advance', 'Reschedule')");
+
+                            t.HasCheckConstraint("CK_ProgressionRecommendations_Decision", "(\"Status\" = 'Pending' AND \"DecidedAtUtc\" IS NULL) OR (\"Status\" <> 'Pending' AND \"DecidedAtUtc\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_ProgressionRecommendations_Reason", "length(\"Reason\") > 0");
+
+                            t.HasCheckConstraint("CK_ProgressionRecommendations_Status", "\"Status\" IN ('Pending', 'Accepted', 'Rejected')");
+
+                            t.HasCheckConstraint("CK_ProgressionRecommendations_Version", "\"Version\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.RunnerExperiencePreferenceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("CueCompletion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CueConnectionProblems")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CueHalfway")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CueHeartRateDeparture")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("CueStepChanges")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CueVolumePercent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DisplayStyle")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PrimaryMetricsJson")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserProfileId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserProfileId")
+                        .IsUnique();
+
+                    b.ToTable("RunnerExperiencePreferences", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_RunnerExperiencePreferences_Style", "\"DisplayStyle\" IN ('Balanced', 'LargeText', 'HighContrast')");
+
+                            t.HasCheckConstraint("CK_RunnerExperiencePreferences_Version", "\"Version\" > 0");
+
+                            t.HasCheckConstraint("CK_RunnerExperiencePreferences_Volume", "\"CueVolumePercent\" >= 0 AND \"CueVolumePercent\" <= 100");
                         });
                 });
 
@@ -1339,6 +1609,42 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.ToTable("WorkoutProgramExtraOccurrences", (string)null);
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemAlternativeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Variant")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutProgramItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkoutRevisionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkoutRevisionId");
+
+                    b.HasIndex("WorkoutProgramItemId", "DisplayOrder")
+                        .IsUnique();
+
+                    b.HasIndex("WorkoutProgramItemId", "WorkoutRevisionId")
+                        .IsUnique();
+
+                    b.ToTable("WorkoutProgramItemAlternatives", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WorkoutProgramItemAlternatives_DisplayOrder", "\"DisplayOrder\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1710,6 +2016,15 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.BackupVerificationEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.LocalBackupPolicyEntity", null)
+                        .WithMany()
+                        .HasForeignKey("LocalBackupPolicyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.CalendarExceptionEntity", b =>
                 {
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.CalendarSeriesEntity", "CalendarSeries")
@@ -1886,6 +2201,15 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.LocalGoalEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.PremadePlanInstallationEntity", b =>
                 {
                     b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
@@ -1898,6 +2222,30 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("WorkoutProgramId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.ProgressionRecommendationEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutSessionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.RunnerExperiencePreferenceEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.UserProfileEntity", null)
+                        .WithOne()
+                        .HasForeignKey("TreadmillRunner.Infrastructure.Persistence.RunnerExperiencePreferenceEntity", "UserProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -1979,6 +2327,23 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .HasForeignKey("WorkoutProgramRunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemAlternativeEntity", b =>
+                {
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", "WorkoutProgramItem")
+                        .WithMany("Alternatives")
+                        .HasForeignKey("WorkoutProgramItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TreadmillRunner.Infrastructure.Persistence.WorkoutRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("WorkoutRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("WorkoutProgramItem");
                 });
 
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
@@ -2120,6 +2485,11 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramEntity", b =>
                 {
                     b.Navigation("Revisions");
+                });
+
+            modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramItemEntity", b =>
+                {
+                    b.Navigation("Alternatives");
                 });
 
             modelBuilder.Entity("TreadmillRunner.Infrastructure.Persistence.WorkoutProgramRevisionEntity", b =>

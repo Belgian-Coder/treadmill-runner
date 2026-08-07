@@ -14,4 +14,8 @@ TR-017 fixtures also populate exact-revision **Run again** choices, an optional 
 
 TR-018 keeps `profiles-garmin-tablet.png` and `profiles-garmin-iphone17-pro-max.png` populated with safe account/job/watch fixtures while a focused browser regression separately proves that a disconnected account with empty jobs and HTTP 204 unpaired-watch state shows the sign-in form. No fixture or image contains a Garmin password, MFA value, token, or internal runtime path.
 
+TR-031 keeps eight committed readability captures under `showcase/tr-031-control-*.png`: large-text and high-contrast Control states at 390×844 phone portrait, 844×390 phone landscape, 1180×820 tablet, and 1920×1080 desktop. The focused browser test asserts three configured metrics, no horizontal overflow, readable computed type/contrast, fresh simulated HR, controller-ready status, and a visible 44px-or-larger Stop target before capturing. A separate browser case blocks every non-loopback HTTP(S) request while traversing Profiles, History, Operations, Run, and Control.
+
+TR-031 also keeps `showcase/tr-031-calendar-workout-details.png`, `showcase/tr-031-history-session-details.png`, and `showcase/tr-031-history-session-details-mobile.png`. They prove that calendar occurrences and recorded history cards open an in-place detail sheet: planned items show the immutable expanded workout graph and change table, while recorded sessions show persisted planned/requested/measured telemetry and every stored event in order. These read-only evidence views contain no treadmill Start or Stop command.
+
 Do not edit the PNG files manually; update the page or browser fixture and rerun Playwright. A fresh public clone contains this README and creates the gallery on its first browser run.

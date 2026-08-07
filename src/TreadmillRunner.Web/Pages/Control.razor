@@ -3,6 +3,7 @@
 @using System.Globalization
 @using System.Text
 @using System.Text.Json
+@using TreadmillRunner.Core.Household
 
 @implements IAsyncDisposable
 @inject HttpClient Http
@@ -14,7 +15,7 @@
 
 <PageTitle>@DashboardTitle · TreadmillRunner</PageTitle>
 
-<section id="control-dashboard" class="control-page control-page--@FocusClass" aria-labelledby="control-title">
+<section id="control-dashboard" class="control-page control-page--@FocusClass control-page--@DisplayStyleClass" aria-labelledby="control-title">
     <header class="dashboard-header control-page__header">
         <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
         <div class="control-header-actions">
@@ -111,10 +112,40 @@
 
             <section class="control-center" aria-label="Live control center">
                 <section class="control-primary-metrics" aria-label="Live workout metrics">
-                    <article aria-label="Measured speed"><span>Measured speed</span><strong>@session.Live.SpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></strong></article>
-                    <article aria-label="Measured incline"><span>Measured incline</span><strong>@session.Live.InclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></strong></article>
-                    <article aria-label="Heart rate"><span>Heart rate</span><strong>@(session.Live.HeartRateBpm?.ToString(CultureInfo.InvariantCulture) ?? "—")<small> bpm</small></strong></article>
-                    <article aria-label="Elapsed time"><span>Time</span><strong>@FormatElapsed(session.Live.Elapsed)</strong></article>
+                    @foreach (LiveMetric metric in primaryMetrics)
+                    {
+                        @switch (metric)
+                        {
+                            case LiveMetric.Speed:
+                                <article aria-label="Measured speed"><span>Measured speed</span><strong>@session.Live.SpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></strong></article>
+                                break;
+                            case LiveMetric.Incline:
+                                <article aria-label="Measured incline"><span>Measured incline</span><strong>@session.Live.InclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></strong></article>
+                                break;
+                            case LiveMetric.HeartRate:
+                                <article aria-label="Heart rate">
+                                    <span>Heart rate</span>
+                                    @if (session.Live.HeartRateBpm is { } heartRate)
+                                    {
+                                        <strong>@heartRate.ToString(CultureInfo.InvariantCulture)<small> bpm</small></strong>
+                                    }
+                                    else
+                                    {
+                                        <strong>—</strong><small>Not available</small>
+                                    }
+                                </article>
+                                break;
+                            case LiveMetric.ElapsedTime:
+                                <article aria-label="Elapsed time"><span>Time</span><strong>@FormatElapsed(session.Live.Elapsed)</strong></article>
+                                break;
+                            case LiveMetric.Distance:
+                                <article aria-label="Distance"><span>Distance</span><strong>@session.Live.DistanceKilometers.ToString("0.00", CultureInfo.InvariantCulture)<small> km</small></strong></article>
+                                break;
+                            case LiveMetric.Calories:
+                                <article aria-label="Calories unavailable"><span>Calories</span><strong>—</strong><small>Not recorded</small></article>
+                                break;
+                        }
+                    }
                 </section>
 
                 <section class="control-live-chart @(focusMode == ControlFocusMode.Chart ? "control-live-chart--focused" : null)" aria-labelledby="control-chart-title">
@@ -272,7 +303,13 @@
     private bool isManualCommandPending;
     private bool isStopPending;
     private ControlFocusMode focusMode = ControlFocusMode.Balanced;
+    private LiveDisplayStyle displayStyle = LiveDisplayStyle.Balanced;
+    private IReadOnlyList<LiveMetric> primaryMetrics = RunnerExperiencePreferences.Default.PrimaryMetrics;
+    private RunCuePreferences cuePreferences = RunCuePreferences.Default;
+    private Guid? experienceProfileId;
+    private bool halfwayCuePlayed;
     private string FocusClass => focusMode.ToString().ToLowerInvariant();
+    private string DisplayStyleClass => displayStyle.ToString().ToLowerInvariant();
     private bool stopRequestedDuringCommand;
     private bool hasRendered;
     private WakeLockStatusView? wakeLockStatus;
@@ -377,6 +414,7 @@
             if (session is not null)
             {
                 focusMode = FocusState.ForSession(session.SessionId);
+                await LoadExperienceAsync(session.UserProfileId);
                 await HydrateChartAsync(session.SessionId);
             }
         }
@@ -426,7 +464,10 @@
     private void GatewayConnectionChanged()
     {
         if (!Gateway.Current.IsConnected)
+        {
             actionStatus = Gateway.Current.ControlsBlockedReason ?? "Live updates interrupted; the treadmill may still be moving.";
+            if (cuePreferences.ConnectionProblems) _ = PlayCueAsync();
+        }
         _ = InvokeAsync(() =>
         {
             if (Gateway.Current.IsConnected && Gateway.Current.Session is null)
@@ -447,12 +488,25 @@
 
     private void GatewaySessionChanged()
     {
+        ActiveSessionSnapshot? previous = session;
         ActiveSessionSnapshot? incoming = Gateway.Current.Session;
         session = incoming;
         if (incoming is not null)
         {
             focusMode = FocusState.ForSession(incoming.SessionId);
             AppendChartPoint(incoming);
+            if (experienceProfileId != incoming.UserProfileId) _ = LoadExperienceAsync(incoming.UserProfileId);
+            if (cuePreferences.StepChanges && previous?.CurrentStep?.Index is { } previousStep && incoming.CurrentStep?.Index != previousStep)
+                _ = PlayCueAsync();
+            if (cuePreferences.HeartRateDeparture && HasHeartRateTarget(previous) && IsHeartRateWithinTarget(previous) && !IsHeartRateWithinTarget(incoming))
+                _ = PlayCueAsync();
+            if (cuePreferences.Halfway && !halfwayCuePlayed && incoming.Remaining is { } remaining && incoming.Live.Elapsed >= remaining)
+            {
+                halfwayCuePlayed = true;
+                _ = PlayCueAsync();
+            }
+            if (cuePreferences.Completion && previous is not null && !IsTerminal(previous.Live.SessionState) && IsTerminal(incoming.Live.SessionState))
+                _ = PlayCueAsync();
         }
         _ = InvokeAsync(async () =>
         {
@@ -462,6 +516,42 @@
             else
                 StateHasChanged();
         });
+    }
+
+    private async Task LoadExperienceAsync(Guid profileId)
+    {
+        experienceProfileId = profileId;
+        try
+        {
+            ExperienceView? value = await Http.GetFromJsonAsync<ExperienceView>($"api/local-first/profiles/{profileId}/preferences");
+            if (value is null || session?.UserProfileId != profileId) return;
+            displayStyle = value.Preferences.DisplayStyle;
+            primaryMetrics = value.Preferences.PrimaryMetrics;
+            cuePreferences = value.Preferences.Cues;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            // A missing preference response keeps the safe, readable local defaults.
+        }
+    }
+
+    private sealed record ExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
+
+    private static bool IsHeartRateWithinTarget(ActiveSessionSnapshot? value)
+    {
+        if (value?.Live.HeartRateBpm is not { } heartRate || value.HeartRateTarget is not { } target) return true;
+        return (target.MinimumBpm is null || heartRate >= target.MinimumBpm) &&
+            (target.MaximumBpm is null || heartRate <= target.MaximumBpm);
+    }
+
+    private static bool HasHeartRateTarget(ActiveSessionSnapshot? value) =>
+        value?.Live.HeartRateBpm is not null && value.HeartRateTarget is not null;
+
+    private async Task PlayCueAsync()
+    {
+        try { await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent); }
+        catch (JSException) { }
     }
 
     private string RecoveryHeading => session?.RecoveryState switch

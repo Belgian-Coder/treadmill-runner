@@ -23,6 +23,7 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<WorkoutProgramEntity> WorkoutPrograms => Set<WorkoutProgramEntity>();
   internal DbSet<WorkoutProgramRevisionEntity> WorkoutProgramRevisions => Set<WorkoutProgramRevisionEntity>();
   internal DbSet<WorkoutProgramItemEntity> WorkoutProgramItems => Set<WorkoutProgramItemEntity>();
+  internal DbSet<WorkoutProgramItemAlternativeEntity> WorkoutProgramItemAlternatives => Set<WorkoutProgramItemAlternativeEntity>();
   internal DbSet<WorkoutProgramRunEntity> WorkoutProgramRuns => Set<WorkoutProgramRunEntity>();
   internal DbSet<WorkoutProgramScheduleOverrideEntity> WorkoutProgramScheduleOverrides => Set<WorkoutProgramScheduleOverrideEntity>();
   internal DbSet<WorkoutProgramExtraOccurrenceEntity> WorkoutProgramExtraOccurrences => Set<WorkoutProgramExtraOccurrenceEntity>();
@@ -37,6 +38,11 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<GarminActivityUploadAccountEntity> GarminActivityUploadAccounts => Set<GarminActivityUploadAccountEntity>();
   internal DbSet<GarminActivityUploadJobEntity> GarminActivityUploadJobs => Set<GarminActivityUploadJobEntity>();
   internal DbSet<OperationReceiptEntity> OperationReceipts => Set<OperationReceiptEntity>();
+  internal DbSet<RunnerExperiencePreferenceEntity> RunnerExperiencePreferences => Set<RunnerExperiencePreferenceEntity>();
+  internal DbSet<LocalGoalEntity> LocalGoals => Set<LocalGoalEntity>();
+  internal DbSet<ProgressionRecommendationEntity> ProgressionRecommendations => Set<ProgressionRecommendationEntity>();
+  internal DbSet<LocalBackupPolicyEntity> LocalBackupPolicies => Set<LocalBackupPolicyEntity>();
+  internal DbSet<BackupVerificationEntity> BackupVerifications => Set<BackupVerificationEntity>();
 
   public override int SaveChanges(bool acceptAllChangesOnSuccess)
   {
@@ -67,6 +73,90 @@ public sealed class TreadmillRunnerDbContext(
     ConfigureSessions(modelBuilder);
     ConfigureGarmin(modelBuilder);
     ConfigureOperationReceipts(modelBuilder);
+    ConfigureLocalFirstExperience(modelBuilder);
+  }
+
+  private static void ConfigureLocalFirstExperience(ModelBuilder modelBuilder)
+  {
+    var preference = modelBuilder.Entity<RunnerExperiencePreferenceEntity>();
+    preference.ToTable("RunnerExperiencePreferences", table =>
+    {
+      table.HasCheckConstraint("CK_RunnerExperiencePreferences_Style", "\"DisplayStyle\" IN ('Balanced', 'LargeText', 'HighContrast')");
+      table.HasCheckConstraint("CK_RunnerExperiencePreferences_Volume", "\"CueVolumePercent\" >= 0 AND \"CueVolumePercent\" <= 100");
+      table.HasCheckConstraint("CK_RunnerExperiencePreferences_Version", "\"Version\" > 0");
+    });
+    preference.HasKey(entity => entity.Id);
+    preference.Property(entity => entity.DisplayStyle).HasMaxLength(20);
+    preference.Property(entity => entity.PrimaryMetricsJson).HasMaxLength(256);
+    preference.Property(entity => entity.Version).IsConcurrencyToken();
+    preference.HasIndex(entity => entity.UserProfileId).IsUnique();
+    preference.HasOne<UserProfileEntity>().WithOne()
+      .HasForeignKey<RunnerExperiencePreferenceEntity>(entity => entity.UserProfileId)
+      .OnDelete(DeleteBehavior.Cascade);
+
+    var goal = modelBuilder.Entity<LocalGoalEntity>();
+    goal.ToTable("LocalGoals", table =>
+    {
+      table.HasCheckConstraint("CK_LocalGoals_Kind", "\"Kind\" IN ('Sessions', 'Minutes', 'Distance', 'PlanCompletion')");
+      table.HasCheckConstraint("CK_LocalGoals_Period", "\"Period\" IN ('Weekly', 'Monthly', 'Plan')");
+      table.HasCheckConstraint("CK_LocalGoals_Target", "\"TargetValue\" > 0");
+      table.HasCheckConstraint("CK_LocalGoals_Version", "\"Version\" > 0");
+    });
+    goal.HasKey(entity => entity.Id);
+    goal.Property(entity => entity.Kind).HasMaxLength(30);
+    goal.Property(entity => entity.Period).HasMaxLength(20);
+    goal.Property(entity => entity.Version).IsConcurrencyToken();
+    goal.HasIndex(entity => new { entity.UserProfileId, entity.Kind, entity.Period }).IsUnique();
+    goal.HasOne<UserProfileEntity>().WithMany()
+      .HasForeignKey(entity => entity.UserProfileId).OnDelete(DeleteBehavior.Cascade);
+
+    var recommendation = modelBuilder.Entity<ProgressionRecommendationEntity>();
+    recommendation.ToTable("ProgressionRecommendations", table =>
+    {
+      table.HasCheckConstraint("CK_ProgressionRecommendations_Action", "\"Action\" IN ('Maintain', 'Repeat', 'Reduce', 'Advance', 'Reschedule')");
+      table.HasCheckConstraint("CK_ProgressionRecommendations_Status", "\"Status\" IN ('Pending', 'Accepted', 'Rejected')");
+      table.HasCheckConstraint("CK_ProgressionRecommendations_Reason", "length(\"Reason\") > 0");
+      table.HasCheckConstraint("CK_ProgressionRecommendations_Decision", "(\"Status\" = 'Pending' AND \"DecidedAtUtc\" IS NULL) OR (\"Status\" <> 'Pending' AND \"DecidedAtUtc\" IS NOT NULL)");
+      table.HasCheckConstraint("CK_ProgressionRecommendations_Version", "\"Version\" > 0");
+    });
+    recommendation.HasKey(entity => entity.Id);
+    recommendation.Property(entity => entity.Action).HasMaxLength(20);
+    recommendation.Property(entity => entity.Reason).HasMaxLength(500);
+    recommendation.Property(entity => entity.AlgorithmVersion).HasMaxLength(50);
+    recommendation.Property(entity => entity.Status).HasMaxLength(20);
+    recommendation.Property(entity => entity.Version).IsConcurrencyToken();
+    recommendation.HasIndex(entity => entity.OperationId).IsUnique();
+    recommendation.HasIndex(entity => new { entity.UserProfileId, entity.WorkoutSessionId }).IsUnique();
+    recommendation.HasOne<UserProfileEntity>().WithMany()
+      .HasForeignKey(entity => entity.UserProfileId).OnDelete(DeleteBehavior.Cascade);
+    recommendation.HasOne<WorkoutSessionEntity>().WithMany()
+      .HasForeignKey(entity => entity.WorkoutSessionId).OnDelete(DeleteBehavior.Cascade);
+
+    var backupPolicy = modelBuilder.Entity<LocalBackupPolicyEntity>();
+    backupPolicy.ToTable("LocalBackupPolicies", table =>
+    {
+      table.HasCheckConstraint("CK_LocalBackupPolicies_Interval", "\"IntervalHours\" >= 1 AND \"IntervalHours\" <= 168");
+      table.HasCheckConstraint("CK_LocalBackupPolicies_Retention", "\"RetentionCount\" >= 2 AND \"RetentionCount\" <= 60");
+      table.HasCheckConstraint("CK_LocalBackupPolicies_Version", "\"Version\" > 0");
+    });
+    backupPolicy.HasKey(entity => entity.Id);
+    backupPolicy.Property(entity => entity.DestinationPath).HasMaxLength(1024);
+    backupPolicy.Property(entity => entity.Version).IsConcurrencyToken();
+
+    var verification = modelBuilder.Entity<BackupVerificationEntity>();
+    verification.ToTable("BackupVerifications", table =>
+    {
+      table.HasCheckConstraint("CK_BackupVerifications_Status", "\"Status\" IN ('Verified', 'Failed')");
+      table.HasCheckConstraint("CK_BackupVerifications_Bytes", "\"BackupBytes\" >= 0");
+      table.HasCheckConstraint("CK_BackupVerifications_Time", "\"CompletedAtUtc\" >= \"StartedAtUtc\"");
+    });
+    verification.HasKey(entity => entity.Id);
+    verification.Property(entity => entity.BackupPath).HasMaxLength(2048);
+    verification.Property(entity => entity.Status).HasMaxLength(20);
+    verification.Property(entity => entity.Detail).HasMaxLength(1000);
+    verification.HasIndex(entity => new { entity.LocalBackupPolicyId, entity.CompletedAtUtc });
+    verification.HasOne<LocalBackupPolicyEntity>().WithMany()
+      .HasForeignKey(entity => entity.LocalBackupPolicyId).OnDelete(DeleteBehavior.Cascade);
   }
 
   private static void ConfigureBleReliability(ModelBuilder modelBuilder)
@@ -527,6 +617,22 @@ public sealed class TreadmillRunnerDbContext(
       .HasForeignKey(entity => entity.WorkoutProgramRevisionId)
       .OnDelete(DeleteBehavior.Restrict);
     item.HasOne<WorkoutRevisionEntity>()
+      .WithMany()
+      .HasForeignKey(entity => entity.WorkoutRevisionId)
+      .OnDelete(DeleteBehavior.Restrict);
+
+    var itemAlternative = modelBuilder.Entity<WorkoutProgramItemAlternativeEntity>();
+    itemAlternative.ToTable("WorkoutProgramItemAlternatives", table =>
+      table.HasCheckConstraint("CK_WorkoutProgramItemAlternatives_DisplayOrder", "\"DisplayOrder\" > 0"));
+    itemAlternative.HasKey(entity => entity.Id);
+    itemAlternative.Property(entity => entity.Variant).HasMaxLength(40);
+    itemAlternative.HasIndex(entity => new { entity.WorkoutProgramItemId, entity.DisplayOrder }).IsUnique();
+    itemAlternative.HasIndex(entity => new { entity.WorkoutProgramItemId, entity.WorkoutRevisionId }).IsUnique();
+    itemAlternative.HasOne(entity => entity.WorkoutProgramItem)
+      .WithMany(entity => entity.Alternatives)
+      .HasForeignKey(entity => entity.WorkoutProgramItemId)
+      .OnDelete(DeleteBehavior.Cascade);
+    itemAlternative.HasOne<WorkoutRevisionEntity>()
       .WithMany()
       .HasForeignKey(entity => entity.WorkoutRevisionId)
       .OnDelete(DeleteBehavior.Restrict);

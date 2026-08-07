@@ -7,9 +7,20 @@
 
 <PageTitle>Session detail · TreadmillRunner</PageTitle>
 
-@if (session is null)
+@if (loading)
 {
-    <p class="empty-state">Loading session detail…</p>
+    <p class="empty-state" role="status">Loading session detail…</p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="empty-state" role="alert">
+        <p>@loadError</p>
+        <button class="secondary-action" type="button" @onclick="LoadSessionAsync">Try again</button>
+    </div>
+}
+else if (session is null)
+{
+    <div class="empty-state"><p>This local session was not found. It may have been deleted.</p><a class="secondary-action" href="/history">Back to history</a></div>
 }
 else
 {
@@ -22,12 +33,58 @@ else
             <article><span>Duration</span><strong>@session.Duration.ToString(@"hh\:mm\:ss")</strong></article>
             <article><span>Distance</span><strong>@session.DistanceKilometers.ToString("0.00") km</strong></article>
             <article><span>Estimated kcal</span><strong>@session.EstimatedKilocalories.ToString("0")</strong></article>
-            <article><span>Average HR</span><strong>@(session.AverageHeartRateBpm?.ToString("0") ?? "—") bpm</strong></article>
+            <article><span>Average HR</span><strong>@AverageHeartRateLabel</strong></article>
         </section>
-        <section class="controls-card" aria-label="Session exports">
+        @if (comparison is { } sameRevision)
+        {
+            <section class="panel-card" aria-labelledby="comparison-title">
+                <div class="panel-heading"><div><p class="eyebrow">Same saved workout revision</p><h2 id="comparison-title">Previous comparison</h2></div><span>@sameRevision.ComparisonCount prior</span></div>
+                @if (sameRevision.Previous is { } previous)
+                {
+                    <div class="weekly-summary">
+                        <article><span>Time change</span><strong>@FormatDelta(session.Duration - previous.Duration)</strong></article>
+                        <article><span>Distance change</span><strong>@((session.DistanceKilometers - previous.DistanceKilometers).ToString("+0.00;-0.00;0.00")) km</strong></article>
+                        <article><span>Previous avg speed</span><strong>@previous.AverageSpeedKph.ToString("0.0") km/h</strong></article>
+                    </div>
+                }
+                <p class="field-hint">@sameRevision.Explanation</p>
+            </section>
+        }
+        <section class="controls-card session-export-actions" aria-label="Session exports">
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.csv")" download>Download CSV</a>
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.fit")" download>Download FIT Activity</a>
             <button class="touch-action danger-action" type="button" disabled="@previewLoading" @onclick="LoadDeletionPreviewAsync">@(previewLoading ? "Checking…" : "Delete local session")</button>
+        </section>
+        <section class="panel-card adviser-card" aria-labelledby="adviser-title">
+            <div class="panel-heading"><div><p class="eyebrow">Deterministic local adviser</p><h2 id="adviser-title">What next?</h2></div><span>No plan changes without confirmation</span></div>
+            <p class="field-hint">Accepting or rejecting records your decision only. It never edits the saved workout or active training plan.</p>
+            @if (localInsightsLoading)
+            {
+                <p class="muted" role="status">Loading comparison and adviser receipts…</p>
+            }
+            else if (!string.IsNullOrWhiteSpace(localInsightsMessage))
+            {
+                <p class="field-error" role="status">@localInsightsMessage</p>
+                <button class="secondary-action" type="button" @onclick="LoadLocalInsightsAsync">Try again</button>
+            }
+            else if (recommendation is null)
+            {
+                <p>Use this run’s recorded completion, adherence, RPE, heart-rate coverage, interruptions, and telemetry quality to create an explainable suggestion.</p>
+                <button class="secondary-action" type="button" @onclick="CreateRecommendationAsync" disabled="@recommendationBusy">@(recommendationBusy ? "Reviewing…" : "Create local suggestion")</button>
+            }
+            else
+            {
+                <p><strong>@recommendation.Recommendation.Action:</strong> @recommendation.Recommendation.Reason</p>
+                <p class="field-hint">Algorithm @recommendation.Recommendation.AlgorithmVersion · receipt @recommendation.Status</p>
+                @if (recommendation.Status == "Pending")
+                {
+                    <div class="controls-card adviser-actions">
+                        <button class="primary-action" type="button" @onclick="() => DecideRecommendationAsync(true)" disabled="@recommendationBusy">Record as accepted</button>
+                        <button class="secondary-action" type="button" @onclick="() => DecideRecommendationAsync(false)" disabled="@recommendationBusy">Record as rejected</button>
+                    </div>
+                }
+            }
+            @if (!string.IsNullOrWhiteSpace(recommendationMessage)) { <p role="status">@recommendationMessage</p> }
         </section>
         @if (deletionPreview is null && !string.IsNullOrWhiteSpace(deletionMessage))
         {
@@ -150,15 +207,121 @@ else
     private bool previewLoading;
     private bool deleting;
     private string deletionMessage = string.Empty;
+    private RecommendationView? recommendation;
+    private ComparisonView? comparison;
+    private bool recommendationBusy;
+    private string recommendationMessage = string.Empty;
+    private bool loading = true;
+    private string? loadError;
+    private bool localInsightsLoading;
+    private string? localInsightsMessage;
+    private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
 
     protected override async Task OnParametersSetAsync()
     {
-        session = await Http.GetFromJsonAsync<StoredWorkoutSessionView>($"api/history/{SessionId}");
+        await LoadSessionAsync();
+    }
+
+    private async Task LoadSessionAsync()
+    {
+        loading = true;
+        loadError = null;
+        session = null;
+        recommendation = null;
+        comparison = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync($"api/history/{SessionId}");
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return;
+            if (!response.IsSuccessStatusCode)
+            {
+                loadError = "Session detail could not be loaded from the local gateway.";
+                return;
+            }
+            session = await response.Content.ReadFromJsonAsync<StoredWorkoutSessionView>();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            loadError = "Session detail could not be loaded from the local gateway. No stored data was changed.";
+            return;
+        }
+        finally
+        {
+            loading = false;
+        }
+
         double observedMaximum = session?.Samples.Count is > 0
             ? session.Samples.SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }).Max()
             : 0;
         speedAxisMaximum = (int)Math.Ceiling(Math.Max(10, observedMaximum));
+        if (session is not null)
+        {
+            await LoadLocalInsightsAsync();
+        }
     }
+
+    private async Task LoadLocalInsightsAsync()
+    {
+        if (session is null) return;
+        localInsightsLoading = true;
+        localInsightsMessage = null;
+        try
+        {
+            comparison = await Http.GetFromJsonAsync<ComparisonView>($"api/local-first/profiles/{session.Definition.UserProfileId}/comparisons/{SessionId}");
+            RecommendationView[] existing = await Http.GetFromJsonAsync<RecommendationView[]>($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations") ?? [];
+            recommendation = existing.FirstOrDefault(item => item.SessionId == SessionId);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            localInsightsMessage = "Comparison and adviser receipts are temporarily unavailable. The session itself is still available.";
+        }
+        finally
+        {
+            localInsightsLoading = false;
+        }
+    }
+
+    private async Task CreateRecommendationAsync()
+    {
+        if (session is null) return;
+        recommendationBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations", new { OperationId = Guid.NewGuid(), SessionId });
+            recommendation = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<RecommendationView>() : null;
+            recommendationMessage = response.IsSuccessStatusCode ? "Suggestion stored locally for review." : "A suggestion could not be created from this session.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            recommendationMessage = "The local gateway could not create a suggestion. No plan or workout was changed.";
+        }
+        finally { recommendationBusy = false; }
+    }
+
+    private async Task DecideRecommendationAsync(bool accepted)
+    {
+        if (session is null || recommendation is null) return;
+        recommendationBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations/{recommendation.Id}/decision", new { Accepted = accepted, ExpectedVersion = recommendation.Version });
+            if (response.IsSuccessStatusCode) recommendation = await response.Content.ReadFromJsonAsync<RecommendationView>();
+            recommendationMessage = response.IsSuccessStatusCode
+                ? accepted ? "Accepted decision recorded. The active plan and immutable workout remain unchanged." : "Rejected decision recorded; the receipt was retained."
+                : "The decision could not be recorded. The active plan and workout remain unchanged.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            recommendationMessage = "The local gateway could not record the decision. The active plan and workout remain unchanged.";
+        }
+        finally { recommendationBusy = false; }
+    }
+
+    private sealed record RecommendationValue(string Action, string Reason, string AlgorithmVersion);
+    private sealed record RecommendationView(Guid Id, Guid ProfileId, Guid SessionId, RecommendationValue Recommendation, string Status, int Version, DateTimeOffset CreatedAtUtc, DateTimeOffset? DecidedAtUtc);
+    private sealed record ComparisonView(Guid WorkoutRevisionId, int ComparisonCount, SessionSummary? Previous, string Explanation);
+    private static string FormatDelta(TimeSpan value) =>
+        $"{(value < TimeSpan.Zero ? "−" : value > TimeSpan.Zero ? "+" : string.Empty)}{value.Duration().ToString(@"hh\:mm\:ss")}";
 
     private async Task LoadDeletionPreviewAsync()
     {

@@ -67,7 +67,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.Locator(".connection-state")).ToHaveTextAsync("Gateway ready");
     ILocator readiness = Page.Locator(".readiness-card");
     await Expect(readiness).ToHaveAttributeAsync("open", "");
-    await Expect(readiness.GetByText("Ready", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(readiness.GetByText("Ready", new() { Exact = true }).First).ToBeVisibleAsync();
     await Expect(Page.Locator(".readiness-list").GetByText("Treadmill connected", new() { Exact = false })).ToBeVisibleAsync();
     await Expect(Page.Locator(".readiness-list").GetByText("Heart rate connected", new() { Exact = false })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Safety notice"))
@@ -133,7 +133,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Live treadmill controls", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Heart rate")).ToContainTextAsync("bpm");
     await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToContainTextAsync("6.4");
-    await Expect(Page.GetByLabel("Measured incline", new() { Exact = true })).ToContainTextAsync("1.0");
+    await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("1.0");
     await Expect(Page.GetByText("Physical movement detected", new() { Exact = true })).ToHaveCountAsync(0);
     ILocator speedDown = Page.GetByRole(AriaRole.Button, new() { Name = "Speed -0.1 km/h" });
     ILocator speedUp = Page.GetByRole(AriaRole.Button, new() { Name = "Speed +0.1 km/h" });
@@ -294,7 +294,10 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "History", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("This week's completed running")).ToContainTextAsync("1");
-    await Page.GetByRole(AriaRole.Link, new() { Name = plan.WorkoutName }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = $"View details for {plan.WorkoutName}", Exact = true }).ClickAsync();
+    ILocator sessionDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(sessionDialog.GetByRole(AriaRole.Heading, new() { Name = plan.WorkoutName, Exact = true })).ToBeVisibleAsync();
+    await sessionDialog.GetByRole(AriaRole.Link, new() { Name = "Open full session page", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = plan.WorkoutName, Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Planned versus actual", new() { Exact = true })).ToBeVisibleAsync();
     await Page.GetByText("Time in heart-rate zones", new() { Exact = true }).ClickAsync();

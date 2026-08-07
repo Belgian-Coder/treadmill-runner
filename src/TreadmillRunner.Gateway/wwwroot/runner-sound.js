@@ -3,7 +3,7 @@ if (window.matchMedia("(display-mode: standalone)").matches || navigator.standal
 }
 
 window.treadmillRunnerSound = {
-  playCue: function () {
+  playCue: function (volumePercent = 60) {
     const AudioContextType = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextType) return false;
     const context = new AudioContextType();
@@ -12,7 +12,8 @@ window.treadmillRunnerSound = {
     oscillator.type = "sine";
     oscillator.frequency.setValueAtTime(660, context.currentTime);
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.015);
+    const volume = Math.max(0, Math.min(100, Number(volumePercent) || 0)) / 100;
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.2 * volume), context.currentTime + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
     oscillator.connect(gain);
     gain.connect(context.destination);

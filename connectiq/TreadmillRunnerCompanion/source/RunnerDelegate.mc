@@ -18,4 +18,12 @@ class RunnerDelegate extends WatchUi.BehaviorDelegate {
         // Prevent an accidental Back press from ending or discarding a recording.
         return _controller.protectsBack();
     }
+
+    function onNextPage() as Boolean {
+        return _controller.showNextPage();
+    }
+
+    function onPreviousPage() as Boolean {
+        return _controller.showPreviousPage();
+    }
 }

@@ -82,7 +82,7 @@ public sealed class VerifiedDatabaseBackupService(
     CancellationToken cancellationToken = default)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(backupRoot);
-    retentionCount = Math.Clamp(retentionCount, 2, 10);
+    retentionCount = Math.Clamp(retentionCount, 2, 60);
     string root = Path.GetFullPath(backupRoot);
     Directory.CreateDirectory(root);
     DateTimeOffset createdAt = timeProvider.GetUtcNow();

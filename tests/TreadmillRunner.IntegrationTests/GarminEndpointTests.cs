@@ -16,7 +16,7 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class GarminEndpointTests(GarminGatewayFactory factory) : IClassFixture<GarminGatewayFactory>
 {
   [Fact]
-  public async Task Mock_OAuth_connects_one_profile_encrypts_tokens_and_syncs_automatically()
+  public async Task Mock_OAuth_connects_one_profile_and_syncs_only_the_requested_calendar_session()
   {
     using HttpClient client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
     JsonElement initial = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/profiles/{factory.ProfileId}/status");
@@ -39,10 +39,17 @@ public sealed class GarminEndpointTests(GarminGatewayFactory factory) : IClassFi
     Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
     Assert.StartsWith("/profiles?garmin=connected", callback.Headers.Location?.OriginalString, StringComparison.Ordinal);
 
-    JsonElement status = await WaitForSyncedAsync(client, 1);
+    JsonElement status = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/profiles/{factory.ProfileId}/status");
     Assert.True(status.GetProperty("connected").GetBoolean());
     Assert.Contains("Garmin test account", status.GetProperty("accountLabel").GetString(), StringComparison.Ordinal);
-    Assert.True(status.GetProperty("syncedItems").GetInt32() >= 1);
+    Assert.Equal(0, status.GetProperty("syncedItems").GetInt32());
+
+    using HttpResponseMessage sessionSync = await client.PostAsJsonAsync(
+      $"/api/integrations/garmin/profiles/{factory.ProfileId}/sessions",
+      new { date = factory.SessionDate, workoutRevisionId = factory.WorkoutRevisionId });
+    Assert.Equal(HttpStatusCode.Accepted, sessionSync.StatusCode);
+    JsonElement afterSession = await WaitForSyncedAsync(client, 2);
+    Assert.Equal(2, afterSession.GetProperty("syncedItems").GetInt32());
 
     using HttpResponseMessage workout = await client.PostAsJsonAsync("/api/planning/workouts", new
     {
@@ -63,8 +70,9 @@ public sealed class GarminEndpointTests(GarminGatewayFactory factory) : IClassFi
       },
     });
     Assert.Equal(HttpStatusCode.Created, workout.StatusCode);
-    JsonElement afterChange = await WaitForSyncedAsync(client, 2);
-    Assert.True(afterChange.GetProperty("syncedItems").GetInt32() >= 2);
+    await Task.Delay(150);
+    JsonElement afterChange = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/profiles/{factory.ProfileId}/status");
+    Assert.Equal(2, afterChange.GetProperty("syncedItems").GetInt32());
 
     await using (var context = await factory.CreateContextAsync())
     {
@@ -104,8 +112,12 @@ public sealed class GarminEndpointTests(GarminGatewayFactory factory) : IClassFi
     using HttpClient client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
     await EnsureConnectedAsync(client, factory.ProfileId);
     await EnsureConnectedAsync(client, factory.SecondProfileId);
-    JsonElement first = await WaitForSyncedAsync(client, factory.ProfileId, 1);
-    JsonElement second = await WaitForSyncedAsync(client, factory.SecondProfileId, 1);
+    await client.PostAsJsonAsync($"/api/integrations/garmin/profiles/{factory.ProfileId}/sessions",
+      new { date = factory.SessionDate, workoutRevisionId = factory.WorkoutRevisionId });
+    await client.PostAsJsonAsync($"/api/integrations/garmin/profiles/{factory.SecondProfileId}/sessions",
+      new { date = factory.SessionDate, workoutRevisionId = factory.WorkoutRevisionId });
+    JsonElement first = await WaitForSyncedAsync(client, factory.ProfileId, 2);
+    JsonElement second = await WaitForSyncedAsync(client, factory.SecondProfileId, 2);
     Assert.NotEqual(first.GetProperty("accountLabel").GetString(), second.GetProperty("accountLabel").GetString());
 
     using HttpResponseMessage disconnect = await client.PostAsync($"/api/integrations/garmin/profiles/{factory.ProfileId}/disconnect", null);
@@ -114,7 +126,7 @@ public sealed class GarminEndpointTests(GarminGatewayFactory factory) : IClassFi
     JsonElement secondAfter = await client.GetFromJsonAsync<JsonElement>($"/api/integrations/garmin/profiles/{factory.SecondProfileId}/status");
     Assert.False(firstAfter.GetProperty("connected").GetBoolean());
     Assert.True(secondAfter.GetProperty("connected").GetBoolean());
-    Assert.True(secondAfter.GetProperty("syncedItems").GetInt32() >= 1);
+    Assert.True(secondAfter.GetProperty("syncedItems").GetInt32() >= 2);
   }
 
   private static async Task EnsureConnectedAsync(HttpClient client, Guid profileId)
@@ -149,6 +161,8 @@ public sealed class GarminGatewayFactory : WebApplicationFactory<TreadmillRunner
   private string DatabasePath => Path.Combine(directory, "gateway.db");
   public Guid ProfileId { get; } = Guid.NewGuid();
   public Guid SecondProfileId { get; } = Guid.NewGuid();
+  public Guid WorkoutRevisionId { get; } = Guid.NewGuid();
+  public DateOnly SessionDate { get; } = new(2026, 8, 10);
 
   protected override void ConfigureWebHost(IWebHostBuilder builder)
   {
@@ -190,13 +204,40 @@ public sealed class GarminGatewayFactory : WebApplicationFactory<TreadmillRunner
       };
       workout.Revisions.Add(new WorkoutRevisionEntity
       {
-        Id = Guid.NewGuid(),
+        Id = WorkoutRevisionId,
         RevisionNumber = 1,
         DefinitionJson = "{\"schemaVersion\":1,\"title\":\"Easy 5K\",\"description\":\"Mock sync fixture\",\"blocks\":[]}",
         ContentSha256 = new string('c', 64),
         CreatedAtUtc = now,
       });
       database.Workouts.Add(workout);
+      foreach (Guid profileId in new[] { ProfileId, SecondProfileId })
+      {
+        Guid seriesId = Guid.NewGuid();
+        database.CalendarSeries.Add(new CalendarSeriesEntity
+        {
+          Id = seriesId,
+          UserProfileId = profileId,
+          ScheduleGroupId = seriesId,
+          Name = "Outside session",
+          TimeZoneId = "Europe/Brussels",
+          StartDate = SessionDate,
+          EndDate = SessionDate,
+          IntervalWeeks = 1,
+          WeekdayMask = 1,
+          Version = 1,
+          CreatedAtUtc = now,
+          Options =
+          [
+            new CalendarSeriesOptionEntity
+            {
+              Id = Guid.NewGuid(),
+              WorkoutRevisionId = WorkoutRevisionId,
+              DisplayOrder = 1,
+            },
+          ],
+        });
+      }
       database.SaveChanges();
     }
 

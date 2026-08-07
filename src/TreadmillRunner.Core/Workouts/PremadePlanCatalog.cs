@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
+using System.Text.Json;
 
 namespace TreadmillRunner.Core.Workouts;
 
@@ -13,7 +15,18 @@ public sealed record PremadePlanSessionTemplate(
   int DurationMinutes,
   double TargetSpeedKph,
   double TargetInclinePercent,
-  int? HeartRateZoneNumber);
+  int? HeartRateZoneNumber,
+  WorkoutDefinition? ExactDefinition = null,
+  IReadOnlyList<PremadePlanVariantTemplate>? Alternatives = null)
+{
+  public IReadOnlyList<PremadePlanVariantTemplate> AlternativeVariants { get; } = Alternatives ?? [];
+}
+
+public sealed record PremadePlanVariantTemplate(
+  string WorkoutKey,
+  string Variant,
+  string WorkoutName,
+  WorkoutDefinition Definition);
 
 public sealed record PremadePlanTemplate(
   string Id,
@@ -27,9 +40,11 @@ public sealed record PremadePlanTemplate(
   bool Repeatable,
   bool RequiresHeartRate,
   IReadOnlySet<string> Tags,
-  IReadOnlyList<PremadePlanSessionTemplate> Sessions)
+  IReadOnlyList<PremadePlanSessionTemplate> Sessions,
+  string? SourceContentSha256 = null)
 {
   public int SessionCount => Sessions.Count;
+  public int VariantCount => Sessions.Count + Sessions.Sum(static session => session.AlternativeVariants.Count);
   public int MaximumDurationMinutes => Sessions.Max(static session => session.DurationMinutes);
   public double MaximumSpeedKph => Sessions.Max(static session => session.TargetSpeedKph);
   public double MaximumInclinePercent => Sessions.Max(static session => session.TargetInclinePercent);
@@ -40,12 +55,15 @@ public sealed record PremadePlanTemplate(
     Name,
     Weeks,
     SessionsPerWeek,
-    string.Join(';', Sessions.Select(static session => $"{session.WeekNumber}:{session.SessionNumber}:{session.Phase}:{session.WorkoutKey}"))))));
+    SourceContentSha256 ?? string.Empty,
+    string.Join(';', Sessions.Select(static session =>
+      $"{session.WeekNumber}:{session.SessionNumber}:{session.Phase}:{session.WorkoutKey}:{string.Join(',', session.AlternativeVariants.Select(static variant => variant.WorkoutKey))}"))))));
 }
 
 public static class PremadePlanCatalog
 {
   public const string CurrentVersion = "1.0.0";
+  private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
   public static IReadOnlyList<PremadePlanTemplate> All { get; } =
   [
@@ -60,7 +78,7 @@ public static class PremadePlanCatalog
     Create("10k-builder-gentle", "10K Builder Gentle", "A conservative fourteen-week 10K progression.", "10K", "Intermediate", 14, 3, 55, 8.0, false, false, "10k", "gentle"),
     Create("heart-rate-10k-gentle", "Heart-rate 10K Gentle", "Zone-guided aerobic development with bounded speed fallback.", "10K", "Intermediate", 14, 3, 55, 8.5, false, true, "10k", "heart-rate", "gentle"),
     Create("10k-performance", "10K Performance", "Eight weeks of tempo, threshold, interval, and long aerobic sessions.", "10K", "Experienced", 8, 4, 65, 12.0, false, false, "10k", "performance"),
-    Create("5k-to-10k-distance-first-58", "5K to 10K Distance First", "A long-horizon 58-week, 174-session distance-first progression.", "10K", "Beginner", 58, 3, 70, 9.0, false, false, "5k", "10k", "long-plan"),
+    CreateWalkingPadDistancePlan(),
     Create("general-treadmill-fitness", "General Treadmill Fitness", "Six weeks mixing easy endurance, steady work, and incline variety.", "General fitness", "All levels", 6, 3, 35, 8.0, false, false, "general-fitness"),
     Create("5k-maintenance", "5K Maintenance", "A repeatable four-week plan for maintaining a 5K routine.", "5K", "Intermediate", 4, 3, 38, 8.5, true, false, "5k", "maintenance"),
     Create("10k-maintenance", "10K Maintenance", "A repeatable four-week plan for maintaining a 10K routine.", "10K", "Intermediate", 4, 3, 55, 9.0, true, false, "10k", "maintenance"),
@@ -78,6 +96,7 @@ public static class PremadePlanCatalog
   public static WorkoutDefinition BuildWorkout(PremadePlanSessionTemplate session)
   {
     ArgumentNullException.ThrowIfNull(session);
+    if (session.ExactDefinition is not null) return session.ExactDefinition;
     int warmup = Math.Clamp(session.DurationMinutes / 6, 4, 8);
     int cooldown = Math.Clamp(session.DurationMinutes / 8, 4, 7);
     int main = Math.Max(5, session.DurationMinutes - warmup - cooldown);
@@ -99,6 +118,101 @@ public static class PremadePlanCatalog
         new WorkoutStep(new TimeGoal(TimeSpan.FromMinutes(cooldown)), new FixedSpeed(warmupSpeed), new FixedIncline(0.5), "Cool down"),
       ]);
   }
+
+  private static PremadePlanTemplate CreateWalkingPadDistancePlan()
+  {
+    byte[] compressed = Convert.FromBase64String(WalkingPadDistancePlanData.GzipBase64);
+    using var input = new MemoryStream(compressed, writable: false);
+    using var gzip = new GZipStream(input, CompressionMode.Decompress);
+    PlanSlotData[] slots = JsonSerializer.Deserialize<PlanSlotData[]>(gzip, JsonOptions)
+      ?? throw new InvalidOperationException("The packaged WalkingPad plan data is invalid.");
+    var sessions = new List<PremadePlanSessionTemplate>(slots.Length);
+    foreach (PlanSlotData slot in slots.OrderBy(static item => item.Week).ThenBy(static item => item.Session))
+    {
+      PlanVariantData primary = slot.Variants.Single(static variant => variant.Variant == "primary");
+      WorkoutDefinition primaryDefinition = BuildExactWorkout(slot.Slot, primary);
+      PremadePlanVariantTemplate[] alternatives = slot.Variants
+        .Where(static variant => variant.Variant != "primary")
+        .Select(variant => new PremadePlanVariantTemplate(
+          variant.Id,
+          variant.Variant,
+          variant.Title,
+          BuildExactWorkout(slot.Slot, variant)))
+        .ToArray();
+      sessions.Add(new PremadePlanSessionTemplate(
+        sessions.Count + 1,
+        slot.Week,
+        slot.Session,
+        Phase("5k-to-10k-distance-first-58", slot.Week, 58),
+        primary.Id,
+        primary.Title,
+        (int)Math.Ceiling(primaryDefinition.Blocks.OfType<WorkoutStep>().Sum(static row => ((TimeGoal)row.Goal).Duration.TotalMinutes)),
+        primary.Rows.Max(static row => row.Speed),
+        primary.Rows.Max(static row => row.Incline),
+        null,
+        primaryDefinition,
+        alternatives));
+    }
+
+    return new PremadePlanTemplate(
+      "5k-to-10k-distance-first-58",
+      "2.0.0",
+      "5K to 10K Distance First",
+      "The exact 58-week WalkingPad X21 progression with fixed and heart-rate alternatives selectable per training day.",
+      "10K",
+      "Beginner",
+      58,
+      3,
+      false,
+      false,
+      new HashSet<string>(["5k", "10k", "long-plan"], StringComparer.Ordinal),
+      sessions,
+      WalkingPadDistancePlanData.ContentSha256);
+  }
+
+  private static WorkoutDefinition BuildExactWorkout(string slot, PlanVariantData variant)
+  {
+    PlanRowData[] trainingRows = HasLegacyStopTail(variant.Rows) ? variant.Rows[..^2] : variant.Rows;
+    WorkoutBlock[] blocks = trainingRows.Select(row =>
+    {
+      SpeedDirective speed = !row.ForceSpeed && row.Zone > 0 && row.MinimumSpeed > 0 && row.MaximumSpeed > 0
+        ? new HeartRateZoneSpeed(row.Zone, row.Speed, row.MinimumSpeed, row.MaximumSpeed)
+        : !row.ForceSpeed && row.HeartRateMinimum > 0 && row.HeartRateMaximum > 0 && row.MinimumSpeed > 0 && row.MaximumSpeed > 0
+          ? new HeartRateSpeed((ushort)row.HeartRateMinimum, (ushort)row.HeartRateMaximum, row.Speed, row.MinimumSpeed, row.MaximumSpeed)
+          : new FixedSpeed(row.Speed);
+      return (WorkoutBlock)new WorkoutStep(
+        new TimeGoal(TimeSpan.FromSeconds(row.DurationSeconds)),
+        speed,
+        new FixedIncline(row.Incline));
+    }).ToArray();
+    return new WorkoutDefinition(
+      1,
+      $"{slot} · {variant.Title}",
+      $"WalkingPad source variant {variant.Id} ({variant.Variant}); legacy low-speed stopping tail removed. {variant.SelectionRule}",
+      blocks);
+  }
+
+  private static bool HasLegacyStopTail(PlanRowData[] rows) => rows.Length >= 2 &&
+    rows[^2].DurationSeconds == 60 && rows[^2].Speed == 1 &&
+    rows[^1].Speed == 0;
+
+  private sealed record PlanSlotData(string Slot, int Week, int Session, PlanVariantData[] Variants);
+  private sealed record PlanVariantData(
+    string Id,
+    string Variant,
+    string Title,
+    string SelectionRule,
+    PlanRowData[] Rows);
+  private sealed record PlanRowData(
+    int DurationSeconds,
+    double Speed,
+    double Incline,
+    bool ForceSpeed,
+    int Zone,
+    int HeartRateMinimum,
+    int HeartRateMaximum,
+    double MinimumSpeed,
+    double MaximumSpeed);
 
   private static PremadePlanTemplate Create(
     string id,

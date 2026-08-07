@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Calendar;
+using TreadmillRunner.Core.Household;
 using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
@@ -82,6 +83,51 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
     var missingReceipt = await new OperationReceiptStore(_factory).FindAsync(missingOperation.ClientOperationId);
     Assert.Equal(404, missingReceipt!.StatusCode);
     Assert.Equal(missingOperation.NotFoundOutcomeJson, missingReceipt.OutcomeJson);
+  }
+
+  [Fact]
+  public async Task Local_first_store_round_trips_runner_preferences_goals_and_backup_verification()
+  {
+    var now = DateTimeOffset.Parse("2026-08-07T10:00:00Z");
+    var profile = Profile(Guid.NewGuid(), "Local Runner");
+    await new ProfileStore(_factory).CreateAsync(profile, now, Op("profile.create", now));
+    var store = new LocalFirstExperienceStore(_factory);
+
+    VersionedRunnerExperiencePreferences defaults = await store.GetPreferencesAsync(profile.Id);
+    Assert.Equal(0, defaults.Version);
+    Assert.Equal(LiveDisplayStyle.Balanced, defaults.Preferences.DisplayStyle);
+
+    var requested = new RunnerExperiencePreferences(
+      LiveDisplayStyle.LargeText,
+      [LiveMetric.ElapsedTime, LiveMetric.HeartRate, LiveMetric.Distance],
+      new RunCuePreferences(true, true, false, true, true, 65));
+    VersionedRunnerExperiencePreferences saved = await store.SavePreferencesAsync(
+      profile.Id, requested, 0, now.AddMinutes(1));
+    Assert.Equal(1, saved.Version);
+    RunnerExperiencePreferences reloaded = (await store.GetPreferencesAsync(profile.Id)).Preferences;
+    Assert.Equal(requested.DisplayStyle, reloaded.DisplayStyle);
+    Assert.Equal(requested.PrimaryMetrics, reloaded.PrimaryMetrics);
+    Assert.Equal(requested.Cues, reloaded.Cues);
+    await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+      store.SavePreferencesAsync(profile.Id, requested, 0, now.AddMinutes(2)));
+
+    LocalGoalDefinition goal = await store.SaveGoalAsync(
+      profile.Id, null, "Sessions", "Weekly", 3, true, null, now.AddMinutes(3));
+    LocalGoalDefinition updatedGoal = await store.SaveGoalAsync(
+      profile.Id, goal.Id, "Sessions", "Weekly", 4, true, goal.Version, now.AddMinutes(4));
+    Assert.Equal(2, updatedGoal.Version);
+    Assert.Equal(4, Assert.Single(await store.ListGoalsAsync(profile.Id)).TargetValue);
+
+    string backupDirectory = Path.Combine(_directory, "household-backups");
+    VersionedLocalBackupPolicy policy = await store.SaveBackupPolicyAsync(
+      null, new LocalBackupPolicy(backupDirectory, 24, 7, true), null, now.AddMinutes(5));
+    var verification = new StoredBackupVerification(
+      Guid.NewGuid(), policy.Id, Path.Combine(backupDirectory, "backup.db"), "Verified",
+      "Full SQLite integrity check passed.", 4096, now.AddMinutes(6), now.AddMinutes(7));
+    await store.RecordBackupVerificationAsync(verification);
+
+    Assert.Equal(policy, await store.GetBackupPolicyAsync());
+    Assert.Equal(verification, Assert.Single(await store.ListBackupVerificationsAsync(10)));
   }
 
   [Fact]

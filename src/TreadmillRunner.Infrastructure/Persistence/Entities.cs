@@ -236,6 +236,17 @@ internal sealed class WorkoutProgramItemEntity
   public int? SessionNumber { get; set; }
   public string? Phase { get; set; }
   public WorkoutProgramRevisionEntity WorkoutProgramRevision { get; set; } = null!;
+  public List<WorkoutProgramItemAlternativeEntity> Alternatives { get; set; } = [];
+}
+
+internal sealed class WorkoutProgramItemAlternativeEntity
+{
+  public Guid Id { get; set; }
+  public Guid WorkoutProgramItemId { get; set; }
+  public Guid WorkoutRevisionId { get; set; }
+  public int DisplayOrder { get; set; }
+  public string Variant { get; set; } = string.Empty;
+  public WorkoutProgramItemEntity WorkoutProgramItem { get; set; } = null!;
 }
 
 internal sealed class PremadePlanInstallationEntity
@@ -457,4 +468,72 @@ internal sealed class OperationReceiptEntity
   public string OutcomeJson { get; set; } = string.Empty;
   public DateTimeOffset CreatedAtUtc { get; set; }
   public string RequestFingerprint { get; set; } = string.Empty;
+}
+
+internal sealed class RunnerExperiencePreferenceEntity
+{
+  public Guid Id { get; set; }
+  public Guid UserProfileId { get; set; }
+  public string DisplayStyle { get; set; } = "Balanced";
+  public string PrimaryMetricsJson { get; set; } = "[\"Speed\",\"HeartRate\",\"ElapsedTime\"]";
+  public bool CueStepChanges { get; set; } = true;
+  public bool CueHeartRateDeparture { get; set; } = true;
+  public bool CueHalfway { get; set; } = true;
+  public bool CueConnectionProblems { get; set; } = true;
+  public bool CueCompletion { get; set; } = true;
+  public int CueVolumePercent { get; set; } = 60;
+  public int Version { get; set; } = 1;
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class LocalGoalEntity
+{
+  public Guid Id { get; set; }
+  public Guid UserProfileId { get; set; }
+  public string Kind { get; set; } = string.Empty;
+  public string Period { get; set; } = string.Empty;
+  public double TargetValue { get; set; }
+  public bool Enabled { get; set; } = true;
+  public int Version { get; set; } = 1;
+  public DateTimeOffset CreatedAtUtc { get; set; }
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class ProgressionRecommendationEntity
+{
+  public Guid Id { get; set; }
+  public Guid OperationId { get; set; }
+  public Guid UserProfileId { get; set; }
+  public Guid WorkoutSessionId { get; set; }
+  public string Action { get; set; } = string.Empty;
+  public string Reason { get; set; } = string.Empty;
+  public string AlgorithmVersion { get; set; } = string.Empty;
+  public string EvidenceJson { get; set; } = "{}";
+  public string Status { get; set; } = "Pending";
+  public DateTimeOffset CreatedAtUtc { get; set; }
+  public DateTimeOffset? DecidedAtUtc { get; set; }
+  public int Version { get; set; } = 1;
+}
+
+internal sealed class LocalBackupPolicyEntity
+{
+  public Guid Id { get; set; }
+  public string DestinationPath { get; set; } = string.Empty;
+  public int IntervalHours { get; set; } = 24;
+  public int RetentionCount { get; set; } = 14;
+  public bool Enabled { get; set; }
+  public int Version { get; set; } = 1;
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class BackupVerificationEntity
+{
+  public Guid Id { get; set; }
+  public Guid LocalBackupPolicyId { get; set; }
+  public string BackupPath { get; set; } = string.Empty;
+  public string Status { get; set; } = string.Empty;
+  public string Detail { get; set; } = string.Empty;
+  public long BackupBytes { get; set; }
+  public DateTimeOffset StartedAtUtc { get; set; }
+  public DateTimeOffset CompletedAtUtc { get; set; }
 }

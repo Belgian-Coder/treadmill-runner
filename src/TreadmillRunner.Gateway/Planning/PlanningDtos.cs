@@ -117,7 +117,16 @@ public sealed record WorkoutProgramItemDto(
   double? DurationMinutes,
   int? WeekNumber = null,
   int? SessionNumber = null,
-  string? Phase = null);
+  string? Phase = null,
+  IReadOnlyList<WorkoutProgramAlternativeDto>? Alternatives = null);
+
+public sealed record WorkoutProgramAlternativeDto(
+  Guid WorkoutRevisionId,
+  int DisplayOrder,
+  string Variant,
+  string WorkoutName,
+  int WorkoutRevisionNumber,
+  double? DurationMinutes);
 
 public sealed record WorkoutProgramRunDto(
   Guid Id,
@@ -159,6 +168,7 @@ public sealed record PremadePlanCatalogDto(
   int Weeks,
   int SessionsPerWeek,
   int SessionCount,
+  int VariantCount,
   int MaximumDurationMinutes,
   double MaximumSpeedKph,
   double MaximumInclinePercent,
@@ -213,6 +223,11 @@ public sealed record WorkoutProgramStartRequest(
   int ScheduledWeekdayMask = 0,
   string? ScheduleTimeZoneId = null);
 public sealed record ArchiveWorkoutProgramRequest(Guid OperationId);
+public sealed record WorkoutProgramClearUpcomingRequest(
+  Guid OperationId,
+  Guid ProfileId,
+  int ExpectedRunVersion,
+  DateOnly Today);
 
 public sealed record ArchiveWorkoutRequest(Guid OperationId);
 

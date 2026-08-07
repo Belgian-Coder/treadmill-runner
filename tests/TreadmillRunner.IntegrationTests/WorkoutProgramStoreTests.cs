@@ -1,9 +1,11 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using TreadmillRunner.Core.Calendar;
 using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Workouts;
+using TreadmillRunner.Gateway.Garmin;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -187,6 +189,96 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
     WorkoutProgramRunEntity abandoned = await context.WorkoutProgramRuns.SingleAsync(run => run.Id == pinnedRun.Id);
     Assert.Equal(nameof(WorkoutProgramRunStatus.Abandoned), abandoned.Status);
     Assert.Equal(Now.AddMinutes(4), abandoned.EndedAtUtc);
+  }
+
+  [Fact]
+  public async Task Alternative_revision_is_persisted_and_is_a_valid_choice_for_the_same_program_slot()
+  {
+    UserProfile runner = await CreateProfileAsync("Choice runner");
+    StoredWorkoutRevision primary = await CreateWorkoutAsync("Fixed pace", 7);
+    StoredWorkoutRevision alternative = await CreateWorkoutAsync("Heart-rate guided", 6);
+    Guid itemId = Guid.NewGuid();
+    var revision = new WorkoutProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1, "Choice plan", null, "10K",
+      [new WorkoutProgramItem(itemId, primary.Id, 1, alternatives:
+        [new WorkoutProgramAlternative(alternative.Id, 2, "hr-alternative")])]);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null, null, Now, Op("program.start"));
+
+    StoredWorkoutProgramProgress stored = Assert.Single(await store.ListAsync(runner.Id));
+    WorkoutProgramAlternative storedAlternative = Assert.Single(stored.Program.CurrentRevision.Items[0].Alternatives);
+    Assert.Equal(alternative.Id, storedAlternative.WorkoutRevisionId);
+    Assert.NotNull(await store.ValidateSelectionAsync(runner.Id, run.Id, itemId, primary.Id));
+    Assert.NotNull(await store.ValidateSelectionAsync(runner.Id, run.Id, itemId, alternative.Id));
+  }
+
+  [Fact]
+  public async Task Clear_upcoming_abandons_only_the_selected_runners_active_schedule_and_preserves_profile()
+  {
+    UserProfile runner = await CreateProfileAsync("Clear runner");
+    UserProfile other = await CreateProfileAsync("Keep runner");
+    StoredWorkoutRevision workout = await CreateWorkoutAsync("Planned run", 7);
+    WorkoutProgramRevision revision = ProgramRevision(Guid.NewGuid(), Guid.NewGuid(), 1, workout.Id, workout.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    var schedule = new WorkoutProgramSchedule(
+      new DateOnly(2026, 8, 10), WeekdayFlags.Monday | WeekdayFlags.Wednesday, "Europe/Brussels");
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null, schedule, Now, Op("program.start"));
+    WorkoutProgramRun otherRun = await store.StartAsync(
+      Guid.NewGuid(), other.Id, revision.RevisionId, null, null, schedule, Now, Op("program.start"));
+
+    WorkoutProgramClearUpcomingPreview preview = await store.PreviewClearUpcomingAsync(
+      runner.Id, run.Id, new DateOnly(2026, 8, 7));
+    Assert.True(preview.CanApply);
+    Assert.Equal(2, preview.UpcomingSessionCount);
+    await Assert.ThrowsAsync<KeyNotFoundException>(() => store.PreviewClearUpcomingAsync(
+      other.Id, run.Id, new DateOnly(2026, 8, 7)));
+
+    WorkoutProgramClearUpcomingPreview cleared = await store.ClearUpcomingAsync(
+      runner.Id, run.Id, new DateOnly(2026, 8, 7), preview.RunVersion, Op("program.run.clear-upcoming"));
+    Assert.False(cleared.CanApply);
+    Assert.Equal(2, cleared.UpcomingSessionCount);
+    Assert.Null(Assert.Single(await store.ListAsync(runner.Id)).Run);
+    Assert.Equal(otherRun.Id, Assert.Single(await store.ListAsync(other.Id)).Run?.Id);
+    await using TreadmillRunnerDbContext context = await _factory.CreateDbContextAsync();
+    Assert.True(await context.UserProfiles.AnyAsync(profile => profile.Id == runner.Id && !profile.IsArchived));
+    Assert.Equal(nameof(WorkoutProgramRunStatus.Abandoned),
+      (await context.WorkoutProgramRuns.SingleAsync(candidate => candidate.Id == run.Id)).Status);
+  }
+
+  [Fact]
+  public async Task Garmin_catalog_contains_runnable_plan_variants_and_scheduled_watch_choices()
+  {
+    UserProfile runner = await CreateProfileAsync("Garmin runner");
+    StoredWorkoutRevision primary = await CreateWorkoutAsync("Outdoor fixed pace", 7);
+    StoredWorkoutRevision alternative = await CreateWorkoutAsync("Outdoor heart rate", 6);
+    var revision = new WorkoutProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1, "Outside-ready plan", null, "10K",
+      [new WorkoutProgramItem(Guid.NewGuid(), primary.Id, 1, 1, 1, "Base",
+        [new WorkoutProgramAlternative(alternative.Id, 2, "hr-alternative")])]);
+    var programStore = new WorkoutProgramStore(_factory);
+    await programStore.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await programStore.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(new DateOnly(2026, 8, 10), WeekdayFlags.Monday, "Europe/Brussels"),
+      Now, Op("program.start"));
+    var catalog = new GarminSyncCatalog(
+      new WorkoutStore(_factory),
+      programStore,
+      new CalendarStore(_factory));
+
+    IReadOnlyList<GarminSyncDocument> documents = await catalog.BuildSessionAsync(
+      runner.Id, new DateOnly(2026, 8, 10), alternative.Id, CancellationToken.None);
+    Assert.Contains(documents, document => document.Kind == "Workout" && document.SourceId == alternative.Id);
+    Assert.DoesNotContain(documents, document => document.Kind == "Workout" && document.SourceId == primary.Id);
+    GarminSyncDocument calendar = Assert.Single(documents, document => document.Kind == "Calendar");
+    using JsonDocument calendarJson = JsonDocument.Parse(calendar.PayloadJson);
+    Assert.Single(calendarJson.RootElement.GetProperty("occurrences")[0].GetProperty("workouts").EnumerateArray());
+    Assert.Equal(alternative.Id, calendarJson.RootElement.GetProperty("occurrences")[0]
+      .GetProperty("workouts")[0].GetProperty("workoutRevisionId").GetGuid());
   }
 
   [Fact]
@@ -501,4 +593,5 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
     "{}",
     Now,
     new string('a', 64));
+
 }

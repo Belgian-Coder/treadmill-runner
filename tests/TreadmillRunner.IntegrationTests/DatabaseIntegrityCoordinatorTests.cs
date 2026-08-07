@@ -65,6 +65,25 @@ public sealed class DatabaseIntegrityCoordinatorTests
   }
 
   [Fact]
+  public async Task Disk_full_backup_failure_is_visible_without_marking_healthy_database_for_recovery()
+  {
+    var checker = new FakeChecker(healthy: true);
+    var backups = new FailingBackups(new IOException("There is not enough space on the disk."));
+    var statuses = new MemoryStatusStore();
+    var lease = new FakeLease(available: true);
+    DatabaseIntegrityCoordinator coordinator = Create(checker, backups, statuses, lease);
+
+    DatabaseIntegrityStatus result = await coordinator.CheckNowAsync();
+
+    Assert.Equal(DatabaseIntegrityState.HealthyWithBackupWarning, result.State);
+    Assert.False(result.RecoveryRequired);
+    Assert.Contains("backup could not be promoted", result.Message, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains(result.Issues, issue => issue.Contains("backup could not be promoted", StringComparison.OrdinalIgnoreCase));
+    Assert.Equal(1, backups.CreateCount);
+    Assert.Equal(1, lease.EndCount);
+  }
+
+  [Fact]
   public async Task Active_database_mutation_defers_check_and_schedules_short_retry()
   {
     DateTimeOffset now = new(2026, 8, 5, 12, 0, 0, TimeSpan.Zero);
@@ -240,6 +259,25 @@ public sealed class DatabaseIntegrityCoordinatorTests
         1024,
         new string('A', 64),
         DateTimeOffset.UtcNow));
+    }
+  }
+
+  private sealed class FailingBackups(IOException failure) : IVerifiedDatabaseBackupService
+  {
+    public int CreateCount { get; private set; }
+
+    public Task<int> CleanupStaleTemporaryFilesAsync(
+      string backupRoot,
+      TimeSpan minimumAge,
+      CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+    public Task<VerifiedDatabaseBackup> CreateAsync(
+      string backupRoot,
+      int retentionCount,
+      CancellationToken cancellationToken = default)
+    {
+      CreateCount++;
+      return Task.FromException<VerifiedDatabaseBackup>(failure);
     }
   }
 

@@ -14,6 +14,7 @@ class RunnerController {
     private var _gatewayState as String = "Standalone";
     private var _sessionTitle as String = "Manual treadmill";
     private var _requestPending as Boolean = false;
+    private var _metricsPage as Boolean = false;
 
     function isRecording() as Boolean {
         return _session != null && (_session as ActivityRecording.Session).isRecording();
@@ -29,6 +30,37 @@ class RunnerController {
 
     function gatewayState() as String { return _gatewayState; }
     function sessionTitle() as String { return _sessionTitle; }
+    function isMetricsPage() as Boolean { return _metricsPage; }
+
+    function showNextPage() as Boolean {
+        if (!isRecording()) { return false; }
+        _metricsPage = true;
+        WatchUi.requestUpdate();
+        return true;
+    }
+
+    function showPreviousPage() as Boolean {
+        if (!isRecording()) { return false; }
+        _metricsPage = false;
+        WatchUi.requestUpdate();
+        return true;
+    }
+
+    function currentHeartRate() as Number? {
+        return isRecording() ? Activity.getActivityInfo().currentHeartRate : null;
+    }
+
+    function elapsedDistance() as Float? {
+        return isRecording() ? Activity.getActivityInfo().elapsedDistance : null;
+    }
+
+    function currentSpeed() as Float? {
+        return isRecording() ? Activity.getActivityInfo().currentSpeed : null;
+    }
+
+    function calories() as Number? {
+        return isRecording() ? Activity.getActivityInfo().calories : null;
+    }
 
     function elapsedSeconds() as Number {
         return _startedAt == null ? 0 : (System.getTimer() - (_startedAt as Number)) / 1000;
@@ -48,6 +80,7 @@ class RunnerController {
             return false;
         }
         _savePending = false;
+        _metricsPage = false;
         _startedAt = System.getTimer();
         WatchUi.requestUpdate();
         return true;
@@ -63,6 +96,7 @@ class RunnerController {
         }
         Sensor.setEnabledSensors([]);
         _savePending = true;
+        _metricsPage = false;
         _startedAt = null;
         return retrySave();
     }

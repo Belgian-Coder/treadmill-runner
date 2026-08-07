@@ -34,3 +34,18 @@ function formatsElapsedTimeDeterministically(logger as Test.Logger) as Boolean {
     logger.debug("elapsed examples=" + zero + "," + minute + "," + hour);
     return zero.equals("00:00") && minute.equals("01:05") && hour.equals("61:01");
 }
+
+(:test)
+function formatsNativeMetricsWithoutInventingValues(logger as Test.Logger) as Boolean {
+    var unavailable = RunnerFormatting.metric(null, " bpm");
+    var heartRate = RunnerFormatting.metric(142, " bpm");
+    var distance = RunnerFormatting.distance(3210.0);
+    var speed = RunnerFormatting.speed(3.0);
+    var calories = RunnerFormatting.metric(286, " kcal");
+    logger.debug("native metric examples=" + heartRate + "," + distance + "," + speed + "," + calories);
+    return unavailable.equals("--")
+        && heartRate.equals("142 bpm")
+        && distance.equals("3.21 km")
+        && speed.equals("10.8 km/h")
+        && calories.equals("286 kcal");
+}

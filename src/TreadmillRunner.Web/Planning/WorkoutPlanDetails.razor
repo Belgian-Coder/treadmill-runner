@@ -1,0 +1,163 @@
+@using System.Globalization
+@using System.Text
+
+@if (Steps.Count == 0)
+{
+    <p class="empty-state">This workout revision has no planned changes.</p>
+}
+else
+{
+    <section class="detail-graph" aria-labelledby="@GraphTitleId">
+        <div class="panel-heading">
+            <div><h3 id="@GraphTitleId">Planned graph</h3><span class="field-help">Each column is one expanded segment; speed and incline use their labelled scales.</span></div>
+        </div>
+        <div class="plan-chart-grid">
+            <div class="plan-chart-scale"><strong>km/h</strong><span>@MaximumSpeed.ToString("0.#", CultureInfo.InvariantCulture)</span><span>0</span></div>
+            <svg class="live-chart plan-change-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Planned speed and incline across @Steps.Count expanded segments">
+                @for (int line = 0; line <= 4; line++)
+                {
+                    double y = 10 + (line * 50);
+                    <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                }
+                @for (int index = 1; index < Steps.Count; index++)
+                {
+                    double x = ChartX(index);
+                    <line class="chart-event-marker" x1="@x" x2="@x" y1="10" y2="210" />
+                }
+                <path class="chart-plan" data-series="planned-speed" d="@BuildPath(static step => step.SpeedStart, static step => step.SpeedEnd, MaximumSpeed)" />
+                <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildPath(static step => step.InclineStart, static step => step.InclineEnd, MaximumIncline)" />
+            </svg>
+            <div class="plan-chart-scale plan-chart-scale--secondary"><strong>%</strong><span>@MaximumIncline.ToString("0.#", CultureInfo.InvariantCulture)</span><span>0</span></div>
+        </div>
+        <div class="legend" aria-label="Planned graph legend"><span><i class="legend-line legend-line--plan"></i>Speed</span><span><i class="legend-line legend-line--incline"></i>Incline</span></div>
+    </section>
+
+    <section class="detail-change-section" aria-labelledby="@ChangesTitleId">
+        <div class="panel-heading">
+            <div><h3 id="@ChangesTitleId">All planned changes</h3><span class="field-help">The immutable revision is expanded so repeated steps appear in execution order.</span></div>
+            <span>@Steps.Count change(s)</span>
+        </div>
+        <div class="detail-table-scroll" tabindex="0" role="region" aria-label="All planned workout changes">
+            <table class="detail-change-table">
+                <thead><tr><th scope="col">Change</th><th scope="col">Target</th><th scope="col">Speed</th><th scope="col">Incline</th><th scope="col">Cue / note</th></tr></thead>
+                <tbody>
+                    @foreach (PlannedStep step in Steps)
+                    {
+                        <tr>
+                            <th scope="row">@(step.Number == 1 ? "Start" : $"After segment {step.Number - 1}")</th>
+                            <td>@step.Goal</td>
+                            <td>@step.Speed</td>
+                            <td>@step.Incline</td>
+                            <td>@step.CueAndNote</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WorkoutBlockInput> Blocks { get; set; } = [];
+
+    [Parameter]
+    public string IdPrefix { get; set; } = "workout-plan";
+
+    private string GraphTitleId => $"{IdPrefix}-graph-title";
+    private string ChangesTitleId => $"{IdPrefix}-changes-title";
+    private IReadOnlyList<PlannedStep> Steps => Expand(Blocks);
+    private double MaximumSpeed => Math.Max(1, Steps.SelectMany(static step => new[] { step.SpeedStart, step.SpeedEnd }).Where(static value => value is not null).Select(static value => value!.Value).DefaultIfEmpty(1).Max());
+    private double MaximumIncline => Math.Max(1, Steps.SelectMany(static step => new[] { step.InclineStart, step.InclineEnd }).Where(static value => value is not null).Select(static value => value!.Value).DefaultIfEmpty(1).Max());
+
+    private static IReadOnlyList<PlannedStep> Expand(IReadOnlyList<WorkoutBlockInput> blocks)
+    {
+        var result = new List<PlannedStep>();
+        ExpandInto(blocks, result);
+        return result;
+    }
+
+    private static void ExpandInto(IReadOnlyList<WorkoutBlockInput> blocks, List<PlannedStep> result)
+    {
+        foreach (WorkoutBlockInput block in blocks)
+        {
+            if (string.Equals(block.Kind, "repeat", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int repetition = 0; repetition < Math.Max(1, block.Repetitions); repetition++) ExpandInto(block.Blocks, result);
+                continue;
+            }
+
+            (double? speedStart, double? speedEnd) = SpeedValues(block);
+            result.Add(new PlannedStep(
+                result.Count + 1,
+                GoalLabel(block),
+                SpeedLabel(block),
+                InclineLabel(block),
+                string.Join(" · ", new[] { block.Cue, block.Notes }.Where(static value => !string.IsNullOrWhiteSpace(value))) is { Length: > 0 } note ? note : "—",
+                speedStart,
+                speedEnd,
+                block.InclineStartPercent,
+                string.Equals(block.InclineKind, "ramp", StringComparison.OrdinalIgnoreCase) ? block.InclineEndPercent : block.InclineStartPercent));
+        }
+    }
+
+    private static (double? Start, double? End) SpeedValues(WorkoutBlockInput block) => block.SpeedKind.ToLowerInvariant() switch
+    {
+        "fixed" => (block.SpeedStartKph, block.SpeedStartKph),
+        "ramp" => (block.SpeedStartKph, block.SpeedEndKph),
+        "heartrate" or "heartratezone" => (block.HeartRateInitialSpeedKph, block.HeartRateInitialSpeedKph),
+        _ => (null, null),
+    };
+
+    private string BuildPath(Func<PlannedStep, double?> startSelector, Func<PlannedStep, double?> endSelector, double maximum)
+    {
+        var path = new StringBuilder();
+        bool drawing = false;
+        for (int index = 0; index < Steps.Count; index++)
+        {
+            double? start = startSelector(Steps[index]);
+            double? end = endSelector(Steps[index]);
+            if (start is null || end is null)
+            {
+                drawing = false;
+                continue;
+            }
+
+            AppendPoint(path, drawing ? 'L' : 'M', ChartX(index), ChartY(start.Value, maximum));
+            AppendPoint(path, 'L', ChartX(index + 1), ChartY(end.Value, maximum));
+            drawing = true;
+        }
+        return path.ToString();
+    }
+
+    private double ChartX(int boundary) => 10 + (boundary / (double)Math.Max(1, Steps.Count) * 700);
+    private static double ChartY(double value, double maximum) => 210 - (Math.Clamp(value / Math.Max(1, maximum), 0, 1) * 200);
+
+    private static void AppendPoint(StringBuilder path, char command, double x, double y)
+    {
+        path.Append(command).Append(x.ToString("0.##", CultureInfo.InvariantCulture)).Append(' ').Append(y.ToString("0.##", CultureInfo.InvariantCulture)).Append(' ');
+    }
+
+    private static string GoalLabel(WorkoutBlockInput block) => block.GoalKind.ToLowerInvariant() switch
+    {
+        "distance" => $"{Format(block.GoalValue)} km",
+        _ => $"{Format(block.GoalValue)} min",
+    };
+
+    private static string SpeedLabel(WorkoutBlockInput block) => block.SpeedKind.ToLowerInvariant() switch
+    {
+        "fixed" => $"{Format(block.SpeedStartKph)} km/h",
+        "ramp" => $"{Format(block.SpeedStartKph)} → {Format(block.SpeedEndKph)} km/h",
+        "heartrate" => $"{block.HeartRateMinimumBpm}–{block.HeartRateMaximumBpm} bpm · {Format(block.HeartRateMinimumSpeedKph)}–{Format(block.HeartRateMaximumSpeedKph)} km/h",
+        "heartratezone" => $"HR zone {block.HeartRateZoneNumber} · {Format(block.HeartRateMinimumSpeedKph)}–{Format(block.HeartRateMaximumSpeedKph)} km/h",
+        _ => "Manual",
+    };
+
+    private static string InclineLabel(WorkoutBlockInput block) => string.Equals(block.InclineKind, "ramp", StringComparison.OrdinalIgnoreCase)
+        ? $"{Format(block.InclineStartPercent)} → {Format(block.InclineEndPercent)}%"
+        : $"{Format(block.InclineStartPercent)}%";
+
+    private static string Format(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private sealed record PlannedStep(int Number, string Goal, string Speed, string Incline, string CueAndNote, double? SpeedStart, double? SpeedEnd, double? InclineStart, double? InclineEnd);
+}

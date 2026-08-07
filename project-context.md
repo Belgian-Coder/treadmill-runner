@@ -2,6 +2,8 @@
 
 TreadmillRunner is a .NET 10 Windows-local gateway and browser UI for one Horizon Omega Z. Start with [the reviewed project package](docs/project/project-context.md), [the decisions](docs/project/decision-record.md), and [the story backlog](docs/project/backlog.md).
 
+TR-031 keeps household improvements local: profile-owned display/cue/goal settings, deterministic session insights and progression receipts, isolated verified backup rotation to an absolute local/UNC folder, combined operations health, and confirmation-only assigned-sensor quick start. No new cloud integration or mandatory internet dependency is introduced.
+
 ## Daily commands
 
 ```powershell

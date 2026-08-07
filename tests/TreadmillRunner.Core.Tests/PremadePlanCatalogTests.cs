@@ -11,7 +11,7 @@ public sealed class PremadePlanCatalogTests
     Assert.Equal(16, PremadePlanCatalog.All.Select(static template => template.Id).Distinct().Count());
     Assert.All(PremadePlanCatalog.All, template =>
     {
-      Assert.Equal(PremadePlanCatalog.CurrentVersion, template.Version);
+      Assert.True(Version.TryParse(template.Version, out _));
       Assert.Equal(template.Weeks * template.SessionsPerWeek, template.SessionCount);
       Assert.Equal(Enumerable.Range(1, template.SessionCount), template.Sessions.Select(static session => session.Position));
       Assert.DoesNotContain("rehab", template.Description, StringComparison.OrdinalIgnoreCase);
@@ -27,6 +27,44 @@ public sealed class PremadePlanCatalogTests
     Assert.Equal(174, template.SessionCount);
     Assert.Equal(58, template.Sessions.Select(static session => session.WeekNumber).Distinct().Count());
     Assert.Equal(4, template.Sessions.Select(static session => session.Phase).Distinct().Count());
+    Assert.Equal("2.0.0", template.Version);
+    Assert.Equal(260, template.VariantCount);
+    Assert.Equal(86, template.Sessions.Count(static session => session.AlternativeVariants.Count == 1));
+    Assert.Equal(65, template.Sessions.SelectMany(static session => session.AlternativeVariants).Count(static variant => variant.Variant == "hr-alternative"));
+    Assert.Equal(21, template.Sessions.SelectMany(static session => session.AlternativeVariants).Count(static variant => variant.Variant == "fixed-fallback"));
+  }
+
+  [Fact]
+  public void Distance_first_plan_uses_exact_training_rows_without_legacy_stop_tail()
+  {
+    PremadePlanTemplate template = PremadePlanCatalog.Find("5k-to-10k-distance-first-58");
+    PremadePlanSessionTemplate first = template.Sessions[0];
+    WorkoutDefinition definition = PremadePlanCatalog.BuildWorkout(first);
+
+    Assert.Equal("W01D1 · Long easy: 10 x 1 min at 8.0 km/h", definition.Title);
+    Assert.Equal(21, definition.Blocks.Count);
+    WorkoutStep warmup = Assert.IsType<WorkoutStep>(definition.Blocks[0]);
+    Assert.Equal(TimeSpan.FromMinutes(5), Assert.IsType<TimeGoal>(warmup.Goal).Duration);
+    Assert.Equal(4.5, Assert.IsType<FixedSpeed>(warmup.Speed).KilometersPerHour);
+    WorkoutStep cooldown = Assert.IsType<WorkoutStep>(definition.Blocks[^1]);
+    Assert.Equal(TimeSpan.FromMinutes(5), Assert.IsType<TimeGoal>(cooldown.Goal).Duration);
+    Assert.Equal(4.5, Assert.IsType<FixedSpeed>(cooldown.Speed).KilometersPerHour);
+    Assert.DoesNotContain(definition.Blocks.OfType<WorkoutStep>(), static step =>
+      step.Speed is FixedSpeed { KilometersPerHour: 0 });
+  }
+
+  [Fact]
+  public void Distance_first_hr_alternative_retains_bounded_zone_control()
+  {
+    PremadePlanTemplate template = PremadePlanCatalog.Find("5k-to-10k-distance-first-58");
+    PremadePlanVariantTemplate alternative = template.Sessions.Single(static session => session.WeekNumber == 11 && session.SessionNumber == 1)
+      .AlternativeVariants.Single();
+
+    HeartRateZoneSpeed directive = Assert.IsType<HeartRateZoneSpeed>(Assert.IsType<WorkoutStep>(alternative.Definition.Blocks[1]).Speed);
+    Assert.Equal(2, directive.ZoneNumber);
+    Assert.Equal(7.5, directive.InitialKilometersPerHour);
+    Assert.Equal(4, directive.MinimumKilometersPerHour);
+    Assert.Equal(10, directive.MaximumKilometersPerHour);
   }
 
   [Fact]
