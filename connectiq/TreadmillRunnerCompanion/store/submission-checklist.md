@@ -12,7 +12,7 @@
 - [ ] Verify Standalone recording with no URL/token and paired status with trusted HTTPS.
 - [ ] Verify an invalid/revoked token reveals no profile or session information.
 - [x] Export the signed multi-device `.iq` and record its SHA-256 through `eng/package-connectiq.ps1`.
-- [ ] Inspect package permissions: only Fit, Communications, and Sensor.
+- [x] Inspect package permissions: only Fit, Communications, and Sensor.
 - [x] Capture and visually approve real simulator screenshots for both round and Vivoactive layouts.
 - [ ] Supply stable support and privacy HTTPS URLs and operator contact details.
 - [ ] Proofread `listing.md`; verify current Garmin asset/copy rules.
