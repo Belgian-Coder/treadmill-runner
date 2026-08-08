@@ -5,6 +5,7 @@ using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Foundation;
 using Windows.Storage.Streams;
+using TreadmillRunner.Protocols.Ftms;
 
 namespace TreadmillRunner.Infrastructure.Bluetooth;
 
@@ -132,11 +133,15 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
       {
         try
         {
-          responses.Writer.TryWrite(new BleNotification(
-            serviceUuid,
-            characteristicUuid,
-            ReadBuffer(args.CharacteristicValue),
-            DateTimeOffset.UtcNow));
+          byte[] responseValue = ReadBuffer(args.CharacteristicValue);
+          if (IsResponseForRequest(value.Span, responseValue))
+          {
+            responses.Writer.TryWrite(new BleNotification(
+              serviceUuid,
+              characteristicUuid,
+              responseValue,
+              DateTimeOffset.UtcNow));
+          }
         }
         catch (Exception exception)
         {
@@ -338,6 +343,13 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
     reader.ReadBytes(value);
     return value;
   }
+
+  internal static bool IsResponseForRequest(
+    ReadOnlySpan<byte> request,
+    ReadOnlySpan<byte> response) =>
+    request.Length > 0 &&
+    FtmsControlPointCodec.TryParseResponse(response, out FtmsControlPointResponse parsed) &&
+    (byte)parsed.RequestOpCode == request[0];
 
   private void ThrowIfDisposed() =>
     ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);

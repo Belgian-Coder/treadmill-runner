@@ -258,7 +258,7 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Deletion_blocks_nonterminal_program_linked_and_normal_sessions_with_Garmin_jobs()
+  public async Task Deletion_blocks_nonterminal_or_unsettled_Garmin_sessions_but_allows_terminal_plan_history()
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
     await MigrateAndSeedAsync(factory);
@@ -301,7 +301,13 @@ public sealed class SessionStoreTests : IAsyncLifetime
       linked.WorkoutProgramItemId = item.Id;
       await context.SaveChangesAsync();
     }
-    Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(linkedId, ids.ProfileId)).CanDelete);
+    HistoryDeletionPreview linkedPreview = Assert.IsType<HistoryDeletionPreview>(
+      await store.PreviewDeletionAsync(linkedId, ids.ProfileId));
+    Assert.True(linkedPreview.CanDelete);
+    Assert.True(linkedPreview.IsProgramLinked);
+    await store.DeleteAsync(new DeleteHistorySessionOperation(
+      Guid.NewGuid(), linkedId, ids.ProfileId, linkedPreview.Revision, new string('b', 64), now.AddMinutes(3)));
+    Assert.Null(await store.FindAsync(linkedId));
 
     Guid normalId = await CreateTerminalSessionAsync(store, ids, now.AddMinutes(4), SessionOrigin.Hardware);
     HistoryDeletionPreview stalePreview = Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(normalId, ids.ProfileId));
@@ -335,9 +341,15 @@ public sealed class SessionStoreTests : IAsyncLifetime
       });
       await context.SaveChangesAsync();
     }
-    Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(normalId, ids.ProfileId)).CanDelete);
     await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => store.DeleteAsync(new DeleteHistorySessionOperation(
       Guid.NewGuid(), normalId, ids.ProfileId, stalePreview.Revision, new string('d', 64), now.AddMinutes(6))));
+    HistoryDeletionPreview confirmedGarminPreview = Assert.IsType<HistoryDeletionPreview>(
+      await store.PreviewDeletionAsync(normalId, ids.ProfileId));
+    Assert.True(confirmedGarminPreview.CanDelete);
+    Assert.True(confirmedGarminPreview.GarminRemoteActivityMayRemain);
+    await store.DeleteAsync(new DeleteHistorySessionOperation(
+      Guid.NewGuid(), normalId, ids.ProfileId, confirmedGarminPreview.Revision, new string('e', 64), now.AddMinutes(7)));
+    Assert.Null(await store.FindAsync(normalId));
   }
 
   [Fact]

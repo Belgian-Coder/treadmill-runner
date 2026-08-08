@@ -4,7 +4,7 @@ type: safety-policy
 status: active
 owner: project
 audience: agent-developer-and-runner
-updated: 2026-08-02
+updated: 2026-08-08
 ---
 
 # Treadmill safety guidelines
@@ -34,6 +34,7 @@ updated: 2026-08-02
 - Clamp finite values to verified machine, profile, workout, and personal limits.
 - Rate-limit increases; coalesce only commands proven safe to supersede.
 - A successful BLE write is not success. Require measured telemetry confirmation.
+- Correlate each control-point indication to the opcode written by that serialized exchange. Ignore a late or unrelated acknowledgement inside the bounded wait; it must not confirm, reject, or trigger a replay of the current command.
 - Do not blindly retry when the physical outcome is unknown.
 - Stale treadmill or HR telemetry suspends automation and blocks increases.
 - Reconnect returns to `Ready` and requires explicit re-arming.

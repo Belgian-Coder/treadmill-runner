@@ -163,6 +163,7 @@
     private bool sessionDetailsOpenPending;
     private string? sessionDetailsError;
     private DotNetObjectReference<History>? sessionDetailsModalReference;
+    private CancellationTokenSource? sessionDetailsCancellation;
 
     private IReadOnlyList<SessionSummary> FilteredSessions
     {
@@ -222,27 +223,53 @@
     private async Task LoadSessionDetailsAsync()
     {
         if (selectedSummary is not { } summary) return;
+        sessionDetailsCancellation?.Cancel();
+        sessionDetailsCancellation?.Dispose();
+        var requestCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+        sessionDetailsCancellation = requestCancellation;
         sessionDetailsLoading = true;
         sessionDetailsError = null;
         try
         {
-            using HttpResponseMessage response = await Http.GetAsync($"api/history/{summary.SessionId:D}");
-            selectedSession = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<StoredWorkoutSessionView>() : null;
+            using HttpResponseMessage response = await Http.GetAsync(
+                $"api/history/{summary.SessionId:D}",
+                requestCancellation.Token);
+            StoredWorkoutSessionView? loaded = response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<StoredWorkoutSessionView>(requestCancellation.Token)
+                : null;
+            if (selectedSummary?.SessionId != summary.SessionId) return;
+            selectedSession = loaded;
             if (selectedSession is null) sessionDetailsError = response.StatusCode == System.Net.HttpStatusCode.NotFound
                 ? "This local session was not found. It may have been deleted."
                 : "The stored session details could not be loaded.";
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            sessionDetailsError = "The session details could not be loaded from the local gateway. No stored data was changed.";
+            if (selectedSummary?.SessionId == summary.SessionId)
+                sessionDetailsError = "The session details could not be loaded from the local gateway. No stored data was changed.";
         }
-        finally { sessionDetailsLoading = false; }
+        finally
+        {
+            if (ReferenceEquals(sessionDetailsCancellation, requestCancellation))
+            {
+                sessionDetailsCancellation = null;
+                requestCancellation.Dispose();
+                if (selectedSummary?.SessionId == summary.SessionId)
+                {
+                    sessionDetailsLoading = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
     }
 
     private Task RetrySessionDetailsAsync() => LoadSessionDetailsAsync();
 
     private async Task CloseSessionDetailsAsync()
     {
+        sessionDetailsCancellation?.Cancel();
+        sessionDetailsCancellation?.Dispose();
+        sessionDetailsCancellation = null;
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         sessionDetailsModalReference = null;
         selectedSummary = null;
@@ -331,6 +358,9 @@
 
     public async ValueTask DisposeAsync()
     {
+        sessionDetailsCancellation?.Cancel();
+        sessionDetailsCancellation?.Dispose();
+        sessionDetailsCancellation = null;
         if (selectedSummary is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }

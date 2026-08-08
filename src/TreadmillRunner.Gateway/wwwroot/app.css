@@ -425,9 +425,9 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .media-control { display: inline-flex; align-items: center; justify-content: center; gap: .7rem; min-width: 0; min-height: 64px; }
 .media-control__icon { display: grid; width: 2rem; height: 2rem; flex: 0 0 2rem; place-items: center; font: 900 1.35rem/1 "Cascadia Mono", Consolas, monospace; }
 .media-control--play .media-control__icon { transform: translateX(.08rem); }
-.stop-decision-dialog { width: min(620px, 100%); }
+.schedule-dialog.stop-decision-dialog { width: min(620px, 100%); height: auto; max-height: calc(100dvh - 2rem); align-content: start; }
 .stop-decision-actions { display: grid; gap: .65rem; }
-.stop-decision-actions button { display: grid; min-height: 68px; gap: .2rem; padding: .8rem 1rem; text-align: left; }
+.stop-decision-actions button { display: grid; min-height: 68px; align-items: center; justify-items: center; gap: .2rem; padding: .8rem 1rem; text-align: center; }
 .stop-decision-actions button strong { font-size: .92rem; }
 .stop-decision-actions button span { opacity: .82; font-size: .74rem; font-weight: 600; line-height: 1.35; }
 

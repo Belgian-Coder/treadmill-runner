@@ -727,6 +727,37 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details-mobile.png"), FullPage = false });
   }
 
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task History_detail_sheet_replaces_a_stalled_local_request_with_a_retryable_error()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    var releaseRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync($"**/api/history/{scenario.HistorySessionId:D}", async route =>
+    {
+      await releaseRequest.Task;
+      await route.AbortAsync();
+    });
+
+    try
+    {
+      await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await Page.Locator(".history-card").First.ClickAsync();
+      ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+      await Expect(dialog.GetByText("Loading the stored session, graph, and changes…", new() { Exact = true })).ToBeVisibleAsync();
+      await Expect(dialog.GetByText("The session details could not be loaded from the local gateway. No stored data was changed.", new() { Exact = true }))
+        .ToBeVisibleAsync(new() { Timeout = 6_000 });
+      await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Try again", Exact = true })).ToBeVisibleAsync();
+    }
+    finally
+    {
+      releaseRequest.TrySetResult();
+    }
+  }
+
   private async Task AssertNoHorizontalOverflowAsync(string fileName, string viewport)
   {
     bool overflow = await Page.EvaluateAsync<bool>(

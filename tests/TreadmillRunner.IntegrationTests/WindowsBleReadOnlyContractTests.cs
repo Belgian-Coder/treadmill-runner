@@ -19,6 +19,23 @@ public sealed class WindowsBleReadOnlyContractTests
     Assert.NotNull(typeof(IBleCommandConnection).GetMethod("ExchangeAsync"));
   }
 
+  [Theory]
+  [InlineData("07", "800001", false)]
+  [InlineData("07", "800701", true)]
+  [InlineData("026400", "800201", true)]
+  [InlineData("07", "8007", false)]
+  public void Command_connection_correlates_the_response_to_the_exact_written_opcode(
+    string requestHex,
+    string responseHex,
+    bool expected)
+  {
+    Assert.Equal(
+      expected,
+      WindowsBleCommandConnection.IsResponseForRequest(
+        Convert.FromHexString(requestHex),
+        Convert.FromHexString(responseHex)));
+  }
+
   [Fact]
   public async Task Command_connection_is_separate_and_precancellation_prevents_hardware_access()
   {

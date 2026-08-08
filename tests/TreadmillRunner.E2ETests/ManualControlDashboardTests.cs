@@ -610,7 +610,9 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Keep paused", Exact = false })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Reset progress", Exact = false })).ToBeVisibleAsync();
-    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false })).ToBeVisibleAsync();
+    ILocator endAndSave = dialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false });
+    await Expect(endAndSave).ToBeVisibleAsync();
+    Assert.Equal("center", await endAndSave.EvaluateAsync<string>("element => getComputedStyle(element).textAlign"));
     string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
     Directory.CreateDirectory(screenshotDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions

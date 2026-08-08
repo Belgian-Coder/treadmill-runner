@@ -431,16 +431,16 @@ public sealed class SessionStore(
     bool terminal = IsTerminal(state) && data.Session.StartedAtUtc is not null && data.Session.EndedAtUtc is not null;
     bool linked = data.Session.WorkoutProgramRunId is not null || data.Session.WorkoutProgramItemId is not null;
     string? garminStatus = data.Garmin?.Status;
-    bool safeTestGarmin = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed";
-    bool canDelete = terminal && !linked && (origin == SessionOrigin.SystemTest ? safeTestGarmin : garminStatus is null);
+    bool garminSettled = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed";
+    bool canDelete = terminal && garminSettled;
     string reason = !terminal
       ? "Only a terminal session can be permanently deleted."
-      : linked
-        ? "This session is linked to a workout program and cannot be deleted."
-        : origin != SessionOrigin.SystemTest && garminStatus is not null
-          ? "A normal session with Garmin upload history cannot be deleted."
-          : origin == SessionOrigin.SystemTest && !safeTestGarmin
-            ? "Wait for the Garmin test upload to finish, or acknowledge its unknown outcome, before deleting it."
+      : !garminSettled
+        ? "Wait for the Garmin upload to finish, or acknowledge its unknown outcome, before deleting it."
+        : garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed"
+          ? "This local session and its settled Garmin upload record can be deleted. The remote Garmin activity is not deleted."
+          : linked
+            ? "This session can be permanently deleted. Its training-plan progress will be recalculated from the remaining history."
             : "This session can be permanently deleted.";
     string revisionMaterial = string.Join('|',
       data.Session.Id.ToString("D"),
@@ -456,7 +456,7 @@ public sealed class SessionStore(
       garminStatus ?? string.Empty,
       data.Garmin?.UpdatedAtUtc.ToString("O") ?? string.Empty);
     string revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(revisionMaterial)));
-    bool remoteMayRemain = origin == SessionOrigin.SystemTest && garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed";
+    bool remoteMayRemain = garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed";
     return new HistoryDeletionPreview(
       data.Session.Id,
       data.Session.UserProfileId,

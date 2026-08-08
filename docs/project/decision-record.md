@@ -25,6 +25,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Polar H10 is primary; a standard-BLE Garmin broadcast is fallback only between sessions.
 - Physical console Start is the current fallback and remains available. A future enrolled adapter may expose a hold-to-start UI only when its exact model/firmware has passed TR-006B; FTMS advertisement alone never enables it.
 - A remote Start intent is single-use, short-lived, lease- and connection-generation-bound, never retried/replayed, and never restored after reconnect, reload, restart, update, or rollback. Running begins only after measured belt movement.
+- Each serialized FTMS exchange accepts only a response indication for the opcode it just wrote. A late acknowledgement for an earlier operation is ignored until the same bounded response deadline; it never changes the current command result, and confirmation still requires fresh measured telemetry.
 - HR workouts may adjust speed only using conservative bounded changes.
 - Workouts have immutable revisions; the calendar supports weekly recurrence, exceptions, and alternative sessions.
 - SQLite is local truth. Imports are native JSON, FIT Workout, and QDomyos treadmill XML.
@@ -37,6 +38,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - The v1 deployment treats every client on the trusted household LAN as an operator. Update activation's two-step UI is an accident guard, not authentication; public/guest-network exposure is prohibited until operator authentication and CSRF-bound activation are added.
 - The daily Play/Pause control does not use the unverified FTMS Pause opcode. While running it sends the exact-device verified Stop operation and retains the active session in a resumable paused state. A fresh hold-to-Start intent is still required, and motion is never inferred from command success.
 - Stop/End first sends Stop, then presents explicit keep-paused, reset-progress, or end-and-save decisions. Reset changes only the workout cursor and progress timer; recorded time, distance, telemetry, and events remain append-only. End is the only terminal action and is accepted only after confirmed stop.
+- Explicit deletion may remove any terminal local session, including a plan-linked run or one with a settled Garmin upload record. Plan progress is derived again from remaining history, remote Garmin activities are never deleted, and pending/in-flight/unknown upload outcomes remain protected.
 - Calendar is a view-and-manage surface. Workout creation, recurring workout scheduling, premade-template installation, and training-plan start/restart scheduling belong to Plan. Installing an already-installed template version is idempotent; the product does not offer duplicate copies as an ordinary action.
 
 ## Engineering decisions
