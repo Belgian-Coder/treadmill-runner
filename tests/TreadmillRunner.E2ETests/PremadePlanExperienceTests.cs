@@ -53,12 +53,14 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await schedule.GetByRole(AriaRole.Button, new() { Name = "Start plan", Exact = true }).ClickAsync();
     await Expect(Page.GetByText("ordered sessions are on the calendar", new() { Exact = false })).ToBeVisibleAsync();
     await Expect(installed).ToContainTextAsync("Calendar starts");
-    await installed.Locator(".template-program-groups > summary").ClickAsync();
-    await Expect(installed.GetByText("Foundation", new() { Exact = true })).ToBeVisibleAsync();
-    await Expect(installed.GetByText("Distance consolidation", new() { Exact = true })).ToBeVisibleAsync();
-    await installed.GetByText("Week 1 · 3 session(s)", new() { Exact = true }).ClickAsync();
-    await Expect(installed.GetByText("Session 1", new() { Exact = true }).First).ToBeVisibleAsync();
+    await installed.Locator(".program-card__select").ClickAsync();
+    ILocator installedDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(installedDialog.GetByText("Foundation", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(installedDialog.GetByText("Distance consolidation", new() { Exact = true })).ToBeVisibleAsync();
+    await installedDialog.GetByText("Week 1 · 3 session(s)", new() { Exact = true }).ClickAsync();
+    await Expect(installedDialog.GetByText("Session 1", new() { Exact = true }).First).ToBeVisibleAsync();
     await SaveShowcaseAsync("tr-024-long-plan-grouped.png");
+    await installedDialog.GetByRole(AriaRole.Button, new() { Name = "Close training plan details", Exact = true }).ClickAsync();
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Demo Runner");

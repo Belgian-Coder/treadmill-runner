@@ -136,7 +136,7 @@
                                 </article>
                                 break;
                             case LiveMetric.ElapsedTime:
-                                <article aria-label="Elapsed time"><span>Time</span><strong>@FormatElapsed(session.Live.Elapsed)</strong></article>
+                                <article aria-label="Workout progress time"><span>Workout</span><strong>@FormatElapsed(session.WorkoutElapsed)</strong></article>
                                 break;
                             case LiveMetric.Distance:
                                 <article aria-label="Distance"><span>Distance</span><strong>@session.Live.DistanceKilometers.ToString("0.00", CultureInfo.InvariantCulture)<small> km</small></strong></article>
@@ -212,21 +212,15 @@
 
                 <section class="control-action-dock" aria-label="Treadmill motion controls">
                     <p class="control-command-status" role="status">@actionStatus</p>
-                    @if (session.Live.SessionState == SessionState.ArmedWaitingForPhysicalStart)
+                    @if (session.Live.SessionState == SessionState.Running)
                     {
-                        <button class="touch-action primary-action hold-start-action" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold">
-                            @(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : $"Hold to start · {session.MinimumStartSpeedKph:0.0} km/h")
-                        </button>
-                    }
-                    else if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
-                    {
-                        <button class="touch-action primary-action" type="button" @onclick="ResumeAsync" disabled="@(!CanResume)">Resume</button>
+                        <button class="touch-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon" aria-hidden="true">Ⅱ</span><span>Pause</span></button>
                     }
                     else
                     {
-                        <button class="touch-action" type="button" @onclick="PauseAsync" disabled="@(!CanPause)">Pause</button>
+                        <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume ? "Hold to resume" : "Hold to start")</span></button>
                     }
-                    <button class="touch-action danger-action stop-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop</button>
+                    <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
                 </section>
                 @if (session.HeartRateTarget is not null)
                 {
@@ -281,6 +275,19 @@
     }
 </section>
 
+@if (isStopDecisionOpen)
+{
+    <DetailSheet BackdropId="stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="stop-decision-title" OnDismiss="KeepSessionPausedAsync">
+        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync">×</button></header>
+        <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
+        <div class="stop-decision-actions">
+            <button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button>
+            <button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Reset progress</strong><span>Go back to the first step. Recording totals stay intact.</span></button>
+            <button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button>
+        </div>
+    </DetailSheet>
+}
+
 @code {
     private static readonly double[] PopularSpeeds = [5.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0];
     private static readonly double[] PopularInclines = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
@@ -311,6 +318,11 @@
     private string FocusClass => focusMode.ToString().ToLowerInvariant();
     private string DisplayStyleClass => displayStyle.ToString().ToLowerInvariant();
     private bool stopRequestedDuringCommand;
+    private bool openDecisionAfterQueuedStop;
+    private bool isStopDecisionOpen;
+    private bool openStopDecisionPending;
+    private bool sessionActionBusy;
+    private DotNetObjectReference<Control>? stopDecisionModalReference;
     private bool hasRendered;
     private WakeLockStatusView? wakeLockStatus;
     private int? startHoldSecondsRemaining;
@@ -325,16 +337,11 @@
     private bool CanStart => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
         CanStartRemotely: true,
-        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
-    };
-    private bool CanResume => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
-    {
-        CanStartRemotely: true,
-        Live.SessionState: SessionState.PausedWaitingForPhysicalResume,
+        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart or SessionState.PausedWaitingForPhysicalResume,
     };
     private bool CanPause => ClientReady && !HasUnknownOutcome && !isManualCommandPending && !isStopPending && HasController && session is
     {
-        CanPauseRemotely: true,
+        CanStopRemotely: true,
         Live.SessionState: SessionState.Running,
     };
     private bool CanStop => ClientReady && !isStopPending && HasController && session is not null &&
@@ -426,11 +433,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        hasRendered = true;
-        wakeLockReference = DotNetObjectReference.Create(this);
-        await UpdateWakeLockAsync();
-        if (Gateway.Current.WantsControl is false) await TakeControlAsync(restoring: true);
+        if (firstRender)
+        {
+            hasRendered = true;
+            wakeLockReference = DotNetObjectReference.Create(this);
+            await UpdateWakeLockAsync();
+            if (Gateway.Current.WantsControl is false) await TakeControlAsync(restoring: true);
+        }
+        if (openStopDecisionPending && isStopDecisionOpen)
+        {
+            openStopDecisionPending = false;
+            stopDecisionModalReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "stop-decision-backdrop", stopDecisionModalReference);
+        }
     }
 
     private Task TakeControlAsync() => TakeControlAsync(restoring: false);
@@ -773,19 +788,21 @@
     }
 
     private void CancelStartHold() => startHoldCancellation?.Cancel();
-    private Task StopAsync()
+    private Task StopAsync() => RequestStopAsync(openDecision: true);
+    private Task PauseAsync() => RequestStopAsync(openDecision: false);
+
+    private Task RequestStopAsync(bool openDecision)
     {
         CancelStartHold();
         if (isManualCommandPending)
         {
             stopRequestedDuringCommand = true;
+            openDecisionAfterQueuedStop |= openDecision;
             actionStatus = "Stop requested — finishing the in-flight command, then sending one current-state Stop.";
             return InvokeAsync(StateHasChanged);
         }
-        return SendCommandAsync(TreadmillCommandKind.Stop);
+        return SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
     }
-    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
-    private Task ResumeAsync() => SendCommandAsync(TreadmillCommandKind.Start);
     private void ToggleChartFocus() => SetFocus(
         focusMode == ControlFocusMode.Chart ? ControlFocusMode.Balanced : ControlFocusMode.Chart);
 
@@ -797,7 +814,7 @@
 
     private string Pressed(ControlFocusMode mode) => (focusMode == mode).ToString().ToLowerInvariant();
 
-    private async Task SendCommandAsync(TreadmillCommandKind kind)
+    private async Task SendCommandAsync(TreadmillCommandKind kind, bool openDecision = false)
     {
         bool isStop = kind == TreadmillCommandKind.Stop;
         if (isStop ? isStopPending : isManualCommandPending || isStopPending) return;
@@ -810,7 +827,6 @@
         string operation = kind switch
         {
             TreadmillCommandKind.Start => "start",
-            TreadmillCommandKind.Pause => "pause",
             _ => "stop",
         };
         actionStatus = $"Sending single-use {operation} command…";
@@ -839,6 +855,13 @@
                 _ => result?.Reason ?? $"{kind} was rejected.",
             };
             await RefreshSessionAsync();
+            if (isStop && openDecision && result?.Disposition == TreadmillCommandDisposition.Confirmed &&
+                session?.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
+            {
+                isStopDecisionOpen = true;
+                openStopDecisionPending = true;
+                await InvokeAsync(StateHasChanged);
+            }
             if (session is null || session.Live.SessionState is SessionState.Stopped or SessionState.Completed)
             {
                 Navigation.NavigateTo("/", replace: true);
@@ -859,8 +882,54 @@
         isManualCommandPending = false;
         if (!stopRequestedDuringCommand) return;
         stopRequestedDuringCommand = false;
+        bool openDecision = openDecisionAfterQueuedStop;
+        openDecisionAfterQueuedStop = false;
         await RefreshSessionAsync();
-        await SendCommandAsync(TreadmillCommandKind.Stop);
+        await SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
+    }
+
+    private async Task KeepSessionPausedAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        stopDecisionModalReference = null;
+        isStopDecisionOpen = false;
+        actionStatus = "Session paused. Hold Start when you are ready to resume.";
+    }
+
+    private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout progress reset. Hold Start when you are ready.", navigateHome: false);
+    private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", navigateHome: true);
+
+    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome)
+    {
+        if (sessionActionBusy || session is null || lease is null) return;
+        sessionActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new
+            {
+                operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version,
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                actionStatus = $"The session action was rejected. Live state was refreshed.";
+                await RefreshSessionAsync();
+                return;
+            }
+            session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            await KeepSessionPausedAsync();
+            actionStatus = successMessage;
+            if (navigateHome) Navigation.NavigateTo("/", replace: true);
+        }
+        finally { sessionActionBusy = false; }
+    }
+
+    [JSInvokable]
+    public async Task<bool> CloseScheduleManagerFromJs()
+    {
+        stopDecisionModalReference = null;
+        isStopDecisionOpen = false;
+        await InvokeAsync(StateHasChanged);
+        return true;
     }
 
     private async Task RefreshSessionAsync()

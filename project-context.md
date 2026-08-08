@@ -2,7 +2,7 @@
 
 TreadmillRunner is a .NET 10 Windows-local gateway and browser UI for one Horizon Omega Z. Start with [the reviewed project package](docs/project/project-context.md), [the decisions](docs/project/decision-record.md), and [the story backlog](docs/project/backlog.md).
 
-TR-031 keeps household improvements local: profile-owned display/cue/goal settings, deterministic session insights and progression receipts, isolated verified backup rotation to an absolute local/UNC folder, combined operations health, and confirmation-only assigned-sensor quick start. No new cloud integration or mandatory internet dependency is introduced.
+TR-031 keeps household improvements local: profile-owned display/cue/goal settings, deterministic session insights and progression receipts, isolated verified backup rotation to an absolute local/UNC folder, combined operations health, and confirmation-only assigned-sensor quick start. TR-033 adds Stop-backed resumable Pause, explicit keep/reset/end decisions, idempotent installed plans, compact plan details, and Plan-owned scheduling. No new cloud integration or mandatory internet dependency is introduced.
 
 ## Daily commands
 
@@ -47,7 +47,7 @@ TR-031 keeps household improvements local: profile-owned display/cue/goal settin
 - TR-004 implements a gateway-owned simulator session at 4 Hz, one-second SQLite samples, immediate event persistence, a 5-second/15-second controller lease, reload reclaim, debrief, session analytics, and weekly completed totals.
 - TR-005 implements exactly-one-role device enrollment, explicit FTMS/vendor read-only Omega telemetry, simultaneous Polar H10 subscription, connection generations/freshness, and composition into the same authoritative live coordinator. Exact-device Stage 1/2, power-cycle, soak, and Session 0 observations remain external gates.
 - The live and historical charts are derived from bounded transient or persisted values; they are not static presentation fixtures.
-- Startup interrupts unfinished persisted sessions. Browser loss alone does not stop the session. The Start/Stop API accepts only volatile, single-use intents for an exact model/firmware with persisted hardware-verified capability; current hardware remains capability-disabled until its dedicated physical gate passes.
+- Startup interrupts unfinished persisted sessions. Browser loss alone does not stop the session. The Start/Stop API accepts only volatile, single-use intents for an exact model/firmware with persisted hardware-verified capability. Daily Pause uses verified Stop and preserves a resumable session; a fresh Start and measured belt movement are still required. Stop/End can keep paused, reset only workout progress, or explicitly end and save.
 - Accelerated four-hour cadence/bounded-memory proof, a 14,400-write SQLite soak, and local loopback p95 targets pass. Normal household Wi-Fi remains a deployment acceptance check. Auto-update, real BLE session operation, and hardware commands are not implemented by TR-004.
 
 ## Safety reminder

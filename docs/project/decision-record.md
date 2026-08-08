@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-05
+updated: 2026-08-08
 ---
 
 # TreadmillRunner decision record
@@ -35,6 +35,9 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Daily releases are signed by an operator-controlled, non-exportable CurrentUser certificate. The service can read but cannot replace the public certificate pinned beside the administrator-owned updater under Program Files; disposable broken acceptance fixtures are isolated from the stable feed.
 - GitHub Actions is disabled. Commits, pull requests, and semantic release tags never consume hosted build minutes. The local release script owns validation, building, signing, immutable tag creation, verified draft upload, and publication, and it never force-moves a tag.
 - The v1 deployment treats every client on the trusted household LAN as an operator. Update activation's two-step UI is an accident guard, not authentication; public/guest-network exposure is prohibited until operator authentication and CSRF-bound activation are added.
+- The daily Play/Pause control does not use the unverified FTMS Pause opcode. While running it sends the exact-device verified Stop operation and retains the active session in a resumable paused state. A fresh hold-to-Start intent is still required, and motion is never inferred from command success.
+- Stop/End first sends Stop, then presents explicit keep-paused, reset-progress, or end-and-save decisions. Reset changes only the workout cursor and progress timer; recorded time, distance, telemetry, and events remain append-only. End is the only terminal action and is accepted only after confirmed stop.
+- Calendar is a view-and-manage surface. Workout creation, recurring workout scheduling, premade-template installation, and training-plan start/restart scheduling belong to Plan. Installing an already-installed template version is idempotent; the product does not offer duplicate copies as an ordinary action.
 
 ## Engineering decisions
 

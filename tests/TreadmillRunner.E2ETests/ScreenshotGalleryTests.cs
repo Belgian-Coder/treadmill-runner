@@ -127,32 +127,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
           WaitUntil = WaitUntilState.NetworkIdle,
         });
         await PreparePopulatedScreenAsync(fileName, scenario);
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true }).ClickAsync();
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What do you want to plan?", Exact = true })).ToBeVisibleAsync();
-        await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
-        ILocator workoutResults = Page.GetByLabel("Available workouts", new() { Exact = true });
-        await Expect(workoutResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-        await workoutResults.Locator(".schedule-source-card").ClickAsync();
-        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Save schedule", Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.Locator("body")).Not.ToContainTextAsync("@workout.CurrentRevisionNumber");
-        await Page.ScreenshotAsync(new PageScreenshotOptions
-        {
-          Path = Path.Combine(galleryDirectory, "calendar-planner-workout-tablet.png"),
-          FullPage = true,
-        });
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Training plan", Exact = true }).ClickAsync();
-        await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
-        ILocator planResults = Page.GetByLabel("Available training plans", new() { Exact = true });
-        await Expect(planResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-        await planResults.Locator(".schedule-source-card").ClickAsync();
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Schedule Stronger 10K", Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Starting this plan abandons the active plan", new() { Exact = false })).ToBeVisibleAsync();
-        await Page.ScreenshotAsync(new PageScreenshotOptions
-        {
-          Path = Path.Combine(galleryDirectory, "calendar-planner-plan-tablet.png"),
-          FullPage = true,
-        });
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Close planner", Exact = true }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
+        await Expect(Page.GetByText("Review scheduled training", new() { Exact = false })).ToBeVisibleAsync();
         await Page.ScreenshotAsync(new PageScreenshotOptions
         {
           Path = Path.Combine(galleryDirectory, "calendar-schedules-tablet.png"),
@@ -209,29 +185,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         {
           WaitUntil = WaitUntilState.NetworkIdle,
         });
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true }).ClickAsync();
-        await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
-        ILocator mobileWorkoutResults = Page.GetByLabel("Available workouts", new() { Exact = true });
-        await Expect(mobileWorkoutResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-        await mobileWorkoutResults.Locator(".schedule-source-card").ClickAsync();
-        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone workout planner");
-        await Page.ScreenshotAsync(new PageScreenshotOptions
-        {
-          Path = Path.Combine(galleryDirectory, "calendar-planner-workout-iphone17-pro-max.png"),
-          FullPage = true,
-        });
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Training plan", Exact = true }).ClickAsync();
-        await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
-        ILocator mobilePlanResults = Page.GetByLabel("Available training plans", new() { Exact = true });
-        await Expect(mobilePlanResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-        await mobilePlanResults.Locator(".schedule-source-card").ClickAsync();
-        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone plan planner");
-        await Page.ScreenshotAsync(new PageScreenshotOptions
-        {
-          Path = Path.Combine(galleryDirectory, "calendar-planner-plan-iphone17-pro-max.png"),
-          FullPage = true,
-        });
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Close planner", Exact = true }).ClickAsync();
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
+        await AssertNoHorizontalOverflowAsync(fileName, "iPhone calendar management view");
         int moveMutationRequests = 0;
         Page.Request += (_, request) =>
         {
@@ -396,13 +351,14 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByRole(AriaRole.Alertdialog)).ToBeHiddenAsync();
         Assert.Equal(0, Volatile.Read(ref programStartRequests));
         await Page.Locator(".program-card__select").First.ClickAsync();
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Edit training plan", Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByLabel("Training plan summary", new() { Exact = true })).ToContainTextAsync("Sessions");
-        await Expect(Page.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Duplicate ") }).First).ToBeVisibleAsync();
-        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone training-plan editor");
+        ILocator planDialog = Page.GetByRole(AriaRole.Dialog);
+        await Expect(planDialog.GetByRole(AriaRole.Heading, new() { Level = 2 })).ToBeVisibleAsync();
+        await Expect(planDialog.GetByRole(AriaRole.Heading, new() { Name = "Plan sessions", Exact = true })).ToBeVisibleAsync();
+        await Expect(planDialog.Locator(".program-session-summary-list li")).ToHaveCountAsync(3);
+        await AssertNoHorizontalOverflowAsync(fileName, "open iPhone training-plan details");
         await Page.ScreenshotAsync(new PageScreenshotOptions
         {
-          Path = Path.Combine(galleryDirectory, "workouts-plan-editor-iphone17-pro-max.png"),
+          Path = Path.Combine(galleryDirectory, "workouts-plan-details-iphone17-pro-max.png"),
           FullPage = true,
         });
       }

@@ -9,13 +9,12 @@
 
 <div class="planning-page">
     <header class="planning-hero">
-        <div><p class="eyebrow">Training rhythm</p><h1>Calendar</h1><p>Plan recurring runs, then move one session or shift everything that follows.</p></div>
+        <div><p class="eyebrow">Training rhythm</p><h1>Calendar</h1><p>Review scheduled training, then move one session or shift everything that follows.</p></div>
         <div class="form-actions">
             @if (ActiveScheduledProgram is not null)
             {
                 <button class="secondary-action danger-action" type="button" disabled="@clearUpcomingBusy" @onclick="RequestClearUpcomingAsync">Clear upcoming plan</button>
             }
-            <button class="primary-action" type="button" @onclick="ToggleSeriesForm">@(showSeriesForm ? "Close planner" : "Plan training")</button>
         </div>
     </header>
 
@@ -42,102 +41,6 @@
     }
     else
     {
-        @if (showSeriesForm)
-        {
-            <section class="planning-panel" aria-labelledby="series-title">
-                <div class="panel-heading"><div><p class="eyebrow">Start with the training</p><h2 id="series-title">What do you want to plan?</h2></div><span>@ActiveProfileName</span></div>
-                <div class="category-chips" role="group" aria-label="Training source">
-                    <button type="button" aria-pressed="@(scheduleSource == "workout" ? "true" : "false")" @onclick='() => SelectScheduleSource("workout")'>Workout</button>
-                    <button type="button" aria-pressed="@(scheduleSource == "plan" ? "true" : "false")" @onclick='() => SelectScheduleSource("plan")'>Training plan</button>
-                </div>
-                <label class="field field--search schedule-source-search">Search @(scheduleSource == "workout" ? "workouts" : "training plans")
-                    <input type="search" @bind="scheduleSearch" @bind:event="oninput" placeholder="Name or description" />
-                </label>
-
-                @if (scheduleSource == "plan")
-                {
-                    <div class="schedule-source-results" aria-label="Available training plans">
-                        @foreach (WorkoutProgramView program in FilteredSchedulePrograms)
-                        {
-                            <button class="schedule-source-card @(pendingCalendarProgram?.Id == program.Id ? "is-selected" : null)" type="button" @onclick="() => SelectProgramForSchedule(program)">
-                                <span><strong>@program.Name</strong><small>@program.Category · @program.Items.Count sessions</small></span>
-                                <small>@(program.Run is null ? "Select" : program.Run.Status == "Active" ? "Active" : program.Run.Status)</small>
-                            </button>
-                        }
-                    </div>
-                    @if (FilteredSchedulePrograms.Count == 0)
-                    {
-                        <p class="empty-state">No training plans match. <a href="/workouts">Browse or create training plans</a>.</p>
-                    }
-                    @if (pendingCalendarProgram is { } selectedProgram)
-                    {
-                        <section class="schedule-source-setup" aria-labelledby="plan-schedule-title">
-                            <h3 id="plan-schedule-title">Schedule @selectedProgram.Name</h3>
-                            <label class="field">First training date<input type="date" @bind="programScheduleStartDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" /></label>
-                            <fieldset class="program-training-days"><legend>Choose exactly @RequiredTrainingDays training day(s)</legend><div>
-                                @foreach ((string label, int flag) in Weekdays)
-                                {
-                                    <button type="button" aria-pressed="@((programScheduleWeekdayMask & flag) != 0)" class="@((programScheduleWeekdayMask & flag) != 0 ? "is-selected" : null)" @onclick="() => TogglePlanWeekday(flag)">@label</button>
-                                }
-                            </div></fieldset>
-                            @if (ActiveProgram is { } active)
-                            {
-                                <p class="notice">@(active.Id == selectedProgram.Id ? "This restarts the active plan from its first session." : $"Starting this plan abandons the active plan “{active.Name}”.") Completed history stays intact.</p>
-                            }
-                            <div class="form-actions"><button class="primary-action" type="button" disabled="@(!CanConfirmProgramSchedule || savingProgramSchedule)" @onclick="ConfirmProgramScheduleAsync">@(savingProgramSchedule ? "Scheduling…" : ActiveProgram?.Id == selectedProgram.Id ? "Restart and schedule plan" : "Start and schedule plan")</button></div>
-                        </section>
-                    }
-                }
-                else
-                {
-                    <div class="schedule-source-results" aria-label="Available workouts">
-                        @foreach (WorkoutSummaryView workout in FilteredScheduleWorkouts)
-                        {
-                            <button class="schedule-source-card @(series.PrimaryRevisionId == workout.CurrentRevisionId ? "is-selected" : null)" type="button" @onclick="() => SelectWorkoutForSchedule(workout)">
-                                <span><strong>@workout.Name</strong><small>@workout.StructureLabel · @DurationLabel(workout.DurationMinutes)</small></span><small>r@(workout.CurrentRevisionNumber)</small>
-                            </button>
-                        }
-                    </div>
-                    @if (FilteredScheduleWorkouts.Count == 0)
-                    {
-                        <p class="empty-state">No workouts match. <a href="/workouts/new">Create a workout</a>.</p>
-                    }
-                }
-
-                @if (scheduleSource == "workout" && series.PrimaryRevisionId is not null)
-                {
-                <EditForm Model="series" OnValidSubmit="SaveSeriesAsync" FormName="calendar-series-form" @oninput="QueueCalendarDraftSave" @onchange="QueueCalendarDraftSave">
-                    @if (pendingCalendarDraft is not null)
-                    {
-                        <section class="notice draft-recovery" role="status"><strong>Unfinished schedule found.</strong><button type="button" @onclick="ContinueCalendarDraftAsync">Continue draft</button><button type="button" @onclick="DiscardCalendarDraftAsync">Discard draft</button></section>
-                    }
-                    <div class="form-grid">
-                        <label class="field field--wide">Schedule name<input @bind="series.Name" @bind:event="oninput" required maxlength="160" /></label>
-                        <label class="field">Starts<input @bind="series.StartDate" type="date" required /></label>
-                        <label class="field">Ends (optional)<input @bind="series.EndDate" type="date" /></label>
-                        <label class="field">Repeat every (weeks)<input @bind="series.IntervalWeeks" type="number" min="1" max="52" /></label>
-                        <label class="field">Alternative<select @bind="series.AlternativeRevisionId"><option value="">None</option>@foreach (WorkoutSummaryView workout in workouts){<option value="@workout.CurrentRevisionId">@workout.Name · r@(workout.CurrentRevisionNumber)</option>}</select></label>
-                    </div>
-                    <fieldset class="weekday-picker"><legend>Training days</legend>
-                        @foreach ((string label, int flag) in Weekdays)
-                        {
-                            <label><input type="checkbox" checked="@series.WeekdayFlags.Contains(flag)" @onchange="args => ToggleWeekday(flag, args)" />@label</label>
-                        }
-                    </fieldset>
-                    <details class="exception-editor">
-                        <summary>Add an exception</summary>
-                        <div class="form-grid">
-                            <label class="field">Date<input @bind="series.ExceptionDate" type="date" /></label>
-                            <label class="field">Action<select @bind="series.ExceptionKind"><option value="Skip">Skip</option><option value="Replace">Replace</option><option value="Add">Add</option></select></label>
-                        </div>
-                        <p class="field-help">Replace/Add use the selected alternative workout. Skip leaves the day empty.</p>
-                    </details>
-                    <div class="form-actions"><button class="primary-action" type="submit" disabled="@savingSeries">@(savingSeries ? "Saving…" : "Save schedule")</button></div>
-                </EditForm>
-                }
-            </section>
-        }
-
         @if (ScheduleGroups.Count > 0)
         {
             <section class="schedule-overview" aria-labelledby="schedule-overview-title">
@@ -241,7 +144,7 @@
                 </div>
                 @if (calendar?.Days.Count is not > 0)
                 {
-                    <p class="empty-state">No workouts are planned this month. Start a training plan or create a weekly schedule.</p>
+                    <p class="empty-state">No workouts are planned this month. <a href="/workouts">Open Training plans</a> to schedule one.</p>
                 }
             }
         </section>
@@ -530,13 +433,11 @@
     private bool initialized;
     private bool loading = true;
     private bool showSeriesForm;
-    private bool savingSeries;
     private string scheduleSource = "workout";
     private string scheduleSearch = string.Empty;
     private WorkoutProgramView? pendingCalendarProgram;
     private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
     private int programScheduleWeekdayMask = 37;
-    private bool savingProgramSchedule;
     private bool clearUpcomingBusy;
     private WorkoutProgramClearUpcomingView? clearUpcomingPreview;
     private string? message;
@@ -687,7 +588,6 @@
     private async Task ConfirmProgramScheduleAsync()
     {
         if (activeProfileId is not { } profileId || pendingCalendarProgram is not { } program || !CanConfirmProgramSchedule) return;
-        savingProgramSchedule = true;
         try
         {
             WorkoutProgramView? active = ActiveProgram;
@@ -712,7 +612,7 @@
                 await ReloadCalendarAsync();
             }
         }
-        finally { savingProgramSchedule = false; }
+        finally { }
     }
 
     private void ToggleWeekday(int flag, ChangeEventArgs args)
@@ -737,7 +637,6 @@
             return;
         }
 
-        savingSeries = true;
         var alternatives = new List<CalendarAlternativeInput> { new(series.PrimaryRevisionId.Value, 0) };
         if (series.AlternativeRevisionId is { } alternative && alternative != series.PrimaryRevisionId)
         {
@@ -774,7 +673,6 @@
             await ReloadCalendarAsync();
         }
 
-        savingSeries = false;
     }
 
     private void QueueCalendarDraftSave()

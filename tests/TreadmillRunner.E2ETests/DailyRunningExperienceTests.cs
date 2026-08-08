@@ -228,7 +228,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
       .ToBeVisibleAsync();
     await SetPhysicalMotionAsync(isMoving: true, measuredSpeedKph: 6.0, measuredInclinePercent: 0.5);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
-    string elapsedBefore = await Page.GetByLabel("Elapsed time", new() { Exact = true }).InnerTextAsync();
+    string elapsedBefore = await Page.GetByLabel("Workout progress time", new() { Exact = true }).InnerTextAsync();
 
     await Page.Context.SetOfflineAsync(true);
     await Expect(Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "Live updates unavailable" }))
@@ -242,7 +242,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
       .ToContainTextAsync("Gateway ready", new() { Timeout = 40_000 });
     await Expect(Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "Live updates unavailable" }))
       .ToHaveCountAsync(0);
-    string elapsedAfter = await Page.GetByLabel("Elapsed time", new() { Exact = true }).InnerTextAsync();
+    string elapsedAfter = await Page.GetByLabel("Workout progress time", new() { Exact = true }).InnerTextAsync();
     Assert.NotEqual(elapsedBefore, elapsedAfter);
   }
 
@@ -431,6 +431,9 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(inclineAxis.Locator("span").First).ToHaveTextAsync("12");
 
     await stop.ClickAsync();
+    ILocator stopDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(stopDialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
+    await stopDialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "How did that run feel?", Exact = true })).ToBeVisibleAsync();
   }
 
@@ -610,7 +613,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     double expectedX = 10 + (Math.Clamp(elapsedSeconds / Math.Max(1, durationSeconds), 0, 1) * 700);
     Assert.InRange(Math.Abs(cursorX - expectedX), 0, 0.01);
 
-    string displayedElapsedText = await Page.GetByLabel("Elapsed time", new() { Exact = true }).Locator("strong").InnerTextAsync();
+    string displayedElapsedText = await Page.GetByLabel("Workout progress time", new() { Exact = true }).Locator("strong").InnerTextAsync();
     TimeSpan displayedElapsed = TimeSpan.ParseExact(
       displayedElapsedText,
       displayedElapsedText.Count(static character => character == ':') == 2 ? @"h\:mm\:ss" : @"m\:ss",

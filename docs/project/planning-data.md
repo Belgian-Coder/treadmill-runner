@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: developer-and-operator
-updated: 2026-08-07
+updated: 2026-08-08
 ---
 
 # Planning data and import flow
@@ -29,7 +29,7 @@ TR-013 keeps unsupported activity delivery structurally separate. `GarminActivit
 
 The calendar UI exposes the scope before it writes: **Move only this session**, **Move this and later**, **Delete only this session**, or **Delete complete workout group**. Deleting one session creates a skip exception. Deleting a complete group transactionally removes every continuation segment and its saved day selections; it never deletes immutable workout revisions or completed session history.
 
-Creating calendar training is source-first. The runner searches and selects either a standalone workout or an ordered training plan before any schedule fields appear. A workout opens the recurring-series editor and may add one alternative revision; a training plan uses its own ordered-run scheduler and enforces the plan's required number of training days. Starting a different plan explicitly warns that the current active plan will be abandoned rather than mixing two progression sequences.
+Creating or scheduling training is owned by Plan. The runner searches and selects either a standalone workout or an ordered training plan there: a workout opens the recurring-series editor and may add one alternative revision; a training plan uses its own ordered-run scheduler and enforces the plan's required number of training days. Starting a different plan explicitly warns that the current active plan will be abandoned rather than mixing two progression sequences. Calendar renders and manages resulting occurrences but exposes no creation flow.
 
 Every mutation has a unique operation ID, expected series version, deterministic request fingerprint, and persisted receipt. Identical replays return the stored outcome; reuse of an operation ID for another request is rejected. A concurrent edit returns a conflict and the UI reloads before another attempt.
 
@@ -38,6 +38,8 @@ Every mutation has a unique operation ID, expected series version, deterministic
 TR-003B keeps a training plan separate from a calendar series. A calendar answers *what is scheduled on a date*; a training plan answers *which exact workout revision comes next*. A plan root owns immutable revisions, and every revision contains contiguous ordered items that reference exact immutable workout revision IDs. Categories such as `5K`, `10K`, `Base`, and `Custom` are searchable labels rather than execution rules.
 
 Each runner can have at most one active plan run. Starting another plan or restarting the current plan abandons the previous active run without rewriting its history. Existing runs remain pinned to the plan revision that was started; editing a plan creates a new revision, and only a later restart opts the runner into that revision.
+
+Premade materialization is idempotent for one runner, template, and template version. Older installed rows and completed history are retained, while ordinary plan lists select one canonical template installation and the template preview opens it with one clear action instead of creating duplicate copies.
 
 TR-025 makes premade plans strictly profile-owned and gives an active run an optional calendar projection: start date, weekday mask, and time-zone label. The projection walks selected weekdays in date order and assigns contiguous program positions without rebasing when a shorter calendar range is queried. These entries are derived from the immutable run rather than copied into editable calendar series. Generated definitions use the internal `PlanInternal` workout kind and are excluded from ordinary library/manual selectors; only their owning plan exposes them. A schedule identifies the exact program run and item, so repeated definitions still advance one intended position at a time.
 

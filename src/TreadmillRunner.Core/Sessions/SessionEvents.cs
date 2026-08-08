@@ -30,6 +30,14 @@ public sealed record WorkoutStepTransitionEvent(
   public override string EventType => "workout-step-transition";
 }
 
+public sealed record WorkoutProgressResetEvent(
+    int PreviousStepIndex,
+    TimeSpan PreviousWorkoutElapsed,
+    DateTimeOffset OccurredAt) : SessionEvent(OccurredAt)
+{
+  public override string EventType => "workout-progress-reset";
+}
+
 public enum SessionPauseReason
 {
   WebControl,

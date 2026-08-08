@@ -89,8 +89,9 @@ public static class LiveSessionEndpoints
     live.MapPost("/sessions/speed-override", AdjustSpeedAsync);
     live.MapPost("/sessions/incline-override", AdjustInclineAsync);
     live.MapPost("/sessions/start", StartAsync);
-    live.MapPost("/sessions/pause", PauseAsync);
     live.MapPost("/sessions/stop", StopAsync);
+    live.MapPost("/sessions/end", EndSessionAsync);
+    live.MapPost("/sessions/reset-progress", ResetWorkoutProgressAsync);
     live.MapPost("/sessions/heart-rate-automation", SetHeartRateAutomationAsync);
     live.MapPost("/sessions/resume-planned-controls", ResumePlannedControlsAsync);
     if (includeSimulatorRoutes)
@@ -433,42 +434,48 @@ public static class LiveSessionEndpoints
       commandCoordinator,
       cancellationToken);
 
-  private static async Task<IResult> StopAsync(
-    TreadmillCommandRequest request,
-    ILiveSessionCoordinator liveCoordinator,
-    ITreadmillCommandCoordinator commandCoordinator,
-    GarminActivityUploadWorker activityUploadWorker,
-    CancellationToken cancellationToken) =>
-    await ExecuteStopAndWakeUploadAsync(
-      request,
-      liveCoordinator,
-      commandCoordinator,
-      activityUploadWorker,
-      cancellationToken);
-
-  private static async Task<IResult> ExecuteStopAndWakeUploadAsync(
-    TreadmillCommandRequest request,
-    ILiveSessionCoordinator liveCoordinator,
-    ITreadmillCommandCoordinator commandCoordinator,
-    GarminActivityUploadWorker activityUploadWorker,
-    CancellationToken cancellationToken)
-  {
-    IResult result = await ExecuteCommandAsync(request, TreadmillCommandKind.Stop, liveCoordinator, commandCoordinator, cancellationToken);
-    activityUploadWorker.Wake();
-    return result;
-  }
-
-  private static Task<IResult> PauseAsync(
+  private static Task<IResult> StopAsync(
     TreadmillCommandRequest request,
     ILiveSessionCoordinator liveCoordinator,
     ITreadmillCommandCoordinator commandCoordinator,
     CancellationToken cancellationToken) =>
     ExecuteCommandAsync(
       request,
-      TreadmillCommandKind.Pause,
+      TreadmillCommandKind.Stop,
       liveCoordinator,
       commandCoordinator,
       cancellationToken);
+
+  private static async Task<IResult> EndSessionAsync(
+    TreadmillCommandRequest request,
+    ILiveSessionCoordinator coordinator,
+    GarminActivityUploadWorker activityUploadWorker,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      ActiveSessionSnapshot snapshot = await coordinator.EndSessionAsync(
+        request.OperationId, request.ExpectedSessionVersion, request.LeaseId, request.HolderId, cancellationToken);
+      activityUploadWorker.Wake();
+      return Results.Ok(snapshot);
+    }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
+  }
+
+  private static async Task<IResult> ResetWorkoutProgressAsync(
+    TreadmillCommandRequest request,
+    ILiveSessionCoordinator coordinator,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      return Results.Ok(await coordinator.ResetWorkoutProgressAsync(
+        request.OperationId, request.ExpectedSessionVersion, request.LeaseId, request.HolderId, cancellationToken));
+    }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
+  }
 
   private static async Task<IResult> SetHeartRateAutomationAsync(
     HeartRateAutomationRequest request,
@@ -778,6 +785,10 @@ public static class LiveSessionEndpoints
       incline.OccurredAt,
       PreviousInclinePercent: incline.PreviousInclinePercent,
       RequestedInclinePercent: incline.RequestedInclinePercent),
+    WorkoutProgressResetEvent reset => new HistoryEventResponse(
+      reset.EventType,
+      reset.OccurredAt,
+      Message: $"Workout progress reset from step {reset.PreviousStepIndex + 1} after {reset.PreviousWorkoutElapsed:hh\\:mm\\:ss}."),
     SessionWarningEvent warning => new HistoryEventResponse(
       warning.EventType,
       warning.OccurredAt,

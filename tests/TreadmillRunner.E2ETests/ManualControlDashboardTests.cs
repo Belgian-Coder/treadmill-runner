@@ -488,6 +488,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     }
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "How did that run feel?", Exact = true }))
       .ToBeVisibleAsync();
@@ -573,6 +575,59 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Stop_backed_pause_is_resumable_and_stop_offers_keep_end_or_reset()
+  {
+    await Page.SetViewportSizeAsync(440, 956);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync("pause-end-reset");
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
+      .ToBeVisibleAsync();
+    await SetPhysicalMotionAsync(6.0, 1.0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume") })).ToBeVisibleAsync();
+
+    ILocator resume = Page.GetByRole(AriaRole.Button, new()
+    {
+      NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume"),
+    });
+    await resume.EvaluateAsync("button => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))");
+    await Expect(Page.GetByText("Keep holding · 3", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.WaitForTimeoutAsync(3_200);
+    await SetPhysicalMotionAsync(6.0, 1.0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Keep paused", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Reset progress", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false })).ToBeVisibleAsync();
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
+    Directory.CreateDirectory(screenshotDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(screenshotDirectory, "tr-033-stop-decision-phone.png"),
+      FullPage = false,
+    });
+
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Reset progress", Exact = false }).ClickAsync();
+    await Expect(dialog).ToBeHiddenAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByLabel("Workout progress time", new() { Exact = true })).ToContainTextAsync("0:00");
+    await Expect(Page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume") })).ToBeVisibleAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Stop_cancels_a_pending_start_hold_before_any_start_request_is_sent()
   {
     await Page.SetViewportSizeAsync(440, 956);
@@ -603,7 +658,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await start.EvaluateAsync("button => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))");
     await Expect(Page.GetByText("Keep holding — Start in 3.", new() { Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
-    await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri);
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await Page.WaitForTimeoutAsync(3_200);
 
     Assert.Equal(0, Volatile.Read(ref startRequests));
@@ -651,7 +707,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.Equal(0, Volatile.Read(ref stopRequests));
     releaseStart.TrySetResult();
 
-    await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri, new PageAssertionsToHaveURLOptions { Timeout = 10_000 });
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"), new PageAssertionsToHaveURLOptions { Timeout = 10_000 });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     Assert.Equal(1, Volatile.Read(ref startRequests));
     Assert.Equal(1, Volatile.Read(ref stopRequests));
   }
@@ -698,7 +755,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.Equal(0, Volatile.Read(ref stopRequests));
     releaseSpeed.TrySetResult();
 
-    await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri, new PageAssertionsToHaveURLOptions { Timeout = 10_000 });
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"), new PageAssertionsToHaveURLOptions { Timeout = 10_000 });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     Assert.Equal(1, Volatile.Read(ref speedRequests));
     Assert.Equal(1, Volatile.Read(ref stopRequests));
   }

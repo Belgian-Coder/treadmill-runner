@@ -219,8 +219,7 @@ public sealed record PremadePlanMaterializeRequest(
   Guid OperationId,
   Guid ProfileId,
   string TemplateId,
-  string TemplateVersion,
-  bool FreshCopy = false);
+  string TemplateVersion);
 
 public sealed record PremadePlanMaterializeDto(
   Guid InstallationId,

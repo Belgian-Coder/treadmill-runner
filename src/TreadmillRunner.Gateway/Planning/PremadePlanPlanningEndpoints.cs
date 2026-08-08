@@ -72,7 +72,6 @@ public static class PremadePlanPlanningEndpoints
         request.ProfileId,
         request.TemplateId,
         request.TemplateVersion,
-        request.FreshCopy,
         template.ContentSha256,
       });
       if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
@@ -92,7 +91,7 @@ public static class PremadePlanPlanningEndpoints
         now,
         fingerprint);
       PremadePlanMaterializationResult stored = await store.MaterializeAsync(
-        new PremadePlanMaterialization(template, request.ProfileId, prepared.WorkoutsByKey, request.FreshCopy),
+        new PremadePlanMaterialization(template, request.ProfileId, prepared.WorkoutsByKey),
         operation,
         cancellationToken);
       PremadePlanMaterializeDto response = ToDto(stored);

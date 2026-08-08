@@ -53,6 +53,20 @@ public interface ILiveSessionCoordinator : ITreadmillCommandContextValidator
     string holderId,
     CancellationToken cancellationToken = default);
 
+  Task<ActiveSessionSnapshot> EndSessionAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default);
+
+  Task<ActiveSessionSnapshot> ResetWorkoutProgressAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default);
+
   Task<ActiveSessionSnapshot> AdjustRequestedSpeedAsync(
     Guid operationId,
     double adjustmentKph,
@@ -492,9 +506,10 @@ public sealed class LiveSessionCoordinator(
 
       DateTimeOffset issuedAt = timeProvider.GetUtcNow();
       UpdateMotion(active, issuedAt);
-      active.Machine.Stop();
+      active.Machine.StopWaitingForPhysicalResume();
       active.IsMoving = false;
       active.MeasuredSpeedKph = 0;
+      SuspendAutomation(active, "The treadmill is stopped; press Start when you are ready to resume.");
       active.ProcessedOperationIds.Add(operationId);
       var result = new TreadmillCommandResult(
         operationId,
@@ -503,7 +518,7 @@ public sealed class LiveSessionCoordinator(
         null,
         null,
         0,
-        "Simulator Stop confirmed and the session was finalized.",
+        "Simulator Stop confirmed; the session is paused and can be resumed.",
         1,
         issuedAt,
         timeProvider.GetUtcNow());
@@ -511,8 +526,9 @@ public sealed class LiveSessionCoordinator(
 
       using IServiceScope scope = scopeFactory.CreateScope();
       ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(active.Definition.SessionId, new SessionStoppedEvent(result.CompletedAt), cancellationToken);
-      await store.FinalizeAsync(CreateSummary(active, SessionState.Stopped, result.CompletedAt), cancellationToken);
+      await store.AppendEventAsync(active.Definition.SessionId,
+        new SessionPausedEvent(SessionPauseReason.TreadmillStopped, result.CompletedAt), cancellationToken);
+      await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, result.CompletedAt), cancellationToken);
       PublishSnapshot(active, result.CompletedAt, SessionControlAccess.Controller, lease.ExpiresAt);
       await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
       return result;
@@ -521,6 +537,100 @@ public sealed class LiveSessionCoordinator(
     {
       _gate.Release();
     }
+  }
+
+  public async Task<ActiveSessionSnapshot> EndSessionAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default)
+  {
+    ValidateSessionAction(operationId, leaseId, holderId);
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      ActiveRun active = RequireActive();
+      if (active.ProcessedOperationIds.Contains(operationId)) return active.Snapshot;
+      if (active.Machine.Version != expectedSessionVersion)
+        throw new InvalidOperationException($"Expected session version {expectedSessionVersion}, but current version is {active.Machine.Version}.");
+      if (active.Machine.State != SessionState.PausedWaitingForPhysicalResume ||
+          active.IsMoving || active.MeasuredSpeedKph > 0.05)
+        throw new InvalidOperationException("End session requires a confirmed stopped treadmill and a paused session.");
+
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      active.Machine.Stop();
+      active.ProcessedOperationIds.Add(operationId);
+      using IServiceScope scope = scopeFactory.CreateScope();
+      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+      await store.AppendEventAsync(active.Definition.SessionId, new SessionStoppedEvent(now), cancellationToken);
+      await store.FinalizeAsync(CreateSummary(active, SessionState.Stopped, now), cancellationToken);
+      PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
+      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      return active.Snapshot;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  public async Task<ActiveSessionSnapshot> ResetWorkoutProgressAsync(
+    Guid operationId,
+    long expectedSessionVersion,
+    Guid leaseId,
+    string holderId,
+    CancellationToken cancellationToken = default)
+  {
+    ValidateSessionAction(operationId, leaseId, holderId);
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      ActiveRun active = RequireActive();
+      if (active.ProcessedOperationIds.Contains(operationId)) return active.Snapshot;
+      if (active.Machine.Version != expectedSessionVersion)
+        throw new InvalidOperationException($"Expected session version {expectedSessionVersion}, but current version is {active.Machine.Version}.");
+      if (active.Machine.State != SessionState.PausedWaitingForPhysicalResume ||
+          active.IsMoving || active.MeasuredSpeedKph > 0.05)
+        throw new InvalidOperationException("Reset progress requires a confirmed stopped treadmill and a paused session.");
+
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      int previousStepIndex = active.Progression.CurrentStepIndex;
+      TimeSpan previousWorkoutElapsed = active.Progression.ElapsedSinceRestart;
+      active.Progression.Restart(active.Elapsed, active.DistanceKilometers);
+      active.SpeedOverrideKph = null;
+      active.InclineOverridePercent = null;
+      active.HeartRateController.ResetDwell();
+      active.DesiredHeartRateAutomationMode = HeartRateAutomationMode.Disabled;
+      active.HeartRateAutomationMode = HeartRateAutomationMode.Disabled;
+      active.HeartRateAutomationReason = "Workout progress was reset. Press Start when you are ready; automation remains disabled.";
+      active.CommandsSuspended = true;
+      active.CommandsSuspendedReason = "Workout progress was reset and awaits an explicit Start.";
+      active.Machine.MarkConfigurationChanged();
+      active.ProcessedOperationIds.Add(operationId);
+
+      using IServiceScope scope = scopeFactory.CreateScope();
+      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+      await store.AppendEventAsync(active.Definition.SessionId,
+        new WorkoutProgressResetEvent(previousStepIndex, previousWorkoutElapsed, now), cancellationToken);
+      await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
+      PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
+      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      return active.Snapshot;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  private void ValidateSessionAction(Guid operationId, Guid leaseId, string holderId)
+  {
+    if (operationId == Guid.Empty) throw new ArgumentException("An operation ID is required.", nameof(operationId));
+    if (leaseCoordinator.Current is not ControlLease lease ||
+        lease.Id != leaseId ||
+        !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
+      throw new InvalidOperationException("A current controller lease is required for this session action.");
   }
 
   public async Task<ActiveSessionSnapshot> AdjustRequestedSpeedAsync(
@@ -952,11 +1062,17 @@ public sealed class LiveSessionCoordinator(
             active.Machine.State is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
         {
           var now = timeProvider.GetUtcNow();
-          active.Machine.Stop();
+          UpdateMotion(active, now);
+          active.Machine.StopWaitingForPhysicalResume();
+          active.IsMoving = false;
+          active.MeasuredSpeedKph = result.MeasuredValue ?? 0;
+          SuspendAutomation(active, "The treadmill is stopped; press Start when you are ready to resume.");
+          active.ProcessedOperationIds.Add(intent.OperationId);
           using IServiceScope scope = scopeFactory.CreateScope();
           ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-          await store.AppendEventAsync(active.Definition.SessionId, new SessionStoppedEvent(now), cancellationToken);
-          await store.FinalizeAsync(CreateSummary(active, SessionState.Stopped, now), cancellationToken);
+          await store.AppendEventAsync(active.Definition.SessionId,
+            new SessionPausedEvent(SessionPauseReason.TreadmillStopped, now), cancellationToken);
+          await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
         }
       }
 
@@ -1868,7 +1984,7 @@ public sealed class LiveSessionCoordinator(
       delta = TimeSpan.Zero;
     }
 
-    active.Elapsed = now - active.StartedAt.Value;
+    active.Elapsed += delta;
     if (active.IsMoving)
     {
       active.DistanceKilometers += active.MeasuredSpeedKph * delta.TotalHours;
@@ -1963,7 +2079,8 @@ public sealed class LiveSessionCoordinator(
       active.CommandsSuspendedReason,
       active.TelemetryGapStartedAtUtc,
       active.CanResumePlannedControls,
-      active.LastReconciledAtUtc);
+      active.LastReconciledAtUtc,
+      active.Progression.ElapsedSinceRestart);
   }
 
   private static IReadOnlyList<WorkoutPlanPoint> BuildWorkoutPlan(WorkoutDefinition definition)

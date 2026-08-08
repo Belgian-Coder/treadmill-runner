@@ -175,6 +175,99 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Confirmed_stop_pauses_reset_preserves_recording_and_end_is_explicit()
+  {
+    using HttpClient client = factory.CreateClient();
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client);
+    const string holderId = "pause-reset-end";
+    ControlLease lease = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+    ActiveSessionSnapshot armed = Assert.IsType<ActiveSessionSnapshot>(await (await client.PostAsJsonAsync(
+      "/api/live/sessions/arm",
+      new { profileId, workoutRevisionId = revisionId, holderId, leaseId = lease.Id, operationId = Guid.NewGuid() }))
+      .Content.ReadFromJsonAsync<ActiveSessionSnapshot>());
+    await client.PostAsJsonAsync("/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.0, measuredInclinePercent = 1.0 });
+    await Task.Delay(TimeSpan.FromMilliseconds(1_200));
+    ActiveSessionSnapshot running = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+
+    using HttpResponseMessage stop = await client.PostAsJsonAsync("/api/live/sessions/stop", new
+    {
+      operationId = Guid.NewGuid(),
+      holderId,
+      leaseId = lease.Id,
+      expectedSessionVersion = running.Version,
+    });
+    Assert.Equal(HttpStatusCode.OK, stop.StatusCode);
+    ActiveSessionSnapshot paused = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(SessionState.PausedWaitingForPhysicalResume, paused.Live.SessionState);
+    Assert.True(paused.Live.Elapsed > TimeSpan.Zero);
+    Assert.True(paused.WorkoutElapsed > TimeSpan.Zero);
+    Assert.Empty(Assert.IsType<SessionSummary[]>(
+      await client.GetFromJsonAsync<SessionSummary[]>($"/api/history?profileId={profileId}")));
+
+    using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/sessions/reset-progress", new
+    {
+      operationId = Guid.NewGuid(),
+      holderId,
+      leaseId = lease.Id,
+      expectedSessionVersion = paused.Version,
+    });
+    Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+    ActiveSessionSnapshot restarted = Assert.IsType<ActiveSessionSnapshot>(
+      await reset.Content.ReadFromJsonAsync<ActiveSessionSnapshot>());
+    Assert.Equal(SessionState.PausedWaitingForPhysicalResume, restarted.Live.SessionState);
+    Assert.Equal(0, restarted.CurrentStep?.Index);
+    Assert.Equal(TimeSpan.Zero, restarted.WorkoutElapsed);
+    Assert.Equal(paused.Live.Elapsed, restarted.Live.Elapsed);
+
+    string unfinishedDetail = await client.GetStringAsync($"/api/history/{restarted.SessionId}");
+    Assert.Contains("workout-progress-reset", unfinishedDetail, StringComparison.Ordinal);
+
+    using HttpResponseMessage invalidEnd = await client.PostAsJsonAsync("/api/live/sessions/end", new
+    {
+      operationId = Guid.NewGuid(),
+      holderId,
+      leaseId = lease.Id,
+      expectedSessionVersion = restarted.Version - 1,
+    });
+    Assert.Equal(HttpStatusCode.Conflict, invalidEnd.StatusCode);
+
+    await client.PostAsJsonAsync("/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.0, measuredInclinePercent = 1.0 });
+    ActiveSessionSnapshot resumed = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(SessionState.Running, resumed.Live.SessionState);
+    using HttpResponseMessage secondStop = await client.PostAsJsonAsync("/api/live/sessions/stop", new
+    {
+      operationId = Guid.NewGuid(),
+      holderId,
+      leaseId = lease.Id,
+      expectedSessionVersion = resumed.Version,
+    });
+    Assert.Equal(HttpStatusCode.OK, secondStop.StatusCode);
+    ActiveSessionSnapshot stoppedAgain = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+
+    using HttpResponseMessage end = await client.PostAsJsonAsync("/api/live/sessions/end", new
+    {
+      operationId = Guid.NewGuid(),
+      holderId,
+      leaseId = lease.Id,
+      expectedSessionVersion = stoppedAgain.Version,
+    });
+    Assert.Equal(HttpStatusCode.OK, end.StatusCode);
+    ActiveSessionSnapshot ended = Assert.IsType<ActiveSessionSnapshot>(
+      await end.Content.ReadFromJsonAsync<ActiveSessionSnapshot>());
+    Assert.Equal(SessionState.Stopped, ended.Live.SessionState);
+    Assert.Single(Assert.IsType<SessionSummary[]>(
+      await client.GetFromJsonAsync<SessionSummary[]>($"/api/history?profileId={profileId}")));
+  }
+
+  [Fact]
   public async Task Preflight_exposes_and_blocks_targets_above_the_selected_profile_limit()
   {
     using HttpClient client = factory.CreateClient();

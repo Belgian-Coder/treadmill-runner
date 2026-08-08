@@ -108,7 +108,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
     if (width <= 1200)
     {
       await Expect(Page.Locator("[role='grid'][aria-label^='Training calendar']")).ToBeHiddenAsync();
@@ -137,7 +137,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
   [InlineData("calendar-planner-mobile", 440, 956)]
   [InlineData("calendar-planner-desktop", 1440, 900)]
   [Trait("Category", "Browser")]
-  public async Task Calendar_planner_starts_from_searchable_workouts_or_training_plans_and_schedules_one_plan(
+  public async Task Workouts_owns_searchable_workout_and_training_plan_scheduling_while_calendar_is_management_only(
     string name,
     int width,
     int height)
@@ -146,6 +146,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await scenario.ConfigureBrowserAsync(Page);
     await Page.SetViewportSizeAsync(width, height);
     int startRequests = 0;
+    int seriesRequests = 0;
     await Page.RouteAsync("**/api/planning/programs/*/start", route =>
     {
       Interlocked.Increment(ref startRequests);
@@ -156,35 +157,40 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         Body = "{}",
       });
     });
+    await Page.RouteAsync("**/api/planning/calendar/series", route =>
+    {
+      Interlocked.Increment(ref seriesRequests);
+      return route.FulfillAsync(new RouteFulfillOptions { Status = 201, ContentType = "application/json", Body = "{}" });
+    });
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions
     {
       WaitUntil = WaitUntilState.NetworkIdle,
     });
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What do you want to plan?", Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Workout", Exact = true })).ToHaveAttributeAsync("aria-pressed", "true");
-    await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
-    ILocator workoutResults = Page.GetByLabel("Available workouts", new() { Exact = true });
-    await Expect(workoutResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-    await Expect(workoutResults).ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
-    await workoutResults.Locator(".schedule-source-card").ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Save schedule", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What do you want to plan?", Exact = true })).ToHaveCountAsync(0);
 
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Training plan", Exact = true }).ClickAsync();
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Standalone workouts", Exact = true }).ClickAsync();
+    await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync(GalleryScenario.FeaturedWorkoutName);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Schedule", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = $"Schedule {GalleryScenario.FeaturedWorkoutName}", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Save schedule", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync($"{GalleryScenario.FeaturedWorkoutName} was scheduled for Marc.");
+    Assert.Equal(1, seriesRequests);
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
     await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
-    ILocator planResults = Page.GetByLabel("Available training plans", new() { Exact = true });
-    await Expect(planResults.Locator(".schedule-source-card")).ToHaveCountAsync(1);
-    await planResults.Locator(".schedule-source-card").ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Schedule Stronger 10K", Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.GetByText("Starting this plan abandons the active plan", new() { Exact = false })).ToBeVisibleAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Start and schedule plan", Exact = true })).ToBeEnabledAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Start plan", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Schedule Stronger 10K", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByText("will be abandoned", new() { Exact = false })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Abandon and start", Exact = true })).ToBeEnabledAsync();
     await AssertNoOverflowAsync();
     await ScreenshotAsync($"{name}.png");
 
     Assert.Equal(0, startRequests);
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Start and schedule plan", Exact = true }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync("Stronger 10K is scheduled for Marc.");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Abandon and start", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync("Stronger 10K is active for Marc.");
     Assert.Equal(1, startRequests);
   }
 
@@ -275,6 +281,35 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(card).ToBeVisibleAsync();
     await Page.GetByLabel("Search workouts", new() { Exact = true }).FillAsync("does not exist");
     await Expect(card).ToHaveCountAsync(0);
+  }
+
+  [Theory]
+  [InlineData("plan-details-desktop", 1920, 1080)]
+  [InlineData("plan-details-mobile", 440, 956)]
+  [Trait("Category", "Browser")]
+  public async Task Training_plan_rows_open_bounded_details_without_expanding_the_library(
+    string name,
+    int width,
+    int height)
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
+    await Expect(Page.Locator(".program-card .template-program-groups")).ToHaveCountAsync(0);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "View Stronger 10K", Exact = true }).ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Stronger 10K", Exact = true })).ToBeVisibleAsync();
+    LocatorBoundingBoxResult? bounds = await dialog.BoundingBoxAsync();
+    Assert.NotNull(bounds);
+    Assert.True(bounds.Width <= width + 1 && bounds.Height <= height + 1, $"Plan details must remain viewport-bounded at {width}x{height}: {bounds}.");
+    await ScreenshotAsync($"{name}.png");
+
+    await dialog.Locator(".program-session-detail").First.ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Dialog).GetByText("Workout structure", new() { Exact = true })).ToBeVisibleAsync();
+    await AssertNoOverflowAsync();
   }
 
   [Fact]

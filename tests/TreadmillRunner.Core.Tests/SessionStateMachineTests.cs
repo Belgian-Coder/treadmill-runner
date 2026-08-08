@@ -50,6 +50,18 @@ public sealed class SessionStateMachineTests
   }
 
   [Fact]
+  public void Confirmed_stop_leaves_an_active_session_waiting_for_explicit_resume()
+  {
+    var session = RunningSession();
+
+    session.StopWaitingForPhysicalResume();
+
+    Assert.Equal(SessionState.PausedWaitingForPhysicalResume, session.State);
+    session.StopWaitingForPhysicalResume();
+    Assert.Equal(SessionState.PausedWaitingForPhysicalResume, session.State);
+  }
+
+  [Fact]
   public void Records_manual_speed_override_as_domain_event()
   {
     var time = new TestTimeProvider(new DateTimeOffset(2026, 8, 2, 10, 0, 0, TimeSpan.Zero));

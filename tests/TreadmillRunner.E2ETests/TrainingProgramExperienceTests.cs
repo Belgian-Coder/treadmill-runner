@@ -57,17 +57,19 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri);
     await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
-    Assert.True(await Page.Locator(".program-card").CountAsync() >= 2);
     await Expect(Page.GetByText("First 5K", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Stronger 10K", new() { Exact = true })).ToBeVisibleAsync();
+    Assert.True(await Page.Locator(".program-card").CountAsync() >= 2);
     await Expect(Page.GetByText("0 complete · 3 remaining", new() { Exact = true })).ToBeVisibleAsync();
-    ILocator sessionSummaries = Page.Locator(".program-card .template-program-groups > summary");
-    await Expect(sessionSummaries).ToHaveCountAsync(2);
-    await Expect(sessionSummaries.First).ToContainTextAsync("View 3 sessions");
-    await sessionSummaries.First.ClickAsync();
-    await Expect(Page.Locator(".program-card").First.Locator(".program-session-summary-list li")).ToHaveCountAsync(3);
+    ILocator first5KCard = Page.Locator(".program-card").Filter(new() { HasText = "First 5K" });
+    await first5KCard.Locator(".program-card__select").ClickAsync();
+    ILocator planDialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(planDialog.GetByRole(AriaRole.Heading, new() { Name = "First 5K", Exact = true })).ToBeVisibleAsync();
+    await Expect(planDialog.Locator(".program-session-summary-list li")).ToHaveCountAsync(3);
+    await planDialog.GetByRole(AriaRole.Button, new() { Name = "Close training plan details", Exact = true }).ClickAsync();
 
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Edit First 5K", Exact = true }).ClickAsync();
+    await first5KCard.Locator("details.card-overflow summary").ClickAsync();
+    await first5KCard.GetByRole(AriaRole.Button, new() { Name = "Edit plan", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Edit training plan", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator(".program-item")).ToHaveCountAsync(3);
     ILocator items = Page.Locator(".program-item");

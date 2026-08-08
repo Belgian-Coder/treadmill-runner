@@ -102,6 +102,7 @@
                             </dl>
                             <div class="card-actions">
                                 <button class="secondary-action" type="button" @onclick="() => OpenWorkoutDetailsAsync(workout)">View details</button>
+                                <button class="primary-action compact-action" type="button" @onclick="() => OpenWorkoutScheduleAsync(workout)">Schedule</button>
                                 <details class="card-overflow">
                                     <summary aria-label="More actions for @workout.Name">More</summary>
                                     <div>
@@ -157,8 +158,8 @@
                     <div class="program-card-list">
                         @foreach (WorkoutProgramView program in FilteredPrograms)
                         {
-                            <article class="program-card @(editingProgramId == program.Id ? "program-card--selected" : null)">
-                                <button class="program-card__select" type="button" @onclick="() => OpenProgram(program)" aria-label="@(program.TemplateId is null ? "Edit" : "View") @program.Name" aria-describedby="@ProgramDescriptionId(program)">
+                            <article class="program-card @(selectedProgramDetails?.Id == program.Id ? "program-card--selected" : null)">
+                                <button class="program-card__select" type="button" @onclick="() => OpenProgramDetailsAsync(program)" aria-label="View @program.Name" aria-describedby="@ProgramDescriptionId(program)">
                                     <span class="program-card__topline"><span class="category-pill">@program.Category</span><small>@(program.OwnerProfileId is null ? "Household" : $"For {ActiveProfileName}") · rev @program.RevisionNumber</small></span>
                                     <strong>@program.Name</strong>
                                     <span>@(string.IsNullOrWhiteSpace(program.Description) ? "No description" : program.Description)</span>
@@ -179,6 +180,10 @@
                                     <details class="card-overflow">
                                         <summary aria-label="More actions for @program.Name">More</summary>
                                         <div>
+                                            @if (program.TemplateId is null)
+                                            {
+                                                <button class="secondary-action" type="button" @onclick="() => EditProgram(program)">Edit plan</button>
+                                            }
                                             @if (program.Run?.ScheduledStartDate is not null)
                                             {
                                                 <a class="secondary-action" href="/calendar">Calendar &amp; training days</a>
@@ -187,47 +192,6 @@
                                         </div>
                                     </details>
                                 </div>
-                                <details class="template-program-groups">
-                                    <summary>View @program.Items.Count sessions</summary>
-                                    @if (program.Items.Any(static item => item.Phase is not null || item.WeekNumber is not null))
-                                    {
-                                        <div class="template-program-phase-grid">
-                                            @foreach (var phase in program.Items.GroupBy(item => item.Phase ?? "Plan").OrderBy(group => group.Min(item => item.Position)))
-                                            {
-                                                <section>
-                                                    <h4>@phase.Key</h4>
-                                                    @foreach (var week in phase.GroupBy(item => item.WeekNumber ?? 1).OrderBy(group => group.Key))
-                                                    {
-                                                        <details>
-                                                            <summary>Week @week.Key · @week.Count() session(s)</summary>
-                                                            <ol>
-                                                                @foreach (WorkoutProgramItemView item in week.OrderBy(item => item.SessionNumber).ThenBy(item => item.Position))
-                                                                {
-                                                                    <li>
-                                                                        <button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item)"><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button>
-                                                                        @foreach (WorkoutProgramAlternativeView alternative in item.Alternatives ?? [])
-                                                                        {
-                                                                            <button class="program-session-detail program-session-detail--alternative" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item, alternative)"><span>Alternative</span><strong>@alternative.WorkoutName</strong><small>@DurationLabel(alternative.DurationMinutes)</small></button>
-                                                                        }
-                                                                    </li>
-                                                                }
-                                                            </ol>
-                                                        </details>
-                                                    }
-                                                </section>
-                                            }
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <ol class="program-session-summary-list">
-                                            @foreach (WorkoutProgramItemView item in program.Items.OrderBy(static item => item.Position))
-                                            {
-                                                <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutDetailsAsync(program, item)"><span>Session @item.Position</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button></li>
-                                            }
-                                        </ol>
-                                    }
-                                </details>
                                 @if (pendingArchive is { Kind: ArchiveKind.Program } archive && archive.Id == program.Id)
                                 {
                                     <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-program-confirm-title">
@@ -454,12 +418,11 @@
                     <div class="card-actions premade-plan-actions">
                         @if (premadePreview.Template.AlreadyAdded)
                         {
-                            <button class="primary-action" type="button" @onclick="ShowMyTrainingPlans">View @premadePreview.Template.CopyCount in My training plans</button>
-                            <button class="secondary-action" type="button" disabled="@premadeBusy" @onclick="() => AddPremadeAsync(true)">Add another copy</button>
+                            <button class="primary-action" type="button" @onclick="ShowMyTrainingPlans">Open my plan</button>
                         }
                         else
                         {
-                            <button class="primary-action" type="button" disabled="@(!premadePreview.Compatible || premadeBusy)" @onclick="() => AddPremadeAsync(false)">Add for @premadePreview.ProfileName</button>
+                            <button class="primary-action" type="button" disabled="@(!premadePreview.Compatible || premadeBusy)" @onclick="AddPremadeAsync">Add for @premadePreview.ProfileName</button>
                         }
                     </div>
                 }
@@ -467,6 +430,81 @@
         </section>
     }
 </div>
+
+@if (selectedProgramDetails is { } selectedProgram)
+{
+    <DetailSheet BackdropId="program-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog program-details-dialog" LabelledBy="program-details-title" OnDismiss="CloseProgramDetailsAsync">
+        <header class="workout-details-header">
+            <div><p class="eyebrow">@selectedProgram.Category · @ProgramProgress(selectedProgram)</p><h2 id="program-details-title">@selectedProgram.Name</h2></div>
+            <button class="icon-action" type="button" aria-label="Close training plan details" autofocus @onclick="CloseProgramDetailsAsync">×</button>
+        </header>
+        <p class="workout-description">@(string.IsNullOrWhiteSpace(selectedProgram.Description) ? "No description." : selectedProgram.Description)</p>
+        <dl class="workout-details-overview" aria-label="Training plan overview">
+            <div><dt>Sessions</dt><dd>@selectedProgram.Items.Count</dd></div>
+            <div><dt>Completed</dt><dd>@selectedProgram.CompletedItemCount</dd></div>
+            <div><dt>Next</dt><dd>@NextWorkoutLabel(selectedProgram)</dd></div>
+            <div><dt>Revision</dt><dd>@selectedProgram.RevisionNumber</dd></div>
+        </dl>
+        <section class="program-details-sessions" aria-labelledby="program-sessions-title">
+            <div class="panel-heading"><div><h3 id="program-sessions-title">Plan sessions</h3><span class="field-help">Open only the week you need; select a session for its existing detailed view.</span></div></div>
+            @if (selectedProgram.Items.Any(static item => item.Phase is not null || item.WeekNumber is not null))
+            {
+                <div class="template-program-phase-grid">
+                    @foreach (var phase in selectedProgram.Items.GroupBy(item => item.Phase ?? "Plan").OrderBy(group => group.Min(item => item.Position)))
+                    {
+                        <section><h4>@phase.Key</h4>
+                        @foreach (var week in phase.GroupBy(item => item.WeekNumber ?? 1).OrderBy(group => group.Key))
+                        {
+                            <details><summary>Week @week.Key · @week.Count() session(s)</summary><ol>
+                            @foreach (WorkoutProgramItemView item in week.OrderBy(item => item.SessionNumber).ThenBy(item => item.Position))
+                            {
+                                <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item)"><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button>
+                                @foreach (WorkoutProgramAlternativeView alternative in item.Alternatives ?? [])
+                                {
+                                    <button class="program-session-detail program-session-detail--alternative" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item, alternative)"><span>Alternative</span><strong>@alternative.WorkoutName</strong><small>@DurationLabel(alternative.DurationMinutes)</small></button>
+                                }</li>
+                            }
+                            </ol></details>
+                        }
+                        </section>
+                    }
+                </div>
+            }
+            else
+            {
+                <ol class="program-session-summary-list">
+                    @foreach (WorkoutProgramItemView item in selectedProgram.Items.OrderBy(static item => item.Position))
+                    {
+                        <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item)"><span>Session @item.Position</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button></li>
+                    }
+                </ol>
+            }
+        </section>
+        <div class="card-actions workout-details-actions"><button class="secondary-action" type="button" @onclick="CloseProgramDetailsAsync">Close</button></div>
+    </DetailSheet>
+}
+
+@if (scheduledWorkout is { } workoutToSchedule)
+{
+    <DetailSheet BackdropId="workout-schedule-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog workout-schedule-dialog" LabelledBy="workout-schedule-title" OnDismiss="CloseWorkoutScheduleAsync">
+        <header class="workout-details-header"><div><p class="eyebrow">Recurring workout</p><h2 id="workout-schedule-title">Schedule @workoutToSchedule.Name</h2></div><button class="icon-action" type="button" aria-label="Close workout schedule" autofocus @onclick="CloseWorkoutScheduleAsync">×</button></header>
+        <p class="field-help">This creates calendar occurrences for @ActiveProfileName. It never starts the treadmill.</p>
+        <div class="form-grid">
+            <label class="field field--wide">Schedule name<input maxlength="160" @bind="workoutScheduleName" /></label>
+            <label class="field">Starts<input type="date" @bind="workoutScheduleStartDate" /></label>
+            <label class="field">Ends (optional)<input type="date" @bind="workoutScheduleEndDate" /></label>
+            <label class="field">Repeat every (weeks)<input type="number" min="1" max="52" @bind="workoutScheduleIntervalWeeks" /></label>
+            <label class="field">Alternative workout<select @bind="workoutScheduleAlternativeRevisionId"><option value="">None</option>@foreach (WorkoutSummaryView alternative in ProgramEligibleWorkouts.Where(item => item.Id != workoutToSchedule.Id)){<option value="@alternative.CurrentRevisionId">@alternative.Name · r@alternative.CurrentRevisionNumber</option>}</select></label>
+        </div>
+        <fieldset class="weekday-picker"><legend>Training days</legend>
+            @foreach ((string label, int flag) in ScheduleWeekdays)
+            {
+                <label><input type="checkbox" checked="@((workoutScheduleWeekdayMask & flag) != 0)" @onchange="args => ToggleWorkoutScheduleWeekday(flag, args)" />@label</label>
+            }
+        </fieldset>
+        <div class="card-actions workout-details-actions"><button class="secondary-action" type="button" disabled="@workoutScheduleBusy" @onclick="CloseWorkoutScheduleAsync">Cancel</button><button class="primary-action" type="button" disabled="@(!CanSaveWorkoutSchedule || workoutScheduleBusy)" @onclick="SaveWorkoutScheduleAsync">@(workoutScheduleBusy ? "Saving…" : "Save schedule")</button></div>
+    </DetailSheet>
+}
 
 @if (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
 {
@@ -570,6 +608,22 @@
     private string? selectedPremadeId;
     private PremadePlanPreviewView? premadePreview;
     private bool premadeBusy;
+    private WorkoutProgramView? selectedProgramDetails;
+    private bool openProgramDetailsPending;
+    private DotNetObjectReference<Workouts>? programDetailsModalReference;
+    private WorkoutSummaryView? scheduledWorkout;
+    private string workoutScheduleName = string.Empty;
+    private DateOnly workoutScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? workoutScheduleEndDate;
+    private int workoutScheduleIntervalWeeks = 1;
+    private int workoutScheduleWeekdayMask = 37;
+    private Guid? workoutScheduleAlternativeRevisionId;
+    private bool workoutScheduleBusy;
+    private bool openWorkoutSchedulePending;
+    private DotNetObjectReference<Workouts>? workoutScheduleModalReference;
+    private bool CanSaveWorkoutSchedule => activeProfileId is not null && scheduledWorkout is not null &&
+        !string.IsNullOrWhiteSpace(workoutScheduleName) && workoutScheduleIntervalWeeks is >= 1 and <= 52 &&
+        workoutScheduleWeekdayMask != 0 && (workoutScheduleEndDate is null || workoutScheduleEndDate >= workoutScheduleStartDate);
     private WorkoutSummaryView? selectedWorkoutDetails;
     private string? selectedPlanWorkoutName;
     private string? selectedPlanWorkoutContext;
@@ -667,7 +721,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (openWorkoutDetailsPending && (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null))
+        if (openWorkoutSchedulePending && scheduledWorkout is not null)
+        {
+            openWorkoutSchedulePending = false;
+            workoutScheduleModalReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "workout-schedule-backdrop", workoutScheduleModalReference);
+        }
+        else if (openProgramDetailsPending && selectedProgramDetails is not null)
+        {
+            openProgramDetailsPending = false;
+            programDetailsModalReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "program-details-backdrop", programDetailsModalReference);
+        }
+        else if (openWorkoutDetailsPending && (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null))
         {
             openWorkoutDetailsPending = false;
             workoutDetailsModalReference = DotNetObjectReference.Create(this);
@@ -708,10 +774,22 @@
         message = null;
     }
 
-    private void ShowMyTrainingPlans()
+    private async Task ShowMyTrainingPlans()
     {
         libraryMode = "programs";
-        message = $"Showing {premadePreview?.Template.Name} in My training plans.";
+        programSearch = string.Empty;
+        programCategory = "All";
+        WorkoutProgramView? installed = programs.FirstOrDefault(program =>
+            string.Equals(program.TemplateId, premadePreview?.Template.Id, StringComparison.Ordinal));
+        if (installed is not null)
+        {
+            message = $"Opening {installed.Name} in My training plans.";
+            await OpenProgramDetailsAsync(installed);
+        }
+        else
+        {
+            message = $"Showing {premadePreview?.Template.Name} in My training plans.";
+        }
     }
 
     private async Task SelectPremadeAsync(PremadePlanCatalogView plan)
@@ -733,14 +811,14 @@
         }
     }
 
-    private async Task AddPremadeAsync(bool freshCopy)
+    private async Task AddPremadeAsync()
     {
         if (premadePreview is null || activeProfileId is not { } profileId || premadeBusy) return;
         premadeBusy = true;
         try
         {
             using HttpResponseMessage response = await Http.PostAsJsonAsync("api/planning/premade-plans/materialize", new PremadePlanMaterializeRequest(
-                Guid.NewGuid(), profileId, premadePreview.Template.Id, premadePreview.Template.Version, freshCopy));
+                Guid.NewGuid(), profileId, premadePreview.Template.Id, premadePreview.Template.Version));
             if (!response.IsSuccessStatusCode)
             {
                 message = "The premade plan could not be added. Review its compatibility and try again.";
@@ -748,7 +826,7 @@
             }
             PremadePlanMaterializeView? result = await response.Content.ReadFromJsonAsync<PremadePlanMaterializeView>();
             message = result is { AlreadyAdded: true }
-                ? $"{premadePreview.Template.Name} was already added for {ActiveProfileName}."
+                ? $"Opening the existing {premadePreview.Template.Name} plan for {ActiveProfileName}."
                 : $"{premadePreview.Template.Name} was added for {ActiveProfileName}. Choose the calendar days now, or cancel to keep it for later.";
             await ReloadAsync();
             if (result is not null && programs.FirstOrDefault(program => program.Id == result.ProgramId) is { } addedProgram)
@@ -824,16 +902,82 @@
         await LoadProgramDraftAsync();
     }
 
-    private Task OpenProgram(WorkoutProgramView program)
+    private async Task OpenProgramDetailsAsync(WorkoutProgramView program)
     {
-        if (program.TemplateId is not null)
+        selectedProgramDetails = program;
+        openProgramDetailsPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseProgramDetailsAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        programDetailsModalReference = null;
+        selectedProgramDetails = null;
+    }
+
+    private async Task OpenWorkoutScheduleAsync(WorkoutSummaryView workout)
+    {
+        scheduledWorkout = workout;
+        workoutScheduleName = workout.Name;
+        workoutScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
+        workoutScheduleEndDate = null;
+        workoutScheduleIntervalWeeks = 1;
+        workoutScheduleWeekdayMask = 37;
+        workoutScheduleAlternativeRevisionId = null;
+        openWorkoutSchedulePending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseWorkoutScheduleAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        workoutScheduleModalReference = null;
+        scheduledWorkout = null;
+    }
+
+    private void ToggleWorkoutScheduleWeekday(int flag, ChangeEventArgs args)
+    {
+        bool selected = args.Value is bool value && value;
+        workoutScheduleWeekdayMask = selected ? workoutScheduleWeekdayMask | flag : workoutScheduleWeekdayMask & ~flag;
+    }
+
+    private async Task SaveWorkoutScheduleAsync()
+    {
+        if (!CanSaveWorkoutSchedule || scheduledWorkout is not { } workout || activeProfileId is not { } profileId) return;
+        workoutScheduleBusy = true;
+        try
         {
-            showProgramEditor = false;
-            editingProgramId = program.Id;
-            message = "Premade plans are immutable. Use Add fresh copy in the catalog when you want another instance.";
-            return Task.CompletedTask;
+            var alternatives = new List<CalendarAlternativeInput> { new(workout.CurrentRevisionId, 0) };
+            if (workoutScheduleAlternativeRevisionId is { } alternative && alternative != workout.CurrentRevisionId)
+                alternatives.Add(new CalendarAlternativeInput(alternative, 1));
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/planning/calendar/series", new CalendarSeriesSaveRequest(
+                Guid.NewGuid(), profileId, workoutScheduleName.Trim(), "Europe/Brussels", workoutScheduleStartDate,
+                workoutScheduleEndDate, workoutScheduleIntervalWeeks, workoutScheduleWeekdayMask, alternatives, []));
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The workout schedule could not be saved.";
+                return;
+            }
+            message = $"{workout.Name} was scheduled for {ActiveProfileName}.";
+            await CloseWorkoutScheduleAsync();
         }
-        return EditProgram(program);
+        finally { workoutScheduleBusy = false; }
+    }
+
+    private async Task OpenProgramWorkoutFromDetailsAsync(WorkoutProgramView program, WorkoutProgramItemView item)
+    {
+        await CloseProgramDetailsAsync();
+        await OpenProgramWorkoutDetailsAsync(program, item);
+    }
+
+    private async Task OpenProgramWorkoutFromDetailsAsync(
+        WorkoutProgramView program,
+        WorkoutProgramItemView item,
+        WorkoutProgramAlternativeView alternative)
+    {
+        await CloseProgramDetailsAsync();
+        await OpenProgramWorkoutDetailsAsync(program, item, alternative);
     }
 
     private void RequestCloseProgramEditor()
@@ -1188,6 +1332,10 @@
     [JSInvokable]
     public async Task<bool> CloseScheduleManagerFromJs()
     {
+        workoutScheduleModalReference = null;
+        scheduledWorkout = null;
+        programDetailsModalReference = null;
+        selectedProgramDetails = null;
         workoutDetailsModalReference = null;
         selectedWorkoutDetails = null;
         selectedPlanWorkoutName = null;
@@ -1325,11 +1473,13 @@
     {
         programDraftDebounce?.Cancel();
         programDraftDebounce?.Dispose();
-        if (selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
+        if (scheduledWorkout is not null || selectedProgramDetails is not null || selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
             catch (JSDisconnectedException) { }
         }
         workoutDetailsModalReference = null;
+        programDetailsModalReference = null;
+        workoutScheduleModalReference = null;
     }
 }

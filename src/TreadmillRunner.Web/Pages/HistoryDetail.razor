@@ -505,6 +505,7 @@ else
         {
             "physical-movement-detected" or "session-warning" when sessionEvent.TryGetProperty("message", out var message) => message.GetString() ?? "Session warning",
             "workout-step-transition" => "Workout step changed",
+            "workout-progress-reset" when sessionEvent.TryGetProperty("message", out var resetMessage) => resetMessage.GetString() ?? "Workout progress reset",
             "session-completed" => "Session completed",
             _ => eventType.Replace('-', ' '),
         };

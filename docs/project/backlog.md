@@ -4,7 +4,7 @@ type: delivery-backlog
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-07
+updated: 2026-08-08
 ---
 
 # Story backlog
@@ -54,5 +54,6 @@ All implementation stories use the reusable `user-story-workflow`; no project-sp
 | [TR-030](stories/tr-030-default-training-days.md) | Preview and atomically reschedule eligible future plan sessions when a runner changes their default training weekdays | completed, validated, and installed in 1.5.19 | Completed, repeated, skipped, and explicitly moved occurrences remain fixed; collisions are shown and never overwritten |
 | [TR-031](stories/tr-031-local-first-household.md) | Local-first household display, readiness, explanations, adviser, trends/goals, cues, verified backups, health, and sensor-assisted quick start | software implemented; visual, offline, and physical acceptance pending | No automatic Start, command replay, inferred command success, active-session profile switching, cloud dependency, or automatic plan rewrite |
 | TR-032 | Exact WalkingPad 5K-to-10K source plan, same-date workout variants, clear-upcoming lifecycle, plan-detail links, and one-session-at-a-time Garmin calendar sync | software implemented and installed in 1.5.20; live Garmin acceptance pending | Existing history is immutable unless explicitly reset; no bulk Garmin enqueue, automatic treadmill Start, or legacy low-speed Stop workaround |
+| [TR-033](stories/tr-033-session-controls-and-planning-ownership.md) | Two-button resumable Stop controls, explicit end/reset decisions, compact plan details, idempotent template installs, and Plan-owned scheduling | completed and validated for 1.5.23; owner installation pending | Stop must be confirmed before decisions; reset preserves recording evidence and never starts; Calendar cannot create training |
 
 Every story owns acceptance mapping, failing-first tests where practical, deterministic validation, documentation delta, skipped hardware checks, and finish evidence.

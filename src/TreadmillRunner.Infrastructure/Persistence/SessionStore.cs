@@ -572,6 +572,7 @@ public sealed class SessionStore(
     "manual-speed-override" => DeserializeEvent<ManualSpeedOverrideEvent>(entity),
     "manual-incline-override" => DeserializeEvent<ManualInclineOverrideEvent>(entity),
     "workout-step-transition" => DeserializeEvent<WorkoutStepTransitionEvent>(entity),
+    "workout-progress-reset" => DeserializeEvent<WorkoutProgressResetEvent>(entity),
     "session-paused" => DeserializeEvent<SessionPausedEvent>(entity),
     "session-resumed" => DeserializeEvent<SessionResumedEvent>(entity),
     "device-disconnected" => DeserializeEvent<DeviceDisconnectedEvent>(entity),

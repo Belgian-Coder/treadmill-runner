@@ -4,7 +4,7 @@ type: delivery-index
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-07
+updated: 2026-08-08
 ---
 
 # TreadmillRunner stories
@@ -33,3 +33,5 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-028 — Single browser connection and live-run confidence](tr-028-single-browser-connection.md)
 - [TR-029 — Whole-app responsive UX consolidation](tr-029-whole-app-ux.md)
 - [TR-030 — Reschedule future workouts after changing training days](tr-030-default-training-days.md)
+- [TR-031 — Local-first household improvements](tr-031-local-first-household.md)
+- [TR-033 — Resumable Stop controls and planning ownership](tr-033-session-controls-and-planning-ownership.md)

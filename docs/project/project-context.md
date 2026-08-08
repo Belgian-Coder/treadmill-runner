@@ -4,14 +4,14 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-07
+updated: 2026-08-08
 ---
 
 # Project context
 
 ## Purpose and current milestone
 
-Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-031 adds profile-owned large-text/high-contrast displays and cues, tiered readiness, exact-revision comparisons, deterministic progression receipts, goals/trends, owner-selected verified backup rotation, combined local health, and confirmation-only sensor-assisted quick start. It adds no service provider, cloud account, or mandatory internet dependency. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; Pause and vendor motion remain disabled.
+Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Windows 11 VM. The gateway owns BLE, workout execution, profiles/history, and a locally served Blazor WebAssembly UI. TR-031 adds profile-owned large-text/high-contrast displays and cues, tiered readiness, exact-revision comparisons, deterministic progression receipts, goals/trends, owner-selected verified backup rotation, combined local health, and confirmation-only sensor-assisted quick start. TR-033 adds Stop-backed resumable Pause, explicit end/reset decisions, and Plan-owned scheduling without adding a service provider, cloud account, or mandatory internet dependency. Exact Omega Z S3.02/V10.23.17 evidence verifies Start, Stop, speed, and incline; the separate raw Pause opcode and vendor motion remain disabled.
 
 ## Load first
 
@@ -49,6 +49,7 @@ When producing a Release WebAssembly publish, use `eng/clean-wasm-publish.ps1 -C
 - History includes a data-derived planned/requested/measured chart, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note.
 - Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.
 - Completed sessions can be compared only with the same immutable workout revision. Local trend calculations exclude simulator/system-test sessions, and deterministic progression suggestions require an explicit acceptance/rejection receipt without changing a plan.
+- Daily Pause uses the exact-device verified Stop operation and retains the active session for an explicit hold-to-resume. Stop/End offers keep paused, reset workout progress, or end and save only after confirmed stop; reset retains recorded totals and never starts motion.
 - Owner-selected absolute local/UNC backup policies create rotating copies that pass an isolated full SQLite integrity check while the live session is idle. Operations combines service, database, BLE, storage, and release status.
 - Startup restores tracking only for a running hardware session with a bounded checkpoint and the same enrolled treadmill. Fresh movement must appear within 30 seconds and planned controls remain suspended until explicit resume; otherwise the session is interrupted. Volatile single-use intents cover accepted Start/Stop/speed/incline with explicit expiry/lease/session/generation guards and response-plus-fresh-telemetry confirmation. Unknown outcomes suspend automation and are never retried.
 - See [Simulated live session](live-session.md). Accelerated four-hour cadence/memory, 14,400 one-second SQLite writes, and loopback latency targets passed on the earlier baseline. Formal normal-Wi-Fi latency measurement is not a release check; command and telemetry timestamps remain available for diagnosing practical issues. Signed GitHub/local checks, expected-version staging, pinned-key offline bundle import, UI activation, health verification, and rollback are implemented. GitHub metadata is transport only; the installed public certificate and signed manifest remain authoritative.
@@ -61,6 +62,7 @@ When producing a Release WebAssembly publish, use `eng/clean-wasm-publish.ps1 -C
 - Browser is not in the live control loop.
 - No WinRT outside Infrastructure and no GATT write outside the device coordinator.
 - No Start or command replay after disconnect, restart, update, or browser reload. A healthy browser-only interruption does not own or suspend the gateway workout. BLE recovery may generate fresh current-position commands only after guarded reconciliation; a service restart always requires explicit planned-control resume.
+- Calendar cannot create training. Plan owns workout scheduling and training-plan start/restart; already-installed premade template versions are idempotent and expose one open action.
 - External QDomyos code is not copied or translated.
 
 ## External and generated boundaries

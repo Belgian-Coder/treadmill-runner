@@ -17,8 +17,7 @@ public sealed record PremadePlanInstallation(
 public sealed record PremadePlanMaterialization(
   PremadePlanTemplate Template,
   Guid UserProfileId,
-  IReadOnlyDictionary<string, WorkoutDefinition> WorkoutsByKey,
-  bool FreshCopy);
+  IReadOnlyDictionary<string, WorkoutDefinition> WorkoutsByKey);
 
 public sealed record PremadePlanMaterializationResult(
   PremadePlanInstallation Installation,
@@ -86,7 +85,7 @@ public sealed class PremadePlanStore(
       PremadePlanInstallationEntity[] prior = allPrior
         .Where(installation => activeProgramIds.Contains(installation.WorkoutProgramId))
         .ToArray();
-      if (!request.FreshCopy && prior.FirstOrDefault() is { } existing)
+      if (prior.FirstOrDefault() is { } existing)
       {
         var existingResult = new PremadePlanMaterializationResult(
           Map(existing),

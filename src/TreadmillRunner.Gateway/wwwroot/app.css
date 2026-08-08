@@ -422,6 +422,14 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .control-action-dock { position: sticky; bottom: .5rem; z-index: 10; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: .8rem; padding: .7rem; border: 1px solid #d8f7ed24; border-radius: 1rem; background: #09222cf2; box-shadow: 0 .8rem 2.4rem #0009; }
 .control-action-dock .touch-action { min-height: 64px; font-size: 1rem; }
 .control-action-dock .stop-action { font-size: 1.08rem !important; }
+.media-control { display: inline-flex; align-items: center; justify-content: center; gap: .7rem; min-width: 0; min-height: 64px; }
+.media-control__icon { display: grid; width: 2rem; height: 2rem; flex: 0 0 2rem; place-items: center; font: 900 1.35rem/1 "Cascadia Mono", Consolas, monospace; }
+.media-control--play .media-control__icon { transform: translateX(.08rem); }
+.stop-decision-dialog { width: min(620px, 100%); }
+.stop-decision-actions { display: grid; gap: .65rem; }
+.stop-decision-actions button { display: grid; min-height: 68px; gap: .2rem; padding: .8rem 1rem; text-align: left; }
+.stop-decision-actions button strong { font-size: .92rem; }
+.stop-decision-actions button span { opacity: .82; font-size: .74rem; font-weight: 600; line-height: 1.35; }
 
 @media (max-width: 700px) {
   .control-page { gap: .6rem; padding-bottom: 5rem; }
@@ -744,7 +752,7 @@ body.immersive-view { overflow: hidden; }
 .legend-line--incline-measured { border-color: #ff9f66; }
 .control-takeover { width: 100%; }
 .control-action-dock { position: sticky; bottom: .5rem; z-index: 10; }
-.control-command-status { min-height: 1.25rem; margin: 0; color: #b8d2ce; font-size: .72rem; line-height: 1.35; text-align: center; }
+.control-command-status { grid-column: 1 / -1; min-height: 1.25rem; margin: 0; color: #b8d2ce; font-size: .72rem; line-height: 1.35; text-align: center; }
 .control-details { padding: .65rem .8rem; border: 1px solid #d9f9f218; border-radius: .85rem; background: #0c2731a8; }
 .control-details > summary { min-height: 44px; color: #a9c4c1; cursor: pointer; font-size: .78rem; font-weight: 700; }
 .control-details[open] > summary { margin-bottom: .65rem; }
@@ -990,9 +998,10 @@ body.immersive-view { overflow: hidden; }
 .library-segments button[aria-pressed="true"], .category-chips button[aria-pressed="true"] { border-color: #74e0bd; background: #174b42; color: #effff9; }
 .program-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(460px, 1.2fr); gap: 1rem; align-items: start; }
 .program-workspace--browse { grid-template-columns: minmax(0, 1fr); }
-.program-workspace--browse .program-card-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+.program-workspace--browse .program-card-list { grid-template-columns: minmax(0, 1fr); }
 .program-browser { display: grid; gap: .8rem; min-width: 0; }
 .program-toolbar { display: grid; gap: .65rem; padding: .8rem; border: 1px solid #d8f7ed16; border-radius: 1rem; background: #102d37c7; }
+.program-toolbar > .secondary-action { width: fit-content; min-height: 42px; padding: .45rem .8rem; }
 .category-chips { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .1rem; scrollbar-width: thin; }
 .category-chips button { flex: 0 0 auto; min-height: 44px; padding-inline: .75rem; border-color: #d9f9f21c; background: #081e278f; font-size: .72rem; }
 .program-card-list { display: grid; gap: .65rem; }
@@ -1001,6 +1010,17 @@ body.immersive-view { overflow: hidden; }
 .program-card__select { display: grid; gap: .42rem; min-width: 0; min-height: 104px; padding: .45rem; border: 0; border-radius: .7rem; background: transparent; color: #edf8f6; cursor: pointer; text-align: left; }
 .program-card__select > strong { overflow: hidden; font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
 .program-card__select > span:not(.program-card__topline):not(.program-progress) { color: #9db7b4; font-size: .73rem; line-height: 1.4; }
+.program-workspace--browse .program-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: .75rem .85rem; }
+.program-workspace--browse .program-card__select { min-height: 88px; }
+.program-workspace--browse .program-card > .card-actions { grid-column: 2; grid-row: 1; align-self: center; }
+.program-workspace--browse .program-start-confirm { grid-column: 1 / -1; }
+.program-details-dialog { width: min(900px, 100%); }
+.program-details-sessions { min-height: 0; overflow: auto; padding-right: .25rem; }
+.program-details-sessions .template-program-phase-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.program-details-sessions .template-program-phase-grid > section { padding: .35rem .7rem .65rem; border-radius: .8rem; background: #081e278f; }
+.program-details-sessions details > summary { min-height: 46px; padding: .55rem 0; color: #9fe7cf; cursor: pointer; font-weight: 800; }
+.program-details-sessions ol { display: grid; gap: .35rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
+.workout-schedule-dialog { width: min(720px, 100%); }
 .program-start-confirm { display: grid; gap: .55rem; margin: 0 .3rem .3rem; padding: .75rem; border: 1px solid #f5c76866; border-radius: .8rem; background: #2b2416cc; }.program-start-confirm p { margin: 0; color: #d9ece8; font-size: .76rem; line-height: 1.45; }
 .profile-context-picker { display: flex; align-items: center; gap: .75rem; margin: 0; padding: .55rem .75rem; border: 1px solid #d9f9f21f; border-radius: 1rem; background: #0d2933cc; }
 .profile-context-picker legend { float: left; width: auto; margin: 0; color: #9ab6b2; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -1111,6 +1131,10 @@ body.immersive-view { overflow: hidden; }
   .program-browser { order: 2; }
   .program-editor { order: 1; }
   .program-card-list { grid-template-columns: minmax(0, 1fr); overflow: visible; padding-bottom: 0; }
+  .program-workspace--browse .program-card { grid-template-columns: minmax(0, 1fr); }
+  .program-workspace--browse .program-card > .card-actions { grid-column: 1; grid-row: auto; }
+  .program-workspace--browse .program-card > .card-actions > button { flex: 1 1 auto; }
+  .program-details-sessions .template-program-phase-grid { grid-template-columns: minmax(0, 1fr); }
   .program-add-workout { grid-template-columns: 1fr; }
   .program-add-workout .secondary-action { width: 100%; }
   .program-item { grid-template-columns: 30px minmax(0, 1fr); }

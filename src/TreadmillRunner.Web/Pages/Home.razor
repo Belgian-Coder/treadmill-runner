@@ -78,7 +78,7 @@
             <article class="primary-metric live-metric live-metric--speed" aria-label="Measured speed"><p>Speed</p><strong>@session.Live.SpeedKph.ToString("0.0") <small>km/h</small></strong><span>Requested @session.RequestedSpeedKph.ToString("0.0") · planned @(session.PlannedSpeedKph?.ToString("0.0") ?? "open")</span></article>
             <article class="metric-card live-metric live-metric--heart" aria-label="Heart rate"><p>Heart rate</p><strong>@HeartRateValue <small>bpm</small></strong><span>@HeartRateTargetLabel</span></article>
             <article class="metric-card live-metric" aria-label="Measured incline"><p>Incline</p><strong>@session.Live.InclinePercent.ToString("0.0")<small>%</small></strong><span>Requested @session.RequestedInclinePercent.ToString("0.0") · planned @(session.PlannedInclinePercent?.ToString("0.0") ?? "open")</span></article>
-            <article class="metric-card live-metric"><p>Elapsed</p><strong>@session.Live.Elapsed.ToString(@"mm\:ss")</strong><span>@(session.Remaining?.ToString(@"mm\:ss") ?? "distance goal") remaining</span></article>
+            <article class="metric-card live-metric"><p>Workout</p><strong>@session.WorkoutElapsed.ToString(@"mm\:ss")</strong><span>@(session.Remaining?.ToString(@"mm\:ss") ?? "distance goal") remaining</span></article>
         </section>
 
         <section class="controls-card live-controls" aria-labelledby="run-controls-title" aria-busy="@(isManualCommandPending || isStopPending)">
@@ -101,13 +101,13 @@
             <div class="run-actions">
                 @if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
                 {
-                    <button class="touch-action primary-action pause-action" type="button" @onclick="ResumeAsync" disabled="@(!CanResume)">Resume at @session.MinimumStartSpeedKph?.ToString("0.0") km/h</button>
+                    <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold"><span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to resume")</span></button>
                 }
                 else
                 {
-                    <button class="touch-action pause-action" type="button" @onclick="PauseAsync" disabled="@(!CanPause)">Pause</button>
+                    <button class="touch-action pause-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon" aria-hidden="true">Ⅱ</span><span>Pause</span></button>
                 }
-                <button class="touch-action danger-action stop-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop</button>
+                <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
             </div>
             @if (session.HeartRateTarget is not null)
             {
@@ -202,7 +202,7 @@
                     <p>Remote Start is unavailable until this exact model and firmware pass the hardware gate. Start from the physical console.</p>
                 }
             </div>
-            <button class="touch-action primary-action hold-start-action"
+            <button class="touch-action primary-action hold-start-action media-control media-control--play"
                     type="button"
                     disabled="@(!CanStart)"
                     aria-describedby="start-hold-status"
@@ -213,9 +213,9 @@
                     @onkeydown="StartKeyDownAsync"
                     @onkeyup="CancelStartHold"
                     @onblur="CancelStartHold">
-                @(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")
+                <span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")</span>
             </button>
-            <button class="touch-action danger-action" type="button" @onclick="StopAsync" disabled="@(!CanStop)">Stop / cancel workout</button>
+            <button class="touch-action danger-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
             <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
         </section>
 
@@ -458,6 +458,15 @@
     }
 </div>
 
+@if (isStopDecisionOpen)
+{
+    <DetailSheet BackdropId="home-stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="home-stop-decision-title" OnDismiss="KeepSessionPausedAsync">
+        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync">×</button></header>
+        <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
+        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Reset progress</strong><span>Go back to the first step. Recording totals stay intact.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button></div>
+    </DetailSheet>
+}
+
 @code {
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
     private CancellationTokenSource? startHoldCancellation;
@@ -498,6 +507,11 @@
     private bool isManualCommandPending;
     private bool isStopPending;
     private bool stopRequestedDuringCommand;
+    private bool openDecisionAfterQueuedStop;
+    private bool isStopDecisionOpen;
+    private bool openStopDecisionPending;
+    private bool sessionActionBusy;
+    private DotNetObjectReference<Home>? stopDecisionModalReference;
     private PendingProgramStart? pendingProgramStart;
     private static readonly (string Label, int Flag)[] ScheduleWeekdays =
     [
@@ -599,7 +613,7 @@
     private bool CanStart => ClientReady && lease is not null && session is
     {
         CanStartRemotely: true,
-        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart,
+        Live.SessionState: SessionState.ArmedWaitingForPhysicalStart or SessionState.PausedWaitingForPhysicalResume,
     };
     private bool CanStop => ClientReady && !isStopPending && lease is not null && session?.CanStopRemotely == true && session.Live.SessionState is
         SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume;
@@ -607,10 +621,8 @@
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
     private bool CanAdjustIncline => ClientReady && !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
-    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
+    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanStopRemotely == true &&
         session.Live.SessionState == SessionState.Running;
-    private bool CanResume => ClientReady && !isManualCommandPending && lease is not null && session?.CanStartRemotely == true &&
-        session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume;
     private bool CanSetAutomation => ClientReady && !isManualCommandPending && lease is not null &&
         session?.Live.SessionState == SessionState.Running;
     private bool CanSetSpeedAutomation => CanSetAutomation && session?.CanSetSpeedRemotely == true;
@@ -685,8 +697,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        await Gateway.EnsureStartedAsync();
+        if (firstRender) await Gateway.EnsureStartedAsync();
+        if (openStopDecisionPending && isStopDecisionOpen)
+        {
+            openStopDecisionPending = false;
+            stopDecisionModalReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.openModal", "home-stop-decision-backdrop", stopDecisionModalReference);
+        }
     }
 
     private async Task SelectProfileAsync(Guid profileId)
@@ -1210,19 +1227,21 @@
         startHoldCancellation?.Cancel();
     }
 
-    private Task StopAsync()
+    private Task StopAsync() => RequestStopAsync(openDecision: true);
+    private Task PauseAsync() => RequestStopAsync(openDecision: false);
+
+    private Task RequestStopAsync(bool openDecision)
     {
         CancelStartHold();
         if (isManualCommandPending)
         {
             stopRequestedDuringCommand = true;
+            openDecisionAfterQueuedStop |= openDecision;
             actionStatus = "Stop requested — finishing the in-flight command, then sending one current-state Stop.";
             return InvokeAsync(StateHasChanged);
         }
-        return SendCommandAsync(TreadmillCommandKind.Stop);
+        return SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
     }
-    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
-    private Task ResumeAsync() => SendCommandAsync(TreadmillCommandKind.Start);
 
     private async Task RefreshAfterManualControlAsync(HttpResponseMessage response, string control)
     {
@@ -1275,7 +1294,7 @@
         }
     }
 
-    private async Task SendCommandAsync(TreadmillCommandKind kind)
+    private async Task SendCommandAsync(TreadmillCommandKind kind, bool openDecision = false)
     {
         bool isStopCommand = kind == TreadmillCommandKind.Stop;
         if (isStopCommand ? isStopPending : isManualCommandPending || isStopPending) return;
@@ -1287,7 +1306,6 @@
         string operation = kind switch
         {
             TreadmillCommandKind.Start => "start",
-            TreadmillCommandKind.Pause => "pause",
             _ => "stop",
         };
         actionStatus = $"Sending single-use {operation} command…";
@@ -1319,6 +1337,13 @@
             {
                 session = await sessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
             }
+            if (isStopCommand && openDecision && result?.Disposition == TreadmillCommandDisposition.Confirmed &&
+                session?.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
+            {
+                isStopDecisionOpen = true;
+                openStopDecisionPending = true;
+                await InvokeAsync(StateHasChanged);
+            }
         }
         finally
         {
@@ -1332,11 +1357,49 @@
         isManualCommandPending = false;
         if (!stopRequestedDuringCommand) return;
         stopRequestedDuringCommand = false;
+        bool openDecision = openDecisionAfterQueuedStop;
+        openDecisionAfterQueuedStop = false;
         using HttpResponseMessage response = await Http.GetAsync("api/live/session");
         session = response.StatusCode == System.Net.HttpStatusCode.NoContent
             ? null
             : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
-        await SendCommandAsync(TreadmillCommandKind.Stop);
+        await SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
+    }
+
+    private async Task KeepSessionPausedAsync()
+    {
+        await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
+        stopDecisionModalReference = null;
+        isStopDecisionOpen = false;
+        actionStatus = "Session paused. Hold Start when you are ready to resume.";
+    }
+
+    private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout progress reset. Hold Start when you are ready.", false);
+    private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", true);
+
+    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome)
+    {
+        if (sessionActionBusy || session is null || lease is null) return;
+        sessionActionBusy = true;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new { operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version });
+            if (!response.IsSuccessStatusCode) { actionStatus = "The session action was rejected."; return; }
+            session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            await KeepSessionPausedAsync();
+            actionStatus = successMessage;
+            if (navigateHome) Navigation.NavigateTo("/", replace: true);
+        }
+        finally { sessionActionBusy = false; }
+    }
+
+    [JSInvokable]
+    public async Task<bool> CloseScheduleManagerFromJs()
+    {
+        stopDecisionModalReference = null;
+        isStopDecisionOpen = false;
+        await InvokeAsync(StateHasChanged);
+        return true;
     }
 
     private static string? CommandValuesLabel(TreadmillCommandResult result)
@@ -1518,6 +1581,7 @@
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Gateway.SessionChanged -= GatewaySessionChanged;
         Gateway.LeaseChanged -= GatewayLeaseChanged;
+        stopDecisionModalReference = null;
         await Task.CompletedTask;
     }
 

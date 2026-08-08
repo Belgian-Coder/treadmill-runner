@@ -273,7 +273,8 @@ public sealed record ActiveSessionSnapshot
       string? commandsSuspendedReason = null,
       DateTimeOffset? telemetryGapStartedAtUtc = null,
       bool canResumePlannedControls = false,
-      DateTimeOffset? lastReconciledAtUtc = null)
+      DateTimeOffset? lastReconciledAtUtc = null,
+      TimeSpan workoutElapsed = default)
   {
     RequireId(sessionId, nameof(sessionId));
     RequireId(userProfileId, nameof(userProfileId));
@@ -295,6 +296,11 @@ public sealed record ActiveSessionSnapshot
     if (heartRateAge < TimeSpan.Zero)
     {
       throw new ArgumentOutOfRangeException(nameof(heartRateAge));
+    }
+
+    if (workoutElapsed < TimeSpan.Zero)
+    {
+      throw new ArgumentOutOfRangeException(nameof(workoutElapsed));
     }
 
     ActiveWorkoutStep.RequireNullableFinite(plannedSpeedKph, nameof(plannedSpeedKph), true);
@@ -344,6 +350,7 @@ public sealed record ActiveSessionSnapshot
     TelemetryGapStartedAtUtc = telemetryGapStartedAtUtc;
     CanResumePlannedControls = canResumePlannedControls;
     LastReconciledAtUtc = lastReconciledAtUtc;
+    WorkoutElapsed = workoutElapsed;
   }
 
   public Guid SessionId { get; }
@@ -385,6 +392,7 @@ public sealed record ActiveSessionSnapshot
   public DateTimeOffset? TelemetryGapStartedAtUtc { get; }
   public bool CanResumePlannedControls { get; }
   public DateTimeOffset? LastReconciledAtUtc { get; }
+  public TimeSpan WorkoutElapsed { get; }
 
   private static void RequireId(Guid value, string parameterName)
   {

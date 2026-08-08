@@ -113,6 +113,33 @@ public sealed class WorkoutProgressionTests
     Assert.InRange(restored.ProgressFraction, 0.16, 0.17);
   }
 
+  [Fact]
+  public void Restart_returns_to_the_first_step_without_erasing_authoritative_totals()
+  {
+    var definition = new WorkoutDefinition(1, "Restart", null,
+    [
+      Step(new TimeGoal(TimeSpan.FromMinutes(1)), new FixedSpeed(5), new FixedIncline(0)),
+      Step(new TimeGoal(TimeSpan.FromMinutes(1)), new FixedSpeed(6), new FixedIncline(1)),
+    ]);
+    var progression = new WorkoutProgression(definition);
+    progression.Advance(TimeSpan.FromSeconds(75), 0.15);
+
+    progression.Restart(TimeSpan.FromSeconds(75), 0.15);
+
+    Assert.Equal(0, progression.CurrentStepIndex);
+    Assert.Equal(TimeSpan.Zero, progression.ElapsedSinceRestart);
+    Assert.Equal(0, progression.ProgressFraction);
+    progression.Advance(TimeSpan.FromSeconds(90), 0.18);
+    Assert.Equal(TimeSpan.FromSeconds(15), progression.ElapsedSinceRestart);
+    Assert.InRange(progression.ProgressFraction, 0.249, 0.251);
+
+    var restored = new WorkoutProgression(definition);
+    restored.Restore(progression.Capture());
+    Assert.Equal(0, restored.CurrentStepIndex);
+    Assert.Equal(TimeSpan.FromSeconds(15), restored.ElapsedSinceRestart);
+    Assert.InRange(restored.ProgressFraction, 0.249, 0.251);
+  }
+
   private static WorkoutStep Step(
       StepGoal goal,
       SpeedDirective speed,

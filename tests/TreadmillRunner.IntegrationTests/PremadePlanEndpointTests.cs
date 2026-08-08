@@ -208,11 +208,13 @@ public sealed class PremadePlanEndpointTests(PlanningGatewayFactory factory)
     Assert.Equal(1, programAfterSkip.GetProperty("skippedItemCount").GetInt32());
     Assert.Equal(installed.GetProperty("items")[1].GetProperty("id").GetGuid(), programAfterSkip.GetProperty("nextItemId").GetGuid());
 
-    using HttpResponseMessage freshResponse = await client.PostAsJsonAsync("/api/planning/premade-plans/materialize", request with { operationId = Guid.NewGuid(), freshCopy = true });
-    Assert.Equal(HttpStatusCode.Created, freshResponse.StatusCode);
-    JsonElement fresh = await ReadJsonAsync(freshResponse);
-    Assert.NotEqual(programId, fresh.GetProperty("programId").GetGuid());
-    Assert.Equal(2, fresh.GetProperty("copyNumber").GetInt32());
+    using HttpResponseMessage duplicateResponse = await client.PostAsJsonAsync(
+      "/api/planning/premade-plans/materialize", request with { operationId = Guid.NewGuid(), freshCopy = true });
+    Assert.Equal(HttpStatusCode.OK, duplicateResponse.StatusCode);
+    JsonElement duplicate = await ReadJsonAsync(duplicateResponse);
+    Assert.Equal(programId, duplicate.GetProperty("programId").GetGuid());
+    Assert.Equal(1, duplicate.GetProperty("copyNumber").GetInt32());
+    Assert.True(duplicate.GetProperty("alreadyAdded").GetBoolean());
 
     using HttpResponseMessage editResponse = await client.PostAsJsonAsync($"/api/planning/programs/{programId}/revisions", new
     {

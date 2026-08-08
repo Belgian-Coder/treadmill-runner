@@ -66,6 +66,12 @@ public sealed class SessionStateMachine
     TransitionTo(SessionState.PausedWaitingForPhysicalResume);
   }
 
+  public void StopWaitingForPhysicalResume()
+  {
+    RequireActiveState();
+    TransitionTo(SessionState.PausedWaitingForPhysicalResume);
+  }
+
   public void RecordManualSpeedOverride(double expectedSpeedKph, double observedSpeedKph)
   {
     RequireState(SessionState.Running, SessionState.PausedWaitingForPhysicalResume);

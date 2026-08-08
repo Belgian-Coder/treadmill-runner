@@ -31,8 +31,9 @@ public static class WorkoutProgramPlanningEndpoints
     CancellationToken cancellationToken)
   {
     IReadOnlyList<StoredWorkoutProgramProgress> programs = await store.ListAsync(profileId, cancellationToken);
-    var result = new List<WorkoutProgramDto>(programs.Count);
-    foreach (StoredWorkoutProgramProgress program in programs.Where(static item => !item.Program.IsArchived))
+    StoredWorkoutProgramProgress[] visiblePrograms = SelectCanonicalPrograms(programs).ToArray();
+    var result = new List<WorkoutProgramDto>(visiblePrograms.Length);
+    foreach (StoredWorkoutProgramProgress program in visiblePrograms)
     {
       result.Add(await ToDtoAsync(program, workoutStore, cancellationToken));
     }
@@ -101,7 +102,7 @@ public static class WorkoutProgramPlanningEndpoints
       {
         return TypedResults.Conflict(new
         {
-          message = "Premade training plans are immutable. Add a fresh copy from the catalog instead.",
+          message = "Premade training plans are immutable. Choose another template from the catalog instead.",
         });
       }
       WorkoutProgramRevision revision = CreateRevision(
@@ -135,6 +136,32 @@ public static class WorkoutProgramPlanningEndpoints
     catch (OperationReplayException replay) { return Replay(replay.Receipt, "program.revision.create", fingerprint); }
     catch (OperationScopeConflictException) { return OperationConflict(); }
   }
+
+  private static IEnumerable<StoredWorkoutProgramProgress> SelectCanonicalPrograms(
+    IReadOnlyList<StoredWorkoutProgramProgress> programs)
+  {
+    IEnumerable<StoredWorkoutProgramProgress> active = programs.Where(static item => !item.Program.IsArchived);
+    foreach (StoredWorkoutProgramProgress custom in active.Where(static item => item.Program.CurrentRevision.TemplateId is null))
+      yield return custom;
+
+    foreach (IGrouping<(Guid? OwnerProfileId, string TemplateId), StoredWorkoutProgramProgress> group in active
+      .Where(static item => item.Program.CurrentRevision.TemplateId is not null)
+      .GroupBy(static item => (
+        item.Program.CurrentRevision.OwnerProfileId,
+        item.Program.CurrentRevision.TemplateId!),
+        EqualityComparer<(Guid? OwnerProfileId, string TemplateId)>.Default))
+    {
+      StoredWorkoutProgramProgress canonical = group
+        .OrderByDescending(static item => item.Run?.Status == WorkoutProgramRunStatus.Active)
+        .ThenByDescending(static item => ParseTemplateVersion(item.Program.CurrentRevision.TemplateVersion))
+        .ThenByDescending(static item => item.Program.CreatedAtUtc)
+        .First();
+      yield return canonical;
+    }
+  }
+
+  private static Version ParseTemplateVersion(string? value) =>
+    Version.TryParse(value, out Version? version) ? version : new Version(0, 0);
 
   private static async Task<IResult> ArchiveAsync(
     Guid id,
