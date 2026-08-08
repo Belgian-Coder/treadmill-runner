@@ -13,6 +13,76 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   IClassFixture<PlanningGatewayFactory>
 {
+  private static readonly Guid HeartRateService = Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
+
+  [Fact]
+  public async Task Prepared_non_heart_rate_session_allows_heart_rate_enrollment_but_not_treadmill_replacement()
+  {
+    using HttpClient client = factory.CreateClient();
+    using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
+    {
+      Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+    }
+
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client);
+    string holderId = $"prepared-enrollment-{Guid.NewGuid():N}";
+    ControlLease lease = Assert.IsType<ControlLease>(
+      await (await client.PostAsJsonAsync("/api/live/lease/acquire", new { holderId }))
+        .Content.ReadFromJsonAsync<ControlLease>());
+    using HttpResponseMessage armResponse = await client.PostAsJsonAsync(
+      "/api/live/sessions/arm",
+      new
+      {
+        profileId,
+        workoutRevisionId = revisionId,
+        holderId,
+        leaseId = lease.Id,
+        operationId = Guid.NewGuid(),
+        selectionSource = "Library",
+      });
+    Assert.Equal(HttpStatusCode.Created, armResponse.StatusCode);
+
+    using HttpResponseMessage heartRateEnrollment = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "HeartRate",
+      deviceId = $"HR{Guid.NewGuid():N}"[..12],
+      displayName = "Venu 3",
+      serviceUuids = new[] { HeartRateService },
+      telemetryMode = (string?)null,
+      ownerProfileIds = new[] { profileId },
+      autoConnect = true,
+    });
+    Assert.Equal(HttpStatusCode.Created, heartRateEnrollment.StatusCode);
+
+    using HttpResponseMessage treadmillEnrollment = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "Treadmill",
+      deviceId = "A1B2C3D4E5F6",
+      displayName = "Replacement treadmill",
+      serviceUuids = new[] { Guid.Parse("00001826-0000-1000-8000-00805f9b34fb") },
+      telemetryMode = "Ftms",
+    });
+    Assert.Equal(HttpStatusCode.Conflict, treadmillEnrollment.StatusCode);
+    Assert.Contains(
+      "Device enrollment cannot change while a workout is active.",
+      await treadmillEnrollment.Content.ReadAsStringAsync(),
+      StringComparison.Ordinal);
+
+    using HttpResponseMessage disconnect = await client.PostAsync(
+      $"/api/devices/enrollments/{Guid.NewGuid()}/disconnect",
+      null);
+    Assert.Equal(HttpStatusCode.Conflict, disconnect.StatusCode);
+    Assert.Contains(
+      "Bluetooth disconnect is not a treadmill stop mechanism.",
+      await disconnect.Content.ReadAsStringAsync(),
+      StringComparison.Ordinal);
+
+    using HttpResponseMessage finalReset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    Assert.Equal(HttpStatusCode.NoContent, finalReset.StatusCode);
+  }
+
   [Fact]
   public async Task Gateway_owns_arm_physical_start_completion_and_history()
   {

@@ -25,6 +25,8 @@ public sealed record EnrollDeviceRequest(
   bool IsPreferred = false);
 
 public sealed record ForgetDeviceRequest(Guid OperationId, int ExpectedVersion);
+public sealed record RenameDeviceRequest(Guid OperationId, int ExpectedVersion, string DisplayName);
+public sealed record ConfigureTreadmillControlsRequest(int ExpectedVersion, bool Enabled);
 public sealed record ConfigureHeartRateAssignmentsRequest(
   Guid OperationId,
   IReadOnlyList<Guid> OwnerProfileIds,
@@ -96,10 +98,146 @@ public static class DeviceEnrollmentEndpoints
     RouteGroupBuilder group = devices.MapGroup("/enrollments");
     group.MapGet("/", ListAsync);
     group.MapPost("/", EnrollAsync);
+    group.MapPost("/{id:guid}/retry", RetryConnectionAsync);
+    group.MapPost("/{id:guid}/disconnect", DisconnectAsync);
+    group.MapPut("/{id:guid}/name", RenameAsync);
+    group.MapPut("/{id:guid}/treadmill-controls", ConfigureTreadmillControlsAsync);
     group.MapPut("/{id:guid}/assignments", ConfigureAssignmentsAsync);
     group.MapDelete("/{id:guid}", ForgetByIdAsync);
     group.MapDelete("/{role}", ForgetAsync);
     return endpoints;
+  }
+
+  private static async Task<IResult> RetryConnectionAsync(
+    Guid id,
+    IReadOnlyDeviceCoordinator coordinator,
+    CancellationToken cancellationToken)
+  {
+    bool found = await coordinator.RetryConnectionAsync(id, cancellationToken);
+    return found
+      ? TypedResults.Accepted($"/api/devices/enrollments/{id}/retry", new
+      {
+        message = "Connection requested for up to two minutes. Wait for fresh telemetry before treating the device as connected.",
+      })
+      : TypedResults.NotFound();
+  }
+
+  private static async Task<IResult> DisconnectAsync(
+    Guid id,
+    IReadOnlyDeviceCoordinator coordinator,
+    ITreadmillCommandCoordinator commandCoordinator,
+    ILiveSessionCoordinator sessions,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      EnsureConnectionCanDisconnect(sessions);
+      bool found = await coordinator.DisconnectAsync(id, cancellationToken);
+      if (!found) return TypedResults.NotFound();
+      await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+      return TypedResults.Ok(new
+      {
+        message = "The local Bluetooth connection was closed. No treadmill command was sent.",
+      });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+  }
+
+  private static async Task<IResult> RenameAsync(
+    Guid id,
+    RenameDeviceRequest request,
+    IDeviceEnrollmentStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      ValidateOperationId(request.OperationId);
+      string name = request.DisplayName?.Trim() ?? string.Empty;
+      string fingerprint = PlanningOperationFingerprint.Compute(new { id, name });
+      DateTimeOffset now = timeProvider.GetUtcNow();
+      VersionedDeviceEnrollment saved = await store.RenameAsync(
+        id,
+        name,
+        request.ExpectedVersion,
+        now,
+        new PersistenceWriteOperation(
+          request.OperationId,
+          "device.rename",
+          StatusCodes.Status200OK,
+          JsonSerializer.Serialize(new { id, displayName = name }, JsonOptions),
+          now,
+          fingerprint),
+        cancellationToken);
+      IReadOnlyList<HeartRateDeviceAssignment> assignments = await store.ListHeartRateAssignmentsAsync(cancellationToken);
+      return TypedResults.Ok(ToDto(saved, assignments));
+    }
+    catch (ArgumentException exception)
+    {
+      return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["displayName"] = [exception.Message] });
+    }
+    catch (KeyNotFoundException)
+    {
+      return TypedResults.NotFound();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+      return TypedResults.Conflict(new { message = "The device changed. Refresh and try again." });
+    }
+  }
+
+  private static async Task<IResult> ConfigureTreadmillControlsAsync(
+    Guid id,
+    ConfigureTreadmillControlsRequest request,
+    IDeviceEnrollmentStore store,
+    ILiveSessionCoordinator sessions,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      EnsureIdle(sessions);
+      VersionedDeviceEnrollment current = (await store.ListActiveAsync(cancellationToken))
+        .SingleOrDefault(item => item.Enrollment.Id == id)
+        ?? throw new KeyNotFoundException();
+      if (!AcceptedTreadmillControlProfile.Matches(current.Enrollment))
+        return TypedResults.Conflict(new { message = "Remote controls can be configured only for the accepted OMEGA Z / V10.23.17 FTMS profile." });
+      TreadmillCapabilities capabilities = request.Enabled
+        ? AcceptedTreadmillControlProfile.Enable(current.Enrollment.Capabilities)
+        : AcceptedTreadmillControlProfile.Disable(current.Enrollment.Capabilities);
+      VersionedDeviceEnrollment saved = await store.UpdateEvidenceAsync(
+        id,
+        request.ExpectedVersion,
+        current.Enrollment.ModelNumber,
+        current.Enrollment.FirmwareRevision,
+        capabilities,
+        TreadmillCapabilityEvidence.HardwareVerified,
+        timeProvider.GetUtcNow(),
+        cancellationToken);
+      return TypedResults.Ok(new
+      {
+        enabled = saved.Enrollment.Capabilities?.CanStartRemotely == true,
+        message = request.Enabled
+          ? "Verified Start, Stop, speed, and incline controls are enabled. Raw Pause remains disabled."
+          : "Remote treadmill controls are disabled.",
+        version = saved.Version,
+      });
+    }
+    catch (KeyNotFoundException)
+    {
+      return TypedResults.NotFound();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+      return TypedResults.Conflict(new { message = "The treadmill settings changed. Refresh and try again." });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
   }
 
   private static async Task<IResult> ReliabilityAsync(
@@ -285,8 +423,8 @@ public static class DeviceEnrollmentEndpoints
     string fingerprint = string.Empty;
     try
     {
-      EnsureIdle(sessionCoordinator);
       DeviceRole role = ParseRole(request.Role);
+      EnsureEnrollmentAllowed(sessionCoordinator, role);
       ValidateOperationId(request.OperationId);
       if (request.ServiceUuids is null)
       {
@@ -657,6 +795,30 @@ public static class DeviceEnrollmentEndpoints
         SessionState.ArmedWaitingForPhysicalStart or
         SessionState.Running or
         SessionState.PausedWaitingForPhysicalResume)
+    {
+      throw new InvalidOperationException("Device enrollment cannot change while a workout is active.");
+    }
+  }
+
+  private static void EnsureConnectionCanDisconnect(ILiveSessionCoordinator coordinator)
+  {
+    if (coordinator.CurrentSession?.Live.SessionState is
+        SessionState.ArmedWaitingForPhysicalStart or
+        SessionState.Running or
+        SessionState.PausedWaitingForPhysicalResume)
+    {
+      throw new InvalidOperationException(
+        "End the active session before disconnecting a device. Bluetooth disconnect is not a treadmill stop mechanism.");
+    }
+  }
+
+  private static void EnsureEnrollmentAllowed(
+    ILiveSessionCoordinator coordinator,
+    DeviceRole role)
+  {
+    SessionState? state = coordinator.CurrentSession?.Live.SessionState;
+    if (state is SessionState.Running or SessionState.PausedWaitingForPhysicalResume ||
+        role == DeviceRole.Treadmill && state == SessionState.ArmedWaitingForPhysicalStart)
     {
       throw new InvalidOperationException("Device enrollment cannot change while a workout is active.");
     }

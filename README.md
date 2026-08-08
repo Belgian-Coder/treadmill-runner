@@ -67,6 +67,23 @@ Open `http://localhost:5180`. Run all deterministic checks with:
 .\eng\validate.ps1
 ```
 
+For normal implementation loops, run only the affected tests and browser flow first. Both commands retain TRX evidence under `artifacts/test-results`:
+
+```powershell
+.\eng\verify-change.ps1 -TestFilter 'FullyQualifiedName~ReadOnlyDeviceCoordinatorTests'
+.\eng\verify-change.ps1 -TestFilter 'FullyQualifiedName~DeviceEnrollmentStoreTests' -BrowserFilter 'FullyQualifiedName~LiveDashboardTests'
+```
+
+`verify-change.ps1` refreshes stale browser output automatically and otherwise reuses the passed readiness report, build, published gateway, and migrated template. Do not run the complete suite after every small change. Once implementation and focused tests are green, run the complete deterministic and clean browser gates once:
+
+```powershell
+.\eng\verify-change.ps1 -Full
+```
+
+Connect IQ is intentionally excluded from the normal final gate. Use `.\eng\verify-change.ps1 -Full -IncludeConnectIq` only when the companion source, resources, build scripts, or companion contracts changed.
+
+The .NET and browser runners stream output to durable logs, print 15-second heartbeats, and stop their exact process trees after 60 or 90 seconds without progress output. Browser execution also stops remaining work as soon as a test failure and its log context are captured. Focused .NET/browser phases cap at one/two minutes; complete .NET/browser phases cap at two/five minutes. The browser runner executes up to three isolated fixture classes in parallel and runs latency benchmarks separately. `-TimeoutMinutes` and `-StallTimeoutSeconds` remain explicit overrides. Passed readiness evidence and the migrated database template are reused until their actual inputs change, including for clean final runs.
+
 Use the Devices page to run a bounded passive scan and enroll one treadmill and one primary heart-rate monitor. Choose FTMS or the Omega vendor telemetry path explicitly; the gateway does not silently switch between them. Enrollment and diagnostics remain read-only, and simulator mutation endpoints exist only in Development.
 
 Some Omega Z firmware advertisements omit the local name. TreadmillRunner accepts the observed unnamed `1816` plus `1826` signature only as a read-only Omega enrollment candidate, then obtains model and firmware from Device Information. Named non-Omega devices are not matched by this fallback, and it never enables controls.

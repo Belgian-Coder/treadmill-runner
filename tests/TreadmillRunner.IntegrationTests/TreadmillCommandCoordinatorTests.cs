@@ -180,6 +180,31 @@ public sealed class TreadmillCommandCoordinatorTests
   }
 
   [Fact]
+  public async Task Explicit_release_disposes_the_retained_command_connection_once()
+  {
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(7, speedKph: 0.8));
+    var connection = new FakeCommandConnection((payload, observedAt) =>
+    {
+      if (payload.Span[0] == 0x08)
+        devices.Set(ReadySnapshot(7, 0, observedAt.AddMilliseconds(1)));
+    });
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, connection, VerifiedEnrollment());
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var intent = new TreadmillCommandIntent(
+      Guid.NewGuid(), Guid.NewGuid(), TreadmillCommandKind.Stop, now, now.AddSeconds(4), 2,
+      SessionState.Running, Guid.NewGuid(), "browser-a", 7, null);
+
+    Assert.Equal(
+      TreadmillCommandDisposition.Confirmed,
+      (await coordinator.ExecuteAsync(intent, AlwaysCurrent.Instance)).Disposition);
+
+    await coordinator.ReleaseConnectionAsync();
+    await coordinator.ReleaseConnectionAsync();
+
+    Assert.Equal(1, connection.DisposeCount);
+  }
+
+  [Fact]
   public async Task Confirms_target_speed_from_response_and_fresh_measured_speed()
   {
     var devices = new FakeDeviceCoordinator(ReadySnapshot(7, speedKph: 0.8));
@@ -499,6 +524,7 @@ public sealed class TreadmillCommandCoordinatorTests
   {
     public string DeviceId => "A0BB3E102117";
     public List<byte[]> Payloads { get; } = [];
+    public int DisposeCount { get; private set; }
 
     public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
       CancellationToken cancellationToken = default) =>
@@ -546,7 +572,11 @@ public sealed class TreadmillCommandCoordinatorTests
         observed));
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+      DisposeCount++;
+      return ValueTask.CompletedTask;
+    }
   }
 
   private sealed class FakeEnrollmentStore(VersionedDeviceEnrollment enrollment) : IDeviceEnrollmentStore

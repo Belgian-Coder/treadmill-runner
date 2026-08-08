@@ -481,6 +481,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         break;
       case "workouts":
         await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
+        await Expect(Page.Locator(".program-card").Nth(1)).ToBeVisibleAsync();
         break;
       case "history-detail":
         ILocator heartRateZones = Page.GetByText("Time in heart-rate zones", new() { Exact = true });
@@ -610,6 +611,21 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByText("143 bpm", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Preferred", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("86%", new() { Exact = false }).First).ToBeVisibleAsync();
+        ILocator connectActions = Page.GetByRole(AriaRole.Button, new() { Name = "Connect / retry", Exact = true });
+        ILocator disconnectActions = Page.GetByRole(AriaRole.Button, new() { Name = "Disconnect", Exact = true });
+        await Expect(connectActions).ToHaveCountAsync(3);
+        await Expect(disconnectActions).ToHaveCountAsync(3);
+        for (int index = 0; index < 3; index++)
+        {
+          await Expect(connectActions.Nth(index)).ToBeVisibleAsync();
+          await Expect(disconnectActions.Nth(index)).ToBeVisibleAsync();
+          LocatorBoundingBoxResult? connectBox = await connectActions.Nth(index).BoundingBoxAsync();
+          LocatorBoundingBoxResult? disconnectBox = await disconnectActions.Nth(index).BoundingBoxAsync();
+          Assert.NotNull(connectBox);
+          Assert.NotNull(disconnectBox);
+          Assert.True(connectBox.Height >= 44);
+          Assert.True(disconnectBox.Height >= 44);
+        }
         await Expect(Page.GetByText("Bluetooth reliability report", new() { Exact = true })).ToBeVisibleAsync();
         break;
       case "profiles":

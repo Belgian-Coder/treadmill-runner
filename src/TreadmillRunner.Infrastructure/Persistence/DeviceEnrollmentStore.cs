@@ -30,6 +30,8 @@ public interface IDeviceEnrollmentStore
     throw new NotSupportedException("ID-based device removal is not supported by this store.");
   Task<IReadOnlyList<HeartRateDeviceAssignment>> ConfigureHeartRateAssignmentsAsync(Guid enrollmentId, IReadOnlyList<HeartRateAssignmentPreference> assignments, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default) =>
     throw new NotSupportedException("Heart-rate assignments are not supported by this store.");
+  Task<VersionedDeviceEnrollment> RenameAsync(Guid enrollmentId, string displayName, int expectedVersion, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default) =>
+    throw new NotSupportedException("Device renaming is not supported by this store.");
   Task<VersionedDeviceEnrollment> UpdateEvidenceAsync(Guid id, int expectedVersion, string? modelNumber, string? firmwareRevision, TreadmillCapabilities? capabilities, TreadmillCapabilityEvidence evidence, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default);
 }
 
@@ -244,6 +246,32 @@ public sealed class DeviceEnrollmentStore(
     enrollment.Version++;
     await PersistenceReceipts.SaveAsync(context, contextFactory, operation, cancellationToken);
     return replacements.Select(MapAssignment).ToArray();
+  }
+
+  public async Task<VersionedDeviceEnrollment> RenameAsync(
+    Guid enrollmentId,
+    string displayName,
+    int expectedVersion,
+    DateTimeOffset nowUtc,
+    PersistenceWriteOperation operation,
+    CancellationToken cancellationToken = default)
+  {
+    if (enrollmentId == Guid.Empty) throw new ArgumentException("Enrollment ID cannot be empty.", nameof(enrollmentId));
+    ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+    string normalized = displayName.Trim();
+    if (normalized.Length > 100) throw new ArgumentException("Device name cannot exceed 100 characters.", nameof(displayName));
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await PersistenceReceipts.ThrowIfCompletedAsync(context, operation, cancellationToken);
+    DeviceEnrollmentEntity entity = await context.DeviceEnrollments.SingleOrDefaultAsync(
+      candidate => candidate.Id == enrollmentId && !candidate.IsArchived,
+      cancellationToken) ?? throw new KeyNotFoundException("The device enrollment was not found.");
+    if (entity.Version != expectedVersion)
+      throw new DbUpdateConcurrencyException($"Expected enrollment version {expectedVersion}, but stored version is {entity.Version}.");
+    entity.DisplayName = normalized;
+    entity.UpdatedAtUtc = nowUtc;
+    entity.Version++;
+    await PersistenceReceipts.SaveAsync(context, contextFactory, operation, cancellationToken);
+    return Map(entity);
   }
 
   public async Task<VersionedDeviceEnrollment> UpdateEvidenceAsync(

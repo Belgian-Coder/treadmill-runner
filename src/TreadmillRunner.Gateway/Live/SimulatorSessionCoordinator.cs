@@ -160,6 +160,7 @@ public sealed class LiveSessionCoordinator(
     (VersionedUserProfile profile, StoredWorkoutRevision revision, WorkoutDefinition workout) =
       await LoadPlanAsync(profileId, workoutRevisionId, cancellationToken);
     bool requiresHeartRate = ContainsHeartRateTarget(workout.Blocks);
+    await deviceCoordinator.PrepareForRunAsync(profileId, requiresHeartRate, cancellationToken);
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(profileId);
     bool hardwareMode = !SimulatorAvailable;
     bool treadmillFresh = hardwareMode &&
@@ -353,6 +354,7 @@ public sealed class LiveSessionCoordinator(
       ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
       await store.CreateAsync(definition, cancellationToken);
       _active = active;
+      await deviceCoordinator.HoldRunConnectionsAsync(profileId, requiresHeartRate, cancellationToken);
       PublishSnapshot(active, now, SessionControlAccess.Controller, lease.ExpiresAt);
       return active.Snapshot;
     }
@@ -460,7 +462,9 @@ public sealed class LiveSessionCoordinator(
         new SessionCompletedEvent(now),
         cancellationToken);
       await store.FinalizeAsync(CreateSummary(active, SessionState.Completed, now), cancellationToken);
+      active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+      await ReleaseDeviceConnectionsAsync(cancellationToken);
     }
     finally
     {
@@ -565,8 +569,10 @@ public sealed class LiveSessionCoordinator(
       ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
       await store.AppendEventAsync(active.Definition.SessionId, new SessionStoppedEvent(now), cancellationToken);
       await store.FinalizeAsync(CreateSummary(active, SessionState.Stopped, now), cancellationToken);
+      active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
       await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      await ReleaseDeviceConnectionsAsync(cancellationToken);
       return active.Snapshot;
     }
     finally
@@ -1220,6 +1226,7 @@ public sealed class LiveSessionCoordinator(
     {
       _gate.Release();
     }
+    await ReleaseDeviceConnectionsAsync(cancellationToken);
   }
 
   public async Task<bool> TryBeginMaintenanceAsync(CancellationToken cancellationToken = default)
@@ -1273,6 +1280,7 @@ public sealed class LiveSessionCoordinator(
     AutomatedCommandRequest? automatedCommand = null;
     LiveSnapshot? liveSnapshotToPublish = null;
     ActiveSessionSnapshot? sessionSnapshotToPublish = null;
+    var releaseConnections = false;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -1355,6 +1363,14 @@ public sealed class LiveSessionCoordinator(
           }
         }
 
+        if (!active.DeviceConnectionsReleased &&
+            active.Machine.State is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted &&
+            !active.IsMoving && active.MeasuredSpeedKph <= 0.05)
+        {
+          active.DeviceConnectionsReleased = true;
+          releaseConnections = true;
+        }
+
         PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
         automatedCommand = BuildAutomatedCommand(active, now);
         liveSnapshotToPublish = Current;
@@ -1369,6 +1385,9 @@ public sealed class LiveSessionCoordinator(
     {
       _gate.Release();
     }
+
+    if (releaseConnections)
+      await ReleaseDeviceConnectionsAsync(cancellationToken);
 
     try
     {
@@ -1632,6 +1651,11 @@ public sealed class LiveSessionCoordinator(
       stored.Definition.ControllerConfigurationJson,
       new JsonSerializerOptions(JsonSerializerDefaults.Web))
       ?? throw new InvalidOperationException("The stored session configuration is invalid.");
+    bool requiresHeartRate = ContainsHeartRateTarget(workout.Blocks);
+    await deviceCoordinator.HoldRunConnectionsAsync(
+      stored.Definition.UserProfileId,
+      requiresHeartRate,
+      cancellationToken);
     using IServiceScope enrollmentScope = scopeFactory.CreateScope();
     VersionedDeviceEnrollment? currentEnrollment = await enrollmentScope.ServiceProvider
       .GetRequiredService<IDeviceEnrollmentStore>()
@@ -1665,7 +1689,7 @@ public sealed class LiveSessionCoordinator(
       configuration.Profile.MaximumSpeedKph ?? 20,
       timeProvider.GetUtcNow(),
       hardwareMode: stored.Definition.Origin == SessionOrigin.Hardware,
-      requiresHeartRate: ContainsHeartRateTarget(workout.Blocks),
+      requiresHeartRate,
       MapHeartRateSource(devices),
       canStartRemotely: false,
       canStopRemotely: capabilities?.CanStopRemotely == true,
@@ -1720,6 +1744,12 @@ public sealed class LiveSessionCoordinator(
     WorkoutImportResult parsed = await new NativeWorkoutJsonImporter()
       .ImportAsync(stream, "stored-workout.json", cancellationToken);
     return (profile, revision, parsed.Definition);
+  }
+
+  private async Task ReleaseDeviceConnectionsAsync(CancellationToken cancellationToken)
+  {
+    await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+    await deviceCoordinator.ReleaseRunConnectionsAsync(cancellationToken);
   }
 
   private async Task<TreadmillControlAvailability> LoadControlAvailabilityAsync(
@@ -2376,6 +2406,7 @@ public sealed class LiveSessionCoordinator(
     public double MeasuredSpeedKph { get; set; }
     public double MeasuredInclinePercent { get; set; }
     public bool IsMoving { get; set; }
+    public bool DeviceConnectionsReleased { get; set; }
     public ushort? HeartRateBpm { get; set; } = hardwareMode ? null : (ushort)132;
     public TimeSpan? HeartRateAge { get; set; } = hardwareMode ? null : TimeSpan.Zero;
     public DateTimeOffset? HeartRateObservedAt { get; set; } = hardwareMode ? null : createdAt;

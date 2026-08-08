@@ -14,7 +14,7 @@ updated: 2026-08-06
 - Use only `user-story-workflow` for product stories. Start it with the story identity; the harness stores it as `US-<identifier>` (for example `US-TR-001`). Bug runs use `BUG-<identifier>`. Never use dates as ticket run-folder names; dates belong in `run.json`, `REPORT.md`, and `execution-log.md`.
 - For a new screen, redesign, or materially different interaction model, start the story with `--profile ui-mock-first`, record `ux_mode: mock-first`, and use `$mock-first-ui` during planning. Keep disposable prototype source under `prototypes/US-<identifier>-<feature-slug>/`, review evidence under that story run's `artifacts/ux/`, and record design approval separately from implementation approval before changing production UI.
 - Keep retained run evidence lean: `plan.md`, `REPORT.md`, and `run.json`; keep `execution-log.md` only while a story remains active. Do not retain generated context/checkpoint mirrors after closeout.
-- Use TDD for domain/protocol behavior and run the scoped verifier plus `eng/validate.ps1` before story finish.
+- Use TDD for domain/protocol behavior. During edits, use `eng/verify-change.ps1` with exact affected test and optional browser filters; do not repeatedly run the complete suite. After implementation and focused verification are green, run `eng/verify-change.ps1 -Full` once before story finish.
 - WinRT types may appear only in `TreadmillRunner.Infrastructure`; Core, Protocols, and Web remain portable.
 - Only the serialized device coordinator may issue GATT writes. Reconnect invalidates queued commands and may return only to `Ready`.
 - Update root `project-context.md` and an ADR when architecture, runtime, safety behavior, persistence, or deployment commands change.

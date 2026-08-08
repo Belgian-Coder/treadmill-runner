@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string] $Configuration = 'Release'
+    [string] $Configuration = 'Release',
+    [switch] $IncludeConnectIq
 )
 
 Set-StrictMode -Version Latest
@@ -20,7 +21,12 @@ try {
     python -B (Join-Path $projectRoot 'tools/garmin/test_adapter_contract.py')
     if ($LASTEXITCODE -ne 0) { throw 'Garmin adapter contract fixtures failed.' }
     & (Join-Path $PSScriptRoot 'validate-public-evidence.ps1')
-    & (Join-Path $PSScriptRoot 'validate-connectiq.ps1')
+    if ($IncludeConnectIq) {
+        & (Join-Path $PSScriptRoot 'validate-connectiq.ps1')
+    }
+    else {
+        Write-Host 'Connect IQ validation skipped; use -IncludeConnectIq only for companion-related changes.'
+    }
     & (Join-Path $PSScriptRoot 'verify-ble-read-only.ps1')
     & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
     & (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration

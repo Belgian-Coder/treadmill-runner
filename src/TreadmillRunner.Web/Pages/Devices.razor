@@ -7,12 +7,12 @@
 <section class="page-stack" aria-labelledby="devices-title">
     <header class="page-heading">
         <div><p class="eyebrow">Local Bluetooth</p><h1 id="devices-title">Devices</h1></div>
-        <p>Add the household treadmill, Polar straps, and Garmin watch broadcasts once. Enabled heart-rate sensors reconnect automatically; each runner keeps an independent preferred device and fallback order.</p>
+        <p>Add the household treadmill, Polar straps, and Garmin watch broadcasts once. Connections open when you prepare a run and close after the session ends so idle devices can sleep.</p>
     </header>
 
     <section class="safety-banner" aria-label="Device safety notice">
         <span class="safety-icon" aria-hidden="true">!</span>
-        <p><strong>The physical console remains authoritative.</strong> This screen can discover, read, and subscribe only. A hardware-verified Start control appears only on the Run screen.</p>
+        <p><strong>The physical console remains authoritative.</strong> Connect and Disconnect only manage the local Bluetooth link; Disconnect never stops a moving treadmill. End the active session before disconnecting.</p>
     </section>
 
     <section class="device-grid" aria-label="Enrolled device status">
@@ -35,9 +35,26 @@
                         <div><dt>Protocol</dt><dd>@treadmill.ProtocolId</dd></div>
                         <div><dt>Mode</dt><dd>@treadmill.TelemetryMode</dd></div>
                         <div><dt>Identity</dt><dd>@RedactDeviceId(treadmill.DeviceId)</dd></div>
+                        <div><dt>Remote controls</dt><dd>@(treadmill.Capabilities?.CanStartRemotely == true ? "Enabled" : "Disabled")</dd></div>
                     </dl>
+                    <label class="field">Local device name<input maxlength="100" @bind="deviceNames[treadmill.Id]" /></label>
+                    <div class="device-actions">
+                        <button class="touch-action" type="button" @onclick="() => RenameAsync(treadmill)">Save name</button>
+                        <button class="touch-action" type="button" @onclick="() => SetTreadmillControlsAsync(treadmill, treadmill.Capabilities?.CanStartRemotely != true)">
+                            @(treadmill.Capabilities?.CanStartRemotely == true ? "Disable verified controls" : "Enable verified controls")
+                        </button>
+                    </div>
+                    <p class="field-hint">Only the accepted OMEGA Z / V10.23.17 FTMS profile can enable Start, Stop, speed, and incline. Raw Pause stays disabled.</p>
                 </details>
-                <button class="touch-action" type="button" @onclick="() => ForgetAsync(treadmill)">Forget treadmill</button>
+                <div class="device-actions">
+                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(treadmill.Id)" @onclick="() => RetryConnectionAsync(treadmill)">
+                        @(retryingConnections.Contains(treadmill.Id) ? "Connecting…" : "Connect / retry")
+                    </button>
+                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(treadmill.Id)" @onclick="() => DisconnectAsync(treadmill)">
+                        @(disconnectingConnections.Contains(treadmill.Id) ? "Disconnecting…" : "Disconnect")
+                    </button>
+                    <button class="touch-action" type="button" @onclick="() => ForgetAsync(treadmill)">Forget treadmill</button>
+                </div>
             }
         </article>
 
@@ -56,15 +73,17 @@
                     }
                 </div>
                 <dl class="device-facts">
-                    <div><dt>Connection</dt><dd>@(source?.State.ToString() ?? "Waiting")</dd></div>
+                    <div><dt>Connection</dt><dd>@(source?.State.ToString() ?? "Disconnected")</dd></div>
                     <div><dt>Current pulse</dt><dd>@(source?.BeatsPerMinute is ushort bpm ? $"{bpm} bpm" : "No reading")</dd></div>
                     <div><dt>Battery</dt><dd>@FormatBattery(source)</dd></div>
                 </dl>
                 <details class="advanced-settings"><summary>Manage sensor</summary>
                 <dl class="device-facts">
                     <div><dt>Freshness</dt><dd>@FormatFreshness(source?.ObservedAt)</dd></div>
-                    <div><dt>Auto-connect</dt><dd>@(IsPolar(enrollment) ? "Always on" : enrollment.Assignments.Any(item => item.AutoConnect) ? "On" : "Off")</dd></div>
+                    <div><dt>Connect during runs</dt><dd>@(enrollment.Assignments.Any(item => item.AutoConnect) ? "On" : "Off")</dd></div>
                 </dl>
+                <label class="field">Local device name<input maxlength="100" @bind="deviceNames[enrollment.Id]" /></label>
+                <button class="touch-action" type="button" @onclick="() => RenameAsync(enrollment)">Save name</button>
                 <fieldset class="sensor-assignment-editor">
                     <legend>Use for runner</legend>
                     <div class="runner-button-row">
@@ -91,8 +110,16 @@
                 {
                     <p class="device-fault" role="alert">@source.Fault</p>
                 }
-                <button class="touch-action" type="button" @onclick="() => ForgetAsync(enrollment)">Forget sensor</button>
                 </details>
+                <div class="device-actions">
+                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(enrollment.Id)" @onclick="() => RetryConnectionAsync(enrollment)">
+                        @(retryingConnections.Contains(enrollment.Id) ? "Connecting…" : "Connect / retry")
+                    </button>
+                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(enrollment.Id)" @onclick="() => DisconnectAsync(enrollment)">
+                        @(disconnectingConnections.Contains(enrollment.Id) ? "Disconnecting…" : "Disconnect")
+                    </button>
+                    <button class="touch-action" type="button" @onclick="() => ForgetAsync(enrollment)">Forget sensor</button>
+                </div>
             </article>
         }
         @if (!enrollments.Any(item => item.Role == "HeartRate"))
@@ -100,6 +127,10 @@
             <article class="panel-card device-card"><p class="eyebrow">Heart-rate sensors</p><h2>None added</h2><p>Scan below while a Polar strap or Garmin HR Broadcast is advertising.</p></article>
         }
     </section>
+    @if (!string.IsNullOrWhiteSpace(connectionActionStatus))
+    {
+        <p class="action-status" role="status">@connectionActionStatus</p>
+    }
 
     @if (maintenance is not null)
     {
@@ -285,13 +316,17 @@
     private IReadOnlyList<ProfileSummary> profiles = Array.Empty<ProfileSummary>();
     private IReadOnlyList<ScanCandidate> candidates = Array.Empty<ScanCandidate>();
     private readonly HashSet<Guid> newSensorProfiles = [];
+    private readonly HashSet<Guid> retryingConnections = [];
+    private readonly HashSet<Guid> disconnectingConnections = [];
+    private readonly Dictionary<Guid, string> deviceNames = [];
     private DeviceTelemetrySnapshot? status;
     private BleReliabilityReportView? reliability;
     private int reliabilityDays = 7;
     private bool reliabilityLoading;
     private string telemetryMode = "Ftms";
     private string scanMessage = "Run a scan while the Omega Z and Polar H10 are powered and advertising.";
-    private string actionStatus = "Enrollment changes are available only while no workout is active.";
+    private string actionStatus = "Heart-rate sensors may be enrolled while a workout is Ready. Other device changes require no prepared or active workout.";
+    private string connectionActionStatus = string.Empty;
     private bool isScanning;
     private TreadmillMaintenanceSnapshot? maintenance;
     private int maintenanceMonths = 3;
@@ -415,6 +450,10 @@
     {
         enrollments = await Http.GetFromJsonAsync<DeviceEnrollmentView[]>("api/devices/enrollments")
             ?? Array.Empty<DeviceEnrollmentView>();
+        foreach (DeviceEnrollmentView enrollment in enrollments)
+        {
+            if (!deviceNames.ContainsKey(enrollment.Id)) deviceNames[enrollment.Id] = enrollment.DisplayName;
+        }
         profiles = await Http.GetFromJsonAsync<ProfileSummary[]>("api/planning/profiles")
             ?? Array.Empty<ProfileSummary>();
         if (newSensorProfiles.Count == 0)
@@ -422,6 +461,106 @@
             foreach (ProfileSummary profile in profiles) newSensorProfiles.Add(profile.Id);
         }
         status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+    }
+
+    private async Task RetryConnectionAsync(DeviceEnrollmentView enrollment)
+    {
+        if (!retryingConnections.Add(enrollment.Id)) return;
+        connectionActionStatus = $"Connecting {enrollment.DisplayName} for up to two minutes. This never sends a treadmill command.";
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/devices/enrollments/{enrollment.Id}/retry", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                connectionActionStatus = await ReadFailureAsync(response, $"{enrollment.DisplayName} could not be retried.");
+                return;
+            }
+
+            for (var attempt = 0; attempt < 12; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+                bool ready = enrollment.Role == "Treadmill"
+                    ? status?.Treadmill.State == DeviceConnectionState.Ready && status.TreadmillAge <= TimeSpan.FromSeconds(5)
+                    : status?.HeartRateSources?.FirstOrDefault(item => item.EnrollmentId == enrollment.Id) is
+                        { State: DeviceConnectionState.Ready, ObservedAt: not null } source &&
+                      DateTimeOffset.Now - source.ObservedAt.Value <= TimeSpan.FromSeconds(5);
+                if (!ready) continue;
+                connectionActionStatus = $"{enrollment.DisplayName} connected with fresh telemetry. End the run or use Disconnect when you are finished.";
+                await LoadReliabilityAsync(reliabilityDays);
+                return;
+            }
+
+            connectionActionStatus = enrollment.Role == "HeartRate"
+                ? $"{enrollment.DisplayName} is still connecting. Make sure the strap is awake or Garmin HR Broadcast remains on; this request expires automatically."
+                : $"{enrollment.DisplayName} is still connecting. Make sure it is powered and nearby; this request expires automatically.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            connectionActionStatus = "The gateway could not confirm the connection request. Try again when the device is awake and nearby.";
+        }
+        finally
+        {
+            retryingConnections.Remove(enrollment.Id);
+        }
+    }
+
+    private bool ConnectionActionBusy(Guid enrollmentId) =>
+        retryingConnections.Contains(enrollmentId) || disconnectingConnections.Contains(enrollmentId);
+
+    private async Task DisconnectAsync(DeviceEnrollmentView enrollment)
+    {
+        if (!disconnectingConnections.Add(enrollment.Id)) return;
+        connectionActionStatus = $"Disconnecting {enrollment.DisplayName} locally. No treadmill command will be sent.";
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync(
+                $"api/devices/enrollments/{enrollment.Id}/disconnect",
+                null);
+            connectionActionStatus = response.IsSuccessStatusCode
+                ? $"{enrollment.DisplayName} disconnected. It will reconnect when you prepare a run or press Connect / retry."
+                : await ReadFailureAsync(response, $"{enrollment.DisplayName} could not be disconnected.");
+            await RefreshAsync();
+            await LoadReliabilityAsync(reliabilityDays);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            connectionActionStatus = "The gateway could not confirm the disconnect. Check the connection state before assuming the device is free.";
+        }
+        finally
+        {
+            disconnectingConnections.Remove(enrollment.Id);
+        }
+    }
+
+    private async Task RenameAsync(DeviceEnrollmentView enrollment)
+    {
+        string name = deviceNames.GetValueOrDefault(enrollment.Id, enrollment.DisplayName).Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            connectionActionStatus = "Enter a device name first.";
+            return;
+        }
+        using HttpResponseMessage response = await Http.PutAsJsonAsync(
+            $"api/devices/enrollments/{enrollment.Id}/name",
+            new { operationId = Guid.NewGuid(), expectedVersion = enrollment.Version, displayName = name });
+        connectionActionStatus = response.IsSuccessStatusCode
+            ? $"Device renamed to {name}."
+            : await ReadFailureAsync(response, "The device name could not be saved.");
+        if (response.IsSuccessStatusCode) await RefreshAsync();
+    }
+
+    private async Task SetTreadmillControlsAsync(DeviceEnrollmentView enrollment, bool enabled)
+    {
+        using HttpResponseMessage response = await Http.PutAsJsonAsync(
+            $"api/devices/enrollments/{enrollment.Id}/treadmill-controls",
+            new { expectedVersion = enrollment.Version, enabled });
+        connectionActionStatus = response.IsSuccessStatusCode
+            ? enabled
+                ? "Verified Start, Stop, speed, and incline controls are enabled. Prepare a new session to use them."
+                : "Remote treadmill controls are disabled."
+            : await ReadFailureAsync(response, "The treadmill control setting could not be changed.");
+        if (response.IsSuccessStatusCode) await RefreshAsync();
     }
 
     private async Task ScanAsync()
@@ -548,7 +687,22 @@
     private static async Task<string> ReadFailureAsync(HttpResponseMessage response, string fallback)
     {
         string detail = await response.Content.ReadAsStringAsync();
-        return string.IsNullOrWhiteSpace(detail) ? fallback : $"{fallback} {detail}";
+        if (string.IsNullOrWhiteSpace(detail)) return fallback;
+        try
+        {
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(detail);
+            if (document.RootElement.TryGetProperty("message", out System.Text.Json.JsonElement message) &&
+                message.ValueKind == System.Text.Json.JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(message.GetString()))
+            {
+                return $"{fallback} {message.GetString()}";
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Non-JSON problem details remain useful as returned by the local gateway.
+        }
+        return $"{fallback} {detail}";
     }
 
     private static string DisplayName(ScanCandidate candidate) =>

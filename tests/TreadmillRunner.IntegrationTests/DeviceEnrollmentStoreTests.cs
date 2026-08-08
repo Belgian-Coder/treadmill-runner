@@ -44,6 +44,14 @@ public sealed class DeviceEnrollmentStoreTests : IAsyncLifetime
       Treadmill("112233445566"), now, Op("device.enroll", now)));
     await Assert.ThrowsAsync<DbUpdateException>(() => store.EnrollAsync(
       HeartRate("AABBCCDDEEFF", "Duplicate watch"), now, Op("device.enroll", now)));
+    watch = await store.RenameAsync(
+      watch.Enrollment.Id,
+      "Marc's Garmin",
+      watch.Version,
+      now.AddSeconds(1),
+      Op("device.rename", now));
+    Assert.Equal("Marc's Garmin", watch.Enrollment.DisplayName);
+    Assert.Equal(2, watch.Version);
     Assert.True(await store.ForgetByIdAsync(
       watch.Enrollment.Id, watch.Version, now, Op("device.forget", now)));
 

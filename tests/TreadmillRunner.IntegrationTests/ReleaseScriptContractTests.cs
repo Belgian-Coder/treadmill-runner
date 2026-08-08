@@ -18,6 +18,10 @@ public sealed class ReleaseScriptContractTests
   [InlineData("Install-TreadmillRunner.ps1")]
   [InlineData("new-installer-bundle.ps1")]
   [InlineData("create-github-release.ps1")]
+  [InlineData("test.ps1")]
+  [InlineData("playwright.ps1")]
+  [InlineData("validate-connectiq.ps1")]
+  [InlineData("verify-change.ps1")]
   public async Task Release_script_has_valid_PowerShell_syntax(string scriptName)
   {
     string scriptPath = Path.Combine(ProjectRoot, "eng", scriptName);

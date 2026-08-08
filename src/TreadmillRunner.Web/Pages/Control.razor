@@ -420,6 +420,7 @@
 
             if (session is not null)
             {
+                UpdateInitialActionStatus(session);
                 focusMode = FocusState.ForSession(session.SessionId);
                 await LoadExperienceAsync(session.UserProfileId);
                 await HydrateChartAsync(session.SessionId);
@@ -508,6 +509,7 @@
         session = incoming;
         if (incoming is not null)
         {
+            UpdateInitialActionStatus(incoming);
             focusMode = FocusState.ForSession(incoming.SessionId);
             AppendChartPoint(incoming);
             if (experienceProfileId != incoming.UserProfileId) _ = LoadExperienceAsync(incoming.UserProfileId);
@@ -531,6 +533,19 @@
             else
                 StateHasChanged();
         });
+    }
+
+    private void UpdateInitialActionStatus(ActiveSessionSnapshot incoming)
+    {
+        if (actionStatus != "Waiting for an active session.") return;
+
+        actionStatus = incoming.Live.SessionState switch
+        {
+            SessionState.ArmedWaitingForPhysicalStart => "Session ready. Hold Start when you are prepared.",
+            SessionState.Running => "Session running. Restoring direct controls.",
+            SessionState.PausedWaitingForPhysicalResume => "Session paused. Hold Start when you are ready to resume.",
+            _ => "Live session connected.",
+        };
     }
 
     private async Task LoadExperienceAsync(Guid profileId)

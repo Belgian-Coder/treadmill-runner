@@ -3,7 +3,11 @@ param(
     [string] $DeveloperKey,
     [string] $SdkPath,
     [switch] $RequireSdk,
-    [switch] $SkipSimulatorTests
+    [switch] $SkipSimulatorTests,
+    [ValidateRange(5, 60)]
+    [int] $SimulatorAttemptTimeoutSeconds = 15,
+    [ValidateRange(1, 3)]
+    [int] $SimulatorAttempts = 2
 )
 
 Set-StrictMode -Version Latest
@@ -98,9 +102,50 @@ function Invoke-RunNoEvil {
     )
 
     $lastOutput = @()
-    for ($attempt = 1; $attempt -le 8; $attempt++) {
-        $lastOutput = @(& $MonkeyDo $Program $Device /t 2>&1)
-        $exitCode = $LASTEXITCODE
+    for ($attempt = 1; $attempt -le $SimulatorAttempts; $attempt++) {
+        $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $processInfo.FileName = (Get-Process -Id $PID).Path
+        $processInfo.UseShellExecute = $false
+        $processInfo.CreateNoWindow = $true
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+        $escapedMonkeyDo = $MonkeyDo.Replace("'", "''")
+        $escapedProgram = $Program.Replace("'", "''")
+        $escapedDevice = $Device.Replace("'", "''")
+        $command = "& '$escapedMonkeyDo' '$escapedProgram' '$escapedDevice' '/t'; exit `$LASTEXITCODE"
+        $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedCommand)) {
+            $processInfo.ArgumentList.Add($argument)
+        }
+
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $processInfo
+        if (-not $process.Start()) { throw "Run No Evil could not start for $Device." }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        try {
+            if (-not $process.WaitForExit($SimulatorAttemptTimeoutSeconds * 1000)) {
+                $process.Kill($true)
+                $process.WaitForExit()
+                $lastOutput = @(
+                    $stdout.GetAwaiter().GetResult()
+                    $stderr.GetAwaiter().GetResult()
+                    "Run No Evil attempt $attempt timed out after $SimulatorAttemptTimeoutSeconds seconds."
+                ) | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") }
+                if ($attempt -lt $SimulatorAttempts) { Start-Sleep -Milliseconds 750 }
+                continue
+            }
+
+            $lastOutput = @(
+                $stdout.GetAwaiter().GetResult()
+                $stderr.GetAwaiter().GetResult()
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace("$_") }
+            $exitCode = $process.ExitCode
+        }
+        finally {
+            $process.Dispose()
+        }
+
         $text = $lastOutput -join [Environment]::NewLine
         if ($text -match '(?m)^RESULTS\s*$') {
             $lastOutput | ForEach-Object { Write-Host $_ }
@@ -109,7 +154,7 @@ function Invoke-RunNoEvil {
             }
             return
         }
-        if ($attempt -lt 8) { Start-Sleep -Milliseconds 750 }
+        if ($attempt -lt $SimulatorAttempts) { Start-Sleep -Milliseconds 750 }
     }
 
     $lastOutput | ForEach-Object { Write-Host $_ }

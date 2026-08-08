@@ -52,7 +52,10 @@ Source: [Mermaid](diagrams/live-session-command-flow.mmd)
 
 ## Validation
 
-- `eng/validate.ps1 -Configuration Release` runs locked restore, formatting/analyzers, architecture gates, build, and non-browser tests.
-- `eng/playwright.ps1 -Configuration Release` exercises preflight, live movement, override markers, browser reclaim, debrief, history analytics, and phone/tablet/desktop screenshots.
+- `eng/validate.ps1 -Configuration Release` runs locked restore, formatting/analyzers, architecture gates, build, and non-browser tests. Connect IQ is opt-in with `-IncludeConnectIq` and is used only for companion-related changes.
+- `eng/playwright.ps1 -Configuration Release` exercises preflight, live movement, override markers, browser reclaim, debrief, history analytics, and phone/tablet/desktop screenshots. It publishes once, reuses one migration-aware database template, copies that template into isolated fixture databases, runs at most three fixture classes in parallel, streams TRX/log evidence under `artifacts/test-results`, prints progress heartbeats, and stops its exact child process tree after 90 seconds without output or on the total timeout.
+- During implementation, reuse current readiness evidence, build/publish output, and migrated database template with `eng/playwright.ps1 -Configuration Release -ReuseBuild -Filter 'FullyQualifiedName~AffectedBrowserTests'`. Run once without `-ReuseBuild` after relevant source changes and for the final release gate. The script automatically allows two minutes for focused filters and five minutes for the complete Browser category.
+- Connect IQ simulator attempts are limited to 15 seconds and two attempts per representative device. A hung `monkeydo` process tree is terminated before retry, so `eng/validate.ps1` cannot wait indefinitely on the Garmin simulator.
+- The preferred agent entry point is `eng/verify-change.ps1`: use exact `-TestFilter` and optional `-BrowserFilter` values while editing, then use `-Full` once at final acceptance. It automatically chooses between refreshed and reusable browser output.
 - `eng/soak.ps1 -Configuration Release -Build` runs the explicit four-hour/14,400-sample SQLite proof outside the fast default suite.
 - Accepted screenshots are generated locally under the ignored `validation/playwright/accepted` evidence directory.

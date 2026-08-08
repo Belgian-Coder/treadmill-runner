@@ -8,6 +8,7 @@ using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Gateway.Operations;
+using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -54,8 +55,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     await coordinator.StartAsync(CancellationToken.None);
     try
     {
+      await coordinator.PrepareForRunAsync(marc.Id, requiresHeartRate: false);
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-      while (coordinator.CurrentForProfile(marc.Id).HeartRateSources?.Count < 2)
+      while (coordinator.CurrentForProfile(marc.Id) is not
+        { HeartRateSources.Count: 2, SelectedHeartRateEnrollmentId: not null })
       {
         await Task.Delay(25, timeout.Token);
       }
@@ -101,9 +104,19 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     await coordinator.StartAsync(CancellationToken.None);
     try
     {
+      await coordinator.RefreshAsync();
+      Assert.Equal(DeviceConnectionState.Disconnected, coordinator.Current.Treadmill.State);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
       while (coordinator.Current is not
-        { TreadmillTelemetry: not null, HeartRateBpm: not null, SelectedHeartRateBatteryPercent: 86 })
+        {
+          TreadmillTelemetry: not null,
+          HeartRateBpm: not null,
+          SelectedHeartRateBatteryPercent: 86,
+          ReportedCapabilities: { SpeedRange: not null },
+        })
       {
         await Task.Delay(25, timeout.Token);
       }
@@ -164,6 +177,77 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       }
 
       Assert.True(coordinator.Current.Treadmill.ConnectionGeneration > generationBeforeCapabilityUpdate);
+
+      await coordinator.ReleaseRunConnectionsAsync();
+      Assert.Equal(DeviceConnectionState.Disconnected, coordinator.Current.Treadmill.State);
+      Assert.Equal(DeviceConnectionState.Disconnected, coordinator.Current.HeartRate.State);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+      Assert.Null(coordinator.Current.HeartRateBpm);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Passively_rediscovers_an_enrolled_device_before_retrying_a_windows_cache_miss()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new CacheDependentBleTransport(treadmill.DeviceId);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+      {
+        await Task.Delay(25, timeout.Token);
+      }
+
+      Assert.True(transport.PassiveScanCount >= 1);
+      Assert.True(transport.ConnectionAttemptCount >= 2);
+      Assert.NotNull(coordinator.Current.TreadmillTelemetry);
+
+      long generation = coordinator.Current.Treadmill.ConnectionGeneration;
+      int attempts = transport.ConnectionAttemptCount;
+      Assert.True(await coordinator.RetryConnectionAsync(treadmill.Id));
+      using var retryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready ||
+             coordinator.Current.Treadmill.ConnectionGeneration <= generation)
+      {
+        await Task.Delay(25, retryTimeout.Token);
+      }
+      Assert.True(transport.ConnectionAttemptCount > attempts);
+
+      int attemptsBeforeDisconnect = transport.ConnectionAttemptCount;
+      Assert.True(await coordinator.DisconnectAsync(treadmill.Id));
+      Assert.Equal(DeviceConnectionState.Disconnected, coordinator.Current.Treadmill.State);
+      await Task.Delay(TimeSpan.FromMilliseconds(2250));
+      Assert.Equal(attemptsBeforeDisconnect, transport.ConnectionAttemptCount);
+
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var reconnectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+      {
+        await Task.Delay(25, reconnectTimeout.Token);
+      }
+      Assert.True(transport.ConnectionAttemptCount > attemptsBeforeDisconnect);
     }
     finally
     {
@@ -272,5 +356,63 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     private static Guid Expand(ushort value) =>
       Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class CacheDependentBleTransport(string deviceId) : IBleCentralTransport
+  {
+    private readonly ScriptedBleTransport _connected = new();
+    private bool _observed;
+
+    public int PassiveScanCount { get; private set; }
+
+    public int ConnectionAttemptCount { get; private set; }
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      PassiveScanCount++;
+      await Task.Yield();
+      cancellationToken.ThrowIfCancellationRequested();
+      _observed = true;
+      yield return new BleAdvertisement(
+        deviceId,
+        null,
+        -45,
+        [Guid.Parse("00001826-0000-1000-8000-00805f9b34fb")]);
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string requestedDeviceId,
+      CancellationToken cancellationToken = default)
+    {
+      ConnectionAttemptCount++;
+      return _observed
+        ? _connected.ConnectAsync(requestedDeviceId, cancellationToken)
+        : ValueTask.FromResult<IBleConnection>(new CacheMissConnection(requestedDeviceId));
+    }
+
+    private sealed class CacheMissConnection(string requestedDeviceId) : IBleConnection
+    {
+      public string DeviceId { get; } = requestedDeviceId;
+
+      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromException<IReadOnlyList<BleService>>(
+          new WindowsBleDeviceUnavailableException());
+
+      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+      public IAsyncEnumerable<BleNotification> SubscribeAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    }
   }
 }

@@ -35,6 +35,14 @@ public sealed class WindowsBleException : InvalidOperationException
   }
 }
 
+public sealed class WindowsBleDeviceUnavailableException : InvalidOperationException
+{
+  public WindowsBleDeviceUnavailableException()
+    : base("Windows could not open the BLE device for read-only access.")
+  {
+  }
+}
+
 /// <summary>
 /// The GATT write completed successfully, but the device did not publish a
 /// response notification before the bounded response window elapsed.

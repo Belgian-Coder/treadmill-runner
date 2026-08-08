@@ -21,6 +21,8 @@ public interface ITreadmillCommandCoordinator
     TreadmillCommandIntent intent,
     ITreadmillCommandContextValidator contextValidator,
     CancellationToken cancellationToken = default);
+
+  Task ReleaseConnectionAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public sealed record TreadmillCommissioningApproval(
@@ -71,6 +73,19 @@ public sealed class TreadmillCommandCoordinator(
     ITreadmillCommandContextValidator contextValidator,
     CancellationToken cancellationToken = default) =>
     ExecuteCoreAsync(intent, contextValidator, null, cancellationToken);
+
+  public async Task ReleaseConnectionAsync(CancellationToken cancellationToken = default)
+  {
+    await _commandGate.WaitAsync(cancellationToken);
+    try
+    {
+      await ResetConnectionAsync().ConfigureAwait(false);
+    }
+    finally
+    {
+      _commandGate.Release();
+    }
+  }
 
   public Task<TreadmillCommandResult> ExecuteCommissioningAsync(
     TreadmillCommandIntent intent,

@@ -238,8 +238,7 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
       .ConfigureAwait(false);
     cancellationToken.ThrowIfCancellationRequested();
 
-    return device ?? throw new WindowsBleException(
-      $"Windows could not open BLE device {DeviceId} for read-only access.");
+    return device ?? throw new WindowsBleDeviceUnavailableException();
   }
 
   private async Task<NativeCharacteristicHandle> OpenCharacteristicAsync(

@@ -470,6 +470,7 @@
 @code {
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
     private CancellationTokenSource? startHoldCancellation;
+    private CancellationTokenSource? preflightRefreshCancellation;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
     private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
@@ -997,10 +998,46 @@
 
     private async Task RefreshPreflightAsync()
     {
-        preflight = selectedProfileId is { } profileId && selectedRevisionId is { } revisionId
-            ? await Http.GetFromJsonAsync<PreflightSnapshot>($"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}")
-            : null;
-        actionStatus = preflight?.IsReady == true ? "Gateway ready — take control when you are prepared." : "Complete the pre-run checks.";
+        preflightRefreshCancellation?.Cancel();
+        preflightRefreshCancellation?.Dispose();
+        preflightRefreshCancellation = null;
+        if (selectedProfileId is not { } profileId || selectedRevisionId is not { } revisionId)
+        {
+            preflight = null;
+            actionStatus = "Select a runner and workout.";
+            return;
+        }
+
+        var refresh = new CancellationTokenSource();
+        preflightRefreshCancellation = refresh;
+        try
+        {
+            for (var attempt = 0; attempt < 12; attempt++)
+            {
+                preflight = await Http.GetFromJsonAsync<PreflightSnapshot>(
+                    $"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}",
+                    refresh.Token);
+                if (preflight?.IsReady == true)
+                {
+                    actionStatus = "Gateway ready — take control when you are prepared.";
+                    return;
+                }
+
+                actionStatus = "Connecting the devices needed for this run…";
+                if (attempt < 11) await Task.Delay(TimeSpan.FromSeconds(1), refresh.Token);
+            }
+
+            actionStatus = "Some pre-run checks are still waiting. Wake nearby devices, then select the workout again or use Connect / retry on Devices.";
+        }
+        catch (OperationCanceledException) when (refresh.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(preflightRefreshCancellation, refresh))
+                preflightRefreshCancellation = null;
+            refresh.Dispose();
+        }
     }
 
     private async Task LoadCuePreferencesAsync(Guid profileId)
@@ -1578,6 +1615,8 @@
     {
         startHoldCancellation?.Cancel();
         startHoldCancellation?.Dispose();
+        preflightRefreshCancellation?.Cancel();
+        preflightRefreshCancellation?.Dispose();
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Gateway.SessionChanged -= GatewaySessionChanged;
         Gateway.LeaseChanged -= GatewayLeaseChanged;

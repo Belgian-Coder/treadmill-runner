@@ -7,6 +7,12 @@ namespace TreadmillRunner.E2ETests;
 
 public sealed class GatewayFixture : IAsyncLifetime
 {
+  private const string TemplateDatabaseEnvironmentVariable = "TreadmillRunner__E2ETemplateDatabasePath";
+  private static readonly SemaphoreSlim databaseTemplateGate = new(1, 1);
+  private static readonly string fallbackTemplateDatabasePath = Path.Combine(
+    Path.GetTempPath(),
+    $"treadmillrunner-e2e-template-{Environment.ProcessId}.db");
+  private static bool fallbackTemplateReady;
   private readonly HttpClient httpClient = new();
   private readonly object galleryScenarioSync = new();
   private readonly object gatewayErrorSync = new();
@@ -14,6 +20,16 @@ public sealed class GatewayFixture : IAsyncLifetime
   private readonly string databasePath = Path.Combine(Path.GetTempPath(), $"treadmillrunner-e2e-{Guid.NewGuid():N}.db");
   private Task<GalleryScenario>? galleryScenario;
   private Process? gatewayProcess;
+
+  static GatewayFixture()
+  {
+    AppDomain.CurrentDomain.ProcessExit += static (_, _) =>
+    {
+      TryDeleteDatabaseFile(fallbackTemplateDatabasePath);
+      TryDeleteDatabaseFile(fallbackTemplateDatabasePath + "-shm");
+      TryDeleteDatabaseFile(fallbackTemplateDatabasePath + "-wal");
+    };
+  }
 
   public Uri BaseAddress { get; private set; } = null!;
 
@@ -29,7 +45,7 @@ public sealed class GatewayFixture : IAsyncLifetime
 
   public async Task InitializeAsync()
   {
-    await ApplyMigrationsAsync();
+    await PrepareDatabaseAsync();
     int port = ReserveTcpPort();
     BaseAddress = new Uri($"http://127.0.0.1:{port}", UriKind.Absolute);
 
@@ -148,7 +164,36 @@ public sealed class GatewayFixture : IAsyncLifetime
     return ((IPEndPoint)listener.LocalEndpoint).Port;
   }
 
-  private async Task ApplyMigrationsAsync()
+  private async Task PrepareDatabaseAsync()
+  {
+    string? configuredTemplate = Environment.GetEnvironmentVariable(TemplateDatabaseEnvironmentVariable);
+    if (!string.IsNullOrWhiteSpace(configuredTemplate) && File.Exists(configuredTemplate))
+    {
+      File.Copy(configuredTemplate, databasePath, overwrite: false);
+      return;
+    }
+
+    await databaseTemplateGate.WaitAsync();
+    try
+    {
+      if (!fallbackTemplateReady || !File.Exists(fallbackTemplateDatabasePath))
+      {
+        TryDeleteDatabaseFile(fallbackTemplateDatabasePath);
+        TryDeleteDatabaseFile(fallbackTemplateDatabasePath + "-shm");
+        TryDeleteDatabaseFile(fallbackTemplateDatabasePath + "-wal");
+        await ApplyMigrationsAsync(fallbackTemplateDatabasePath);
+        fallbackTemplateReady = true;
+      }
+    }
+    finally
+    {
+      databaseTemplateGate.Release();
+    }
+
+    File.Copy(fallbackTemplateDatabasePath, databasePath, overwrite: false);
+  }
+
+  private async Task ApplyMigrationsAsync(string targetDatabasePath)
   {
     string script = Path.Combine(ProjectRoot, "eng", "database.ps1");
     ProcessStartInfo startInfo = new("pwsh.exe")
@@ -165,7 +210,7 @@ public sealed class GatewayFixture : IAsyncLifetime
     startInfo.ArgumentList.Add("-Action");
     startInfo.ArgumentList.Add("Update");
     startInfo.ArgumentList.Add("-DatabasePath");
-    startInfo.ArgumentList.Add(databasePath);
+    startInfo.ArgumentList.Add(targetDatabasePath);
     using Process process = Process.Start(startInfo)
       ?? throw new InvalidOperationException("The explicit database migration process could not be started.");
     await process.WaitForExitAsync();
