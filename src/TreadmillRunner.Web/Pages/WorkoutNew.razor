@@ -1,4 +1,5 @@
 @page "/workouts/new"
+@using System.Globalization
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ActiveProfileState ActiveProfile
@@ -21,7 +22,7 @@
         <section class="notice draft-recovery" role="status"><strong>Unfinished workout found.</strong><span>Continue where you left off or discard the browser-local draft.</span><button type="button" @onclick="ContinueDraftAsync">Continue draft</button><button type="button" @onclick="DiscardDraftAsync">Discard draft</button></section>
     }
 
-    <div class="workout-editor-shell">
+    <div class="workout-editor-shell @(ReturnToPlan ? "workout-editor-shell--direct" : null)">
     @if (!ReturnToPlan)
     {
     <details class="planning-panel existing-workout-browser">
@@ -48,39 +49,55 @@
     </details>
     }
 
-    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout" @oninput="QueueDraftSave" @onchange="QueueDraftSave">
-        <section class="planning-panel">
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="workout-form" class="editor-layout workout-builder" @oninput="QueueDraftSave" @onchange="QueueDraftSave">
+        <section class="planning-panel workout-builder__meta">
             <div class="form-grid">
                 <label class="field field--wide">Workout name<input @bind="form.Name" @bind:event="oninput" maxlength="160" required /></label>
                 <label class="field field--wide">Description<textarea @bind="form.Description" @bind:event="oninput" rows="2" maxlength="500"></textarea></label>
             </div>
         </section>
 
-        <section class="planning-panel" aria-labelledby="blocks-title">
-            <div class="panel-heading"><div><h2 id="blocks-title">Workout blocks</h2><span class="field-help">Open only the block you want to edit.</span></div></div>
-            <div class="workout-quick-add" aria-label="Quick add workout block">
-                <button type="button" aria-label="Warm-up" @onclick="AddWarmUp"><strong>Warm-up</strong><small>5 min · 4.5→6 km/h</small></button>
-                <button type="button" aria-label="Steady" @onclick="AddSteady"><strong>Steady</strong><small>10 min · 7 km/h</small></button>
-                <button type="button" aria-label="Intervals" @onclick="AddIntervals"><strong>Intervals</strong><small>4× fast/recovery</small></button>
-                <button type="button" aria-label="Cool-down" @onclick="AddCooldown"><strong>Cool-down</strong><small>5 min · 6→4.5 km/h</small></button>
-            </div>
-            <div class="step-list">
-                @for (int index = 0; index < form.Blocks.Count; index++)
+        <div class="workout-builder__workspace">
+            <section class="planning-panel workout-builder__rows" aria-labelledby="blocks-title">
+                <div class="panel-heading"><div><h2 id="blocks-title">Workout blocks</h2><span class="field-help">Build the exact sequence. Every row shows its cumulative start time.</span></div></div>
+                <div class="workout-quick-add" aria-label="Quick add workout block">
+                    <button type="button" aria-label="Warm-up" @onclick="AddWarmUp"><strong>Warm-up</strong><small>05:00 · 4.5→6 km/h</small></button>
+                    <button type="button" aria-label="Steady" @onclick="AddSteady"><strong>Steady</strong><small>10:00 · 7 km/h</small></button>
+                    <button type="button" aria-label="Intervals" @onclick="AddIntervals"><strong>Intervals</strong><small>4× fast/recovery</small></button>
+                    <button type="button" aria-label="Cool-down" @onclick="AddCooldown"><strong>Cool-down</strong><small>05:00 · 6→4.5 km/h</small></button>
+                </div>
+                @if (SelectedBlockCount > 0 || copiedBlocks.Count > 0)
                 {
-                    BlockForm block = form.Blocks[index];
-                    @BlockEditor(block, index, 0, form.Blocks)
+                    <div class="builder-selection-toolbar" role="toolbar" aria-label="Selected workout rows">
+                        <strong>@SelectedBlockCount selected</strong>
+                        <button class="secondary-action compact-action" type="button" @onclick="CopySelectedBlocks" disabled="@(SelectedBlockCount == 0)">Copy selected</button>
+                        <button class="secondary-action compact-action" type="button" @onclick="InsertCopiedBlocks" disabled="@(copiedBlocks.Count == 0)">Insert @copiedBlocks.Count at end</button>
+                        <button class="text-action" type="button" @onclick="ClearBlockSelection" disabled="@(SelectedBlockCount == 0)">Clear selection</button>
+                    </div>
                 }
-            </div>
-            <div class="workout-block-actions">
-                <button class="secondary-action" type="button" @onclick="AddStep">Add custom step</button>
-                <button class="secondary-action" type="button" @onclick="AddRepeat">Add repeat block</button>
-            </div>
-        </section>
+                <div class="builder-row-head" aria-hidden="true"><span></span><span>Start / block</span><span>Duration</span><span>Speed</span><span>Incline</span><span>Cue</span><span>Actions</span></div>
+                <div class="step-list workout-builder__list">
+                    @for (int index = 0; index < form.Blocks.Count; index++)
+                    {
+                        BlockForm block = form.Blocks[index];
+                        @BlockEditor(block, index, 0, form.Blocks)
+                    }
+                </div>
+                <div class="workout-block-actions">
+                    <button class="secondary-action" type="button" @onclick="AddStep">Add step</button>
+                    <button class="secondary-action" type="button" @onclick="AddRepeat">Add repeat group</button>
+                </div>
+            </section>
 
-        <div class="sticky-actions">
-            <span>@ExpandedStepCount steps · @PlannedDurationLabel</span>
-            <button class="primary-action" type="submit" disabled="@(!CanSubmit)">@(saving ? "Saving…" : WorkoutId is null ? "Create workout" : "Save new revision")</button>
+            <aside class="workout-builder__preview">
+                <WorkoutPreviewChart Blocks="@PreviewBlocks" Title="@(string.IsNullOrWhiteSpace(form.Name) ? "Workout preview" : form.Name)" />
+                <div class="sticky-actions workout-builder__save">
+                    <span>@ExpandedStepCount steps · @PlannedDurationLabel</span>
+                    <button class="primary-action" type="submit" disabled="@(!CanSubmit)">@(saving ? "Saving…" : WorkoutId is null ? "Create workout" : "Save new revision")</button>
+                </div>
+            </aside>
         </div>
+
     </EditForm>
     </div>
 </div>
@@ -98,7 +115,8 @@
     private readonly WorkoutForm form = new();
     private bool saving;
     private bool loading;
-    private bool CanSubmit => !saving && !loading && (WorkoutId is null || form.LoadedWorkoutId == WorkoutId);
+    private bool CanSubmit => !saving && !loading && form.Blocks.SelectMany(FlattenSteps).All(static step => step.DurationIsValid) &&
+        (WorkoutId is null || form.LoadedWorkoutId == WorkoutId);
     private string? message;
     private Guid pendingOperationId = Guid.NewGuid();
     private IReadOnlyList<WorkoutSummaryView> existingWorkouts = Array.Empty<WorkoutSummaryView>();
@@ -106,6 +124,9 @@
     private string? pendingDraft;
     private string? draftKey;
     private CancellationTokenSource? draftDebounce;
+    private readonly List<BlockForm> copiedBlocks = [];
+    private IReadOnlyList<WorkoutBlockInput> PreviewBlocks => form.Blocks.Select(ToInput).ToArray();
+    private int SelectedBlockCount => EnumerateBlocks(form.Blocks).Count(static block => block.Selected);
 
     private IReadOnlyList<WorkoutSummaryView> FilteredExistingWorkouts => existingWorkouts
         .Where(workout => string.IsNullOrWhiteSpace(existingWorkoutSearch) ||
@@ -228,69 +249,72 @@
         message = null;
     }
 
-    private RenderFragment BlockEditor(BlockForm block, int index, int depth, List<BlockForm> owner) => @<details class="step-card" open="@(depth == 0 && index == 0)">
-            <summary><strong>@BlockLabel(block, index + 1, depth)</strong><span>@BlockSummary(block)</span></summary>
-            <fieldset class="step-card__fields">
-            <legend class="visually-hidden">@BlockLabel(block, index + 1, depth)</legend>
+    private RenderFragment BlockEditor(BlockForm block, int index, int depth, List<BlockForm> owner) => @<div class="@(block.Kind == "repeat" ? "builder-repeat-group" : $"builder-step-row builder-step-row--depth-{Math.Min(depth, 2)}")">
             @if (block.Kind == "repeat")
             {
-                <label class="field">Repetitions<input @bind="block.Repetitions" type="number" min="1" max="100" required /></label>
-                <div class="step-list">
+                <div class="builder-repeat-header">
+                    <input class="builder-row-select" type="checkbox" @bind="block.Selected" aria-label="Select @BlockLabel(block, index + 1, depth)" />
+                    <span class="builder-drag" aria-hidden="true">≡</span>
+                    <span class="builder-row-identity"><strong>@BlockLabel(block, index + 1, depth)</strong><small>Starts @StartLabel(block) · @block.Children.Count block(s) per repeat</small></span>
+                    <label class="builder-repeat-count">Repeat <input @bind="block.Repetitions" type="number" min="1" max="100" required /> times</label>
+                    <span class="builder-row-actions">
+                        <button type="button" @onclick="() => MoveBlock(owner, index, -1)" disabled="@(index == 0)">Up</button>
+                        <button type="button" @onclick="() => MoveBlock(owner, index, 1)" disabled="@(index == owner.Count - 1)">Down</button>
+                        <button class="danger-action" type="button" @onclick="() => RemoveBlock(owner, index)" disabled="@(owner.Count == 1)">Delete</button>
+                    </span>
+                </div>
+                <div class="step-list builder-repeat-children">
                     @for (int childIndex = 0; childIndex < block.Children.Count; childIndex++)
                     {
                         BlockForm child = block.Children[childIndex];
-                        <div class="repeat-child">
-                            @BlockEditor(child, childIndex, depth + 1, block.Children)
-                        </div>
+                        @BlockEditor(child, childIndex, depth + 1, block.Children)
                     }
                 </div>
-                <div class="card-actions">
-                    <button class="secondary-action" type="button" @onclick="() => block.Children.Add(new BlockForm())">Add repeated step</button>
-                    <button class="secondary-action" type="button" @onclick="() => block.Children.Add(NewRepeatBlock())">Add nested repeat</button>
+                <div class="builder-repeat-add">
+                    <button class="secondary-action compact-action" type="button" @onclick="() => block.Children.Add(new BlockForm())">Add step to group</button>
+                    <button class="secondary-action compact-action" type="button" @onclick="() => block.Children.Add(NewRepeatBlock())">Add nested group</button>
                 </div>
             }
             else
             {
+                <input class="builder-row-select" type="checkbox" @bind="block.Selected" aria-label="Select @BlockLabel(block, index + 1, depth)" />
+                <span class="builder-row-identity"><span class="builder-start-time">@StartLabel(block)</span><strong>@BlockLabel(block, index + 1, depth)</strong></span>
                 @StepEditor(block.Step)
+                <span class="builder-row-actions">
+                    <button type="button" @onclick="() => MoveBlock(owner, index, -1)" disabled="@(index == 0)">Up</button>
+                    <button type="button" @onclick="() => MoveBlock(owner, index, 1)" disabled="@(index == owner.Count - 1)">Down</button>
+                    <button class="danger-action" type="button" @onclick="() => RemoveBlock(owner, index)" disabled="@(owner.Count == 1)">Delete</button>
+                </span>
             }
-            <div class="block-edit-actions" role="group" aria-label="Actions for @BlockLabel(block, index + 1, depth)">
-                <button class="secondary-action compact-action" type="button" @onclick="() => MoveBlock(owner, index, -1)" disabled="@(index == 0)">Move up</button>
-                <button class="secondary-action compact-action" type="button" @onclick="() => MoveBlock(owner, index, 1)" disabled="@(index == owner.Count - 1)">Move down</button>
-                <button class="secondary-action compact-action" type="button" @onclick="() => DuplicateBlock(owner, index)">Duplicate</button>
-                <button class="text-action danger-action" type="button" @onclick="() => RemoveBlock(owner, index)" disabled="@(owner.Count == 1)">Remove</button>
-            </div>
-            </fieldset>
-        </details>;
+        </div>;
 
     private static string BlockLabel(BlockForm block, int sequence, int depth) => block.Kind == "repeat"
         ? depth == 0 ? $"Repeat block {sequence}" : $"Nested repeat block {sequence}"
         : depth == 0 ? $"Step {sequence}" : $"Repeated step {sequence}";
 
-    private static string BlockSummary(BlockForm block) => block.Kind == "repeat"
-        ? $"{block.Repetitions}× repeated sequence · {block.Children.Count} blocks"
-        : $"{block.Step.GoalValue:0.##} {(block.Step.GoalKind == "time" ? "min" : "km")} · {SpeedSummary(block.Step)} · {block.Step.InclineStartPercent:0.#}%";
-
-    private static string SpeedSummary(StepForm step) => step.SpeedKind switch
-    {
-        "fixed" => $"{step.SpeedStartKph:0.#} km/h",
-        "ramp" => $"{step.SpeedStartKph:0.#}→{step.SpeedEndKph:0.#} km/h",
-        "heartRate" => $"HR {step.HeartRateMinimumBpm}–{step.HeartRateMaximumBpm}",
-        "heartRateZone" => $"HR zone {step.HeartRateZoneNumber}",
-        _ => "Manual speed",
-    };
-
-    private RenderFragment StepEditor(StepForm step) => @<div class="form-grid form-grid--steps">
-            <label class="field">Goal<select @bind="step.GoalKind"><option value="time">Time</option><option value="distance">Distance</option></select></label>
-            <label class="field">@(step.GoalKind == "time" ? "Minutes" : "Kilometers")<input @bind="step.GoalValue" type="number" min="0.01" max="720" step="0.01" required /></label>
-            <label class="field">Speed target<select @bind="step.SpeedKind"><option value="open">Open/manual</option><option value="fixed">Fixed</option><option value="ramp">Ramp</option><option value="heartRate">HR range</option><option value="heartRateZone">HR zone</option></select></label>
-            @if (step.SpeedKind is "fixed" or "ramp")
-            {
-                <label class="field">@(step.SpeedKind == "ramp" ? "Start speed (km/h)" : "Speed (km/h)")<input @bind="step.SpeedStartKph" type="number" min="0" max="40" step="0.1" required /></label>
-            }
-            @if (step.SpeedKind == "ramp")
-            {
-                <label class="field">End speed (km/h)<input @bind="step.SpeedEndKph" type="number" min="0" max="40" step="0.1" required /></label>
-            }
+    private RenderFragment StepEditor(StepForm step) => @<div class="builder-step-fields">
+            <label class="builder-compact-field"><span>Duration</span>
+                @if (step.GoalKind == "time")
+                {
+                    <input class="builder-duration" @bind="step.DurationText" inputmode="numeric" placeholder="01:30" aria-label="Duration in minutes and seconds" required />
+                }
+                else
+                {
+                    <input @bind="step.GoalValue" type="number" min="0.01" max="1000" step="0.01" aria-label="Distance in kilometers" required />
+                }
+            </label>
+            <label class="builder-compact-field"><span>Speed (km/h)</span><input @bind="step.PrimarySpeedKph" type="number" min="0" max="40" step="0.1" required /></label>
+            <label class="builder-compact-field"><span>Incline (%)</span><input @bind="step.InclineStartPercent" type="number" min="-5" max="40" step="0.1" required /></label>
+            <label class="builder-compact-field"><span>Cue</span><input @bind="step.Cue" maxlength="120" placeholder="Optional" /></label>
+            <details class="builder-advanced">
+                <summary>Advanced targets and notes</summary>
+                <div class="form-grid form-grid--steps">
+                    <label class="field">Goal type<select @bind="step.GoalKind"><option value="time">Time</option><option value="distance">Distance</option></select></label>
+                    <label class="field">Speed target<select @bind="step.SpeedKind"><option value="open">Open/manual</option><option value="fixed">Fixed</option><option value="ramp">Ramp</option><option value="heartRate">HR range</option><option value="heartRateZone">HR zone</option></select></label>
+                    @if (step.SpeedKind == "ramp")
+                    {
+                        <label class="field">End speed (km/h)<input @bind="step.SpeedEndKph" type="number" min="0" max="40" step="0.1" required /></label>
+                    }
             @if (step.SpeedKind == "heartRate")
             {
                 <label class="field">Minimum bpm<input @bind="step.HeartRateMinimumBpm" type="number" min="1" max="250" required /></label>
@@ -307,14 +331,14 @@
                 <label class="field">Minimum speed<input @bind="step.HeartRateMinimumSpeedKph" type="number" min="0" max="40" step="0.1" /></label>
                 <label class="field">Maximum speed<input @bind="step.HeartRateMaximumSpeedKph" type="number" min="0" max="40" step="0.1" /></label>
             }
-            <label class="field">Incline<select @bind="step.InclineKind"><option value="fixed">Fixed</option><option value="ramp">Ramp</option></select></label>
-            <label class="field">@(step.InclineKind == "ramp" ? "Start incline (%)" : "Incline (%)")<input @bind="step.InclineStartPercent" type="number" min="-5" max="40" step="0.1" required /></label>
+            <label class="field">Incline target<select @bind="step.InclineKind"><option value="fixed">Fixed</option><option value="ramp">Ramp</option></select></label>
             @if (step.InclineKind == "ramp")
             {
                 <label class="field">End incline (%)<input @bind="step.InclineEndPercent" type="number" min="-5" max="40" step="0.1" required /></label>
             }
-            <label class="field">Cue<input @bind="step.Cue" maxlength="120" /></label>
             <label class="field field--wide">Notes<input @bind="step.Notes" maxlength="300" /></label>
+                </div>
+            </details>
         </div>;
 
     private void AddStep() => form.Blocks.Add(new BlockForm());
@@ -376,6 +400,77 @@
     }
 
     private static BlockForm CloneBlock(BlockForm block) => ToForm(ToInput(block));
+
+    private void CopySelectedBlocks()
+    {
+        copiedBlocks.Clear();
+        copiedBlocks.AddRange(EnumerateBlocks(form.Blocks).Where(static block => block.Selected).Select(CloneBlock));
+    }
+
+    private void InsertCopiedBlocks()
+    {
+        form.Blocks.AddRange(copiedBlocks.Select(CloneBlock));
+        ClearBlockSelection();
+        QueueDraftSave();
+    }
+
+    private void ClearBlockSelection()
+    {
+        foreach (BlockForm block in EnumerateBlocks(form.Blocks)) block.Selected = false;
+    }
+
+    private static IEnumerable<BlockForm> EnumerateBlocks(IEnumerable<BlockForm> blocks)
+    {
+        foreach (BlockForm block in blocks)
+        {
+            yield return block;
+            foreach (BlockForm child in EnumerateBlocks(block.Children)) yield return child;
+        }
+    }
+
+    private static IEnumerable<StepForm> FlattenSteps(BlockForm block) => block.Kind == "repeat"
+        ? block.Children.SelectMany(FlattenSteps)
+        : [block.Step];
+
+    private string StartLabel(BlockForm target)
+    {
+        double elapsedMinutes = 0;
+        bool exact = true;
+        if (Find(form.Blocks)) return exact ? FormatMinutes(elapsedMinutes) : "—";
+        return "—";
+
+        bool Find(IReadOnlyList<BlockForm> blocks)
+        {
+            foreach (BlockForm block in blocks)
+            {
+                if (ReferenceEquals(block, target)) return true;
+                if (block.Kind == "repeat")
+                {
+                    double groupStart = elapsedMinutes;
+                    if (Find(block.Children)) return true;
+                    (double groupMinutes, bool groupComplete) = block.Children.Aggregate((0d, true), static (current, child) =>
+                    {
+                        (double minutes, bool complete) = PlannedMinutes(child);
+                        return (current.Item1 + minutes, current.Item2 && complete);
+                    });
+                    elapsedMinutes = groupStart + (groupMinutes * block.Repetitions);
+                    exact &= groupComplete;
+                }
+                else
+                {
+                    if (block.Step.GoalKind == "time" && block.Step.DurationIsValid) elapsedMinutes += block.Step.GoalValue;
+                    else exact = false;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static string FormatMinutes(double minutes)
+    {
+        TimeSpan value = TimeSpan.FromMinutes(Math.Max(0, minutes));
+        return value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : value.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+    }
 
     private int ExpandedStepCount => form.Blocks.Sum(ExpandedSteps);
     private string PlannedDurationLabel
@@ -475,17 +570,38 @@
     {
         public string Kind { get; set; } = "step";
         public int Repetitions { get; set; } = 2;
+        public bool Selected { get; set; }
         public StepForm Step { get; set; } = new();
         public List<BlockForm> Children { get; set; } = [];
     }
 
     private sealed class StepForm
     {
+        private string? durationText;
         public string GoalKind { get; set; } = "time";
         public double GoalValue { get; set; } = 5;
+        public string DurationText
+        {
+            get => durationText ?? FormatGoalDuration(GoalValue);
+            set
+            {
+                durationText = value;
+                if (TryParseGoalDuration(value, out double minutes)) GoalValue = minutes;
+            }
+        }
+        public bool DurationIsValid => GoalKind != "time" || TryParseGoalDuration(DurationText, out _);
         public string SpeedKind { get; set; } = "fixed";
         public double SpeedStartKph { get; set; } = 7;
         public double SpeedEndKph { get; set; } = 9;
+        public double PrimarySpeedKph
+        {
+            get => SpeedStartKph;
+            set
+            {
+                SpeedStartKph = value;
+                if (SpeedKind == "fixed") SpeedEndKph = value;
+            }
+        }
         public ushort HeartRateMinimumBpm { get; set; } = 120;
         public ushort HeartRateMaximumBpm { get; set; } = 150;
         public int HeartRateZoneNumber { get; set; } = 2;
@@ -497,5 +613,24 @@
         public double InclineEndPercent { get; set; }
         public string? Cue { get; set; }
         public string? Notes { get; set; }
+
+        private static string FormatGoalDuration(double minutes)
+        {
+            int seconds = Math.Max(1, (int)Math.Round(minutes * 60, MidpointRounding.AwayFromZero));
+            return $"{seconds / 60:00}:{seconds % 60:00}";
+        }
+
+        private static bool TryParseGoalDuration(string? value, out double minutes)
+        {
+            minutes = 0;
+            string[] parts = value?.Trim().Split(':') ?? [];
+            if (parts.Length != 2 || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int wholeMinutes) ||
+                !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out int seconds) || wholeMinutes < 0 || seconds is < 0 or > 59)
+                return false;
+            int totalSeconds = (wholeMinutes * 60) + seconds;
+            if (totalSeconds <= 0 || totalSeconds > 43_200) return false;
+            minutes = totalSeconds / 60d;
+            return true;
+        }
     }
 }

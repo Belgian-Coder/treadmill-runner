@@ -154,7 +154,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     await Expect(Page.Locator("#signed-updates")).ToBeInViewportAsync();
     await Expect(Page.GetByText("Update ready", new() { Exact = false })).ToHaveCountAsync(0);
 
-    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "tr-022");
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery", "tr-022");
     Directory.CreateDirectory(screenshotDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {

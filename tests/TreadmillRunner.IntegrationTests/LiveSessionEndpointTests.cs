@@ -209,6 +209,9 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     Assert.Contains("manual-speed-override", detailJson, StringComparison.Ordinal);
     Assert.Contains("manual-incline-override", detailJson, StringComparison.Ordinal);
     using JsonDocument detail = JsonDocument.Parse(detailJson);
+    Assert.Equal(
+      detail.RootElement.GetProperty("samples").GetArrayLength(),
+      detail.RootElement.GetProperty("totalSampleCount").GetInt32());
     JsonElement analytics = detail.RootElement.GetProperty("analytics");
     Assert.Equal("Aerobic", analytics.GetProperty("heartRateZones")[0].GetProperty("name").GetString());
     Assert.Equal(1, analytics.GetProperty("eventCounts").GetProperty("manualSpeedOverrides").GetInt32());

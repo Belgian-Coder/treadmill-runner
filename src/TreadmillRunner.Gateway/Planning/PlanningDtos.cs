@@ -106,7 +106,8 @@ public sealed record WorkoutProgramSaveRequest(
   string Name,
   string? Description,
   string Category,
-  IReadOnlyList<WorkoutProgramItemRequest> Items);
+  IReadOnlyList<WorkoutProgramItemRequest> Items,
+  Guid? OwnerProfileId = null);
 
 public sealed record WorkoutProgramItemDto(
   Guid Id,

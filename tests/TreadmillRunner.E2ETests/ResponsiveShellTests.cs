@@ -38,7 +38,7 @@ public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, ICl
       Assert.True(targetBox.Width >= 44 && targetBox.Height >= 44, "A mobile navigation target is below 44x44 CSS pixels.");
     }
 
-    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery");
     Directory.CreateDirectory(galleryDirectory);
     await Page.EvaluateAsync("() => { document.activeElement?.blur(); window.scrollTo(0, 0); }");
     await Expect(header).ToHaveAttributeAsync("data-scroll-state", "shown");

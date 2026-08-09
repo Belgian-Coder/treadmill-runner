@@ -59,6 +59,7 @@ public static class WorkoutProgramPlanningEndpoints
         revision.Name,
         revision.Description,
         revision.Category,
+        revision.OwnerProfileId,
         Items = revision.Items.Select(static item => item.WorkoutRevisionId),
       });
       if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
@@ -113,6 +114,7 @@ public static class WorkoutProgramPlanningEndpoints
         revision.Name,
         revision.Description,
         revision.Category,
+        revision.OwnerProfileId,
         Items = revision.Items.Select(static item => item.WorkoutRevisionId),
       });
       if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
@@ -356,7 +358,8 @@ public static class WorkoutProgramPlanningEndpoints
       request.Description,
       request.Category,
       request.Items.Select((item, index) =>
-        new WorkoutProgramItem(Guid.NewGuid(), item.WorkoutRevisionId, index + 1)).ToArray());
+        new WorkoutProgramItem(Guid.NewGuid(), item.WorkoutRevisionId, index + 1)).ToArray(),
+      ownerProfileId: request.OwnerProfileId);
 
   private static async Task<WorkoutProgramDto> ToDtoAsync(
     StoredWorkoutProgramProgress stored,

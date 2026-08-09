@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Microsoft.Playwright.Xunit;
@@ -79,7 +81,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       await AssertPopulatedAsync(fileName, scenario);
       await AssertNoHorizontalOverflowAsync(fileName, "desktop");
 
-      string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+      string galleryDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery");
       Directory.CreateDirectory(galleryDirectory);
       await Page.EvaluateAsync("""
         () => {
@@ -228,8 +230,11 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       else if (fileName == "workout-editor")
       {
         await Page.GetByRole(AriaRole.Button, new() { Name = "Intervals", Exact = true }).ClickAsync();
-        await Expect(Page.GetByText("4× repeated sequence · 2 blocks", new() { Exact = true })).ToBeVisibleAsync();
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Duplicate", Exact = true }).First.ClickAsync();
+        ILocator repeatGroup = Page.Locator(".builder-repeat-group").Last;
+        await Expect(repeatGroup.GetByLabel("Repeat times", new() { Exact = true })).ToHaveValueAsync("4");
+        await repeatGroup.Locator(".builder-step-row .builder-row-select").First.CheckAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Copy selected", Exact = true }).ClickAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Insert 1 at end", Exact = true }).ClickAsync();
         await Page.EvaluateAsync("() => { window.scrollTo(0, 0); document.activeElement?.blur(); }");
         await Page.WaitForTimeoutAsync(100);
         await AssertNoHorizontalOverflowAsync(fileName, "edited iPhone workout");
@@ -382,7 +387,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await SelectFeaturedRunAsync();
     await Expect(Page.Locator("html")).ToHaveClassAsync(new Regex("standalone-shell"));
-    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery");
     Directory.CreateDirectory(galleryDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max.png"), FullPage = true });
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(galleryDirectory, "run-installed-iphone17-pro-max-viewport.png"), FullPage = false });
@@ -495,7 +500,6 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
             $"History detail did not become interactive. Body: {await Page.Locator("body").InnerTextAsync()}", exception);
         }
         await Page.GetByText("Session events", new() { Exact = true }).ClickAsync();
-        await Page.GetByText("Runner debrief", new() { Exact = true }).ClickAsync();
         break;
       case "devices":
         await Page.GetByText("Bluetooth reliability report", new() { Exact = true }).ClickAsync();
@@ -524,9 +528,39 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
   private async Task SelectFeaturedRunAsync()
   {
     await Page.SelectActiveRunnerAsync("Marc");
-    await Page.OpenRunChoicesAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = GalleryScenario.FeaturedWorkoutName, Exact = false }).First.ClickAsync();
     ILocator selectedWorkout = Page.GetByLabel("Selected workout", new() { Exact = true });
+    await Expect(selectedWorkout).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 5_000 });
+    if ((await selectedWorkout.InnerTextAsync()).Contains(GalleryScenario.FeaturedWorkoutName, StringComparison.Ordinal))
+      return;
+
+    await Page.OpenRunChoicesAsync();
+    ILocator recommended = Page.GetByRole(AriaRole.Region, new() { Name = "Recommended next run", Exact = true })
+      .Filter(new() { HasText = GalleryScenario.FeaturedWorkoutName });
+    if (await recommended.CountAsync() > 0)
+    {
+      await recommended.GetByRole(AriaRole.Button, new() { Name = "Choose", Exact = true }).ClickAsync();
+    }
+    else
+    {
+      await Page.GetByRole(AriaRole.Button, new() { Name = "All workouts", Exact = true }).ClickAsync();
+      ILocator featuredWorkout = Page.GetByRole(
+        AriaRole.Button,
+        new() { Name = GalleryScenario.FeaturedWorkoutName, Exact = false }).First;
+      try
+      {
+        await Expect(featuredWorkout).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 5_000 });
+      }
+      catch (TimeoutException exception)
+      {
+        throw new InvalidOperationException(
+          $"The featured workout did not load for the selected runner. Body: {await Page.Locator("body").InnerTextAsync()}",
+          exception);
+      }
+      // This gallery setup is not the interaction assertion. Invoke the already-visible
+      // button atomically so the chooser's expected post-selection re-render cannot
+      // detach the element between Playwright's actionability check and click dispatch.
+      await featuredWorkout.EvaluateAsync("element => element.click()");
+    }
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
     await Expect(selectedWorkout)
       .ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
@@ -572,7 +606,9 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         break;
       case "workout-editor":
         await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync(GalleryScenario.FeaturedWorkoutName);
-        Assert.True(await Page.Locator(".step-card").CountAsync() >= 5, "Workout editor gallery must contain the complete plan.");
+        Assert.True(await Page.Locator(".workout-builder__list .builder-step-row").CountAsync() >= 5, "Workout editor gallery must contain the complete plan rows.");
+        await Expect(Page.Locator(".workout-preview-chart [data-series='planned-speed']")).ToHaveAttributeAsync("d", new Regex("^M.+L"));
+        await Expect(Page.Locator(".builder-start-time").First).ToHaveTextAsync("0:00");
         await Expect(Page.GetByText("Start from an existing workout", new() { Exact = true })).ToBeVisibleAsync();
         break;
       case "workout-import":
@@ -600,7 +636,6 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(historySpeedAxis.Locator("span").First).ToHaveTextAsync(new Regex("^\\d+$"));
         await Expect(Page.GetByText("Zone 3 · Aerobic", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Manual speed override:", new() { Exact = false })).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Comfortable progression; held form", new() { Exact = false })).ToBeVisibleAsync();
         Assert.True((await Page.Locator(".chart-current").GetAttributeAsync("d"))?.Count(character => character == 'L') >= 8);
         await AssertTimeAxisLabelsDoNotOverlapAsync("history detail desktop");
         break;
@@ -756,6 +791,43 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     {
       releaseRequest.TrySetResult();
     }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task History_detail_sheet_renders_a_bounded_four_hour_payload_without_freezing()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.RouteAsync($"**/api/history/{scenario.HistorySessionId:D}", async route =>
+    {
+      JsonObject payload = JsonSerializer.SerializeToNode(scenario.HistoryDetail())!.AsObject();
+      JsonNode sample = payload["samples"]!.AsArray()[0]!.DeepClone();
+      var boundedSamples = new JsonArray();
+      for (var index = 0; index < 240; index++)
+      {
+        boundedSamples.Add(sample.DeepClone());
+      }
+
+      payload["samples"] = boundedSamples;
+      payload["totalSampleCount"] = 12_788;
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = payload.ToJsonString(),
+      });
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.Locator(".history-card").First.ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Live graph", Exact = true }))
+      .ToBeVisibleAsync(new() { Timeout = 3_000 });
+    await Expect(dialog.GetByText("240 graph samples from 12,788 persisted", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "All recorded changes", Exact = true })).ToBeVisibleAsync();
   }
 
   private async Task AssertNoHorizontalOverflowAsync(string fileName, string viewport)

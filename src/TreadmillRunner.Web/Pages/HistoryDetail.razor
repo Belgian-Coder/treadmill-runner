@@ -69,7 +69,7 @@ else
             }
             else if (recommendation is null)
             {
-                <p>Use this run’s recorded completion, adherence, RPE, heart-rate coverage, interruptions, and telemetry quality to create an explainable suggestion.</p>
+                <p>Use this run’s recorded completion, adherence, heart-rate coverage, interruptions, and telemetry quality to create an explainable suggestion.</p>
                 <button class="secondary-action" type="button" @onclick="CreateRecommendationAsync" disabled="@recommendationBusy">@(recommendationBusy ? "Reviewing…" : "Create local suggestion")</button>
             }
             else
@@ -151,7 +151,7 @@ else
                 </div>
             </div>
             <div class="legend" aria-label="Chart legend"><span><i class="legend-line legend-line--plan"></i>Planned</span><span><i class="legend-line legend-line--requested"></i>Requested</span><span><i class="legend-line legend-line--measured"></i>Measured</span></div>
-            <p>@session.Samples.Count persisted one-second sample(s). The chart is generated from the stored planned, requested, and measured speed values.</p>
+            <p>@HistoryGraphSampleSummary The chart is generated from the stored planned, requested, and measured speed values; full-resolution data remains available in the exports.</p>
         </section>
 
         <details class="panel-card advanced-settings">
@@ -190,11 +190,6 @@ else
             }
         </details>
 
-        <details class="panel-card advanced-settings">
-            <summary>Runner debrief</summary>
-            <p><strong>RPE:</strong> @(session.Debrief?.PerceivedExertion?.ToString() ?? "Not recorded")</p>
-            <p>@(session.Debrief?.Note ?? "No note was added.")</p>
-        </details>
     </section>
 }
 
@@ -216,6 +211,11 @@ else
     private bool localInsightsLoading;
     private string? localInsightsMessage;
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
+    private string HistoryGraphSampleSummary => session is null
+        ? "No telemetry samples were persisted."
+        : session.SamplesAreDownsampled
+            ? $"Showing {session.Samples.Count:N0} representative graph samples from {session.PersistedSampleCount:N0} persisted one-second samples."
+            : $"{session.PersistedSampleCount:N0} persisted one-second sample(s).";
 
     protected override async Task OnParametersSetAsync()
     {

@@ -11,7 +11,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 {
   public static TheoryData<string, int, int> Viewports => new()
   {
-    { "planning-iphone17-pro-max", 440, 956 },
+    { "planning-phone", 390, 844 },
     { "planning-tablet", 1180, 820 },
     { "planning-desktop", 1920, 1080 },
   };
@@ -79,30 +79,24 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts/new").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New workout" })).ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Add repeat block" }).ClickAsync();
-    await Expect(Page.Locator(".step-card > summary").Filter(new() { HasText = "Repeat block 2" })).ToBeVisibleAsync();
-    await Page.Locator("select").Nth(0).SelectOptionAsync("distance");
-    await Page.Locator("select").Nth(1).SelectOptionAsync("ramp");
-    await Page.Locator("select").Nth(2).SelectOptionAsync("ramp");
-    await Expect(Page.GetByLabel("Kilometers")).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Add repeat group" }).ClickAsync();
+    await Expect(Page.Locator(".builder-repeat-group").Filter(new() { HasText = "Repeat block 2" })).ToBeVisibleAsync();
+    await Page.Locator(".builder-step-row").First.Locator(".builder-advanced > summary").ClickAsync();
+    await Page.GetByLabel("Goal type").First.SelectOptionAsync("distance");
+    await Page.GetByLabel("Speed target").First.SelectOptionAsync("ramp");
+    await Page.GetByLabel("Incline target").First.SelectOptionAsync("ramp");
+    await Expect(Page.GetByLabel("Distance in kilometers")).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("End speed (km/h)")).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("End incline (%)")).ToBeVisibleAsync();
     await Expect(Page.GetByText("Start from an existing workout", new() { Exact = true })).ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Duplicate", Exact = true }).First.ClickAsync();
-    ILocator rootBlocks = Page.Locator("section[aria-labelledby='blocks-title'] > .step-list > .step-card");
+    await Page.Locator(".workout-builder__list > .builder-step-row .builder-row-select").First.CheckAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Copy selected", Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Insert 1 at end", Exact = true }).ClickAsync();
+    ILocator rootBlocks = Page.Locator(".workout-builder__list > .builder-step-row, .workout-builder__list > .builder-repeat-group");
     await Expect(rootBlocks).ToHaveCountAsync(3);
-    await rootBlocks.Nth(1).Locator("summary").ClickAsync();
-    await rootBlocks.Nth(1).Locator("select").First.SelectOptionAsync("time");
-    await Expect(rootBlocks.Nth(0).Locator("select").First).ToHaveValueAsync("distance");
-    await rootBlocks.Nth(1).GetByRole(AriaRole.Button, new() { Name = "Remove", Exact = true }).ClickAsync();
-    await Expect(rootBlocks).ToHaveCountAsync(2);
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Move down", Exact = true }).First.ClickAsync();
-    await Expect(Page.Locator(".sticky-actions")).ToHaveCSSAsync("position", "static");
-    LocatorBoundingBoxResult? editorActions = await Page.Locator(".sticky-actions").BoundingBoxAsync();
-    LocatorBoundingBoxResult? finalStep = await rootBlocks.Last.BoundingBoxAsync();
-    Assert.NotNull(editorActions);
-    Assert.NotNull(finalStep);
-    Assert.True(editorActions.Y >= finalStep.Y + finalStep.Height - 1, "Editor actions must not overlap workout fields.");
+    await Expect(Page.Locator(".workout-preview-chart")).ToHaveAttributeAsync("data-component", "live-progress-chart");
+    await Expect(Page.Locator(".workout-preview-chart [data-series='planned-speed']")).ToHaveAttributeAsync("d", new System.Text.RegularExpressions.Regex("^M"));
+    await Expect(Page.Locator(".workout-builder__save")).ToHaveCSSAsync("position", "static");
     await AssertNoOverflowAsync();
     await ScreenshotAsync($"{name}-workout-editor.png");
 
@@ -340,8 +334,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         programItemId = itemId,
         action = "MoveOne",
         runVersion = 4,
-        canApply = true,
-        message = "Only this session will move; later sessions keep their dates. Warning: 1 date will contain more than one session.",
+        canApply = false,
+        message = "That change would place two plan sessions on 11 Aug 2026. Choose an empty date instead.",
         impacts = new[] { new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1), isRepeat = false } },
         collisionDates = new[] { plannedDate.AddDays(1) },
       }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
@@ -377,8 +371,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         currentWeekdayMask = 37,
         newWeekdayMask = 42,
         effectiveDate = plannedDate,
-        canApply = true,
-        message = "16 future sessions will move. Completed and individually adjusted sessions stay unchanged.",
+        canApply = false,
+        message = "The new training days would place two sessions on 13 Aug 2026. Choose different days or move the existing session first.",
         revision = "preview-revision",
         impacts = new[]
         {
@@ -470,13 +464,14 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     ILocator dialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(dialog).ToContainTextAsync("step 2 of 18");
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToHaveCountAsync(0);
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Remove all upcoming sessions from this plan", Exact = true })).ToBeVisibleAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Change training days", Exact = true }).ClickAsync();
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Change training days", Exact = true })).ToBeVisibleAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Mon", Exact = true }).ClickAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Tue", Exact = true }).ClickAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("Sessions moving");
-    await Expect(dialog).ToContainTextAsync("Double-session warning");
+    await Expect(dialog).ToContainTextAsync("Date unavailable");
     Assert.Equal(0, defaultDaysApplyRequests);
     string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
     Directory.CreateDirectory(showcaseDirectory);
@@ -491,15 +486,14 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       Path = Path.Combine(showcaseDirectory, "tr-030-training-days-preview-desktop.png"),
       FullPage = false,
     });
-    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm all future changes", Exact = true }).ClickAsync();
-    await Expect(dialog).ToBeHiddenAsync();
-    Assert.Equal(1, defaultDaysApplyRequests);
-    manageButton = Page.Locator(".calendar-option-manage:visible").First;
-    await manageButton.ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm all future changes", Exact = true })).ToBeDisabledAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Back", Exact = true }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Back", Exact = true }).ClickAsync();
+    Assert.Equal(0, defaultDaysApplyRequests);
     await dialog.GetByLabel("New or repeat date").FillAsync("2026-08-11");
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("Impact preview");
-    await Expect(dialog).ToContainTextAsync("Double-session warning");
+    await Expect(dialog).ToContainTextAsync("Date unavailable");
     Assert.Equal(0, applyRequests);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
@@ -512,9 +506,10 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       Path = Path.Combine(showcaseDirectory, "tr-027-calendar-move.png"),
       FullPage = false,
     });
-    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true })).ToBeDisabledAsync();
+    Assert.Equal(0, applyRequests);
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Close plan session manager", Exact = true }).ClickAsync();
     await Expect(dialog).ToBeHiddenAsync();
-    Assert.Equal(1, applyRequests);
     await Page.GetByRole(AriaRole.Button, new() { Name = "Manage Earlier foundation on 10 August", Exact = true }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("step 1 of 18");
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToBeVisibleAsync();
@@ -611,7 +606,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     });
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New immutable revision" }))
       .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-    await Expect(Page.Locator(".step-card > summary").Filter(new() { HasText = "Nested repeat block 2" })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".builder-repeat-children > .builder-repeat-group").Filter(new() { HasText = "Nested repeat block 2" })).ToBeVisibleAsync();
 
     await Page.GetByLabel("Workout name").FillAsync("Nested revision");
     await Page.GetByRole(AriaRole.Button, new() { Name = "Save new revision" }).ClickAsync();
@@ -626,7 +621,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GetByRole(AriaRole.Link, new() { Name = "Blank workout Start a new plan", Exact = true }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/workouts/new$"));
     await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync(string.Empty);
-    await Expect(Page.Locator("section[aria-labelledby='blocks-title'] > .step-list > .step-card")).ToHaveCountAsync(1);
+    await Expect(Page.Locator(".workout-builder__list > .builder-step-row, .workout-builder__list > .builder-repeat-group")).ToHaveCountAsync(1);
   }
 
   [Fact]
@@ -636,15 +631,16 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts/new").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New workout" })).ToBeVisibleAsync();
 
+    await Page.Locator(".builder-step-row").First.Locator(".builder-advanced > summary").ClickAsync();
     await Page.GetByLabel("Speed target").SelectOptionAsync("heartRate");
     await Expect(Page.GetByLabel("Minimum bpm")).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Note)).ToHaveCountAsync(1);
     await Expect(Page.GetByRole(AriaRole.Note)).ToContainTextAsync("This step follows your live heart rate");
 
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Add custom step" }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Add step", Exact = true }).ClickAsync();
     await Expect(Page.GetByLabel("Speed target")).ToHaveCountAsync(2);
     await Expect(Page.GetByRole(AriaRole.Note)).ToHaveCountAsync(1);
-    await Page.Locator(".step-card").Nth(1).Locator("summary").ClickAsync();
+    await Page.Locator(".builder-step-row").Nth(1).Locator(".builder-advanced > summary").ClickAsync();
     await Page.GetByLabel("Speed target").Nth(1).SelectOptionAsync("heartRateZone");
     await Expect(Page.GetByRole(AriaRole.Spinbutton, new() { Name = "HR zone", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Note)).ToHaveCountAsync(2);
@@ -726,6 +722,29 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await profileRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Watch pairing status is temporarily unavailable", new() { Exact = false })).ToBeVisibleAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Header_runner_selection_closes_and_updates_the_run_page_without_reselecting()
+  {
+    string firstName = $"Runner A {Guid.NewGuid():N}";
+    string secondName = $"Runner B {Guid.NewGuid():N}";
+    Guid firstId = await CreateProfileAsync(firstName);
+    await CreateProfileAsync(secondName);
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    await picker.Locator("summary").ClickAsync();
+    await picker.GetByRole(AriaRole.Radio, new() { Name = secondName, Exact = true }).ClickAsync();
+
+    await Expect(picker).Not.ToHaveAttributeAsync("open", string.Empty);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(secondName);
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(secondName);
+    await Expect(Page.GetByLabel("Recommended next run", new() { Exact = true })).ToContainTextAsync($"Next for {secondName}");
   }
 
   [Fact]

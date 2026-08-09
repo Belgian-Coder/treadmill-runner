@@ -13,7 +13,7 @@
         <div class="form-actions">
             @if (ActiveScheduledProgram is not null)
             {
-                <button class="secondary-action danger-action" type="button" disabled="@clearUpcomingBusy" @onclick="RequestClearUpcomingAsync">Clear upcoming plan</button>
+                <button class="secondary-action danger-action" type="button" disabled="@clearUpcomingBusy" @onclick="RequestClearUpcomingAsync">Remove upcoming sessions</button>
             }
         </div>
     </header>
@@ -281,7 +281,7 @@
                         <label class="field">Apply from
                             <input type="date" @bind="programEffectiveDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" />
                         </label>
-                        <p class="field-help">Current days: @FormatWeekdayMask(managedProgramSession.WeekdayMask). The preview shows every generated future session that will move and any dates containing two sessions.</p>
+                        <p class="field-help">Current days: @FormatWeekdayMask(managedProgramSession.WeekdayMask). The preview shows every generated future session and blocks changes that would put two sessions on one date.</p>
                         <div class="schedule-dialog-actions">
                             <button class="secondary-action" type="button" @onclick="CancelDefaultDaysChange" disabled="@programActionBusy">Back</button>
                             <button class="primary-action" type="button" @onclick="PreviewDefaultDaysChangeAsync" disabled="@(!CanPreviewDefaultDays || programActionBusy)">@(programActionBusy ? "Checking…" : "Preview new schedule")</button>
@@ -303,7 +303,7 @@
                         </ol>
                         @if (defaultDaysPreview.CollisionDates.Count > 0)
                         {
-                            <p class="notice" role="alert"><strong>Double-session warning.</strong> @string.Join(", ", defaultDaysPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another session. Nothing is overwritten.</p>
+                            <p class="notice" role="alert"><strong>Date unavailable.</strong> @string.Join(", ", defaultDaysPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another session. Choose different training days or move that session first.</p>
                         }
                         <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
                             <button class="secondary-action" type="button" @onclick="ClearDefaultDaysPreview" disabled="@programActionBusy">Back</button>
@@ -320,6 +320,7 @@
             {
                 <div id="program-schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
                     <button class="secondary-action change-training-days" type="button" @onclick="StartDefaultDaysChange">Change training days</button>
+                    <button class="secondary-action danger-action" type="button" @onclick="RequestClearUpcomingFromProgramManagerAsync" disabled="@clearUpcomingBusy">Remove all upcoming sessions from this plan</button>
                     <label class="field">New or repeat date
                         <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-366).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(366).ToString("yyyy-MM-dd")" />
                     </label>
@@ -333,7 +334,7 @@
                         else
                         {
                             <p class="field-hint schedule-choice-grid__hint">This plan step is still incomplete. Reschedule or skip it; a failed attempt never counts as completed.</p>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Later plan dates remain unchanged. A full date may contain two sessions.</span></button>
+                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Later plan dates remain unchanged. Dates that already contain a plan session are blocked.</span></button>
                             <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveFollowing")' disabled="@programActionBusy"><strong>Move this and all following</strong><span>Shift the remaining plan by the same number of days.</span></button>
                             <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Skip")' disabled="@programActionBusy"><strong>Skip this session</strong><span>Advance to the next plan step without creating a completed run.</span></button>
                             <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Restore")' disabled="@programActionBusy"><strong>Restore original date</strong><span>Remove the saved move or skip for this plan step.</span></button>
@@ -359,7 +360,7 @@
                     }
                     @if (programPreview.CollisionDates.Count > 0)
                     {
-                        <p class="notice" role="alert"><strong>Double-session warning.</strong> @string.Join(", ", programPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another plan session. Nothing will be overwritten.</p>
+                        <p class="notice" role="alert"><strong>@(programPreview.CanApply ? "Double-session warning." : "Date unavailable.")</strong> @string.Join(", ", programPreview.CollisionDates.Select(date => date.ToString("d MMM"))) already contain another plan session.@(programPreview.CanApply ? " Nothing will be overwritten." : " Choose an empty date instead.")</p>
                     }
                     <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
                         <button class="secondary-action" type="button" @onclick="ClearProgramPreview" disabled="@programActionBusy">Back</button>
@@ -510,6 +511,8 @@
             group.OrderByDescending(static item => item.StartDate).First()))
         .OrderBy(static group => group.StartDate)
         .ToArray();
+
+    protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -811,15 +814,41 @@
         if (activeProfileId == profileId) return;
         activeProfileId = profileId;
         await ActiveProfile.SetAsync(profileId);
-        calendarDraftKey = $"{profileId:N}.calendar.new";
+        await ApplyActiveProfileAsync(profileId);
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        if (profileId == activeProfileId) return;
+        _ = InvokeAsync(() => ApplyActiveProfileAsync(profileId));
+    }
+
+    private async Task ApplyActiveProfileAsync(Guid? profileId)
+    {
+        activeProfileId = profileId;
+        calendarDraftKey = $"{profileId?.ToString("N") ?? "household"}.calendar.new";
         pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
         managedSession = null;
+        managedProgramSession = null;
+        selectedCalendarDetail = null;
         clearUpcomingPreview = null;
         showSeriesForm = false;
         loading = true;
-        await ReloadCalendarAsync();
+        if (profileId is null)
+        {
+            calendarSeries = [];
+            calendar = null;
+            programs = [];
+        }
+        else
+        {
+            await ReloadCalendarAsync();
+        }
         loading = false;
-        message = $"Showing {profiles.First(profile => profile.Id == profileId).DisplayName}’s calendar.";
+        message = profiles.FirstOrDefault(profile => profile.Id == profileId) is { } profile
+            ? $"Showing {profile.DisplayName}’s calendar."
+            : null;
+        StateHasChanged();
     }
 
     private static string CalendarOptionContext(CalendarOptionView option)
@@ -863,6 +892,12 @@
     }
 
     private void CancelClearUpcoming() => clearUpcomingPreview = null;
+
+    private async Task RequestClearUpcomingFromProgramManagerAsync()
+    {
+        await DismissProgramManagerAsync();
+        await RequestClearUpcomingAsync();
+    }
 
     private async Task ConfirmClearUpcomingAsync()
     {
@@ -1519,6 +1554,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        ActiveProfile.Changed -= ActiveProfileChanged;
         if (managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }

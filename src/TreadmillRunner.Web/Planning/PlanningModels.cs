@@ -99,7 +99,8 @@ public sealed record WorkoutProgramSaveRequest(
   string Name,
   string? Description,
   string Category,
-  IReadOnlyList<WorkoutProgramItemInput> Items);
+  IReadOnlyList<WorkoutProgramItemInput> Items,
+  Guid? OwnerProfileId = null);
 
 public sealed record WorkoutProgramItemView(
   Guid Id,

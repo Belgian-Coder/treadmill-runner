@@ -259,62 +259,74 @@
                             </div>
                         </section>
                     }
-                    <div class="form-grid">
-                        <label class="field">Plan name
-                            <input maxlength="120" @bind="programDraft.Name" @bind:event="oninput" placeholder="Couch to 5K" />
-                        </label>
-                        <label class="field">Category
-                            <select @bind="programDraft.Category">
-                                <option value="5K">5K</option>
-                                <option value="10K">10K</option>
-                                <option value="Base">Base</option>
-                                <option value="Custom">Custom</option>
-                            </select>
-                        </label>
-                        <label class="field field--wide">Description
-                            <textarea rows="2" maxlength="1000" @bind="programDraft.Description" @bind:event="oninput" placeholder="What this plan builds toward"></textarea>
-                        </label>
-                    </div>
+                    <div class="program-builder-grid">
+                        <section class="program-builder-details" aria-labelledby="program-details-title">
+                            <h3 id="program-details-title">Plan details</h3>
+                            <label class="field">Plan name
+                                <input maxlength="120" @bind="programDraft.Name" @bind:event="oninput" placeholder="Couch to 5K" />
+                            </label>
+                            <label class="field">Category
+                                <select @bind="programDraft.Category"><option value="5K">5K</option><option value="10K">10K</option><option value="Base">Base</option><option value="Custom">Custom</option></select>
+                            </label>
+                            <label class="field">Description
+                                <textarea rows="4" maxlength="1000" @bind="programDraft.Description" @bind:event="oninput" placeholder="What this plan builds toward"></textarea>
+                            </label>
+                            <fieldset class="program-visibility-choice">
+                                <legend>Who can use this plan?</legend>
+                                <label class="@(programDraft.IsHouseholdTemplate ? null : "is-selected")">
+                                    <input type="radio" name="program-scope" checked="@(!programDraft.IsHouseholdTemplate)" @onchange="() => programDraft.IsHouseholdTemplate = false" disabled="@(activeProfileId is null)" />
+                                    <span><strong>Personal plan</strong><small>Only for @ActiveProfileName.</small></span>
+                                </label>
+                                <label class="@(programDraft.IsHouseholdTemplate ? "is-selected" : null)">
+                                    <input type="radio" name="program-scope" checked="@programDraft.IsHouseholdTemplate" @onchange="() => programDraft.IsHouseholdTemplate = true" />
+                                    <span><strong>Household template</strong><small>Reusable by every runner on this local system.</small></span>
+                                </label>
+                            </fieldset>
+                        </section>
 
-                    <div class="program-add-workout">
-                        <label class="field">Add workout
-                            <select @bind="workoutToAdd">
-                                <option value="">Choose a workout</option>
-                                @foreach (WorkoutSummaryView workout in ProgramEligibleWorkouts)
+                        <section class="program-builder-sessions" aria-labelledby="program-sessions-title">
+                            <div class="panel-heading"><div><h3 id="program-sessions-title">Ordered workouts</h3><span class="field-help">Exact revisions run from top to bottom.</span></div><button class="primary-action compact-action" type="button" @onclick="CreateWorkoutForPlanAsync">Create workout</button></div>
+                            <div class="program-workout-picker">
+                                <label class="field">Find a workout<input type="search" @bind="programWorkoutSearch" @bind:event="oninput" placeholder="Search all workouts" /></label>
+                                <div class="program-workout-results" aria-label="Workout search results">
+                                    @foreach (WorkoutSummaryView workout in ProgramWorkoutChoices)
+                                    {
+                                        <button type="button" @onclick="() => AddWorkout(workout)"><strong>@workout.Name</strong><small>Rev @workout.CurrentRevisionNumber · @DurationLabel(workout.DurationMinutes)</small><span>Add</span></button>
+                                    }
+                                </div>
+                            </div>
+
+                            <ol class="program-item-list" aria-label="Ordered workouts">
+                                @foreach ((ProgramDraftItem item, int index) in VisibleProgramDraftItems)
                                 {
-                                    <option value="@workout.CurrentRevisionId">@workout.Name · rev @workout.CurrentRevisionNumber</option>
+                                    <li class="program-item">
+                                        <span class="program-item__number">@(index + 1)</span>
+                                        <span class="program-item__copy"><strong>@item.WorkoutName</strong><small>Exact revision @item.WorkoutRevisionNumber · @DurationLabel(item.DurationMinutes)</small></span>
+                                        <span class="program-item__actions">
+                                            <button type="button" @onclick="() => MoveProgramItem(index, -1)" disabled="@(index == 0)" aria-label="Move @item.WorkoutName up">Up</button>
+                                            <button type="button" @onclick="() => MoveProgramItem(index, 1)" disabled="@(index == programDraft.Items.Count - 1)" aria-label="Move @item.WorkoutName down">Down</button>
+                                            <button type="button" @onclick="() => DuplicateProgramItem(index)" aria-label="Duplicate @item.WorkoutName">Copy</button>
+                                            <button class="danger-action" type="button" @onclick="() => RemoveProgramItem(index)" aria-label="Remove @item.WorkoutName">Delete</button>
+                                        </span>
+                                    </li>
                                 }
-                            </select>
-                        </label>
-                        <button class="secondary-action" type="button" @onclick="AddSelectedWorkout" disabled="@(workoutToAdd is null)">Add</button>
-                        <button class="primary-action" type="button" @onclick="CreateWorkoutForPlanAsync">Create detailed workout for this plan</button>
+                            </ol>
+                            @if (programDraft.Items.Count == 0)
+                            {
+                                <p class="empty-state">Add at least one workout. The saved order becomes the progression order.</p>
+                            }
+                            else if (programDraft.Items.Count > programItemDisplayLimit)
+                            {
+                                <div class="bounded-list-note"><span>Showing @programItemDisplayLimit of @programDraft.Items.Count workouts to keep this editor fast.</span><button class="secondary-action compact-action" type="button" @onclick="ShowMoreProgramItems">Show more</button></div>
+                            }
+                        </section>
                     </div>
-
-                    <dl class="program-draft-summary" aria-label="Training plan summary">
+                    <dl class="program-draft-summary program-draft-summary--wide" aria-label="Training plan summary">
                         <div><dt>Sessions</dt><dd>@programDraft.Items.Count</dd></div>
                         <div><dt>Planned time</dt><dd>@ProgramDurationLabel</dd></div>
                         <div><dt>Goal</dt><dd>@programDraft.Category</dd></div>
+                        <div><dt>Availability</dt><dd>@(programDraft.IsHouseholdTemplate ? "Household" : ActiveProfileName)</dd></div>
                     </dl>
-
-                    <ol class="program-item-list" aria-label="Ordered workouts">
-                        @foreach ((ProgramDraftItem item, int index) in programDraft.Items.Select((item, index) => (item, index)))
-                        {
-                            <li class="program-item">
-                                <span class="program-item__number">@(index + 1)</span>
-                                <span class="program-item__copy"><strong>@item.WorkoutName</strong><small>Exact revision @item.WorkoutRevisionNumber · @DurationLabel(item.DurationMinutes)</small></span>
-                                <span class="program-item__actions">
-                                    <button type="button" @onclick="() => MoveProgramItem(index, -1)" disabled="@(index == 0)" aria-label="Move @item.WorkoutName up">↑</button>
-                                    <button type="button" @onclick="() => MoveProgramItem(index, 1)" disabled="@(index == programDraft.Items.Count - 1)" aria-label="Move @item.WorkoutName down">↓</button>
-                                    <button type="button" @onclick="() => DuplicateProgramItem(index)" aria-label="Duplicate @item.WorkoutName">⧉</button>
-                                    <button class="danger-action" type="button" @onclick="() => RemoveProgramItem(index)" aria-label="Remove @item.WorkoutName">×</button>
-                                </span>
-                            </li>
-                        }
-                    </ol>
-                    @if (programDraft.Items.Count == 0)
-                    {
-                        <p class="empty-state">Add at least one workout. The saved order becomes the progression order.</p>
-                    }
                     <div class="sticky-actions program-editor__save">
                         <span>@programDraft.Items.Count workout(s) · exact revisions</span>
                         <button class="primary-action" type="button" @onclick="SaveProgramAsync" disabled="@(!CanSaveProgram)">@(editingProgramId is null ? "Create plan" : "Save new revision")</button>
@@ -586,6 +598,8 @@
     private string sortOrder = "updated";
     private string programSearch = string.Empty;
     private string programCategory = "All";
+    private string programWorkoutSearch = string.Empty;
+    private int programItemDisplayLimit = 24;
     private bool showProgramEditor;
     private Guid? editingProgramId;
     private Guid? activeProfileId;
@@ -657,6 +671,18 @@
         .OrderBy(static workout => workout.Name, StringComparer.CurrentCultureIgnoreCase)
         .ToArray();
 
+    private IReadOnlyList<WorkoutSummaryView> ProgramWorkoutChoices => ProgramEligibleWorkouts
+        .Where(workout => string.IsNullOrWhiteSpace(programWorkoutSearch) ||
+            workout.Name.Contains(programWorkoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
+            (workout.Description?.Contains(programWorkoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
+        .Take(8)
+        .ToArray();
+
+    private IReadOnlyList<(ProgramDraftItem Item, int Index)> VisibleProgramDraftItems => programDraft.Items
+        .Take(programItemDisplayLimit)
+        .Select((item, index) => (item, index))
+        .ToArray();
+
     private IReadOnlyList<WorkoutSummaryView> FilteredWorkouts
     {
         get
@@ -695,7 +721,8 @@
     private bool HasProgramFilters => !string.IsNullOrWhiteSpace(programSearch) || programCategory != "All";
     private bool HasPremadeFilters => !string.IsNullOrWhiteSpace(premadeSearch) || premadeGoal != "All" ||
         premadeExperience != "All" || premadeHeartRate != "All" || premadeDuration != "All" || premadeFrequency != "All";
-    private bool CanSaveProgram => !string.IsNullOrWhiteSpace(programDraft.Name) && !string.IsNullOrWhiteSpace(programDraft.Category) && programDraft.Items.Count > 0;
+    private bool CanSaveProgram => !string.IsNullOrWhiteSpace(programDraft.Name) && !string.IsNullOrWhiteSpace(programDraft.Category) &&
+        programDraft.Items.Count > 0 && (programDraft.IsHouseholdTemplate || activeProfileId is not null);
     private string ProgramDurationLabel
     {
         get
@@ -877,7 +904,9 @@
     {
         libraryMode = "programs";
         editingProgramId = null;
-        programDraft = new ProgramDraft { Category = programCategory is "All" ? "5K" : programCategory };
+        programDraft = new ProgramDraft { Category = programCategory is "All" ? "5K" : programCategory, IsHouseholdTemplate = activeProfileId is null };
+        programWorkoutSearch = string.Empty;
+        programItemDisplayLimit = 24;
         programDraftBaseline = DraftSignature(programDraft);
         confirmDiscardProgram = false;
         workoutToAdd = null;
@@ -893,8 +922,11 @@
             Name = program.Name,
             Description = program.Description ?? string.Empty,
             Category = program.Category,
+            IsHouseholdTemplate = program.OwnerProfileId is null,
             Items = program.Items.OrderBy(static item => item.Position).Select(static item => new ProgramDraftItem(item.WorkoutRevisionId, item.WorkoutName, item.WorkoutRevisionNumber, item.DurationMinutes)).ToList(),
         };
+        programWorkoutSearch = string.Empty;
+        programItemDisplayLimit = 24;
         programDraftBaseline = DraftSignature(programDraft);
         confirmDiscardProgram = false;
         workoutToAdd = null;
@@ -1011,6 +1043,15 @@
         QueueProgramDraftSave();
     }
 
+    private void AddWorkout(WorkoutSummaryView workout)
+    {
+        programDraft.Items.Add(new ProgramDraftItem(workout.CurrentRevisionId, workout.Name, workout.CurrentRevisionNumber, workout.DurationMinutes));
+        programWorkoutSearch = string.Empty;
+        QueueProgramDraftSave();
+    }
+
+    private void ShowMoreProgramItems() => programItemDisplayLimit = Math.Min(programDraft.Items.Count, programItemDisplayLimit + 24);
+
     private async Task CreateWorkoutForPlanAsync()
     {
         if (programDraftKey is null) await LoadProgramDraftAsync();
@@ -1093,7 +1134,8 @@
         if (!CanSaveProgram) return;
         var request = new WorkoutProgramSaveRequest(
             Guid.NewGuid(), programDraft.Name.Trim(), string.IsNullOrWhiteSpace(programDraft.Description) ? null : programDraft.Description.Trim(), programDraft.Category,
-            programDraft.Items.Select(static item => new WorkoutProgramItemInput(item.WorkoutRevisionId)).ToArray());
+            programDraft.Items.Select(static item => new WorkoutProgramItemInput(item.WorkoutRevisionId)).ToArray(),
+            programDraft.IsHouseholdTemplate ? null : activeProfileId);
         string url = editingProgramId is { } programId ? $"api/planning/programs/{programId}/revisions" : "api/planning/programs";
         using HttpResponseMessage response = await Http.PostAsJsonAsync(url, request);
         message = response.IsSuccessStatusCode ? $"{programDraft.Name} saved." : "The training plan could not be saved.";
@@ -1461,6 +1503,7 @@
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string Category { get; set; } = "5K";
+        public bool IsHouseholdTemplate { get; set; }
         public List<ProgramDraftItem> Items { get; set; } = [];
     }
 

@@ -17,29 +17,7 @@
 <PageTitle>TreadmillRunner</PageTitle>
 
 <div class="runner-page">
-    @if (session?.Live.SessionState is SessionState.Completed or SessionState.Stopped)
-    {
-        <section class="debrief-card" aria-labelledby="debrief-title">
-            <p class="eyebrow">@(session.Live.SessionState == SessionState.Stopped ? "Run stopped" : "Run complete")</p>
-            <h1 id="debrief-title">How did that run feel?</h1>
-            <p>Review the result now; you can add or change this note later from history.</p>
-            <label class="field">Perceived effort
-                <select aria-label="Perceived effort" @bind="perceivedEffort">
-                    <option value="">Not set</option>
-                    @for (var effort = 1; effort <= 10; effort++)
-                    {
-                        <option value="@effort">@effort</option>
-                    }
-                </select>
-            </label>
-            <label class="field">Run note
-                <textarea aria-label="Run note" maxlength="1000" @bind="runNote"></textarea>
-            </label>
-            <button class="primary-action touch-action" type="button" @onclick="SaveDebriefAsync">Save debrief</button>
-            <span role="status" class="action-status">@actionStatus</span>
-        </section>
-    }
-    else if (session is not null && session.Live.SessionState is SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+    @if (session is not null && session.Live.SessionState is SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
     {
         <header class="dashboard-header">
             <div><p class="eyebrow">Authoritative gateway</p><h1>Live run</h1></div>
@@ -500,8 +478,6 @@
     private bool liveStateConnected => Gateway.Current.IsConnected;
     private string controlStatus => lease is null ? "Observer" : "Controller";
     private string actionStatus = "Select a runner and workout.";
-    private int? perceivedEffort;
-    private string? runNote;
     private bool soundEnabled;
     private RunCuePreferences cuePreferences = RunCuePreferences.Default;
     private int liveSpeedAxisMaximum = 10;
@@ -653,6 +629,7 @@
         Gateway.ConnectionChanged += GatewayConnectionChanged;
         Gateway.SessionChanged += GatewaySessionChanged;
         Gateway.LeaseChanged += GatewayLeaseChanged;
+        ActiveProfile.Changed += ActiveProfileChanged;
         try
         {
             await Gateway.EnsureStartedAsync();
@@ -719,6 +696,30 @@
         await LoadCuePreferencesAsync(profileId);
         await LoadProfilePlanningAsync();
         await ApplyRecommendationAsync();
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume) return;
+            if (selectedProfileId == profileId) return;
+            selectedProfileId = profileId;
+            selectedRevisionId = null;
+            selectedWorkoutLabel = null;
+            selectedWorkoutSource = "Library";
+            selectedProgramRunId = null;
+            selectedProgramItemId = null;
+            preflight = null;
+            if (profileId is { } selected)
+            {
+                await LoadCuePreferencesAsync(selected);
+                await LoadProfilePlanningAsync();
+                await ApplyRecommendationAsync();
+                actionStatus = $"{SelectedProfileName} selected. Choose a workout.";
+            }
+            StateHasChanged();
+        });
     }
 
     private async Task ConfirmQuickStartAsync(Guid profileId)
@@ -1097,9 +1098,7 @@
             }
             if (incoming is not null)
             {
-                actionStatus = incoming.Live.SessionState == SessionState.Completed && actionStatus != "Run saved"
-                    ? "Run completed."
-                    : actionStatus;
+                if (incoming.Live.SessionState == SessionState.Completed) actionStatus = "Run completed. Ready for the next run.";
                 if (soundEnabled && cuePreferences.StepChanges && previousStepIndex is not null && incoming.CurrentStep?.Index != previousStepIndex)
                     await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent);
             }
@@ -1456,17 +1455,6 @@
         return values.Count == 0 ? null : string.Join(" · ", values);
     }
 
-    private async Task SaveDebriefAsync()
-    {
-        if (session is null) return;
-        HttpResponseMessage response = await Http.PutAsJsonAsync($"api/history/{session.SessionId}/debrief", new
-        {
-            perceivedExertion = perceivedEffort,
-            note = runNote,
-        });
-        actionStatus = response.IsSuccessStatusCode ? "Run saved" : "Could not save the run debrief.";
-    }
-
     private async Task ToggleSoundAsync()
     {
         soundEnabled = !soundEnabled;
@@ -1620,6 +1608,7 @@
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Gateway.SessionChanged -= GatewaySessionChanged;
         Gateway.LeaseChanged -= GatewayLeaseChanged;
+        ActiveProfile.Changed -= ActiveProfileChanged;
         stopDecisionModalReference = null;
         await Task.CompletedTask;
     }

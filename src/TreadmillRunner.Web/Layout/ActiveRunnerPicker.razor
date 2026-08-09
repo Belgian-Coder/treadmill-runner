@@ -1,9 +1,8 @@
 @inject HttpClient Http
-@inject NavigationManager Navigation
 @inject ActiveProfileState ActiveProfile
 @implements IDisposable
 
-<details class="active-runner-picker">
+<details @key="pickerRenderKey" class="active-runner-picker">
     <summary aria-label="Choose active runner">
         <span aria-hidden="true">@ActiveInitial</span>
         <strong>@ActiveName</strong>
@@ -30,6 +29,7 @@
 @code {
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private Guid? activeProfileId;
+    private int pickerRenderKey;
     private string ActiveName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "Choose runner";
     private string ActiveInitial => ActiveName == "Choose runner" ? "?" : ActiveName[..1].ToUpperInvariant();
 
@@ -54,12 +54,10 @@
 
     private async Task SelectAsync(Guid profileId)
     {
-        if (profileId == activeProfileId) return;
-        await ActiveProfile.SetAsync(profileId);
+        if (profileId != activeProfileId) await ActiveProfile.SetAsync(profileId);
         activeProfileId = profileId;
+        pickerRenderKey++;
         await InvokeAsync(StateHasChanged);
-        await Task.Delay(50);
-        Navigation.Refresh(forceReload: true);
     }
 
     private void ActiveProfileChanged(Guid? profileId)

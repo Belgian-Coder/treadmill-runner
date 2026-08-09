@@ -8,6 +8,41 @@ public sealed class WorkoutProgramEndpointTests(PlanningGatewayFactory factory)
   : IClassFixture<PlanningGatewayFactory>
 {
   [Fact]
+  public async Task Program_create_supports_personal_and_household_visibility()
+  {
+    using HttpClient client = factory.CreateClient();
+    JsonElement firstProfile = await CreateProfileAsync(client);
+    JsonElement secondProfile = await CreateProfileAsync(client);
+    JsonElement workout = await CreateWorkoutAsync(client, $"Scoped workout {Guid.NewGuid():N}", 6.0);
+
+    async Task<JsonElement> CreateProgramAsync(string name, Guid? ownerProfileId)
+    {
+      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/programs", new
+      {
+        operationId = Guid.NewGuid(),
+        name,
+        description = "Visibility contract",
+        category = "Custom",
+        ownerProfileId,
+        items = new[] { new { workoutRevisionId = workout.GetProperty("revisionId").GetGuid() } },
+      });
+      Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+      return await ReadJsonAsync(response);
+    }
+
+    JsonElement personal = await CreateProgramAsync($"Personal {Guid.NewGuid():N}", firstProfile.GetProperty("id").GetGuid());
+    JsonElement household = await CreateProgramAsync($"Household {Guid.NewGuid():N}", null);
+    Assert.Equal(firstProfile.GetProperty("id").GetGuid(), personal.GetProperty("ownerProfileId").GetGuid());
+    Assert.Equal(JsonValueKind.Null, household.GetProperty("ownerProfileId").ValueKind);
+
+    JsonElement[] firstList = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={firstProfile.GetProperty("id").GetGuid()}"))!;
+    JsonElement[] secondList = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={secondProfile.GetProperty("id").GetGuid()}"))!;
+    Assert.Contains(firstList, item => item.GetProperty("id").GetGuid() == personal.GetProperty("id").GetGuid());
+    Assert.DoesNotContain(secondList, item => item.GetProperty("id").GetGuid() == personal.GetProperty("id").GetGuid());
+    Assert.Contains(secondList, item => item.GetProperty("id").GetGuid() == household.GetProperty("id").GetGuid());
+  }
+
+  [Fact]
   public async Task Program_create_start_list_and_operation_replay_preserve_the_same_run()
   {
     using HttpClient client = factory.CreateClient();

@@ -264,7 +264,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
-  public async Task Completed_physical_session_collects_debrief_and_exposes_history_detail_and_analytics()
+  public async Task Completed_physical_session_returns_to_ready_and_exposes_history_detail_and_analytics()
   {
     SeededPlan plan = await SeedPlanAsync("history", heartRateTarget: true);
     await Page.SetViewportSizeAsync(1180, 820);
@@ -285,11 +285,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Task.Delay(TimeSpan.FromMilliseconds(2_200));
 
     await CompletePhysicalSessionAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "How did that run feel?", Exact = true })).ToBeVisibleAsync();
-    await Page.GetByLabel("Perceived effort").SelectOptionAsync("7");
-    await Page.GetByLabel("Run note").FillAsync("Comfortable progression; held form through the final step.");
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Save debrief" }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Run saved" })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "History", Exact = true })).ToBeVisibleAsync();
@@ -306,9 +302,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByText("Plan adherence:", new() { Exact = false })).ToBeVisibleAsync();
     await Page.GetByText("Session events", new() { Exact = true }).ClickAsync();
     await Expect(Page.GetByText("Manual speed override:", new() { Exact = false })).ToBeVisibleAsync();
-    await Page.GetByText("Runner debrief", new() { Exact = true }).ClickAsync();
-    await Expect(Page.GetByText("Comfortable progression; held form through the final step.", new() { Exact = true }))
-      .ToBeVisibleAsync();
+    await Expect(Page.GetByText("Runner debrief", new() { Exact = true })).ToHaveCountAsync(0);
     await ScreenshotAsync("tr004-history-session-detail-ipad-landscape.png");
   }
 
@@ -412,7 +406,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await AssertNoHorizontalOverflowAsync();
 
     string validationDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
-    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery");
     Directory.CreateDirectory(validationDirectory);
     Directory.CreateDirectory(galleryDirectory);
     foreach (string path in new[]
@@ -434,7 +428,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     ILocator stopDialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(stopDialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await stopDialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "How did that run feel?", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
   }
 
   [Fact]

@@ -62,7 +62,7 @@
         ]
       },
       "beginner": {
-        "budget_tokens": 5000,
+        "budget_tokens": 5500,
         "files": [
           "README.md",
           "docs/start-here.md"

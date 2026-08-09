@@ -37,16 +37,16 @@ Commands are project-owned under `eng/`: `bootstrap.ps1`, `build.ps1`, `test.ps1
 - Household profiles and browser-local active-profile selection are supported.
 - Reusable workouts are immutable revisions with canonical definition JSON and a content hash. Editing appends a revision; calendar selections retain their exact revision.
 - Native JSON, QDomyos XML, and Garmin FIT workout files are bounded, previewed in memory, and confirmed by revalidating the original bytes. Secure QDomyos parsing never gives `forcespeed` any device-control meaning.
-- The calendar expands weekly recurrence in `Europe/Brussels`, supports alternatives and skip/add/replace exceptions, and persists a chosen alternative by profile and local date.
+- The calendar expands weekly recurrence in `Europe/Brussels`, supports alternatives and skip/add/replace exceptions, and persists a chosen alternative by profile and local date. A move, following-session shift, restore, or default training-day change is rejected if any resulting date is already occupied, so one plan never silently double-books a day. Removing upcoming sessions is explicitly scoped to the selected plan and leaves completed history intact.
 - The file-backed SQLite proof migrates, backs up online, restores to an isolated database, and compares semantic data. Live-database replacement and full disaster recovery remain TR-007.
 
 When producing a Release WebAssembly publish, use `eng/clean-wasm-publish.ps1 -Configuration Release` if generated output may be stale: `dotnet clean` can retain WebCIL assets.
 
 ## Simulated runner experience (TR-004)
 
-- The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery.
+- The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery. BLE treadmill and heart-rate sources publish Ready only with their first valid telemetry snapshot.
 - A single controller lease renews every five seconds and expires after fifteen seconds; observers remain read-only. Browser reload can reclaim manual control without owning the workout timer.
-- History includes a data-derived planned/requested/measured chart, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note.
+- History includes a data-derived planned/requested/measured chart, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note. Detail responses bound the interactive graph to 240 representative samples and expose the full persisted-sample count; analytics and CSV/FIT exports remain full-resolution.
 - Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.
 - Completed sessions can be compared only with the same immutable workout revision. Local trend calculations exclude simulator/system-test sessions, and deterministic progression suggestions require an explicit acceptance/rejection receipt without changing a plan.
 - Daily Pause uses the exact-device verified Stop operation and retains the active session for an explicit hold-to-resume. Stop/End offers keep paused, reset workout progress, or end and save only after confirmed stop; reset retains recorded totals and never starts motion.

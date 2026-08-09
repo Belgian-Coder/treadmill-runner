@@ -17,7 +17,7 @@
 <section class="detail-graph" aria-labelledby="@GraphTitleId">
     <div class="panel-heading">
         <div><h3 id="@GraphTitleId">Live graph</h3><span class="field-help">Persisted planned, requested, and measured speed. Missing samples are not estimated.</span></div>
-        <span>@Session.Samples.Count sample(s)</span>
+        <span>@GraphSampleLabel</span>
     </div>
     @if (Session.Samples.Count == 0)
     {
@@ -87,6 +87,9 @@
 
     private string GraphTitleId => $"{IdPrefix}-graph-title";
     private string ChangesTitleId => $"{IdPrefix}-changes-title";
+    private string GraphSampleLabel => Session.SamplesAreDownsampled
+        ? $"{Session.Samples.Count:N0} graph samples from {Session.PersistedSampleCount:N0} persisted"
+        : $"{Session.PersistedSampleCount:N0} sample(s)";
     private string HeartRateLabel => Session.AverageHeartRateBpm is not { } average ? "Not recorded" : Session.MaximumHeartRateBpm is { } maximum ? $"{average:0} avg / {maximum} max bpm" : $"{average:0} bpm";
     private int SpeedAxisMaximum => (int)Math.Ceiling(Math.Max(10, Session.Samples.SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }).DefaultIfEmpty(0).Max()));
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();

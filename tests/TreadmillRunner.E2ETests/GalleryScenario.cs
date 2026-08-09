@@ -693,7 +693,7 @@ public sealed record GalleryScenario(
     };
   }
 
-  private object HistoryDetail()
+  internal object HistoryDetail()
   {
     DateTimeOffset started = DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(-35);
     double[] speeds = [4.5, 5.0, 6.2, 7.0, 7.1, 6.0, 7.5, 7.4, 5.5, 4.5];
@@ -739,13 +739,6 @@ public sealed record GalleryScenario(
       maximumHeartRateBpm = 171,
       averageSpeedKph = 8.8,
       averageInclinePercent = 1.0,
-      debrief = new
-      {
-        sessionId = HistorySessionId,
-        perceivedExertion = 7,
-        note = "Comfortable progression; held form through the final interval.",
-        updatedAt = started.AddMinutes(35),
-      },
       samples,
       events = new object[]
       {

@@ -420,7 +420,7 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
       new WorkoutSessionSelection(WorkoutSelectionSource.Program, run.Id, revision.Items[0].Id));
     WorkoutProgramScheduleChangePreview moved = await store.ApplyScheduleChangeAsync(
       runner.Id, run.Id, revision.Items[1].Id, WorkoutProgramScheduleAction.MoveOne,
-      new DateOnly(2026, 8, 18), run.Version, Op("program.schedule.move"));
+      new DateOnly(2026, 8, 16), run.Version, Op("program.schedule.move"));
     WorkoutProgramScheduleChangePreview skipped = await store.ApplyScheduleChangeAsync(
       runner.Id, run.Id, revision.Items[2].Id, WorkoutProgramScheduleAction.Skip,
       null, moved.RunVersion, Op("program.schedule.skip"));
@@ -438,7 +438,7 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
     Assert.Equal(
       [new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 20), new DateOnly(2026, 8, 23)],
       preview.Impacts.Select(static impact => impact.NewDate));
-    Assert.Equal([new DateOnly(2026, 8, 18)], preview.CollisionDates);
+    Assert.Empty(preview.CollisionDates);
     Assert.Equal(4, preview.PreservedExceptionCount);
     Assert.Equal(64, preview.Revision.Length);
 
@@ -459,9 +459,66 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
       revision, progress.Run, progress.ScheduleOverrides, progress.ExtraOccurrences);
     Assert.Contains(projected, item => item.Item.Id == revision.Items[0].Id && !item.IsRepeat && item.Date == new DateOnly(2026, 8, 10));
     Assert.Contains(projected, item => item.Item.Id == revision.Items[0].Id && item.IsRepeat && item.Date == new DateOnly(2026, 8, 14));
-    Assert.Contains(projected, item => item.Item.Id == revision.Items[1].Id && item.Date == new DateOnly(2026, 8, 18));
+    Assert.Contains(projected, item => item.Item.Id == revision.Items[1].Id && item.Date == new DateOnly(2026, 8, 16));
     Assert.DoesNotContain(projected, item => item.Item.Id == revision.Items[2].Id);
     Assert.Contains(projected, item => item.Item.Id == revision.Items[5].Id && item.Date == new DateOnly(2026, 8, 23));
+  }
+
+  [Fact]
+  public async Task Schedule_moves_and_training_day_changes_block_double_booked_dates()
+  {
+    UserProfile runner = await CreateProfileAsync("Collision guard runner");
+    StoredWorkoutRevision workout = await CreateWorkoutAsync("Collision guard workout", 6);
+    WorkoutProgramRevision revision = ProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1,
+      workout.Id, workout.Id, workout.Id, workout.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"),
+      Now, Op("program.start"));
+
+    WorkoutProgramScheduleChangePreview moveOne = await store.PreviewScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[0].Id, WorkoutProgramScheduleAction.MoveOne,
+      new DateOnly(2026, 8, 12));
+    Assert.False(moveOne.CanApply);
+    Assert.Equal([new DateOnly(2026, 8, 12)], moveOne.CollisionDates);
+    Assert.Contains("empty date", moveOne.Message, StringComparison.OrdinalIgnoreCase);
+    await Assert.ThrowsAsync<ArgumentException>(() => store.ApplyScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[0].Id, WorkoutProgramScheduleAction.MoveOne,
+      new DateOnly(2026, 8, 12), run.Version, Op("program.schedule.move")));
+
+    WorkoutProgramScheduleChangePreview moveFollowing = await store.PreviewScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[1].Id, WorkoutProgramScheduleAction.MoveFollowing,
+      new DateOnly(2026, 8, 10));
+    Assert.False(moveFollowing.CanApply);
+    Assert.Equal([new DateOnly(2026, 8, 10)], moveFollowing.CollisionDates);
+
+    WorkoutProgramScheduleChangePreview moved = await store.ApplyScheduleChangeAsync(
+      runner.Id, run.Id, revision.Items[0].Id, WorkoutProgramScheduleAction.MoveOne,
+      new DateOnly(2026, 8, 18), run.Version, Op("program.schedule.move.allowed"));
+    WorkoutProgramDefaultDaysPreview days = await store.PreviewDefaultDaysChangeAsync(
+      runner.Id,
+      run.Id,
+      WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday,
+      new DateOnly(2026, 8, 10),
+      new DateOnly(2026, 8, 4));
+    Assert.False(days.CanApply);
+    Assert.Equal([new DateOnly(2026, 8, 18)], days.CollisionDates);
+    Assert.Contains("Choose different days", days.Message, StringComparison.OrdinalIgnoreCase);
+    await Assert.ThrowsAsync<ArgumentException>(() => store.ApplyDefaultDaysChangeAsync(
+      runner.Id,
+      run.Id,
+      WeekdayFlags.Tuesday | WeekdayFlags.Thursday | WeekdayFlags.Sunday,
+      days.EffectiveDate,
+      new DateOnly(2026, 8, 4),
+      moved.RunVersion,
+      days.Revision,
+      Op("program.default-days.change")));
   }
 
   [Fact]

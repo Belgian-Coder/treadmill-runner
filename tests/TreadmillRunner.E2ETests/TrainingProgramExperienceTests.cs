@@ -14,23 +14,29 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
     await scenario.ConfigureBrowserAsync(Page);
+    await Page.SetViewportSizeAsync(1920, 1080);
     string planName = $"Direct plan {Guid.NewGuid():N}";
     string workoutName = $"Direct session {Guid.NewGuid():N}";
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.GetByRole(AriaRole.Button, new() { Name = "New training plan", Exact = true }).ClickAsync();
     await Page.GetByLabel("Plan name", new() { Exact = true }).FillAsync(planName);
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Create detailed workout for this plan", Exact = true }).ClickAsync();
+    await Page.GetByText("Household template", new() { Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Create workout", Exact = true }).ClickAsync();
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New workout", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Start from an existing workout", new() { Exact = true })).ToHaveCountAsync(0);
     await Page.GetByLabel("Workout name", new() { Exact = true }).FillAsync(workoutName);
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Create workout", Exact = true }).ClickAsync();
+    ILocator createWorkout = Page.Locator(".workout-builder__save button[type='submit']");
+    await Expect(createWorkout).ToBeVisibleAsync();
+    await Expect(createWorkout).ToBeEnabledAsync();
+    await createWorkout.ClickAsync();
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "New training plan", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Plan name", new() { Exact = true })).ToHaveValueAsync(planName);
     await Expect(Page.Locator(".program-item")).ToHaveCountAsync(1);
     await Expect(Page.Locator(".program-item").First).ToContainTextAsync(workoutName);
+    await ScreenshotAsync("training-plan-builder-desktop.png");
     await Page.GetByRole(AriaRole.Button, new() { Name = "Create plan", Exact = true }).ClickAsync();
     await Expect(Page.Locator(".program-card").Filter(new() { HasText = planName })).ToBeVisibleAsync();
 
@@ -40,6 +46,7 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
 
     JsonElement[] plans = (await client.GetFromJsonAsync<JsonElement[]>("/api/planning/programs"))!;
     JsonElement createdPlan = Assert.Single(plans, plan => plan.GetProperty("name").GetString() == planName);
+    Assert.Equal(JsonValueKind.Null, createdPlan.GetProperty("ownerProfileId").ValueKind);
     using HttpResponseMessage archived = await client.PostAsJsonAsync(
       $"/api/planning/programs/{createdPlan.GetProperty("id").GetGuid():D}/archive",
       new { operationId = Guid.NewGuid() });
@@ -53,7 +60,7 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
     await scenario.ConfigureBrowserAsync(Page);
     await scenario.InstallVisualDataRoutesAsync(Page);
-    await Page.SetViewportSizeAsync(440, 956);
+    await Page.SetViewportSizeAsync(390, 844);
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri);
     await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
@@ -134,5 +141,12 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     Assert.Equal(0, immediateStartRequests);
     await confirmation.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
     await Expect(confirmation).ToBeHiddenAsync();
+  }
+
+  private async Task ScreenshotAsync(string fileName)
+  {
+    string directory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
+    Directory.CreateDirectory(directory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, fileName), FullPage = true });
   }
 }

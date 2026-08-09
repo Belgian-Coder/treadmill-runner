@@ -249,6 +249,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Set incline to 3.5%", Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Set incline to 4.5%", Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator("[data-component='live-progress-chart']")).ToHaveCountAsync(1);
     ILocator speedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
     await Expect(speedAxis.Locator("span")).ToHaveCountAsync(10);
     await Expect(speedAxis.Locator("span").First).ToHaveTextAsync("10");
@@ -314,6 +315,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     if (viewport.EndsWith("landscape", StringComparison.Ordinal))
     {
+      await Expect(Page.Locator(".control-action-dock .media-control").First).ToHaveCSSAsync("flex-direction", "column");
+      await Expect(Page.Locator(".control-action-dock .media-control > span:last-child").First).ToHaveCSSAsync("white-space", "nowrap");
       foreach (string groupName in new[] { "Speed presets", "Incline presets" })
       {
         ILocator presetButtons = Page.GetByRole(AriaRole.Group, new() { Name = groupName, Exact = true })
@@ -385,7 +388,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       Path = Path.Combine(screenshotDirectory, $"tr006e-control-{viewport}.png"),
       FullPage = false,
     });
-    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "screenshots");
+    string galleryDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "gallery");
     Directory.CreateDirectory(galleryDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
@@ -491,7 +494,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
     await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri);
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "How did that run feel?", Exact = true }))
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
       .ToBeVisibleAsync();
     Assert.True(await Page.EvaluateAsync<int>("window.__wakeLockReleases") >= 1,
       "Control must release the wake lock when the run ends or navigation leaves the dashboard.");

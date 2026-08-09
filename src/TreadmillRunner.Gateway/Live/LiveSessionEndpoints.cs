@@ -56,7 +56,6 @@ public sealed record TreadmillCommandRequest(
   string HolderId,
   Guid LeaseId,
   long ExpectedSessionVersion);
-public sealed record SaveDebriefRequest(int? PerceivedExertion, string? Note);
 public sealed record DeleteHistorySessionRequest(
   Guid OperationId,
   Guid ProfileId,
@@ -110,7 +109,6 @@ public static class LiveSessionEndpoints
     history.MapPost("/{sessionId:guid}/delete", DeleteHistoryAsync);
     history.MapGet("/{sessionId:guid}/export.csv", ExportCsvAsync);
     history.MapGet("/{sessionId:guid}/export.fit", ExportFitAsync);
-    history.MapPut("/{sessionId:guid}/debrief", SaveDebriefAsync);
     return endpoints;
   }
 
@@ -632,6 +630,7 @@ public static class LiveSessionEndpoints
       session.Samples,
       session.Events,
       ReadProfileHeartRateZones(session.Definition.ControllerConfigurationJson));
+    IReadOnlyList<SessionSample> displaySamples = HistoryDisplaySampler.Select(session.Samples);
     return Results.Ok(new
     {
       session.Definition,
@@ -646,7 +645,8 @@ public static class LiveSessionEndpoints
       session.AverageSpeedKph,
       session.AverageInclinePercent,
       session.Debrief,
-      session.Samples,
+      Samples = displaySamples,
+      TotalSampleCount = session.Samples.Count,
       Events = session.Events.Select(ToHistoryEvent).ToArray(),
       Analytics = analytics,
     });
@@ -808,26 +808,4 @@ public static class LiveSessionEndpoints
     _ => new HistoryEventResponse(sessionEvent.EventType, sessionEvent.OccurredAt),
   };
 
-  private static async Task<IResult> SaveDebriefAsync(
-    Guid sessionId,
-    SaveDebriefRequest request,
-    ISessionStore store,
-    TimeProvider timeProvider,
-    CancellationToken cancellationToken)
-  {
-    try
-    {
-      var debrief = new SessionDebrief(sessionId, request.PerceivedExertion, request.Note, timeProvider.GetUtcNow());
-      await store.SaveDebriefAsync(debrief, cancellationToken);
-      return Results.Ok(debrief);
-    }
-    catch (ArgumentException exception)
-    {
-      return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (KeyNotFoundException)
-    {
-      return Results.NotFound();
-    }
-  }
 }

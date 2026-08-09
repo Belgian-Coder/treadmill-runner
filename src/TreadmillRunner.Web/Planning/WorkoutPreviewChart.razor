@@ -1,0 +1,90 @@
+@using System.Globalization
+@using System.Text
+
+<LiveProgressChart TitleId="workout-preview-title"
+                   Eyebrow="This workout"
+                   Heading="Live progress preview"
+                   Title="@Title"
+                   CssClass="workout-preview-chart"
+                   ChartAriaLabel="Planned speed and incline preview using the live Run chart"
+                   SpeedAxisMaximum="@SpeedAxisMaximum"
+                   InclineAxisMaximum="@InclineAxisMaximum"
+                   Duration="@Duration"
+                   PlannedSpeedPath="@BuildPath(true)"
+                   PlannedInclinePath="@BuildPath(false)"
+                   CursorX="10"
+                   ElapsedSeconds="0"
+                   DurationSeconds="@Duration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)"
+                   Note="This is the Run screen chart component before a session starts. The plan lines are available now; Target and Measured populate during the run." />
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<WorkoutBlockInput> Blocks { get; set; } = [];
+    [Parameter] public string Title { get; set; } = "Workout preview";
+
+    private IReadOnlyList<PreviewPoint> Points => BuildPoints(Blocks);
+    private TimeSpan Duration => Points.Count == 0 ? TimeSpan.FromMinutes(1) : Points[^1].Elapsed;
+    private int SpeedAxisMaximum => Math.Max(10, (int)Math.Ceiling(Points
+        .Select(static point => Math.Max(point.SpeedStart ?? 0, point.SpeedEnd ?? 0))
+        .DefaultIfEmpty(0)
+        .Max()));
+    private int InclineAxisMaximum => Math.Max(10, (int)Math.Ceiling(Points
+        .Select(static point => Math.Max(point.InclineStart ?? 0, point.InclineEnd ?? 0))
+        .DefaultIfEmpty(0)
+        .Max()));
+
+    private string BuildPath(bool speed)
+    {
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (PreviewPoint point in Points)
+        {
+            double? start = speed ? point.SpeedStart : point.InclineStart;
+            double? end = speed ? point.SpeedEnd : point.InclineEnd;
+            if (start is null || end is null) { started = false; continue; }
+            Append(started ? " L" : "M", point.Elapsed - point.Duration, start.Value);
+            Append(" L", point.Elapsed, end.Value);
+            started = true;
+        }
+        return path.ToString();
+
+        void Append(string command, TimeSpan elapsed, double value)
+        {
+            path.Append(command);
+            path.Append(ChartX(elapsed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(ChartY(value, speed).ToString("0.##", CultureInfo.InvariantCulture));
+        }
+    }
+
+    private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, Duration.TotalSeconds), 0, 1) * 700);
+    private double ChartY(double value, bool speed) => 210 - (Math.Clamp(value / (speed ? SpeedAxisMaximum : InclineAxisMaximum), 0, 1) * 200);
+    private static IReadOnlyList<PreviewPoint> BuildPoints(IReadOnlyList<WorkoutBlockInput> blocks)
+    {
+        var result = new List<PreviewPoint>();
+        TimeSpan elapsed = TimeSpan.Zero;
+        Expand(blocks);
+        return result;
+
+        void Expand(IReadOnlyList<WorkoutBlockInput> source)
+        {
+            foreach (WorkoutBlockInput block in source)
+            {
+                if (block.Kind == "repeat")
+                {
+                    for (int repetition = 0; repetition < block.Repetitions; repetition++) Expand(block.Blocks);
+                    continue;
+                }
+
+                TimeSpan duration = block.GoalKind == "time" ? TimeSpan.FromMinutes(Math.Max(.01, block.GoalValue)) : TimeSpan.FromMinutes(1);
+                elapsed += duration;
+                double? speedStart = block.SpeedKind switch { "fixed" or "ramp" => block.SpeedStartKph, "heartRate" or "heartRateZone" => block.HeartRateInitialSpeedKph, _ => null };
+                double? speedEnd = block.SpeedKind == "ramp" ? block.SpeedEndKph : speedStart;
+                double inclineStart = block.InclineStartPercent;
+                double inclineEnd = block.InclineKind == "ramp" ? block.InclineEndPercent : inclineStart;
+                result.Add(new PreviewPoint(elapsed, duration, speedStart, speedEnd, inclineStart, inclineEnd));
+            }
+        }
+    }
+
+    private sealed record PreviewPoint(TimeSpan Elapsed, TimeSpan Duration, double? SpeedStart, double? SpeedEnd, double? InclineStart, double? InclineEnd);
+}

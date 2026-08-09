@@ -593,9 +593,11 @@ public sealed class WorkoutProgramStore(
       + overrides.Count(static item => item.IsSkipped);
     string revisionValue = ComputeDefaultDaysRevision(
       runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, impacts, collisions);
-    string message = $"{impacts.Count} future session(s) will move to the new weekly rhythm. {preserved} completed, earlier, repeated, or explicitly adjusted occurrence(s) stay unchanged.";
-    if (collisions.Length > 0) message += $" {collisions.Length} date(s) will contain more than one session; nothing is overwritten.";
-    return new(runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, true,
+    bool canApply = collisions.Length == 0;
+    string message = canApply
+      ? $"{impacts.Count} future session(s) will move to the new weekly rhythm. {preserved} completed, earlier, repeated, or explicitly adjusted occurrence(s) stay unchanged."
+      : $"The new training days would place two sessions on {string.Join(", ", collisions.Select(static date => date.ToString("d MMM yyyy")))}. Choose different days or move the existing session first.";
+    return new(runId, runEntity.Version, (int)currentWeekdays, (int)weekdays, effectiveDate, canApply,
       message, revisionValue, impacts, collisions, preserved);
 
     WorkoutProgramDefaultDaysPreview Blocked(string reason) => new(
@@ -732,8 +734,13 @@ public sealed class WorkoutProgramStore(
       WorkoutProgramScheduleAction.MoveFollowing => $"{impacts.Count} session(s) will move by the same number of days.",
       _ => "Only this session will move; later sessions keep their dates.",
     };
-    if (collisions.Length > 0) message += $" Warning: {collisions.Length} date(s) will contain more than one session.";
-    return new(runId, itemId, action, runEntity.Version, true, message, impacts, collisions);
+    bool collisionBlocksMove = collisions.Length > 0 &&
+      action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing or WorkoutProgramScheduleAction.Restore;
+    if (collisionBlocksMove)
+      message = $"That change would place two plan sessions on {string.Join(", ", collisions.Select(static date => date.ToString("d MMM yyyy")))}. Choose an empty date instead.";
+    else if (collisions.Length > 0)
+      message += $" Warning: {collisions.Length} date(s) will contain more than one session.";
+    return new(runId, itemId, action, runEntity.Version, !collisionBlocksMove, message, impacts, collisions);
 
     WorkoutProgramScheduleChangePreview Blocked(string reason) =>
       new(runId, itemId, action, runEntity.Version, false, reason, [], []);

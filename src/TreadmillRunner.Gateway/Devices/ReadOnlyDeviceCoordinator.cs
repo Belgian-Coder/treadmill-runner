@@ -595,8 +595,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       TreadmillCapabilities reported = await ReadFtmsCapabilitiesAsync(connection, services, cancellationToken);
       (string? model, string? firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
       UpdateCapabilities(reported);
-      UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
       var evidencePersisted = false;
+      var readyPublished = false;
       await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
         connection,
         Uuids.FtmsService,
@@ -610,6 +610,11 @@ public sealed class ReadOnlyDeviceCoordinator(
         }
 
         UpdateTreadmillTelemetry(data, notification.ObservedAt, generation);
+        if (!readyPublished)
+        {
+          UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+          readyPublished = true;
+        }
         primaryTelemetryObserved(notification.ObservedAt);
         if (!evidencePersisted)
         {
@@ -635,7 +640,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       services,
       cancellationToken);
     var vendorEvidencePersisted = false;
-    UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+    var vendorReadyPublished = false;
     await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
       connection,
       Uuids.VendorService,
@@ -650,6 +655,11 @@ public sealed class ReadOnlyDeviceCoordinator(
             new FtmsTreadmillData(0, status.SpeedKph, status.InclinePercent, null),
             notification.ObservedAt,
             generation);
+          if (!vendorReadyPublished)
+          {
+            UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+            vendorReadyPublished = true;
+          }
           primaryTelemetryObserved(notification.ObservedAt);
           if (!vendorEvidencePersisted)
           {
@@ -678,9 +688,9 @@ public sealed class ReadOnlyDeviceCoordinator(
     CancellationToken cancellationToken)
   {
     RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
-    UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
     (string? model, string? firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
     var evidencePersisted = false;
+    var readyPublished = false;
     using var batteryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     Task batteryTask = RunOptionalBatteryAsync(
       connection,
@@ -707,6 +717,11 @@ public sealed class ReadOnlyDeviceCoordinator(
             ObservedAt = notification.ObservedAt,
             Connection = runtime.Connection with { LastObservedAt = notification.ObservedAt, Fault = null },
           };
+        }
+        if (!readyPublished)
+        {
+          UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+          readyPublished = true;
         }
         primaryTelemetryObserved(notification.ObservedAt);
         if (!evidencePersisted)

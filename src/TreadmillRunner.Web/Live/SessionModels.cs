@@ -18,4 +18,9 @@ public sealed record StoredWorkoutSessionView(
   SessionDebrief? Debrief,
   IReadOnlyList<SessionSample> Samples,
   IReadOnlyList<JsonElement> Events,
-  SessionAnalytics Analytics);
+  SessionAnalytics Analytics,
+  int TotalSampleCount = 0)
+{
+  public int PersistedSampleCount => Math.Max(TotalSampleCount, Samples.Count);
+  public bool SamplesAreDownsampled => PersistedSampleCount > Samples.Count;
+}
