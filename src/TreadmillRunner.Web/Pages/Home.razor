@@ -711,6 +711,11 @@
     private bool IsCurrentProfileSelection(int generation, Guid? profileId) =>
         !disposed && generation == profileSelectionGeneration && selectedProfileId == profileId;
 
+    private bool IsCurrentPreflightSelection(int profileGeneration, Guid profileId, int workoutGeneration, Guid revisionId) =>
+        IsCurrentProfileSelection(profileGeneration, profileId) &&
+        workoutSelectionGeneration == workoutGeneration &&
+        selectedRevisionId == revisionId;
+
     private async Task ApplyProfileSelectionAsync(Guid? profileId, bool announce)
     {
         if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
@@ -764,6 +769,11 @@
             CommitProfilePlanning(await planningTask);
             if (!IsCurrentProfileSelection(generation, profileId)) return;
 
+            // Planning is ready at this point. Readiness polling may intentionally continue
+            // for several seconds while nearby devices reconnect, but it must not keep the
+            // runner switch presented as a plan load.
+            profileSelectionLoading = false;
+
             if (workoutSelectionGeneration == selectionGeneration)
             {
                 if (announce)
@@ -814,6 +824,9 @@
         selectedWorkoutSource = choice.SelectionSource;
         selectedProgramRunId = choice.ProgramRunId;
         selectedProgramItemId = choice.ProgramItemId;
+        preflight = null;
+        actionStatus = "Checking readiness in the background…";
+        await InvokeAsync(StateHasChanged);
         await RefreshPreflightAsync();
     }
 
@@ -1122,10 +1135,12 @@
         {
             preflight = null;
             actionStatus = "Select a runner and workout.";
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
         int profileGeneration = profileSelectionGeneration;
+        int workoutGeneration = workoutSelectionGeneration;
         var refresh = new CancellationTokenSource();
         preflightRefreshCancellation = refresh;
         try
@@ -1135,29 +1150,35 @@
                 PreflightSnapshot? loaded = await Http.GetFromJsonAsync<PreflightSnapshot>(
                     $"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}",
                     refresh.Token);
-                if (!IsCurrentProfileSelection(profileGeneration, profileId)) return;
+                if (!IsCurrentPreflightSelection(profileGeneration, profileId, workoutGeneration, revisionId)) return;
+                if (loaded is not null && (loaded.UserProfileId != profileId || loaded.WorkoutRevisionId != revisionId))
+                    throw new JsonException("The preflight response did not match the selected runner and workout.");
                 preflight = loaded;
                 if (loaded?.IsReady == true)
                 {
                     actionStatus = "Gateway ready — take control when you are prepared.";
+                    await InvokeAsync(StateHasChanged);
                     return;
                 }
 
                 actionStatus = "Connecting the devices needed for this run…";
+                await InvokeAsync(StateHasChanged);
                 if (attempt < 11) await Task.Delay(TimeSpan.FromSeconds(1), refresh.Token);
             }
 
             actionStatus = "Some pre-run checks are still waiting. Wake nearby devices, then select the workout again or use Connect on Devices.";
+            await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) when (refresh.IsCancellationRequested)
         {
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            if (IsCurrentProfileSelection(profileGeneration, profileId))
+            if (IsCurrentPreflightSelection(profileGeneration, profileId, workoutGeneration, revisionId))
             {
                 preflight = null;
                 actionStatus = "Pre-run checks are temporarily unavailable. Try selecting the workout again.";
+                await InvokeAsync(StateHasChanged);
             }
         }
         finally
@@ -1760,6 +1781,7 @@
         startHoldCancellation?.Dispose();
         preflightRefreshCancellation?.Cancel();
         preflightRefreshCancellation?.Dispose();
+        preflightRefreshCancellation = null;
         profileSelectionCancellation?.Cancel();
         profileSelectionCancellation?.Dispose();
         Gateway.ConnectionChanged -= GatewayConnectionChanged;

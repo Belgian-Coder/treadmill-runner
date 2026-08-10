@@ -1092,6 +1092,116 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Run_page_profile_switch_does_not_wait_for_device_readiness_retries()
+  {
+    string firstName = $"Fast runner A {Guid.NewGuid():N}";
+    string secondName = $"Fast runner B {Guid.NewGuid():N}";
+    string workoutName = $"Fast switch workout {Guid.NewGuid():N}";
+    Guid firstId = await CreateProfileAsync(firstName);
+    Guid secondId = await CreateProfileAsync(secondName);
+    Guid workoutRevisionId = await CreateWorkoutAsync(workoutName);
+    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+    using (HttpClient client = new() { BaseAddress = gateway.BaseAddress })
+    using (HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+    {
+      operationId = Guid.NewGuid(),
+      profileId = secondId,
+      name = "Fast switch schedule",
+      timeZoneId = "Europe/Brussels",
+      startDate = today,
+      endDate = today,
+      intervalWeeks = 1,
+      weekdayMask = WeekdayFlag(today.DayOfWeek),
+      alternatives = new[] { new { workoutRevisionId, displayOrder = 0 } },
+      exceptions = Array.Empty<object>(),
+      expectedVersion = (int?)null,
+    }))
+    {
+      response.EnsureSuccessStatusCode();
+    }
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(firstName);
+
+    TaskCompletionSource<bool> preflightRequested = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<bool> releasePreflight = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync("**/api/live/preflight?**", async route =>
+    {
+      if (!TryGetProfileId(new Uri(route.Request.Url), out Guid requestedProfileId) || requestedProfileId != secondId)
+      {
+        await route.ContinueAsync();
+        return;
+      }
+
+      preflightRequested.TrySetResult(true);
+      await releasePreflight.Task;
+      try
+      {
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 200,
+          ContentType = "application/json",
+          Body = JsonSerializer.Serialize(new
+          {
+            capturedAt = DateTimeOffset.UtcNow,
+            userProfileId = secondId,
+            userProfileName = secondName,
+            workoutRevisionId,
+            workoutTitle = workoutName,
+            expectedDuration = "00:20:00",
+            intensityLabel = "Planned pace",
+            requiresHeartRate = false,
+            selectedHeartRateSource = 0,
+            checks = new[]
+            {
+              new { id = "treadmill", label = "Treadmill", status = 2, detail = "Waiting for a nearby treadmill." },
+            },
+            canStartRemotely = false,
+            canStopRemotely = false,
+            minimumStartSpeedKph = (double?)null,
+            canSetSpeedRemotely = false,
+            canSetInclineRemotely = false,
+            canPauseRemotely = false,
+            speedRange = (object?)null,
+            inclineRange = (object?)null,
+            heartRateAutomationMode = 0,
+            heartRateAutomationReason = (string?)null,
+            targetEvaluations = Array.Empty<object>(),
+          }),
+        });
+      }
+      catch (PlaywrightException)
+      {
+        // The browser can cancel an in-flight retry during teardown.
+      }
+    });
+
+    try
+    {
+      ILocator picker = Page.Locator("details.active-runner-picker");
+      await picker.Locator("summary").ClickAsync();
+      await picker.GetByRole(AriaRole.Radio, new() { Name = secondName, Exact = true }).ClickAsync();
+      await preflightRequested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+      // The readiness request remains blocked. Runner planning and the selected workout
+      // must already be usable instead of looking stuck for the retry window.
+      await Expect(Page.GetByLabel("Recommended next run", new() { Exact = true })).ToContainTextAsync($"Next for {secondName}");
+      await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(secondName);
+      await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
+
+      releasePreflight.TrySetResult(true);
+      await Expect(Page.GetByText("Connecting the devices needed for this run…", new() { Exact = true })).ToBeVisibleAsync();
+    }
+    finally
+    {
+      releasePreflight.TrySetResult(true);
+    }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Run_page_profile_switches_supersede_out_of_order_planning_responses()
   {
     string firstName = $"Race runner A {Guid.NewGuid():N}";
@@ -1270,7 +1380,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     return profile.GetProperty("id").GetGuid();
   }
 
-  private async Task CreateWorkoutAsync(string name)
+  private async Task<Guid> CreateWorkoutAsync(string name)
   {
     using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
     using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/workouts", new
@@ -1305,6 +1415,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       },
     });
     response.EnsureSuccessStatusCode();
+    JsonElement saved = await response.Content.ReadFromJsonAsync<JsonElement>();
+    return saved.GetProperty("revisionId").GetGuid();
   }
 
   private static bool TryGetProfileId(Uri uri, out Guid profileId)
