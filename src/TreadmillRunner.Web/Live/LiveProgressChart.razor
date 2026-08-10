@@ -55,8 +55,8 @@
         <div></div>
     </div>
     <div class="control-chart-legend" aria-label="Chart legend">
-        <strong>Speed</strong><span><i class="legend-line legend-line--plan"></i>Plan</span><span><i class="legend-line legend-line--requested"></i>Target</span><span><i class="legend-line legend-line--measured"></i>Measured</span>
-        <strong>Incline</strong><span><i class="legend-line legend-line--plan legend-line--incline-plan"></i>Plan</span><span><i class="legend-line legend-line--requested legend-line--incline-target"></i>Target</span><span><i class="legend-line legend-line--measured legend-line--incline-measured"></i>Measured</span>
+        <span class="control-chart-legend__group" aria-label="Speed legend"><strong>Speed</strong><span><i class="legend-line legend-line--plan"></i>Plan</span><span><i class="legend-line legend-line--requested"></i>Target</span><span><i class="legend-line legend-line--measured"></i>Measured</span></span>
+        <span class="control-chart-legend__group" aria-label="Incline legend"><strong>Incline</strong><span><i class="legend-line legend-line--plan legend-line--incline-plan"></i>Plan</span><span><i class="legend-line legend-line--requested legend-line--incline-target"></i>Target</span><span><i class="legend-line legend-line--measured legend-line--incline-measured"></i>Measured</span></span>
     </div>
     @if (!string.IsNullOrWhiteSpace(Note))
     {

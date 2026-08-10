@@ -14,6 +14,7 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
 
   public static TheoryData<string, int, int> NarrowViewports => new()
     {
+        { "desktop-full-hd", 1920, 1080 },
         { "phone-portrait", 390, 844 },
         { "phone-landscape", 844, 390 },
         { "compact-portrait", 360, 800 },
@@ -55,7 +56,13 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
       """);
     Assert.True(hasSafeGutters, $"Run shell must retain a visible side gutter at {viewport} ({width}x{height}).");
 
-    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "tr-036");
+    await Expect(Page.Locator(".choose-another-run > summary")).ToContainTextAsync("Other workout");
+    await Expect(Page.Locator(".choose-another-run > summary")).ToContainTextAsync("Manual, calendar, plan, or library");
+    bool headerContentOverlaps = await Page.Locator(".runner-page .dashboard-header").EvaluateAsync<bool>(
+      "header => { const title = header.querySelector('h1')?.getBoundingClientRect(); const status = header.querySelector('.connection-state')?.getBoundingClientRect(); if (!title || !status) return true; return !(title.right <= status.left || status.right <= title.left || title.bottom <= status.top || status.bottom <= title.top); }");
+    Assert.False(headerContentOverlaps, $"Run title and gateway status overlapped at {viewport} ({width}x{height}).");
+
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "bug-tr-037");
     Directory.CreateDirectory(screenshotDirectory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {

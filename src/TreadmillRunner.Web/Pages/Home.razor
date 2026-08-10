@@ -128,9 +128,9 @@
                         double y = LiveChartY(tick);
                         <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
                     }
-                    <path class="chart-plan" d="@BuildLiveSpeedPath(static point => point.PlannedSpeedKph)" />
-                    <path class="chart-requested" d="@BuildLiveSpeedPath(static point => point.RequestedSpeedKph)" />
-                    <path class="chart-current" d="@BuildLiveSpeedPath(static point => point.MeasuredSpeedKph)" />
+                    <path class="chart-plan" data-series="planned-speed" d="@BuildLiveSpeedPath(static point => point.PlannedSpeedKph)" />
+                    <path class="chart-requested" data-series="requested-speed" d="@BuildLiveSpeedPath(static point => point.RequestedSpeedKph)" />
+                    <path class="chart-current" data-series="measured-speed" d="@BuildLiveSpeedPath(static point => point.MeasuredSpeedKph)" />
                     @foreach (TimeSpan marker in liveOverrideMarkers)
                     {
                         double markerX = ChartX(marker);
@@ -236,7 +236,14 @@
         <section class="preflight-grid">
             <article class="selection-card">
                 <p class="eyebrow">Choose today’s run</p>
-                @if (selectedProfileId is not null)
+                @if (profileSelectionLoading && selectedProfileId is not null)
+                {
+                    <section class="next-run-card" aria-label="Loading runner plan" aria-busy="true">
+                        <span class="next-run-card__icon"><AppIcon Name="calendar" /></span>
+                        <span class="next-run-card__copy"><small>Runner selected</small><strong>Loading @SelectedProfileName’s plan</strong><span>Refreshing workouts and pre-run checks for this runner…</span></span>
+                    </section>
+                }
+                else if (selectedProfileId is not null)
                 {
                     <section class="next-run-card" aria-label="Recommended next run">
                         <span class="next-run-card__icon"><AppIcon Name="arrow-right" /></span>
@@ -285,13 +292,13 @@
                 else
                 {
                     <section class="next-run-card" aria-label="Runner required">
-                        <span class="next-run-card__icon"><AppIcon Name="help" /></span>
+                        <span class="next-run-card__icon"><AppIcon Name="runner" /></span>
                         <span class="next-run-card__copy"><small>Runner required</small><strong>Choose who is running</strong><span>Use the runner control in the navigation bar. The app remembers it.</span></span>
                     </section>
                 }
 
                 <details class="choose-another-run">
-                    <summary>Other workout</summary>
+                    <summary><span><strong>Other workout</strong><small>Manual, calendar, plan, or library</small></span><AppIcon Name="chevron-down" /></summary>
                     <div class="choose-another-run__content">
                 <section class="workout-picker" aria-label="Choose workout">
                     <div class="workout-picker__heading"><strong>Workout</strong><span>@VisibleWorkoutChoices.Count available</span></div>
@@ -381,11 +388,11 @@
                 </section>
                     </div>
                     </details>
-                <dl class="selection-summary">
+                <dl class="selection-summary" aria-busy="@profileSelectionLoading">
                     <div><dt>Selected runner</dt><dd aria-label="Selected runner">@SelectedProfileName</dd></div>
-                    <div><dt>Selected workout</dt><dd aria-label="Selected workout">@SelectedWorkoutName</dd></div>
-                    <div><dt>Expected</dt><dd>@ExpectedDuration</dd></div>
-                    <div><dt>Intensity</dt><dd>@(preflight?.IntensityLabel ?? "Select a workout")</dd></div>
+                    <div><dt>Selected workout</dt><dd aria-label="Selected workout">@(profileSelectionLoading ? "Loading…" : SelectedWorkoutName)</dd></div>
+                    <div><dt>Expected</dt><dd>@(profileSelectionLoading ? "Loading…" : ExpectedDuration)</dd></div>
+                    <div><dt>Intensity</dt><dd>@(profileSelectionLoading ? "Loading…" : preflight?.IntensityLabel ?? "Select a workout")</dd></div>
                 </dl>
                 <div class="preflight-actions">
                     <p>Only one screen can control the treadmill at a time.</p>
@@ -394,9 +401,13 @@
                 </div>
             </article>
 
-            <details class="readiness-card" open>
+            <details class="readiness-card" open aria-busy="@profileSelectionLoading">
                 <summary><span>Pre-run checks</span><strong>@(preflight is null ? "Select a run" : preflight.IsReady ? "Ready" : "Needs attention")</strong></summary>
-                @if (preflight is { } readiness)
+                @if (profileSelectionLoading)
+                {
+                    <p class="empty-state" role="status">Loading checks for @SelectedProfileName…</p>
+                }
+                else if (preflight is { } readiness)
                 {
                     <div class="weekly-summary readiness-summary" aria-label="Readiness levels">
                         <article><span>Safe to record</span><strong>@(CanRecord(readiness) ? "Ready" : "Blocked")</strong></article>
@@ -426,7 +437,7 @@
                         </ul>
                     </details>
                 }
-                @if (preflight is null)
+                @if (!profileSelectionLoading && preflight is null)
                 {
                     <p class="empty-state">Select a runner and workout to check readiness.</p>
                 }
@@ -449,6 +460,7 @@
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
     private CancellationTokenSource? startHoldCancellation;
     private CancellationTokenSource? preflightRefreshCancellation;
+    private CancellationTokenSource? profileSelectionCancellation;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
     private IReadOnlyList<WorkoutProgramSummaryView> programs = Array.Empty<WorkoutProgramSummaryView>();
@@ -467,6 +479,9 @@
     private PreflightSnapshot? preflight;
     private QuickStartView? quickStart;
     private ActiveSessionSnapshot? session;
+    private bool profileSelectionLoading;
+    private int profileSelectionGeneration;
+    private bool disposed;
     private ControlLease? lease => Gateway.Current.Lease;
     private string holderId => Gateway.HolderId;
     private string connectionStatus => Gateway.Current.ConnectionPhase switch
@@ -665,12 +680,7 @@
         workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
         quickStart = await Http.GetFromJsonAsync<QuickStartView>("api/local-first/quick-start");
         selectedProfileId = await ActiveProfile.GetAsync();
-        if (selectedProfileId is not null)
-        {
-            await LoadCuePreferencesAsync(selectedProfileId.Value);
-            await LoadProfilePlanningAsync();
-            await ApplyRecommendationAsync();
-        }
+        await ApplyProfileSelectionAsync(selectedProfileId, announce: false);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -686,44 +696,106 @@
 
     private async Task SelectProfileAsync(Guid profileId)
     {
+        if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+            return;
+
+        await ActiveProfile.SetAsync(profileId);
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        if (disposed) return;
+        _ = InvokeAsync(() => ApplyProfileSelectionAsync(profileId, announce: true));
+    }
+
+    private bool IsCurrentProfileSelection(int generation, Guid? profileId) =>
+        !disposed && generation == profileSelectionGeneration && selectedProfileId == profileId;
+
+    private async Task ApplyProfileSelectionAsync(Guid? profileId, bool announce)
+    {
+        if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
+            return;
+
+        int generation = ++profileSelectionGeneration;
         int selectionGeneration = ++workoutSelectionGeneration;
+        profileSelectionCancellation?.Cancel();
+        profileSelectionCancellation?.Dispose();
+        profileSelectionCancellation = new CancellationTokenSource();
+        CancellationTokenSource selectionCancellation = profileSelectionCancellation;
+        CancellationToken cancellationToken = selectionCancellation.Token;
+
         selectedProfileId = profileId;
         selectedRevisionId = null;
         selectedWorkoutLabel = null;
         selectedWorkoutSource = "Library";
         selectedProgramRunId = null;
         selectedProgramItemId = null;
-        await ActiveProfile.SetAsync(profileId);
-        await LoadCuePreferencesAsync(profileId);
-        await LoadProfilePlanningAsync();
-        if (workoutSelectionGeneration == selectionGeneration && selectedProfileId == profileId)
-            await ApplyRecommendationAsync();
-    }
+        preflightRefreshCancellation?.Cancel();
+        preflightRefreshCancellation?.Dispose();
+        preflightRefreshCancellation = null;
+        preflight = null;
+        planningCalendar = null;
+        calendarSeries = Array.Empty<CalendarSeriesView>();
+        programs = Array.Empty<WorkoutProgramSummaryView>();
+        reusableWorkouts = Array.Empty<WorkoutReuseView>();
+        profileSelectionLoading = profileId is not null;
+        actionStatus = profileId is { } selected
+            ? $"Loading {profiles.FirstOrDefault(profile => profile.Id == selected)?.DisplayName ?? "runner"}…"
+            : "Select a runner and workout.";
+        await InvokeAsync(StateHasChanged);
 
-    private void ActiveProfileChanged(Guid? profileId)
-    {
-        _ = InvokeAsync(async () =>
+        if (profileId is null)
         {
-            if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume) return;
-            if (selectedProfileId == profileId) return;
-            int selectionGeneration = ++workoutSelectionGeneration;
-            selectedProfileId = profileId;
-            selectedRevisionId = null;
-            selectedWorkoutLabel = null;
-            selectedWorkoutSource = "Library";
-            selectedProgramRunId = null;
-            selectedProgramItemId = null;
-            preflight = null;
-            if (profileId is { } selected)
+            profileSelectionLoading = false;
+            profileSelectionCancellation?.Dispose();
+            profileSelectionCancellation = null;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            Task<RunCuePreferences> cueTask = LoadCuePreferencesAsync(profileId.Value, cancellationToken);
+            Task<ProfilePlanningData> planningTask = LoadProfilePlanningAsync(profileId.Value, cancellationToken);
+            await Task.WhenAll(cueTask, planningTask);
+            if (!IsCurrentProfileSelection(generation, profileId)) return;
+
+            cuePreferences = await cueTask;
+            CommitProfilePlanning(await planningTask);
+            if (!IsCurrentProfileSelection(generation, profileId)) return;
+
+            if (workoutSelectionGeneration == selectionGeneration)
             {
-                await LoadCuePreferencesAsync(selected);
-                await LoadProfilePlanningAsync();
-                if (workoutSelectionGeneration == selectionGeneration && selectedProfileId == profileId)
-                    await ApplyRecommendationAsync();
-                actionStatus = $"{SelectedProfileName} selected. Choose a workout.";
+                if (announce)
+                    actionStatus = $"{SelectedProfileName} selected. Choose a workout.";
+                await ApplyRecommendationAsync(generation, profileId.Value, selectionGeneration, cancellationToken);
             }
-            StateHasChanged();
-        });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            if (!IsCurrentProfileSelection(generation, profileId)) return;
+            planningCalendar = null;
+            calendarSeries = Array.Empty<CalendarSeriesView>();
+            programs = Array.Empty<WorkoutProgramSummaryView>();
+            reusableWorkouts = Array.Empty<WorkoutReuseView>();
+            actionStatus = $"{SelectedProfileName}’s plan is temporarily unavailable. You can still choose a workout manually.";
+        }
+        finally
+        {
+            if (IsCurrentProfileSelection(generation, profileId))
+            {
+                profileSelectionLoading = false;
+                if (ReferenceEquals(profileSelectionCancellation, selectionCancellation))
+                {
+                    selectionCancellation.Dispose();
+                    profileSelectionCancellation = null;
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private async Task ConfirmQuickStartAsync(Guid profileId)
@@ -803,31 +875,66 @@
         await SelectWorkoutAsync(ChoiceFromSummary(manual) with { Context = "Manual run", SelectionSource = "Manual" });
     }
 
-    private async Task LoadProfilePlanningAsync()
+    private async Task<ProfilePlanningData> LoadProfilePlanningAsync(Guid profileId, CancellationToken cancellationToken)
     {
-        if (selectedProfileId is not { } profileId)
-        {
-            planningCalendar = null;
-            calendarSeries = Array.Empty<CalendarSeriesView>();
-            programs = Array.Empty<WorkoutProgramSummaryView>();
-            reusableWorkouts = Array.Empty<WorkoutReuseView>();
-            return;
-        }
-
         DateOnly from = DateOnly.FromDateTime(DateTime.Today);
         DateOnly to = from.AddDays(30);
-        planningCalendar = await Http.GetFromJsonAsync<CalendarRangeView>(
-            $"api/planning/calendar/{profileId}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
-        calendarSeries = await Http.GetFromJsonAsync<CalendarSeriesView[]>(
-            $"api/planning/calendar/series?profileId={profileId}") ?? Array.Empty<CalendarSeriesView>();
-        programs = await Http.GetFromJsonAsync<WorkoutProgramSummaryView[]>(
-            $"api/planning/programs?profileId={profileId}") ?? Array.Empty<WorkoutProgramSummaryView>();
-        reusableWorkouts = await Http.GetFromJsonAsync<WorkoutReuseView[]>(
-            $"api/planning/workouts/reuse?profileId={profileId}&take=3") ?? Array.Empty<WorkoutReuseView>();
+        Task<CalendarRangeView?> calendarTask = Http.GetFromJsonAsync<CalendarRangeView>(
+            $"api/planning/calendar/{profileId}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", cancellationToken);
+        Task<CalendarSeriesView[]?> seriesTask = Http.GetFromJsonAsync<CalendarSeriesView[]>(
+            $"api/planning/calendar/series?profileId={profileId}", cancellationToken);
+        Task<WorkoutProgramSummaryView[]?> programsTask = Http.GetFromJsonAsync<WorkoutProgramSummaryView[]>(
+            $"api/planning/programs?profileId={profileId}", cancellationToken);
+        Task<WorkoutReuseView[]?> reusableTask = Http.GetFromJsonAsync<WorkoutReuseView[]>(
+            $"api/planning/workouts/reuse?profileId={profileId}&take=3", cancellationToken);
+        await Task.WhenAll(calendarTask, seriesTask, programsTask, reusableTask);
+        return new ProfilePlanningData(
+            await calendarTask,
+            await seriesTask ?? Array.Empty<CalendarSeriesView>(),
+            await programsTask ?? Array.Empty<WorkoutProgramSummaryView>(),
+            await reusableTask ?? Array.Empty<WorkoutReuseView>());
     }
 
-    private async Task ApplyRecommendationAsync()
+    private void CommitProfilePlanning(ProfilePlanningData planning)
     {
+        planningCalendar = planning.Calendar;
+        calendarSeries = planning.Series;
+        programs = planning.Programs;
+        reusableWorkouts = planning.ReusableWorkouts;
+    }
+
+    private async Task ReloadCurrentProfilePlanningAsync()
+    {
+        if (selectedProfileId is not { } profileId) return;
+        int generation = profileSelectionGeneration;
+        CancellationToken cancellationToken = profileSelectionCancellation?.Token ?? CancellationToken.None;
+        try
+        {
+            ProfilePlanningData planning = await LoadProfilePlanningAsync(profileId, cancellationToken);
+            if (IsCurrentProfileSelection(generation, profileId))
+                CommitProfilePlanning(planning);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            if (IsCurrentProfileSelection(generation, profileId))
+                actionStatus = $"{SelectedProfileName}’s plan is temporarily unavailable.";
+        }
+    }
+
+    private Task ApplyRecommendationForCurrentProfileAsync()
+    {
+        int selectionGeneration = workoutSelectionGeneration;
+        return selectedProfileId is { } profileId
+            ? ApplyRecommendationAsync(profileSelectionGeneration, profileId, selectionGeneration, profileSelectionCancellation?.Token ?? CancellationToken.None)
+            : Task.CompletedTask;
+    }
+
+    private async Task ApplyRecommendationAsync(int generation, Guid profileId, int selectionGeneration, CancellationToken cancellationToken)
+    {
+        if (!IsCurrentProfileSelection(generation, profileId) ||
+            workoutSelectionGeneration != selectionGeneration ||
+            cancellationToken.IsCancellationRequested) return;
         if (CalendarNeedsChoice)
         {
             workoutSource = "scheduled";
@@ -837,6 +944,7 @@
 
         if (RecommendedChoice is { } recommendation)
         {
+            if (!IsCurrentProfileSelection(generation, profileId) || workoutSelectionGeneration != selectionGeneration) return;
             workoutSource = recommendation.SelectionSource switch
             {
                 "Calendar" => "scheduled",
@@ -911,12 +1019,12 @@
             if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
             {
                 actionStatus = "The active plan changed in another browser. Review the latest progress and try again.";
-                await LoadProfilePlanningAsync();
+                await ReloadCurrentProfilePlanningAsync();
             }
             return;
         }
-        await LoadProfilePlanningAsync();
-        await ApplyRecommendationAsync();
+        await ReloadCurrentProfilePlanningAsync();
+        await ApplyRecommendationForCurrentProfileAsync();
     }
 
     private void RequestProgramStart(WorkoutProgramSummaryView program, bool restart)
@@ -996,6 +1104,11 @@
         : $"{workout.ExpandedStepCount} steps · {(workout.DurationMinutes is null ? "Distance-based" : $"{workout.DurationMinutes:0} min")}";
 
     private sealed record PendingProgramStart(WorkoutProgramSummaryView Program, bool Restart, WorkoutProgramSummaryView? Active);
+    private sealed record ProfilePlanningData(
+        CalendarRangeView? Calendar,
+        IReadOnlyList<CalendarSeriesView> Series,
+        IReadOnlyList<WorkoutProgramSummaryView> Programs,
+        IReadOnlyList<WorkoutReuseView> ReusableWorkouts);
     private sealed record ExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
     private sealed record QuickStartSuggestionView(Guid? SuggestedProfileId, string Reason, bool RequiresConfirmation);
     private sealed record QuickStartView(QuickStartSuggestionView Suggestion, string? ProfileName);
@@ -1012,16 +1125,19 @@
             return;
         }
 
+        int profileGeneration = profileSelectionGeneration;
         var refresh = new CancellationTokenSource();
         preflightRefreshCancellation = refresh;
         try
         {
             for (var attempt = 0; attempt < 12; attempt++)
             {
-                preflight = await Http.GetFromJsonAsync<PreflightSnapshot>(
+                PreflightSnapshot? loaded = await Http.GetFromJsonAsync<PreflightSnapshot>(
                     $"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}",
                     refresh.Token);
-                if (preflight?.IsReady == true)
+                if (!IsCurrentProfileSelection(profileGeneration, profileId)) return;
+                preflight = loaded;
+                if (loaded?.IsReady == true)
                 {
                     actionStatus = "Gateway ready — take control when you are prepared.";
                     return;
@@ -1036,6 +1152,14 @@
         catch (OperationCanceledException) when (refresh.IsCancellationRequested)
         {
         }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            if (IsCurrentProfileSelection(profileGeneration, profileId))
+            {
+                preflight = null;
+                actionStatus = "Pre-run checks are temporarily unavailable. Try selecting the workout again.";
+            }
+        }
         finally
         {
             if (ReferenceEquals(preflightRefreshCancellation, refresh))
@@ -1044,16 +1168,20 @@
         }
     }
 
-    private async Task LoadCuePreferencesAsync(Guid profileId)
+    private async Task<RunCuePreferences> LoadCuePreferencesAsync(Guid profileId, CancellationToken cancellationToken)
     {
         try
         {
-            ExperienceView? value = await Http.GetFromJsonAsync<ExperienceView>($"api/local-first/profiles/{profileId}/preferences");
-            if (selectedProfileId == profileId && value is not null) cuePreferences = value.Preferences.Cues;
+            ExperienceView? value = await Http.GetFromJsonAsync<ExperienceView>($"api/local-first/profiles/{profileId}/preferences", cancellationToken);
+            return value?.Preferences.Cues ?? RunCuePreferences.Default;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            cuePreferences = RunCuePreferences.Default;
+            return RunCuePreferences.Default;
         }
     }
 
@@ -1492,6 +1620,7 @@
         IReadOnlyList<LiveChartPoint> points = RenderLiveChartPoints();
         var path = new StringBuilder();
         bool started = false;
+        double previousY = 0;
         foreach (LiveChartPoint point in points)
         {
             if (selector(point) is not { } speed)
@@ -1500,10 +1629,32 @@
                 continue;
             }
             double y = LiveChartY(speed);
-            path.Append(started ? " L" : "M");
-            path.Append(ChartX(point.Elapsed).ToString("0.##", CultureInfo.InvariantCulture));
-            path.Append(' ');
-            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            double x = ChartX(point.Elapsed);
+            if (!started)
+            {
+                path.Append('M');
+                path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
+                path.Append(' ');
+                path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                // Treat each sample as the value held until the next timestamp. This
+                // keeps speed changes rectangular, matching the incline presentation,
+                // instead of visually implying a gradual ramp between samples.
+                path.Append(" L");
+                path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
+                path.Append(' ');
+                path.Append(previousY.ToString("0.##", CultureInfo.InvariantCulture));
+                if (Math.Abs(y - previousY) > 0.0001)
+                {
+                    path.Append(" L");
+                    path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
+                    path.Append(' ');
+                    path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+                }
+            }
+            previousY = y;
             started = true;
         }
 
@@ -1604,10 +1755,13 @@
 
     public async ValueTask DisposeAsync()
     {
+        disposed = true;
         startHoldCancellation?.Cancel();
         startHoldCancellation?.Dispose();
         preflightRefreshCancellation?.Cancel();
         preflightRefreshCancellation?.Dispose();
+        profileSelectionCancellation?.Cancel();
+        profileSelectionCancellation?.Dispose();
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Gateway.SessionChanged -= GatewaySessionChanged;
         Gateway.LeaseChanged -= GatewayLeaseChanged;

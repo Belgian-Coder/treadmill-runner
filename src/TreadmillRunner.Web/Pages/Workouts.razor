@@ -242,7 +242,7 @@
                 <section class="planning-panel program-editor" aria-labelledby="program-editor-title" @oninput="QueueProgramDraftSave" @onchange="QueueProgramDraftSave">
                     <div class="panel-heading">
                         <div><p class="eyebrow">Ordered plan</p><h2 id="program-editor-title">@(editingProgramId is null ? "New training plan" : "Edit training plan")</h2></div>
-                        <button class="text-action" type="button" @onclick="RequestCloseProgramEditor" aria-label="Close training plan editor">Close</button>
+                        <button class="secondary-action icon-action" type="button" @onclick="RequestCloseProgramEditor" aria-label="Close training plan editor" title="Close"><AppIcon Name="close" /></button>
                     </div>
                     @if (pendingProgramDraft is not null)
                     {

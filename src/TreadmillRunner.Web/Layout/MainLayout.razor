@@ -5,6 +5,7 @@
 @inject HttpClient Http
 @inject TreadmillRunner.Web.ClientRuntimeState Runtime
 @inject GatewayConnectionSupervisor Gateway
+@inject NavigationManager Navigation
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
@@ -28,7 +29,7 @@
         <NavLink href="/workouts">Plan</NavLink>
         <NavLink href="/history">History</NavLink>
         <details class="nav-more">
-            <summary><span>More</span><AppIcon Name="chevron-down" /></summary>
+            <summary class="@(MoreIsActive ? "active" : null)" aria-current="@(MoreIsActive ? "page" : null)"><span>More</span><AppIcon Name="chevron-down" /></summary>
             <div class="nav-more__menu">
                 <NavLink href="/calendar">Calendar</NavLink>
                 <NavLink href="/devices">Devices</NavLink>
@@ -67,6 +68,16 @@
 @code {
     private CancellationTokenSource? monitorCancellation;
     private DotNetObjectReference<MainLayout>? selfReference;
+    private bool MoreIsActive
+    {
+        get
+        {
+            string path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+            return path is "calendar" or "devices" or "profiles" or "workouts/import" or "operations";
+        }
+    }
+
+    protected override void OnInitialized() => Navigation.LocationChanged += NavigationLocationChanged;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -98,12 +109,14 @@
 
     private void RuntimeChanged() => _ = InvokeAsync(StateHasChanged);
     private void GatewayConnectionChanged() => _ = InvokeAsync(StateHasChanged);
+    private void NavigationLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
     private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reloadNow", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
 
     public async ValueTask DisposeAsync()
     {
         Runtime.Changed -= RuntimeChanged;
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
+        Navigation.LocationChanged -= NavigationLocationChanged;
         monitorCancellation?.Cancel();
         try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeAutoHideHeader"); }
         catch (JSDisconnectedException) { }

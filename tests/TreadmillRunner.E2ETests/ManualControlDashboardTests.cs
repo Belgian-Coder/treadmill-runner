@@ -17,6 +17,15 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     { "desktop", 1920, 1080 },
   };
 
+  public static TheoryData<string, int, int> ActiveResponsiveViewports => new()
+  {
+    { "desktop-full-hd", 1920, 1080 },
+    { "phone-portrait", 390, 844 },
+    { "phone-landscape", 844, 390 },
+    { "phone-compact", 360, 800 },
+    { "phone-narrow", 320, 800 },
+  };
+
   public static TheoryData<string, string, int, int> ReadabilityViewports => new()
   {
     { "LargeText", "phone-portrait", 390, 844 },
@@ -166,6 +175,160 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   }
 
   [Theory]
+  [MemberData(nameof(ActiveResponsiveViewports))]
+  [Trait("Category", "Browser")]
+  public async Task Active_control_remains_compact_and_touchable_at_narrow_viewports(
+    string viewport,
+    int width,
+    int height)
+  {
+    await Page.SetViewportSizeAsync(width, height);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync($"tr036-{viewport}");
+
+    try
+    {
+      await PrepareActiveControlAsync(plan);
+
+      await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(plan.ProfileName);
+      await Expect(Page.Locator(".control-command-status")).ToContainTextAsync("Session running");
+      await Expect(Page.Locator(".control-command-status")).Not.ToContainTextAsync("Hold Start");
+
+      bool hasHorizontalOverflow = await Page.EvaluateAsync<bool>(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 || document.body.scrollWidth > document.body.clientWidth + 1");
+      Assert.False(hasHorizontalOverflow, $"Active Control overflowed horizontally at {width}x{height}.");
+
+      foreach (string actionName in new[] { "Pause", "Stop" })
+      {
+        ILocator action = Page.GetByRole(AriaRole.Button, new() { Name = actionName, Exact = true });
+        await Expect(action).ToBeVisibleAsync();
+        await Expect(action).ToBeEnabledAsync();
+        LocatorBoundingBoxResult? actionBox = await action.BoundingBoxAsync();
+        Assert.NotNull(actionBox);
+        Assert.True(actionBox.Width >= 44 && actionBox.Height >= 44,
+          $"{actionName} must retain a 44px touch target at {width}x{height}: {actionBox}.");
+        Assert.True(actionBox.X >= -1 && actionBox.X + actionBox.Width <= width + 1,
+          $"{actionName} must remain inside the viewport horizontally at {width}x{height}: {actionBox}.");
+        Assert.True(actionBox.Y >= -1 && actionBox.Y + actionBox.Height <= height + 1,
+          $"{actionName} must remain inside the viewport vertically at {width}x{height}: {actionBox}.");
+      }
+
+      ILocator fullscreenButton = Page.GetByRole(AriaRole.Button, new()
+      {
+        Name = "Toggle full-screen dashboard",
+        Exact = true,
+      });
+      await Expect(fullscreenButton).ToBeVisibleAsync();
+      await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "false");
+      await Expect(fullscreenButton).ToHaveCSSAsync("display", "grid");
+      await Expect(fullscreenButton.Locator("svg")).ToHaveCountAsync(1);
+      string fullscreenText = await fullscreenButton.EvaluateAsync<string>(
+        "element => (element.textContent || '').trim()");
+      Assert.Empty(fullscreenText);
+      LocatorBoundingBoxResult? fullscreenBox = await fullscreenButton.BoundingBoxAsync();
+      Assert.NotNull(fullscreenBox);
+      Assert.True(fullscreenBox.Width >= 44 && fullscreenBox.Height >= 44,
+        $"Full-screen control must retain a 44px target at {width}x{height}: {fullscreenBox}.");
+      Assert.True(fullscreenBox.Width <= 72 && fullscreenBox.Height <= 72,
+        $"Full-screen control must remain a compact icon button at {width}x{height}: {fullscreenBox}.");
+      Assert.True(fullscreenBox.Width <= fullscreenBox.Height * 1.6,
+        $"Full-screen control must not stretch into a text row at {width}x{height}: {fullscreenBox}.");
+
+      ILocator chartFocus = Page.GetByRole(AriaRole.Button, new() { Name = "Chart", Exact = true });
+      await chartFocus.ClickAsync();
+      await Expect(chartFocus).ToHaveAttributeAsync("aria-pressed", "true");
+      await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+        new System.Text.RegularExpressions.Regex("control-page--chart"));
+      if (width <= 650)
+      {
+        await Expect(Page.Locator(".control-live-chart--focused .control-chart-actions > span"))
+          .ToHaveTextAsync(plan.WorkoutName);
+        ILocator collapseGraph = Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true });
+        await Expect(collapseGraph).ToBeVisibleAsync();
+        await Expect(collapseGraph).ToContainTextAsync("Back");
+      }
+
+      ILocator legendGroups = Page.Locator(".control-chart-legend__group");
+      await Expect(legendGroups).ToHaveCountAsync(2);
+      foreach (ILocator group in await legendGroups.AllAsync())
+      {
+        await Expect(group).ToContainTextAsync("Plan");
+        await Expect(group).ToContainTextAsync("Target");
+        await Expect(group).ToContainTextAsync("Measured");
+        bool headingSharesFirstRow = await group.EvaluateAsync<bool>(
+          "element => { const heading = element.querySelector('strong'); const first = element.querySelector('span'); if (!heading || !first) return false; const a = heading.getBoundingClientRect(); const b = first.getBoundingClientRect(); return Math.abs(a.top - b.top) <= 2; }");
+        Assert.True(headingSharesFirstRow, $"Each legend heading must stay with its first item at {width}x{height}.");
+      }
+
+      JsonElement chartGeometry = await Page.Locator(".control-live-chart").EvaluateAsync<JsonElement>(
+        "chart => { const heading = chart.querySelector('.control-chart-heading'); const speedUnit = chart.querySelector('.chart-y-scale:not(.chart-y-scale--secondary) .chart-axis-unit'); const axis = chart.querySelector('.chart-time-scale'); const legend = chart.querySelector('.control-chart-legend'); if (!heading || !speedUnit || !axis || !legend) return { missing: true }; const headingBox = heading.getBoundingClientRect(); const unitBox = speedUnit.getBoundingClientRect(); const axisBox = axis.getBoundingClientRect(); const legendBox = legend.getBoundingClientRect(); const labels = [...axis.querySelectorAll('span')].filter(label => getComputedStyle(label).display !== 'none').map(label => { const box = label.getBoundingClientRect(); return { bottom: box.bottom, left: box.left, right: box.right }; }); return { missing: false, headingBottom: headingBox.bottom, speedUnitTop: unitBox.top, axisBottom: axisBox.bottom, legendTop: legendBox.top, legendBottom: legendBox.bottom, labels }; }");
+      Assert.False(chartGeometry.GetProperty("missing").GetBoolean(),
+        $"Chart time scale and legend must be present in Chart mode at {width}x{height}.");
+      double headingBottom = chartGeometry.GetProperty("headingBottom").GetDouble();
+      double speedUnitTop = chartGeometry.GetProperty("speedUnitTop").GetDouble();
+      double requiredHeadingClearance = width <= 650 ? 2 : 0;
+      Assert.True(speedUnitTop >= headingBottom + requiredHeadingClearance,
+        $"Chart speed unit must clear the heading at {width}x{height}; heading bottom {headingBottom}, unit top {speedUnitTop}.");
+      double axisBottom = chartGeometry.GetProperty("axisBottom").GetDouble();
+      double legendTop = chartGeometry.GetProperty("legendTop").GetDouble();
+      Assert.True(legendTop >= axisBottom - 1,
+        $"Chart time labels must have a dedicated row before the legend at {width}x{height}: {chartGeometry}.");
+      double legendBottom = chartGeometry.GetProperty("legendBottom").GetDouble();
+      Assert.True(legendBottom <= height + 1,
+        $"The complete chart legend must remain in the viewport at {width}x{height}: {chartGeometry}.");
+      foreach (JsonElement label in chartGeometry.GetProperty("labels").EnumerateArray())
+      {
+        Assert.True(label.GetProperty("bottom").GetDouble() <= legendTop + 1,
+          $"Chart time label overlapped the legend at {width}x{height}: {chartGeometry}");
+      }
+      if (height > 500)
+      {
+        LocatorBoundingBoxResult? chartDockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+        Assert.NotNull(chartDockBox);
+        Assert.True(legendBottom <= chartDockBox.Y - 4,
+          $"The chart legend must clear the motion dock at {width}x{height}: legend bottom {legendBottom}, dock={chartDockBox}.");
+      }
+
+      string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "bug-tr-037");
+      Directory.CreateDirectory(screenshotDirectory);
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(screenshotDirectory, $"control-chart-{width}x{height}.png"),
+        FullPage = false,
+      });
+      ILocator exitChartFocus = width <= 650
+        ? Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true })
+        : Page.GetByRole(AriaRole.Button, new() { Name = "Balanced", Exact = true });
+      await exitChartFocus.ClickAsync();
+      await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Balanced", Exact = true }))
+        .ToHaveAttributeAsync("aria-pressed", "true");
+      await Page.EvaluateAsync("window.scrollTo(0, 0)");
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(screenshotDirectory, $"control-active-{width}x{height}.png"),
+        FullPage = false,
+      });
+
+      if (width <= 650 && height > 500)
+      {
+        ILocator details = Page.Locator(".control-details");
+        await details.EvaluateAsync("element => element.scrollIntoView({ block: 'end' })");
+        await Page.WaitForTimeoutAsync(50);
+        LocatorBoundingBoxResult? detailsBox = await details.BoundingBoxAsync();
+        LocatorBoundingBoxResult? dockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+        Assert.NotNull(detailsBox);
+        Assert.NotNull(dockBox);
+        Assert.True(detailsBox.Y + detailsBox.Height <= dockBox.Y - 4,
+          $"The last Control section must clear the fixed action dock at {width}x{height}: details={detailsBox}, dock={dockBox}.");
+      }
+    }
+    finally
+    {
+      await ResetSimulatorAsync();
+    }
+  }
+
+  [Theory]
   [MemberData(nameof(Viewports))]
   [Trait("Category", "Browser")]
   public async Task Control_page_is_realtime_touchable_with_vertical_preset_rails(
@@ -236,6 +399,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Screen stay-awake active", new() { Exact = true })).ToBeVisibleAsync();
     await SetPhysicalMotionAsync(1.2, 0.5);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".control-command-status")).ToContainTextAsync("Session running");
+    await Expect(Page.Locator(".control-command-status")).Not.ToContainTextAsync("Hold Start");
     await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true })).ToContainTextAsync("4.5");
     await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("0.5");
     await Expect(Page.GetByRole(AriaRole.Group, new() { Name = "Speed presets", Exact = true })).ToBeVisibleAsync();
@@ -777,6 +942,22 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     Assert.Equal(1, Volatile.Read(ref speedRequests));
     Assert.Equal(1, Volatile.Read(ref stopRequests));
+  }
+
+  private async Task PrepareActiveControlAsync(SeededPlan plan)
+  {
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
+      .ToBeVisibleAsync();
+    await SetPhysicalMotionAsync(1.2, 0.5);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true }))
+      .ToBeVisibleAsync();
   }
 
   private async Task ResetSimulatorAsync()

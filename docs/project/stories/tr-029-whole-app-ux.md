@@ -11,7 +11,7 @@ updated: 2026-08-07
 
 ## Outcome
 
-Run now presents one primary preparation action and keeps the full workout browser, manual run, search, and recent reuse behind **Choose another run**. Pre-run checks remain expanded and actionable.
+Run now presents one primary preparation action and keeps the full workout browser, manual run, search, and recent reuse behind **Other workout**. Pre-run checks remain expanded and actionable.
 
 Control has three browser-session focus modes: Balanced, Chart, and Controls. The selected mode remains with the active session and resets to Balanced for the next run. Portrait and landscape retain vertical preset rails, safe-area spacing, a persistent Pause/Stop dock, and explicit 44 px touch targets.
 

@@ -83,6 +83,14 @@
                     </div>
                 </div>
             </div>
+            @if (calendarView == CalendarViewMode.Month && !loading && string.IsNullOrWhiteSpace(calendarLoadError))
+            {
+                <div class="calendar-marker-key" aria-label="Month calendar key">
+                    <span><i class="calendar-date-marker--program"></i>Plan</span>
+                    <span><i></i>Scheduled workout</span>
+                    <small>The number shows scheduled sessions.</small>
+                </div>
+            }
             @if (loading)
             {
                 <p class="empty-state">Resolving calendar…</p>
@@ -117,7 +125,7 @@
                                                             <button class="calendar-option-manage" type="button"
                                                                     @onclick="() => OpenOptionManager(agendaDay.Date, option)"
                                                                     aria-haspopup="dialog"
-                                                                    aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")"><AppIcon Name="more" /></button>
+                                                                    aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")" title="Manage session"><AppIcon Name="more" /><span class="calendar-option-manage__label">Manage</span></button>
                                                         }
                                                     </div>
                                                 }
@@ -160,13 +168,13 @@
                                                         @if (day?.Options.Count is > 0)
                                                         {
                                                             <span class="calendar-date-markers" aria-hidden="true">
-                                                                @foreach (CalendarOptionView option in day.Options.Take(3))
+                                                                <small class="calendar-date-count">@day.Options.Count</small>
+                                                                @foreach (CalendarOptionView option in day.Options
+                                                                    .GroupBy(static option => option.Source == "Program")
+                                                                    .Select(static group => group.First())
+                                                                    .Take(2))
                                                                 {
                                                                     <i class="@(option.Source == "Program" ? "calendar-date-marker--program" : null)"></i>
-                                                                }
-                                                                @if (day.Options.Count > 3)
-                                                                {
-                                                                    <small>+@(day.Options.Count - 3)</small>
                                                                 }
                                                             </span>
                                                         }
@@ -195,7 +203,7 @@
                                             </button>
                                             @if (!option.IsRepeat)
                                             {
-                                                <button class="calendar-option-manage" type="button" @onclick="() => OpenOptionManager(selectedMonthDate, option)" aria-haspopup="dialog" aria-label="Manage @option.WorkoutName on @selectedMonthDate.ToString("d MMMM")"><AppIcon Name="more" /></button>
+                                                <button class="calendar-option-manage" type="button" @onclick="() => OpenOptionManager(selectedMonthDate, option)" aria-haspopup="dialog" aria-label="Manage @option.WorkoutName on @selectedMonthDate.ToString("d MMMM")" title="Manage session"><AppIcon Name="more" /><span class="calendar-option-manage__label">Manage</span></button>
                                             }
                                         </div>
                                     }
@@ -232,7 +240,7 @@
         <section class="schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="schedule-dialog-title" @onclick:stopPropagation="true">
             <div class="panel-heading">
                 <div><p class="eyebrow">@managedSession.ScheduleName</p><h2 id="schedule-dialog-title">@(managedSession.IsWholeGroup ? "Manage workout group" : managedSession.WorkoutName)</h2></div>
-                <button class="text-action" type="button" @onclick="CloseManagerAsync" aria-label="Close schedule manager" autofocus>Close</button>
+                <button class="secondary-action icon-action" type="button" @onclick="CloseManagerAsync" aria-label="Close schedule manager" title="Close" autofocus><AppIcon Name="close" /></button>
             </div>
             @if (!managedSession.IsWholeGroup)
             {
@@ -337,7 +345,7 @@
         <section class="schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="program-schedule-dialog-title" @onclick:stopPropagation="true">
             <div class="panel-heading">
                 <div><p class="eyebrow">@managedProgramSession.PlanName · step @managedProgramSession.Position of @managedProgramSession.Total</p><h2 id="program-schedule-dialog-title">@managedProgramSession.WorkoutName</h2></div>
-                <button class="text-action" type="button" @onclick="CloseProgramManagerAsync" aria-label="Close plan session manager" autofocus>Close</button>
+                <button class="secondary-action icon-action" type="button" @onclick="CloseProgramManagerAsync" aria-label="Close plan session manager" title="Close" autofocus><AppIcon Name="close" /></button>
             </div>
             <p class="schedule-dialog__summary">Currently planned for <strong>@managedProgramSession.CurrentDate.ToString("dddd d MMMM")</strong>.</p>
             @if (changingProgramDays)

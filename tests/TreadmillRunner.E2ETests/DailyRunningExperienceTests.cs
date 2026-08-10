@@ -59,6 +59,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
         exception);
     }
     await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(plan.ProfileName);
+    await Expect(Page.GetByText("Other workout", new() { Exact = true })).ToBeVisibleAsync();
     await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
 

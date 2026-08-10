@@ -168,7 +168,7 @@
                                    MarkerX="@(LatestMeasuredPoint is { } latest ? ChartX(latest.Elapsed) : null)"
                                    MarkerY="@(LatestMeasuredPoint is { } marker ? ChartY(marker.MeasuredSpeedKph, ChartBand.Speed) : null)">
                     <HeaderActions>
-                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Collapse graph" : "Expand graph")"><AppIcon Name="@(focusMode == ControlFocusMode.Chart ? "shrink" : "chart-expand")" /></button>
+                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Back to dashboard" : "Expand graph")"><AppIcon Name="@(focusMode == ControlFocusMode.Chart ? "shrink" : "chart-expand")" /><span class="chart-focus-action__label">Back</span></button>
                     </HeaderActions>
                 </LiveProgressChart>
 
@@ -478,7 +478,7 @@
         session = incoming;
         if (incoming is not null)
         {
-            UpdateInitialActionStatus(incoming);
+            UpdateStateActionStatus(previous, incoming);
             focusMode = FocusState.ForSession(incoming.SessionId);
             AppendChartPoint(incoming);
             if (experienceProfileId != incoming.UserProfileId) _ = LoadExperienceAsync(incoming.UserProfileId);
@@ -508,14 +508,22 @@
     {
         if (actionStatus != "Waiting for an active session.") return;
 
-        actionStatus = incoming.Live.SessionState switch
+        actionStatus = StateActionStatus(incoming.Live.SessionState);
+    }
+
+    private void UpdateStateActionStatus(ActiveSessionSnapshot? previous, ActiveSessionSnapshot incoming)
+    {
+        if (previous?.Live.SessionState == incoming.Live.SessionState) return;
+        actionStatus = StateActionStatus(incoming.Live.SessionState);
+    }
+
+    private static string StateActionStatus(SessionState state) => state switch
         {
             SessionState.ArmedWaitingForPhysicalStart => "Session ready. Hold Start when you are prepared.",
-            SessionState.Running => "Session running. Restoring direct controls.",
+            SessionState.Running => "Session running. Pause or Stop when needed.",
             SessionState.PausedWaitingForPhysicalResume => "Session paused. Hold Start when you are ready to resume.",
             _ => "Live session connected.",
         };
-    }
 
     private async Task LoadExperienceAsync(Guid profileId)
     {

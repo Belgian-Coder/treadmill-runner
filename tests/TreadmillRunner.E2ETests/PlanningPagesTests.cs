@@ -155,19 +155,57 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     });
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Month", Exact = true }).ClickAsync();
+    await Page.EvaluateAsync("() => { window.scrollTo(0, 0); const header = document.querySelector('#site-header'); if (header) header.dataset.scrollState = 'shown'; }");
+    await Page.WaitForTimeoutAsync(50);
     ILocator monthTable = Page.Locator("table.calendar-month");
     await Expect(monthTable).ToBeVisibleAsync();
     Assert.InRange(await monthTable.Locator("tbody tr").CountAsync(), 5, 6);
     await AssertTouchTargetsAsync(Page.Locator(".calendar-date-button"), $"calendar-month-{width}x{height}");
+    double[] monthViewport = await Page.Locator(".calendar-month-scroll").EvaluateAsync<double[]>(
+      "element => [element.clientWidth, element.scrollWidth]");
+    Assert.True(monthViewport[1] <= monthViewport[0] + 1,
+      $"The full seven-day month must be visible without a hidden horizontal scroll at {width}x{height}; " +
+      $"clientWidth={monthViewport[0]:0.0}, scrollWidth={monthViewport[1]:0.0}.");
+    await Expect(monthTable.Locator("thead th").Last).ToContainTextAsync("Sun");
+    await Expect(Page.Locator(".calendar-selected-day")).ToBeVisibleAsync();
+    await Expect(Page.Locator(".calendar-marker-key")).ToContainTextAsync("The number shows scheduled sessions.");
+    ILocator populatedDates = Page.Locator(".calendar-date-button:has(.calendar-date-count)");
+    Assert.True(await populatedDates.CountAsync() > 0, "The populated month fixture must expose visible session counts.");
+    await Expect(populatedDates.First.Locator(".calendar-date-count")).ToBeVisibleAsync();
+    if (width <= 580)
+    {
+      ILocator currentMore = Page.Locator(".primary-nav--mobile .nav-more > summary");
+      await Expect(currentMore).ToHaveAttributeAsync("aria-current", "page");
+      await Expect(currentMore).ToHaveClassAsync(new System.Text.RegularExpressions.Regex("active"));
+      await Expect(Page.Locator(".primary-nav--mobile > a.active, .primary-nav--mobile > .nav-more > summary.active"))
+        .ToHaveCountAsync(1);
+    }
     await AssertNoOverflowAsync();
 
-    string directory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "tr-036");
+    string directory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "bug-tr-037");
     Directory.CreateDirectory(directory);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
       Path = Path.Combine(directory, $"calendar-month-{width}x{height}.png"),
       FullPage = false,
     });
+    await Page.EvaluateAsync("() => { const header = document.querySelector('#site-header'); if (!header) return; header.dataset.scrollState = 'shown'; header.style.position = 'static'; header.style.transform = 'none'; window.scrollTo(0, 0); }");
+    try
+    {
+      double[] headerGeometry = await Page.Locator("#site-header").EvaluateAsync<double[]>(
+        "header => [window.scrollY, header.getBoundingClientRect().top]");
+      Assert.InRange(headerGeometry[0], 0, 1);
+      Assert.InRange(headerGeometry[1], -1, 1);
+      await Page.ScreenshotAsync(new PageScreenshotOptions
+      {
+        Path = Path.Combine(directory, $"calendar-month-{width}x{height}-full.png"),
+        FullPage = true,
+      });
+    }
+    finally
+    {
+      await Page.EvaluateAsync("() => { const header = document.querySelector('#site-header'); if (!header) return; header.style.position = ''; header.style.transform = ''; }");
+    }
   }
 
   [Theory]
@@ -1034,6 +1072,137 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Run_page_profile_switches_supersede_out_of_order_planning_responses()
+  {
+    string firstName = $"Race runner A {Guid.NewGuid():N}";
+    string secondName = $"Race runner B {Guid.NewGuid():N}";
+    Guid firstId = await CreateProfileAsync(firstName);
+    Guid secondId = await CreateProfileAsync(secondName);
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(firstName);
+
+    TaskCompletionSource<bool> firstResponses = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<bool> secondResponses = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync("**/api/planning/**", async route =>
+    {
+      if (!TryGetProfileId(new Uri(route.Request.Url), out Guid requestedProfileId) ||
+          requestedProfileId != firstId && requestedProfileId != secondId)
+      {
+        await route.ContinueAsync();
+        return;
+      }
+
+      try
+      {
+        await (requestedProfileId == firstId ? firstResponses.Task : secondResponses.Task);
+        using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+        using HttpResponseMessage response = await client.GetAsync(new Uri(route.Request.Url).PathAndQuery);
+        string body = await response.Content.ReadAsStringAsync();
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = (int)response.StatusCode,
+          ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json",
+          Body = body,
+        });
+      }
+      catch (Exception exception) when (exception is OperationCanceledException or PlaywrightException)
+      {
+        // A superseded browser request may be aborted while this route is held.
+      }
+    });
+
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    await picker.Locator("summary").ClickAsync();
+    await picker.GetByRole(AriaRole.Radio, new() { Name = secondName, Exact = true }).ClickAsync();
+    await Expect(Page.GetByLabel("Loading runner plan", new() { Exact = true })).ToBeVisibleAsync();
+
+    await picker.Locator("summary").ClickAsync();
+    await picker.GetByRole(AriaRole.Radio, new() { Name = firstName, Exact = true }).ClickAsync();
+    await Expect(Page.GetByLabel("Loading runner plan", new() { Exact = true })).ToBeVisibleAsync();
+
+    // Let stale B responses win the network race; they must not overwrite final A.
+    secondResponses.TrySetResult(true);
+    await Page.WaitForTimeoutAsync(150);
+    firstResponses.TrySetResult(true);
+
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(firstName);
+    await Expect(picker).Not.ToHaveAttributeAsync("open", string.Empty);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(firstName);
+    await Expect(Page.GetByLabel("Recommended next run", new() { Exact = true })).ToContainTextAsync($"Next for {firstName}");
+    await Expect(Page.GetByLabel("Recommended next run", new() { Exact = true })).Not.ToContainTextAsync($"Next for {secondName}");
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).Not.ToContainTextAsync(secondName);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Run_page_keeps_an_explicit_workout_when_profile_planning_finishes()
+  {
+    string firstName = $"Choice runner A {Guid.NewGuid():N}";
+    string secondName = $"Choice runner B {Guid.NewGuid():N}";
+    string workoutName = $"Keep my workout {Guid.NewGuid():N}";
+    Guid firstId = await CreateProfileAsync(firstName);
+    Guid secondId = await CreateProfileAsync(secondName);
+    await CreateWorkoutAsync(workoutName);
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    TaskCompletionSource<bool> secondResponses = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync("**/api/planning/**", async route =>
+    {
+      if (!TryGetProfileId(new Uri(route.Request.Url), out Guid requestedProfileId) || requestedProfileId != secondId)
+      {
+        await route.ContinueAsync();
+        return;
+      }
+
+      try
+      {
+        await secondResponses.Task;
+        using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+        using HttpResponseMessage response = await client.GetAsync(new Uri(route.Request.Url).PathAndQuery);
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = (int)response.StatusCode,
+          ContentType = response.Content.Headers.ContentType?.MediaType ?? "application/json",
+          Body = await response.Content.ReadAsStringAsync(),
+        });
+      }
+      catch (Exception exception) when (exception is OperationCanceledException or PlaywrightException)
+      {
+        // A superseded browser request may be aborted while this route is held.
+      }
+    });
+
+    try
+    {
+      ILocator picker = Page.Locator("details.active-runner-picker");
+      await picker.Locator("summary").ClickAsync();
+      await picker.GetByRole(AriaRole.Radio, new() { Name = secondName, Exact = true }).ClickAsync();
+      await Expect(Page.GetByLabel("Loading runner plan", new() { Exact = true })).ToBeVisibleAsync();
+
+      ILocator otherWorkout = Page.Locator("details.choose-another-run");
+      await otherWorkout.Locator("summary").ClickAsync();
+      ILocator explicitWorkout = otherWorkout.Locator(".workout-choice-card").Filter(new() { HasText = workoutName });
+      await Expect(explicitWorkout).ToBeVisibleAsync();
+      await explicitWorkout.ClickAsync();
+
+      secondResponses.TrySetResult(true);
+      await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
+      await Expect(explicitWorkout).ToHaveAttributeAsync("aria-pressed", "true");
+    }
+    finally
+    {
+      secondResponses.TrySetResult(true);
+    }
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Browser_drafts_are_bounded_expiring_profile_scoped_and_no_service_worker_is_registered()
   {
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
@@ -1079,6 +1248,66 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     response.EnsureSuccessStatusCode();
     JsonElement profile = await response.Content.ReadFromJsonAsync<JsonElement>();
     return profile.GetProperty("id").GetGuid();
+  }
+
+  private async Task CreateWorkoutAsync(string name)
+  {
+    using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/workouts", new
+    {
+      operationId = Guid.NewGuid(),
+      name,
+      description = "Explicit selection race regression fixture",
+      blocks = new[]
+      {
+        new
+        {
+          kind = "step",
+          repetitions = 1,
+          blocks = Array.Empty<object>(),
+          goalKind = "time",
+          goalValue = 20.0,
+          speedKind = "fixed",
+          speedStartKph = 6.5,
+          speedEndKph = 0.0,
+          heartRateMinimumBpm = 0,
+          heartRateMaximumBpm = 0,
+          heartRateZoneNumber = 0,
+          heartRateInitialSpeedKph = 0.0,
+          heartRateMinimumSpeedKph = 0.0,
+          heartRateMaximumSpeedKph = 0.0,
+          inclineKind = "fixed",
+          inclineStartPercent = 1.0,
+          inclineEndPercent = 0.0,
+          cue = "Steady",
+          notes = "Deterministic browser fixture",
+        },
+      },
+    });
+    response.EnsureSuccessStatusCode();
+  }
+
+  private static bool TryGetProfileId(Uri uri, out Guid profileId)
+  {
+    if (uri.AbsolutePath.Contains("/calendar/", StringComparison.OrdinalIgnoreCase) &&
+        Guid.TryParse(uri.AbsolutePath[(uri.AbsolutePath.LastIndexOf('/') + 1)..], out profileId))
+    {
+      return true;
+    }
+
+    string query = uri.Query.TrimStart('?');
+    foreach (string part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+    {
+      string[] pair = part.Split('=', 2);
+      if (pair.Length == 2 && string.Equals(pair[0], "profileId", StringComparison.OrdinalIgnoreCase) &&
+          Guid.TryParse(Uri.UnescapeDataString(pair[1]), out profileId))
+      {
+        return true;
+      }
+    }
+
+    profileId = Guid.Empty;
+    return false;
   }
 
   private async Task ChangeLiveProgramDaysAsync(int currentMask, int targetMask)
