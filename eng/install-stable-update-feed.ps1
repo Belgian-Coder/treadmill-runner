@@ -86,7 +86,7 @@ try {
         if ([long]$entry.Length -gt (2GB - $expandedBytes)) { throw 'The expanded stable package is too large.' }
         $expandedBytes += [long]$entry.Length
     }
-    foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1')) {
+    foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1', 'Updates\service-guardian.ps1')) {
         if (-not $entryNames.Contains($required.Replace('\', '/'))) { throw "The stable package is missing $required." }
     }
 }

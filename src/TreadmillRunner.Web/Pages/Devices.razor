@@ -11,7 +11,7 @@
     </header>
 
     <section class="safety-banner" aria-label="Device safety notice">
-        <span class="safety-icon" aria-hidden="true">!</span>
+        <span class="safety-icon"><AppIcon Name="alert" /></span>
         <p><strong>The physical console remains authoritative.</strong> Connect and Disconnect only manage the local Bluetooth link; Disconnect never stops a moving treadmill. End the active session before disconnecting.</p>
     </section>
 
@@ -47,8 +47,8 @@
                     <p class="field-hint">Only the accepted OMEGA Z / V10.23.17 FTMS profile can enable Start, Stop, speed, and incline. Raw Pause stays disabled.</p>
                 </details>
                 <div class="device-actions">
-                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(treadmill.Id)" @onclick="() => RetryConnectionAsync(treadmill)">
-                        @(retryingConnections.Contains(treadmill.Id) ? "Connecting…" : "Connect / retry")
+                    <button class="touch-action action-with-icon" type="button" disabled="@ConnectionActionBusy(treadmill.Id)" @onclick="() => RetryConnectionAsync(treadmill)">
+                        <AppIcon Name="bluetooth" /><span>@(retryingConnections.Contains(treadmill.Id) ? "Connecting…" : "Connect")</span>
                     </button>
                     <button class="touch-action" type="button" disabled="@ConnectionActionBusy(treadmill.Id)" @onclick="() => DisconnectAsync(treadmill)">
                         @(disconnectingConnections.Contains(treadmill.Id) ? "Disconnecting…" : "Disconnect")
@@ -112,8 +112,8 @@
                 }
                 </details>
                 <div class="device-actions">
-                    <button class="touch-action" type="button" disabled="@ConnectionActionBusy(enrollment.Id)" @onclick="() => RetryConnectionAsync(enrollment)">
-                        @(retryingConnections.Contains(enrollment.Id) ? "Connecting…" : "Connect / retry")
+                    <button class="touch-action action-with-icon" type="button" disabled="@ConnectionActionBusy(enrollment.Id)" @onclick="() => RetryConnectionAsync(enrollment)">
+                        <AppIcon Name="bluetooth" /><span>@(retryingConnections.Contains(enrollment.Id) ? "Connecting…" : "Connect")</span>
                     </button>
                     <button class="touch-action" type="button" disabled="@ConnectionActionBusy(enrollment.Id)" @onclick="() => DisconnectAsync(enrollment)">
                         @(disconnectingConnections.Contains(enrollment.Id) ? "Disconnecting…" : "Disconnect")
@@ -518,7 +518,7 @@
                 $"api/devices/enrollments/{enrollment.Id}/disconnect",
                 null);
             connectionActionStatus = response.IsSuccessStatusCode
-                ? $"{enrollment.DisplayName} disconnected. It will reconnect when you prepare a run or press Connect / retry."
+                ? $"{enrollment.DisplayName} disconnected. It will reconnect when you prepare a run or press Connect."
                 : await ReadFailureAsync(response, $"{enrollment.DisplayName} could not be disconnected.");
             await RefreshAsync();
             await LoadReliabilityAsync(reliabilityDays);

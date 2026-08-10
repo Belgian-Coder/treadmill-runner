@@ -441,6 +441,122 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
   }
 
   [Fact]
+  public async Task Calendar_range_handles_the_maximum_supported_date_without_overflowing()
+  {
+    using HttpClient client = factory.CreateClient();
+    JsonElement profile = await CreateProfileAsync(client);
+    Guid profileId = profile.GetProperty("id").GetGuid();
+
+    using HttpResponseMessage response = await client.GetAsync(
+      $"/api/planning/calendar/{profileId}?from=9999-12-31&to=9999-12-31");
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    JsonElement range = await ReadJsonAsync(response);
+    Assert.Equal("9999-12-31", range.GetProperty("from").GetString());
+    Assert.Equal("9999-12-31", range.GetProperty("to").GetString());
+    Assert.Empty(range.GetProperty("days").EnumerateArray());
+  }
+
+  [Fact]
+  public async Task Calendar_move_rejects_a_date_occupied_by_another_schedule_group()
+  {
+    using HttpClient client = factory.CreateClient();
+    JsonElement profile = await CreateProfileAsync(client);
+    JsonElement workout = await CreateSimpleWorkoutAsync(client);
+    Guid profileId = profile.GetProperty("id").GetGuid();
+    Guid revisionId = workout.GetProperty("revisionId").GetGuid();
+    DateOnly monday = NextWeekday(DateOnly.FromDateTime(DateTime.Today.AddDays(1)), DayOfWeek.Monday);
+    DateOnly tuesday = monday.AddDays(1);
+
+    async Task<JsonElement> CreateSeriesAsync(string name, DateOnly date, int weekdayMask)
+    {
+      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        name,
+        timeZoneId = "Europe/Brussels",
+        startDate = date,
+        endDate = date,
+        intervalWeeks = 1,
+        weekdayMask,
+        alternatives = new[] { new { workoutRevisionId = revisionId, displayOrder = 0 } },
+        exceptions = Array.Empty<object>(),
+        expectedVersion = (int?)null,
+      });
+      Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+      return await ReadJsonAsync(response);
+    }
+
+    JsonElement mondaySeries = await CreateSeriesAsync("Monday schedule", monday, 1);
+    await CreateSeriesAsync("Tuesday schedule", tuesday, 2);
+    Guid mondaySeriesId = mondaySeries.GetProperty("id").GetGuid();
+    using HttpResponseMessage moved = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/series/{mondaySeriesId}/occurrences/{monday:yyyy-MM-dd}/move",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        targetDate = tuesday,
+        moveFollowing = false,
+        expectedVersion = 1,
+        expectedSegments = (object?)null,
+      });
+
+    Assert.Equal(HttpStatusCode.BadRequest, moved.StatusCode);
+  }
+
+  [Fact]
+  public async Task Calendar_following_move_rejects_collisions_on_later_shifted_dates()
+  {
+    using HttpClient client = factory.CreateClient();
+    JsonElement profile = await CreateProfileAsync(client);
+    JsonElement workout = await CreateSimpleWorkoutAsync(client);
+    Guid profileId = profile.GetProperty("id").GetGuid();
+    Guid revisionId = workout.GetProperty("revisionId").GetGuid();
+    DateOnly firstMonday = new(2026, 8, 10);
+    DateOnly shiftedTuesday = firstMonday.AddDays(1);
+    DateOnly laterCollision = new(2026, 8, 18);
+
+    async Task<JsonElement> CreateSeriesAsync(string name, DateOnly startDate, DateOnly endDate, int weekdayMask)
+    {
+      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        name,
+        timeZoneId = "Europe/Brussels",
+        startDate,
+        endDate,
+        intervalWeeks = 1,
+        weekdayMask,
+        alternatives = new[] { new { workoutRevisionId = revisionId, displayOrder = 0 } },
+        exceptions = Array.Empty<object>(),
+        expectedVersion = (int?)null,
+      });
+      Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+      return await ReadJsonAsync(response);
+    }
+
+    JsonElement selected = await CreateSeriesAsync("Monday sequence", firstMonday, new DateOnly(2026, 8, 24), 1);
+    await CreateSeriesAsync("Later Tuesday collision", laterCollision, laterCollision, 2);
+    Guid selectedId = selected.GetProperty("id").GetGuid();
+
+    using HttpResponseMessage moved = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/series/{selectedId}/occurrences/{firstMonday:yyyy-MM-dd}/move",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        targetDate = shiftedTuesday,
+        moveFollowing = true,
+        expectedVersion = 1,
+        expectedSegments = new[] { new { seriesId = selectedId, version = 1 } },
+      });
+
+    Assert.Equal(HttpStatusCode.BadRequest, moved.StatusCode);
+    Assert.Contains("another workout group", await moved.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
   public async Task Calendar_moves_single_and_following_sessions_then_deletes_one_or_the_complete_group()
   {
     using HttpClient client = factory.CreateClient();

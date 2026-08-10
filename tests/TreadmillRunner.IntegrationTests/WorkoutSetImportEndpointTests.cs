@@ -48,7 +48,8 @@ public sealed class WorkoutSetImportEndpointTests(PlanningGatewayFactory factory
     JsonElement program = Assert.Single(programs, item =>
       item.GetProperty("id").GetGuid() == confirmed.GetProperty("workoutProgramId").GetGuid());
     Assert.Equal(planName, program.GetProperty("name").GetString());
-    Assert.Equal(2, program.GetProperty("items").GetArrayLength());
+    Assert.Equal(2, program.GetProperty("itemCount").GetInt32());
+    Assert.False(program.TryGetProperty("items", out _));
 
     using HttpResponseMessage replay = await client.PostAsJsonAsync(
       "/api/planning/workout-sets/import/confirm", confirmation);

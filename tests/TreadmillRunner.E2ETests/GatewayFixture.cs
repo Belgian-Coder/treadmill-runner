@@ -56,6 +56,7 @@ public sealed class GatewayFixture : IAsyncLifetime
           "The published E2E gateway was not found. Run eng/playwright.ps1 to build it first.",
           hostPath);
     }
+    AssertPublishedHostIsFresh(hostPath);
 
     ProcessStartInfo startInfo = new(hostPath)
     {
@@ -110,6 +111,24 @@ public sealed class GatewayFixture : IAsyncLifetime
     }
 
     throw new TimeoutException("The simulator gateway did not become ready within 45 seconds.");
+  }
+
+  private void AssertPublishedHostIsFresh(string hostPath)
+  {
+    DateTime hostTimestampUtc = File.GetLastWriteTimeUtc(hostPath);
+    string sourceRoot = Path.Combine(ProjectRoot, "src");
+    string[] runtimeExtensions = [".cs", ".razor", ".csproj", ".json", ".resx", ".js", ".css"];
+    string? newestInput = Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
+      .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+        !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
+        runtimeExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
+      .OrderByDescending(File.GetLastWriteTimeUtc)
+      .FirstOrDefault();
+    if (newestInput is null || File.GetLastWriteTimeUtc(newestInput) <= hostTimestampUtc) return;
+
+    throw new InvalidOperationException(
+      $"The published E2E gateway is older than '{Path.GetRelativePath(ProjectRoot, newestInput)}'. " +
+      "Run eng/playwright.ps1 without -ReuseBuild before executing browser tests directly.");
   }
 
   public Task DisposeAsync()

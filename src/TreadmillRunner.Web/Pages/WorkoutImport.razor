@@ -1,4 +1,5 @@
 @page "/workouts/import"
+@implements IDisposable
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
 @inject NavigationManager Navigation
@@ -133,6 +134,9 @@
     private string setStrategy = "Default";
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private string? DestinationProfileName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName;
+    private int profileGeneration;
+
+    protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
 
     private void SetImportMode(string mode)
     {
@@ -151,9 +155,20 @@
         }
 
         initialized = true;
-        activeProfileId = await ActiveProfile.GetAsync();
-        profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
+        int generation = profileGeneration;
+        Guid? profileId = await ActiveProfile.GetAsync();
+        IReadOnlyList<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
+        if (generation != profileGeneration) return;
+        activeProfileId = profileId;
+        profiles = loadedProfiles;
         StateHasChanged();
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        profileGeneration++;
+        activeProfileId = profileId;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void SelectDestinationProfile(ChangeEventArgs args)
@@ -283,4 +298,6 @@
         "PreferOmegaRecovery" => $"Prefer Omega recovery incline · {strategy.Substitutions} changes",
         _ => strategy.Name,
     };
+
+    public void Dispose() => ActiveProfile.Changed -= ActiveProfileChanged;
 }

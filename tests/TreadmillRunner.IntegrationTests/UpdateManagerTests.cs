@@ -285,6 +285,7 @@ public sealed class UpdateManagerTests : IDisposable
     ("TreadmillRunner.Gateway.exe", "gateway"),
     ("TreadmillRunner.Migrations.exe", "migrations"),
     ("Updates/update-helper.ps1", "helper"),
+    ("Updates/service-guardian.ps1", "guardian"),
     ("app/version.txt", marker));
 
   private byte[] CreateSignedBundle(string version)

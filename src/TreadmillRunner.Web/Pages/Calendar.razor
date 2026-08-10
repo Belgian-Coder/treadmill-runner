@@ -7,7 +7,7 @@
 
 <PageTitle>Calendar · TreadmillRunner</PageTitle>
 
-<div class="planning-page">
+<div class="planning-page calendar-page">
     <header class="planning-hero">
         <div><p class="eyebrow">Training rhythm</p><h1>Calendar</h1><p>Review scheduled training, then move one session or shift everything that follows.</p></div>
         <div class="form-actions">
@@ -37,7 +37,14 @@
 
     @if (activeProfileId is null)
     {
-        <section class="planning-panel empty-state"><h2>Choose a runner first</h2><p>Use the runner control in the navigation bar. Your choice is remembered across the app.</p><a class="primary-action" href="/profiles">Manage profiles</a></section>
+        @if (!string.IsNullOrWhiteSpace(calendarLoadError))
+        {
+            <section class="planning-panel empty-state" role="alert"><h2>Calendar unavailable</h2><p>@calendarLoadError</p><button class="secondary-action" type="button" @onclick="ReloadInitialCalendarAsync">Retry calendar</button></section>
+        }
+        else
+        {
+            <section class="planning-panel empty-state"><h2>Choose a runner first</h2><p>Use the runner control in the navigation bar. Your choice is remembered across the app.</p><a class="primary-action" href="/profiles">Manage profiles</a></section>
+        }
     }
     else
     {
@@ -52,7 +59,7 @@
                             <div><h3>@group.Name</h3><p>@SchedulePattern(group)</p></div>
                             <dl class="compact-stats">
                                 <div><dt>Starts</dt><dd>@group.StartDate.ToString("d MMM")</dd></div>
-                                <div><dt>Workouts</dt><dd>@group.WorkoutCount</dd></div>
+                                <div><dt>Workout choices</dt><dd>@group.WorkoutCount</dd></div>
                             </dl>
                             <button class="secondary-action compact-action" type="button" @onclick="() => OpenGroupManager(group)">Manage group</button>
                         </article>
@@ -64,84 +71,143 @@
         <section class="planning-panel calendar-agenda-panel" aria-labelledby="range-title">
             <div class="panel-heading calendar-heading">
                 <div><p class="eyebrow">Effective plan</p><h2 id="range-title">@visibleMonth.ToString("MMMM yyyy")</h2></div>
-                <div class="calendar-navigation" role="group" aria-label="Calendar period">
-                    <button class="secondary-action" type="button" aria-label="Previous month" @onclick="() => ChangeMonthAsync(-1)">‹</button>
-                    <button class="secondary-action" type="button" @onclick="GoToTodayAsync">Today</button>
-                    <button class="secondary-action" type="button" aria-label="Next month" @onclick="() => ChangeMonthAsync(1)">›</button>
+                <div class="calendar-toolbar">
+                    <div class="calendar-view-switcher" role="group" aria-label="Calendar view">
+                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Agenda)" aria-controls="calendar-agenda-view" @onclick="() => SelectCalendarView(CalendarViewMode.Agenda)"><AppIcon Name="list" /><span>Agenda</span></button>
+                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Month)" aria-controls="calendar-month-view" @onclick="() => SelectCalendarView(CalendarViewMode.Month)"><AppIcon Name="calendar" /><span>Month</span></button>
+                    </div>
+                    <div class="calendar-navigation" role="group" aria-label="Calendar period">
+                        <button class="secondary-action" type="button" aria-label="Previous month" disabled="@(!CanNavigatePreviousMonth || loading)" @onclick="() => ChangeMonthAsync(-1)"><AppIcon Name="chevron-left" /></button>
+                        <button class="secondary-action" type="button" disabled="@loading" @onclick="GoToTodayAsync">Today</button>
+                        <button class="secondary-action" type="button" aria-label="Next month" disabled="@(!CanNavigateNextMonth || loading)" @onclick="() => ChangeMonthAsync(1)"><AppIcon Name="chevron-right" /></button>
+                    </div>
                 </div>
             </div>
             @if (loading)
             {
                 <p class="empty-state">Resolving calendar…</p>
             }
+            else if (!string.IsNullOrWhiteSpace(calendarLoadError))
+            {
+                <div class="empty-state" role="alert"><p>@calendarLoadError</p><button class="secondary-action" type="button" @onclick="ReloadCalendarAsync">Retry calendar</button></div>
+            }
             else
             {
-                <div class="calendar-agenda" aria-label="Training agenda for @visibleMonth.ToString("MMMM yyyy")">
-                    @foreach ((CalendarAgendaWeek agendaWeek, int weekIndex) in CalendarAgendaWeeks.Select((week, index) => (week, index)))
-                    {
-                        <details class="calendar-agenda-week" open="@ShouldOpenAgendaWeek(agendaWeek, weekIndex)">
-                            <summary><span>@FormatAgendaWeek(agendaWeek)</span><strong>@agendaWeek.WorkoutCount scheduled</strong></summary>
-                            <div class="calendar-agenda-week__days">
-                                @foreach (CalendarAgendaDay agendaDay in agendaWeek.Days)
-                                {
-                                    <article class="calendar-agenda-day @(agendaDay.Date == DateOnly.FromDateTime(DateTime.Today) ? "calendar-agenda-day--today" : null)">
-                                        <time datetime="@agendaDay.Date.ToString("yyyy-MM-dd")"><strong>@agendaDay.Date.ToString("ddd")</strong><span>@agendaDay.Date.ToString("d MMM")</span></time>
-                                        <div class="calendar-agenda-day__workouts">
-                                    @foreach (CalendarOptionView option in agendaDay.Day.Options)
+                @if (calendarView == CalendarViewMode.Agenda)
+                {
+                    <div id="calendar-agenda-view" class="calendar-agenda" aria-label="Training agenda for @visibleMonth.ToString("MMMM yyyy")">
+                        @foreach ((CalendarAgendaWeek agendaWeek, int weekIndex) in CalendarAgendaWeeks.Select((week, index) => (week, index)))
+                        {
+                            <details class="calendar-agenda-week" open="@ShouldOpenAgendaWeek(agendaWeek, weekIndex)">
+                                <summary><span>@FormatAgendaWeek(agendaWeek)</span><strong>@agendaWeek.WorkoutCount scheduled</strong></summary>
+                                <div class="calendar-agenda-week__days">
+                                    @foreach (CalendarAgendaDay agendaDay in agendaWeek.Days)
+                                    {
+                                        <article class="calendar-agenda-day @(agendaDay.Date == DateOnly.FromDateTime(DateTime.Today) ? "calendar-agenda-day--today" : null)">
+                                            <time datetime="@agendaDay.Date.ToString("yyyy-MM-dd")"><strong>@agendaDay.Date.ToString("ddd")</strong><span>@agendaDay.Date.ToString("d MMM")</span></time>
+                                            <div class="calendar-agenda-day__workouts">
+                                                @foreach (CalendarOptionView option in agendaDay.Day.Options)
+                                                {
+                                                    <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
+                                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(agendaDay.Day, option)" aria-haspopup="dialog" aria-label="View details for @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">
+                                                            <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
+                                                        </button>
+                                                        @if (!option.IsRepeat)
+                                                        {
+                                                            <button class="calendar-option-manage" type="button"
+                                                                    @onclick="() => OpenOptionManager(agendaDay.Date, option)"
+                                                                    aria-haspopup="dialog"
+                                                                    aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")"><AppIcon Name="more" /></button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </article>
+                                    }
+                                </div>
+                            </details>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div id="calendar-month-view" class="calendar-month-view">
+                        <div class="calendar-month-scroll" tabindex="0" role="region" aria-label="Month grid for @visibleMonth.ToString("MMMM yyyy"). Scroll horizontally if needed to see all seven days.">
+                            <table class="calendar-month">
+                                <caption class="visually-hidden">Training calendar for @visibleMonth.ToString("MMMM yyyy")</caption>
+                                <thead>
+                                    <tr>
+                                        @foreach (string weekday in CalendarWeekdays)
+                                        {
+                                            <th scope="col"><abbr title="@CalendarWeekdayName(weekday)">@weekday</abbr></th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (DateOnly[] week in CalendarWeeks)
+                                    {
+                                        <tr>
+                                            @foreach (DateOnly date in week)
+                                            {
+                                                CalendarDayView? day = DayFor(date);
+                                                <td class="calendar-cell @CalendarCellClass(date)">
+                                                    <button class="calendar-date-button" type="button"
+                                                            aria-pressed="@(selectedMonthDate == date)"
+                                                            aria-current="@(date == DateOnly.FromDateTime(DateTime.Today) ? "date" : null)"
+                                                            aria-label="@CalendarDateLabel(date, day)"
+                                                            @onclick="() => SelectMonthDate(date)">
+                                                        <time datetime="@date.ToString("yyyy-MM-dd")"><span>@date.Day</span></time>
+                                                        @if (day?.Options.Count is > 0)
+                                                        {
+                                                            <span class="calendar-date-markers" aria-hidden="true">
+                                                                @foreach (CalendarOptionView option in day.Options.Take(3))
+                                                                {
+                                                                    <i class="@(option.Source == "Program" ? "calendar-date-marker--program" : null)"></i>
+                                                                }
+                                                                @if (day.Options.Count > 3)
+                                                                {
+                                                                    <small>+@(day.Options.Count - 3)</small>
+                                                                }
+                                                            </span>
+                                                        }
+                                                    </button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <section class="calendar-selected-day" aria-labelledby="calendar-selected-day-title">
+                            <div class="panel-heading">
+                                <div><p class="eyebrow">Selected date</p><h3 id="calendar-selected-day-title">@selectedMonthDate.ToString("dddd d MMMM")</h3></div>
+                                <span>@(SelectedMonthDay?.Options.Count ?? 0) scheduled</span>
+                            </div>
+                            @if (SelectedMonthDay is { } selectedDay && selectedDay.Options.Count > 0)
+                            {
+                                <div class="calendar-selected-day__workouts">
+                                    @foreach (CalendarOptionView option in selectedDay.Options)
                                     {
                                         <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(agendaDay.Day, option)" aria-label="View details for @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">
+                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(selectedDay, option)" aria-haspopup="dialog" aria-label="View details for @option.WorkoutName on @selectedMonthDate.ToString("d MMMM")">
                                                 <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
                                             </button>
                                             @if (!option.IsRepeat)
                                             {
-                                                <button class="calendar-option-manage" type="button"
-                                                        @onclick="() => OpenOptionManager(agendaDay.Date, option)"
-                                                        aria-label="Manage @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">•••</button>
+                                                <button class="calendar-option-manage" type="button" @onclick="() => OpenOptionManager(selectedMonthDate, option)" aria-haspopup="dialog" aria-label="Manage @option.WorkoutName on @selectedMonthDate.ToString("d MMMM")"><AppIcon Name="more" /></button>
                                             }
                                         </div>
                                     }
-                                        </div>
-                                    </article>
-                                }
-                            </div>
-                        </details>
-                    }
-                </div>
-                <div class="calendar-month" role="grid" aria-label="Training calendar for @visibleMonth.ToString("MMMM yyyy")">
-                    @foreach (string weekday in CalendarWeekdays)
-                    {
-                        <div class="calendar-weekday" role="columnheader">@weekday</div>
-                    }
-                    @foreach (DateOnly date in CalendarDates)
-                    {
-                        CalendarDayView? day = DayFor(date);
-                        <article class="calendar-cell @CalendarCellClass(date)" role="gridcell" aria-label="@date.ToString("dddd d MMMM")">
-                            <time datetime="@date.ToString("yyyy-MM-dd")"><span>@date.Day</span></time>
-                            @if (day is not null)
-                            {
-                                <div class="calendar-cell__workouts">
-                                @foreach (CalendarOptionView option in day.Options.Take(2))
-                                {
-                                    <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(day, option)" aria-label="View details for @option.WorkoutName on @date.ToString("d MMMM")">
-                                            <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Repeat" : option.Source == "Program" ? $"{option.ProgramPosition}/{option.ProgramTotal}" : $"r{option.RevisionNumber}")</small>
-                                        </button>
-                                        @if (!option.IsRepeat)
-                                        {
-                                            <button class="calendar-option-manage" type="button" @onclick="() => OpenOptionManager(date, option)" aria-label="Manage @option.WorkoutName on @date.ToString("d MMMM")">•••</button>
-                                        }
-                                    </div>
-                                }
-                                @if (day.Options.Count > 2)
-                                {
-                                    <span class="calendar-more">+@(day.Options.Count - 2) more</span>
-                                 }
-                                 </div>
+                                </div>
                             }
-                        </article>
-                    }
-                </div>
+                            else
+                            {
+                                <p class="empty-state">No workout planned for this date.</p>
+                            }
+                        </section>
+                    </div>
+                }
                 @if (calendar?.Days.Count is not > 0)
                 {
                     <p class="empty-state">No workouts are planned this month. <a href="/workouts">Open Training plans</a> to schedule one.</p>
@@ -322,7 +388,7 @@
                     <button class="secondary-action change-training-days" type="button" @onclick="StartDefaultDaysChange">Change training days</button>
                     <button class="secondary-action danger-action" type="button" @onclick="RequestClearUpcomingFromProgramManagerAsync" disabled="@clearUpcomingBusy">Remove all upcoming sessions from this plan</button>
                     <label class="field">New or repeat date
-                        <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-366).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(366).ToString("yyyy-MM-dd")" />
+                        <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-365).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(365).ToString("yyyy-MM-dd")" />
                     </label>
                     <div class="schedule-choice-grid">
                         @if (managedProgramSession.IsCompleted)
@@ -384,7 +450,7 @@
                 <p class="eyebrow">@selectedCalendarDetail.Option.ScheduleName · @selectedCalendarDetail.Date.ToString("dddd d MMMM")</p>
                 <h2 id="calendar-details-title">@selectedCalendarDetail.Option.WorkoutName</h2>
             </div>
-            <button class="icon-action" type="button" aria-label="Close calendar workout details" autofocus @onclick="CloseCalendarDetailsAsync">×</button>
+            <button class="icon-action" type="button" aria-label="Close calendar workout details" autofocus @onclick="CloseCalendarDetailsAsync"><AppIcon Name="close" /></button>
         </header>
         <dl class="workout-details-overview" aria-label="Scheduled workout overview">
             <div><dt>Date</dt><dd>@selectedCalendarDetail.Date.ToString("d MMM yyyy")</dd></div>
@@ -425,22 +491,31 @@
 
     private readonly CalendarSeriesForm series = new();
     private DateOnly visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly selectedMonthDate = DateOnly.FromDateTime(DateTime.Today);
+    private CalendarViewMode calendarView = CalendarViewMode.Agenda;
     private Guid? activeProfileId;
     private List<ProfileView> profiles = [];
     private List<WorkoutSummaryView> workouts = [];
-    private List<WorkoutProgramView> programs = [];
+    private List<WorkoutProgramSummaryView> programs = [];
     private List<CalendarSeriesView> calendarSeries = [];
     private CalendarRangeView? calendar;
     private bool initialized;
     private bool loading = true;
+    private string? calendarLoadError;
+    private int calendarLoadGeneration;
+    private CancellationTokenSource? calendarLoadCancellation;
+    private int profileApplyGeneration;
     private bool showSeriesForm;
     private string scheduleSource = "workout";
     private string scheduleSearch = string.Empty;
-    private WorkoutProgramView? pendingCalendarProgram;
+    private WorkoutProgramSummaryView? pendingCalendarProgram;
     private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
     private int programScheduleWeekdayMask = 37;
     private bool clearUpcomingBusy;
     private WorkoutProgramClearUpcomingView? clearUpcomingPreview;
+    private Guid? clearUpcomingProfileId;
+    private int clearUpcomingGeneration;
+    private CancellationTokenSource? clearUpcomingCancellation;
     private string? message;
     private Guid pendingSeriesOperationId = Guid.NewGuid();
     private readonly Dictionary<DateOnly, Guid> pendingSelectionOperations = [];
@@ -451,6 +526,8 @@
     private bool calendarDetailsLoading;
     private bool calendarSelectionBusy;
     private string? calendarDetailsError;
+    private int calendarDetailsGeneration;
+    private CancellationTokenSource? calendarDetailsCancellation;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
     private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
     private bool changingProgramDays;
@@ -467,6 +544,8 @@
     private string? calendarDraftKey;
     private string? pendingCalendarDraft;
     private CancellationTokenSource? calendarDraftDebounce;
+    private int initialLoadGeneration;
+    private int calendarSelectionGeneration;
     private int RequiredProgramTrainingDays => managedProgramSession is null
         ? 0
         : Weekdays.Count(day => (managedProgramSession.WeekdayMask & day.Flag) != 0);
@@ -474,9 +553,11 @@
         programWeekdayMask != managedProgramSession.WeekdayMask &&
         Weekdays.Count(day => (programWeekdayMask & day.Flag) != 0) == RequiredProgramTrainingDays &&
         programEffectiveDate >= DateOnly.FromDateTime(DateTime.Today);
-    private WorkoutProgramView? ActiveScheduledProgram => programs.FirstOrDefault(static program =>
+    private bool CanNavigatePreviousMonth => visibleMonth > DateOnly.MinValue;
+    private bool CanNavigateNextMonth => visibleMonth.Year < DateOnly.MaxValue.Year || visibleMonth.Month < DateOnly.MaxValue.Month;
+    private WorkoutProgramSummaryView? ActiveScheduledProgram => programs.FirstOrDefault(static program =>
         program.Run is { Status: "Active", ScheduledStartDate: not null });
-    private WorkoutProgramView? ActiveProgram => programs.FirstOrDefault(static program => program.Run is { Status: "Active" });
+    private WorkoutProgramSummaryView? ActiveProgram => programs.FirstOrDefault(static program => program.Run is { Status: "Active" });
     private string ActiveProfileName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "selected runner";
     private IReadOnlyList<WorkoutSummaryView> FilteredScheduleWorkouts => workouts
         .Where(workout => string.IsNullOrWhiteSpace(scheduleSearch) ||
@@ -484,7 +565,7 @@
             (workout.Description?.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
         .OrderBy(static workout => workout.Name, StringComparer.CurrentCultureIgnoreCase)
         .ToArray();
-    private IReadOnlyList<WorkoutProgramView> FilteredSchedulePrograms => programs
+    private IReadOnlyList<WorkoutProgramSummaryView> FilteredSchedulePrograms => programs
         .Where(program => !program.IsArchived && (string.IsNullOrWhiteSpace(scheduleSearch) ||
             program.Name.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ||
             (program.Description?.Contains(scheduleSearch, StringComparison.CurrentCultureIgnoreCase) ?? false) ||
@@ -493,8 +574,7 @@
         .ThenBy(static program => program.Name, StringComparer.CurrentCultureIgnoreCase)
         .ToArray();
     private int RequiredTrainingDays => pendingCalendarProgram is { } program
-        ? Math.Max(1, program.Items.Where(static item => item.WeekNumber is not null)
-            .GroupBy(static item => item.WeekNumber).Select(static group => group.Count()).DefaultIfEmpty(3).Max())
+        ? program.RequiredTrainingDays
         : 3;
     private bool CanConfirmProgramSchedule => pendingCalendarProgram is not null &&
         CountSelectedWeekdays(programScheduleWeekdayMask) == RequiredTrainingDays &&
@@ -519,23 +599,7 @@
         if (firstRender && !initialized)
         {
             initialized = true;
-            profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
-            activeProfileId = await ActiveProfile.GetAsync();
-            if (activeProfileId is null && profiles.Count == 1)
-            {
-                activeProfileId = profiles[0].Id;
-                await ActiveProfile.SetAsync(profiles[0].Id);
-            }
-            calendarDraftKey = $"{activeProfileId?.ToString("N") ?? "household"}.calendar.new";
-            pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
-            if (activeProfileId is not null)
-            {
-                workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
-                await ReloadCalendarAsync();
-            }
-
-            loading = false;
-            StateHasChanged();
+            await ReloadInitialCalendarAsync();
         }
 
         if (openModalPending && (managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null))
@@ -558,6 +622,56 @@
         }
     }
 
+    private async Task ReloadInitialCalendarAsync()
+    {
+        int generation = ++initialLoadGeneration;
+        int profileGeneration = profileApplyGeneration;
+        loading = true;
+        calendarLoadError = null;
+        try
+        {
+            List<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
+            if (generation != initialLoadGeneration || profileGeneration != profileApplyGeneration) return;
+            profiles = loadedProfiles;
+            Guid? loadedProfileId = await ActiveProfile.GetAsync();
+            if (generation != initialLoadGeneration || profileGeneration != profileApplyGeneration) return;
+            activeProfileId = loadedProfileId;
+            if (activeProfileId is { } storedProfileId && profiles.All(profile => profile.Id != storedProfileId))
+            {
+                activeProfileId = null;
+                await ActiveProfile.ClearAsync();
+            }
+            if (activeProfileId is null && profiles.Count == 1)
+            {
+                activeProfileId = profiles[0].Id;
+                await ActiveProfile.SetAsync(profiles[0].Id);
+            }
+            if (generation != initialLoadGeneration || profileGeneration != profileApplyGeneration) return;
+            calendarDraftKey = $"{activeProfileId?.ToString("N") ?? "household"}.calendar.new";
+            pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
+            if (generation != initialLoadGeneration || profileGeneration != profileApplyGeneration) return;
+            if (activeProfileId is not null)
+            {
+                workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
+                if (generation != initialLoadGeneration || profileGeneration != profileApplyGeneration) return;
+                await ReloadCalendarAsync();
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or JSException)
+        {
+            if (generation == initialLoadGeneration && profileGeneration == profileApplyGeneration)
+                calendarLoadError = "The calendar could not be loaded from the local gateway. Check the connection and retry.";
+        }
+        finally
+        {
+            if (generation == initialLoadGeneration && profileGeneration == profileApplyGeneration)
+            {
+                loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
     private void ToggleSeriesForm()
     {
         showSeriesForm = !showSeriesForm;
@@ -577,7 +691,7 @@
         if (series.Name == "Weekly rhythm" || string.IsNullOrWhiteSpace(series.Name)) series.Name = workout.Name;
     }
 
-    private void SelectProgramForSchedule(WorkoutProgramView program)
+    private void SelectProgramForSchedule(WorkoutProgramSummaryView program)
     {
         pendingCalendarProgram = program;
         programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
@@ -593,7 +707,7 @@
         if (activeProfileId is not { } profileId || pendingCalendarProgram is not { } program || !CanConfirmProgramSchedule) return;
         try
         {
-            WorkoutProgramView? active = ActiveProgram;
+            WorkoutProgramSummaryView? active = ActiveProgram;
             string action = active?.Id == program.Id ? "restart" : "start";
             using HttpResponseMessage response = await Http.PostAsJsonAsync(
                 $"api/planning/programs/{program.Id:D}/{action}",
@@ -757,6 +871,7 @@
 
     private async Task OpenCalendarDetailsAsync(CalendarDayView day, CalendarOptionView option)
     {
+        ++calendarSelectionGeneration;
         selectedCalendarDetail = new CalendarDetailSelection(day.Date, day, option);
         selectedCalendarRevision = null;
         calendarDetailsError = null;
@@ -769,21 +884,35 @@
     private async Task LoadCalendarDetailsAsync()
     {
         if (selectedCalendarDetail is not { } detail) return;
+        calendarDetailsCancellation?.Cancel();
+        calendarDetailsCancellation?.Dispose();
+        calendarDetailsCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = calendarDetailsCancellation.Token;
+        int generation = ++calendarDetailsGeneration;
+        Guid revisionId = detail.Option.WorkoutRevisionId;
         calendarDetailsLoading = true;
         calendarDetailsError = null;
         try
         {
-            using HttpResponseMessage response = await Http.GetAsync($"api/planning/workouts/revisions/{detail.Option.WorkoutRevisionId:D}");
-            selectedCalendarRevision = response.IsSuccessStatusCode
-                ? await response.Content.ReadFromJsonAsync<WorkoutRevisionView>()
+            using HttpResponseMessage response = await Http.GetAsync(
+                $"api/planning/workouts/revisions/{revisionId:D}", cancellationToken);
+            WorkoutRevisionView? revision = response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<WorkoutRevisionView>(cancellationToken: cancellationToken)
                 : null;
-            if (selectedCalendarRevision is null) calendarDetailsError = "This immutable workout revision is no longer available.";
+            if (generation != calendarDetailsGeneration || selectedCalendarDetail?.Option.WorkoutRevisionId != revisionId) return;
+            selectedCalendarRevision = revision;
+            if (revision is null) calendarDetailsError = "This immutable workout revision is no longer available.";
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            calendarDetailsError = "The workout details could not be loaded from the local gateway.";
+            if (generation == calendarDetailsGeneration)
+                calendarDetailsError = "The workout details could not be loaded from the local gateway.";
         }
-        finally { calendarDetailsLoading = false; }
+        finally
+        {
+            if (generation == calendarDetailsGeneration) calendarDetailsLoading = false;
+        }
     }
 
     private Task RetryCalendarDetailsAsync() => LoadCalendarDetailsAsync();
@@ -791,16 +920,27 @@
     private async Task SelectCalendarDetailAsync()
     {
         if (selectedCalendarDetail is not { } detail) return;
+        int selectionGeneration = ++calendarSelectionGeneration;
         calendarSelectionBusy = true;
         try
         {
-            if (await SelectDayAsync(detail.Day, detail.Option)) await CloseCalendarDetailsAsync();
+            if (await SelectDayAsync(detail.Day, detail.Option) &&
+                selectionGeneration == calendarSelectionGeneration &&
+                IsCurrentCalendarDetail(detail))
+            {
+                await CloseCalendarDetailsAsync();
+            }
         }
         finally { calendarSelectionBusy = false; }
     }
 
     private async Task CloseCalendarDetailsAsync()
     {
+        calendarSelectionGeneration++;
+        calendarDetailsCancellation?.Cancel();
+        calendarDetailsCancellation?.Dispose();
+        calendarDetailsCancellation = null;
+        calendarDetailsGeneration++;
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         modalReference = null;
         selectedCalendarDetail = null;
@@ -809,12 +949,16 @@
         calendarDetailsLoading = false;
     }
 
+    private bool IsCurrentCalendarDetail(CalendarDetailSelection detail) =>
+        selectedCalendarDetail is { } current &&
+        current.Date == detail.Date &&
+        current.Option.SeriesId == detail.Option.SeriesId &&
+        current.Option.WorkoutRevisionId == detail.Option.WorkoutRevisionId;
+
     private async Task SelectProfileAsync(Guid profileId)
     {
         if (activeProfileId == profileId) return;
-        activeProfileId = profileId;
         await ActiveProfile.SetAsync(profileId);
-        await ApplyActiveProfileAsync(profileId);
     }
 
     private void ActiveProfileChanged(Guid? profileId)
@@ -825,13 +969,39 @@
 
     private async Task ApplyActiveProfileAsync(Guid? profileId)
     {
+        int profileGeneration = ++profileApplyGeneration;
+        bool hadOpenModal = managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null;
+        calendarDetailsCancellation?.Cancel();
+        calendarDetailsGeneration++;
+        clearUpcomingCancellation?.Cancel();
+        clearUpcomingCancellation?.Dispose();
+        clearUpcomingCancellation = null;
+        clearUpcomingGeneration++;
+        clearUpcomingBusy = false;
+        calendarSelectionGeneration++;
         activeProfileId = profileId;
         calendarDraftKey = $"{profileId?.ToString("N") ?? "household"}.calendar.new";
-        pendingCalendarDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
+        string? loadedDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", calendarDraftKey);
+        if (profileGeneration != profileApplyGeneration || activeProfileId != profileId) return;
+        if (hadOpenModal)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
+            catch (JSDisconnectedException) { }
+        }
+        pendingCalendarDraft = loadedDraft;
         managedSession = null;
         managedProgramSession = null;
         selectedCalendarDetail = null;
+        selectedCalendarRevision = null;
+        calendarDetailsLoading = false;
+        calendarDetailsError = null;
         clearUpcomingPreview = null;
+        clearUpcomingProfileId = null;
+        programPreview = null;
+        defaultDaysPreview = null;
+        changingProgramDays = false;
+        managerStep = ManagerSteps.Actions;
+        pendingSelectionOperations.Clear();
         showSeriesForm = false;
         loading = true;
         if (profileId is null)
@@ -844,6 +1014,7 @@
         {
             await ReloadCalendarAsync();
         }
+        if (profileGeneration != profileApplyGeneration || activeProfileId != profileId) return;
         loading = false;
         message = profiles.FirstOrDefault(profile => profile.Id == profileId) is { } profile
             ? $"Showing {profile.DisplayName}’s calendar."
@@ -861,37 +1032,95 @@
 
     private async Task ReloadCalendarAsync()
     {
+        if (activeProfileId is not { } profileId)
+        {
+            calendarSeries = [];
+            calendar = null;
+            programs = [];
+            calendarLoadError = null;
+            loading = false;
+            return;
+        }
         DateOnly rangeStart = CalendarGridStart;
         DateOnly rangeEnd = CalendarGridEnd;
-        Task<List<CalendarSeriesView>?> seriesTask = Http.GetFromJsonAsync<List<CalendarSeriesView>>(
-            $"api/planning/calendar/series?profileId={activeProfileId}");
-        Task<CalendarRangeView?> rangeTask = Http.GetFromJsonAsync<CalendarRangeView>(
-            $"api/planning/calendar/{activeProfileId}?from={rangeStart:yyyy-MM-dd}&to={rangeEnd:yyyy-MM-dd}");
-        Task<List<WorkoutProgramView>?> programsTask = Http.GetFromJsonAsync<List<WorkoutProgramView>>(
-            $"api/planning/programs?profileId={activeProfileId}");
-        await Task.WhenAll(seriesTask, rangeTask, programsTask);
-        calendarSeries = await seriesTask ?? [];
-        calendar = await rangeTask;
-        programs = await programsTask ?? [];
+        calendarLoadCancellation?.Cancel();
+        calendarLoadCancellation?.Dispose();
+        calendarLoadCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = calendarLoadCancellation.Token;
+        int generation = ++calendarLoadGeneration;
+        loading = true;
+        calendarLoadError = null;
+        try
+        {
+            Task<List<CalendarSeriesView>?> seriesTask = Http.GetFromJsonAsync<List<CalendarSeriesView>>(
+                $"api/planning/calendar/series?profileId={profileId}", cancellationToken);
+            Task<CalendarRangeView?> rangeTask = Http.GetFromJsonAsync<CalendarRangeView>(
+                $"api/planning/calendar/{profileId}?from={rangeStart:yyyy-MM-dd}&to={rangeEnd:yyyy-MM-dd}", cancellationToken);
+            Task<List<WorkoutProgramSummaryView>?> programsTask = Http.GetFromJsonAsync<List<WorkoutProgramSummaryView>>(
+                $"api/planning/programs?profileId={profileId}", cancellationToken);
+            await Task.WhenAll(seriesTask, rangeTask, programsTask);
+            if (generation != calendarLoadGeneration || activeProfileId != profileId ||
+                CalendarGridStart != rangeStart || CalendarGridEnd != rangeEnd) return;
+            CalendarRangeView? loadedCalendar = await rangeTask;
+            if (loadedCalendar is null) throw new HttpRequestException("The calendar range response was empty.");
+            calendarSeries = await seriesTask ?? [];
+            calendar = loadedCalendar;
+            programs = await programsTask ?? [];
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (generation == calendarLoadGeneration)
+                calendarLoadError = "The calendar could not be loaded from the local gateway. Check the connection and retry.";
+        }
+        finally
+        {
+            if (generation == calendarLoadGeneration)
+            {
+                loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private async Task RequestClearUpcomingAsync()
     {
         if (activeProfileId is not { } profileId || ActiveScheduledProgram?.Run is not { } run) return;
+        clearUpcomingCancellation?.Cancel();
+        clearUpcomingCancellation?.Dispose();
+        clearUpcomingCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = clearUpcomingCancellation.Token;
+        int generation = ++clearUpcomingGeneration;
         clearUpcomingBusy = true;
         try
         {
-            clearUpcomingPreview = await Http.GetFromJsonAsync<WorkoutProgramClearUpcomingView>(
-                $"api/planning/programs/runs/{run.Id:D}/clear-upcoming/preview?profileId={profileId:D}&today={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}");
+            WorkoutProgramClearUpcomingView? preview = await Http.GetFromJsonAsync<WorkoutProgramClearUpcomingView>(
+                $"api/planning/programs/runs/{run.Id:D}/clear-upcoming/preview?profileId={profileId:D}&today={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}",
+                cancellationToken);
+            if (generation == clearUpcomingGeneration && activeProfileId == profileId && ActiveScheduledProgram?.Run?.Id == run.Id)
+            {
+                clearUpcomingPreview = preview;
+                clearUpcomingProfileId = profileId;
+            }
         }
-        catch (HttpRequestException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            message = "Upcoming plan sessions could not be checked right now.";
+            if (generation == clearUpcomingGeneration)
+                message = "Upcoming plan sessions could not be checked right now.";
         }
-        finally { clearUpcomingBusy = false; }
+        finally
+        {
+            if (generation == clearUpcomingGeneration)
+                clearUpcomingBusy = false;
+        }
     }
 
-    private void CancelClearUpcoming() => clearUpcomingPreview = null;
+    private void CancelClearUpcoming()
+    {
+        clearUpcomingPreview = null;
+        clearUpcomingProfileId = null;
+    }
 
     private async Task RequestClearUpcomingFromProgramManagerAsync()
     {
@@ -901,7 +1130,8 @@
 
     private async Task ConfirmClearUpcomingAsync()
     {
-        if (activeProfileId is not { } profileId || clearUpcomingPreview is not { CanApply: true } preview) return;
+        if (activeProfileId is not { } profileId || clearUpcomingProfileId != profileId || clearUpcomingPreview is not { CanApply: true } preview) return;
+        int generation = clearUpcomingGeneration;
         clearUpcomingBusy = true;
         try
         {
@@ -909,18 +1139,37 @@
                 $"api/planning/programs/runs/{preview.RunId:D}/clear-upcoming",
                 new WorkoutProgramClearUpcomingRequest(
                     Guid.NewGuid(), profileId, preview.RunVersion, DateOnly.FromDateTime(DateTime.Today)));
+            if (generation != clearUpcomingGeneration || activeProfileId != profileId) return;
             if (!response.IsSuccessStatusCode)
             {
                 message = response.StatusCode == System.Net.HttpStatusCode.Conflict
                     ? "The training plan changed. Reloaded the latest schedule; review it and try again."
                     : "Upcoming plan sessions could not be removed.";
+                clearUpcomingPreview = null;
+                clearUpcomingProfileId = null;
+                await ReloadCalendarAsync();
                 return;
             }
             clearUpcomingPreview = null;
+            clearUpcomingProfileId = null;
             await ReloadCalendarAsync();
             message = "All upcoming training-plan sessions were removed. Completed workouts and the runner profile were preserved.";
         }
-        finally { clearUpcomingBusy = false; }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (generation == clearUpcomingGeneration)
+            {
+                clearUpcomingPreview = null;
+                clearUpcomingProfileId = null;
+                message = "Upcoming plan sessions could not be removed. The calendar was reloaded; review it and try again.";
+                await ReloadCalendarAsync();
+            }
+        }
+        finally
+        {
+            if (generation == clearUpcomingGeneration)
+                clearUpcomingBusy = false;
+        }
     }
 
     private void OpenSessionManager(DateOnly date, CalendarOptionView option)
@@ -1414,9 +1663,11 @@
     {
         get
         {
-            DateOnly last = visibleMonth.AddMonths(1).AddDays(-1);
+            DateOnly last = CanNavigateNextMonth ? visibleMonth.AddMonths(1).AddDays(-1) : DateOnly.MaxValue;
             int daysToSunday = (7 - (int)last.DayOfWeek) % 7;
-            return last.AddDays(daysToSunday);
+            return last.DayNumber > DateOnly.MaxValue.DayNumber - daysToSunday
+                ? DateOnly.MaxValue
+                : last.AddDays(daysToSunday);
         }
     }
 
@@ -1425,12 +1676,20 @@
         get
         {
             var dates = new List<DateOnly>();
-            for (DateOnly date = CalendarGridStart; date <= CalendarGridEnd; date = date.AddDays(1)) dates.Add(date);
+            DateOnly end = CalendarGridEnd;
+            for (DateOnly date = CalendarGridStart; ; date = date.AddDays(1))
+            {
+                dates.Add(date);
+                if (date == end) break;
+            }
             return dates;
         }
     }
 
+    private IReadOnlyList<DateOnly[]> CalendarWeeks => CalendarDates.Chunk(7).ToArray();
+
     private CalendarDayView? DayFor(DateOnly date) => calendar?.Days.FirstOrDefault(day => day.Date == date);
+    private CalendarDayView? SelectedMonthDay => DayFor(selectedMonthDate);
 
     private IReadOnlyList<CalendarAgendaWeek> CalendarAgendaWeeks
     {
@@ -1469,26 +1728,67 @@
 
     private string CalendarCellClass(DateOnly date)
     {
-        var classes = new List<string>(2);
+        var classes = new List<string>(3);
         if (date.Month != visibleMonth.Month) classes.Add("calendar-cell--outside");
         if (date == DateOnly.FromDateTime(DateTime.Today)) classes.Add("calendar-cell--today");
+        if (date == selectedMonthDate) classes.Add("calendar-cell--selected");
         return string.Join(' ', classes);
     }
 
+    private static string CalendarWeekdayName(string weekday) => weekday switch
+    {
+        "Mon" => "Monday",
+        "Tue" => "Tuesday",
+        "Wed" => "Wednesday",
+        "Thu" => "Thursday",
+        "Fri" => "Friday",
+        "Sat" => "Saturday",
+        "Sun" => "Sunday",
+        _ => weekday,
+    };
+
+    private string CalendarDateLabel(DateOnly date, CalendarDayView? day)
+    {
+        int count = day?.Options.Count ?? 0;
+        string monthContext = date.Month == visibleMonth.Month && date.Year == visibleMonth.Year
+            ? string.Empty
+            : ", outside the selected month";
+        string schedule = count switch
+        {
+            0 => "No workouts scheduled",
+            1 => "1 workout scheduled",
+            _ => $"{count} workouts scheduled",
+        };
+        return $"{date:dddd d MMMM}{monthContext}. {schedule}.";
+    }
+
+    private void SelectCalendarView(CalendarViewMode view) => calendarView = view;
+    private void SelectMonthDate(DateOnly date) => selectedMonthDate = date;
+
     private async Task ChangeMonthAsync(int months)
     {
+        if ((months < 0 && !CanNavigatePreviousMonth) || (months > 0 && !CanNavigateNextMonth)) return;
         visibleMonth = visibleMonth.AddMonths(months);
-        loading = true;
         await ReloadCalendarAsync();
-        loading = false;
+        selectedMonthDate = PreferredMonthDate();
     }
 
     private async Task GoToTodayAsync()
     {
         visibleMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
-        loading = true;
         await ReloadCalendarAsync();
-        loading = false;
+        selectedMonthDate = DateOnly.FromDateTime(DateTime.Today);
+    }
+
+    private DateOnly PreferredMonthDate()
+    {
+        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        if (today.Month == visibleMonth.Month && today.Year == visibleMonth.Year) return today;
+        return calendar?.Days
+            .Where(day => day.Date.Month == visibleMonth.Month && day.Date.Year == visibleMonth.Year)
+            .OrderBy(static day => day.Date)
+            .Select(static day => day.Date)
+            .FirstOrDefault(visibleMonth);
     }
 
     private sealed class CalendarSeriesForm
@@ -1511,6 +1811,7 @@
     private sealed record CalendarAgendaDay(DateOnly Date, CalendarDayView Day);
     private sealed record CalendarDetailSelection(DateOnly Date, CalendarDayView Day, CalendarOptionView Option);
     private sealed record CalendarAgendaWeek(DateOnly Start, DateOnly End, IReadOnlyList<CalendarAgendaDay> Days, int WorkoutCount);
+    private enum CalendarViewMode { Agenda, Month }
     private sealed record ScheduleGroupSummary(
         Guid Id,
         string Name,
@@ -1555,6 +1856,14 @@
     public async ValueTask DisposeAsync()
     {
         ActiveProfile.Changed -= ActiveProfileChanged;
+        calendarLoadCancellation?.Cancel();
+        calendarLoadCancellation?.Dispose();
+        clearUpcomingCancellation?.Cancel();
+        clearUpcomingCancellation?.Dispose();
+        calendarDetailsCancellation?.Cancel();
+        calendarDetailsCancellation?.Dispose();
+        calendarDraftDebounce?.Cancel();
+        calendarDraftDebounce?.Dispose();
         if (managedSession is not null || managedProgramSession is not null || selectedCalendarDetail is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }

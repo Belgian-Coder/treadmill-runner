@@ -61,6 +61,17 @@ public sealed class WorkoutProgramTests
   }
 
   [Fact]
+  public void Program_item_rejects_an_unbounded_alternative_collection()
+  {
+    WorkoutProgramAlternative[] alternatives = Enumerable.Range(0, WorkoutProgramLimits.MaximumAlternativesPerItem + 1)
+      .Select(index => new WorkoutProgramAlternative(Guid.NewGuid(), index + 1, $"variant-{index}"))
+      .ToArray();
+
+    Assert.Throws<ArgumentOutOfRangeException>(() => new WorkoutProgramItem(
+      Guid.NewGuid(), Guid.NewGuid(), 1, alternatives: alternatives));
+  }
+
+  [Fact]
   public void Progress_counts_only_consecutive_completed_items()
   {
     WorkoutProgramRevision revision = Revision(
@@ -258,6 +269,33 @@ public sealed class WorkoutProgramTests
       "Europe/Brussels"));
 
     Assert.Contains("first training date", error.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public void Schedule_rejects_an_unavailable_time_zone_before_a_run_can_be_stored()
+  {
+    ArgumentException error = Assert.Throws<ArgumentException>(() => new WorkoutProgramSchedule(
+      new DateOnly(2026, 8, 10),
+      WeekdayFlags.Monday,
+      "Definitely/Not-A-TimeZone"));
+
+    Assert.Contains("time zone", error.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public void Full_schedule_projects_a_single_item_on_the_maximum_supported_date()
+  {
+    WorkoutProgramRevision revision = Revision(Item(1));
+    var run = new WorkoutProgramRun(
+      Guid.NewGuid(), Guid.NewGuid(), revision.RevisionId, WorkoutProgramRunStatus.Active,
+      EndedAt, null, 1,
+      new WorkoutProgramSchedule(DateOnly.MaxValue, WeekdayFlags.Friday, "UTC"));
+
+    IReadOnlyList<ScheduledWorkoutProgramItem> scheduled = WorkoutProgramScheduleProjector.ProjectAll(revision, run);
+
+    ScheduledWorkoutProgramItem item = Assert.Single(scheduled);
+    Assert.Equal(DateOnly.MaxValue, item.Date);
+    Assert.Equal(revision.Items[0].Id, item.Item.Id);
   }
 
   private static WorkoutProgramRevision Revision(params WorkoutProgramItem[] items) => new(

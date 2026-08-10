@@ -219,6 +219,18 @@ Release `1.5.19` combined TR-028, TR-029, and TR-030. The local deterministic ga
 
 ## Recovery
 
+### Gateway is stopped without an update
+
+The installer registers `TreadmillRunnerGuardian` under `SYSTEM`. It checks at startup and once per minute. When `TreadmillRunnerGateway` is stopped outside a protected installer or update transaction, the guardian starts it and records a bounded result under `%ProgramData%\TreadmillRunner\logs\service-guardian.log`; the previous 1 MB log is retained as `service-guardian.previous.log`.
+
+The installer also enables the retained 4 MB `Microsoft-Windows-Services/Diagnostic` event channel. Its service-control event records the control code, caller process ID, parent process ID, and process start key. On recovery, the guardian copies the latest matching control event into its JSON-lines log and enriches it with executable paths when those processes still exist. It deliberately does not capture command lines, environment variables, request data, or memory. `%ProgramData%\TreadmillRunner\logs\service-guardian-state.json` keeps only the most recent healthy observation and process ID.
+
+To inspect a later outage, run `sudo powershell.exe -NoProfile -File eng\inspect-service-recovery.ps1`. The script is read-only and reports the bounded guardian log, latest healthy observation, and matching service-control events without exporting command lines or process memory.
+
+The signed updater and reviewed installer create `%ProgramData%\TreadmillRunner\updates\service-maintenance.lock` before stopping the gateway and remove it in `finally`. The guardian never starts the service while that marker exists. Do not create this marker to hide an unresolved outage, and do not delete it while the update task is running.
+
+Run `eng/accept-gateway-service.ps1` after installation or infrastructure repair. It verifies both SYSTEM tasks, the immutable service path, loopback readiness, LAN access, and current release status. A missing guardian task or script requires the documented `-RepairUpdateInfrastructureOnly` installer procedure; copying a script into Program Files manually is not accepted.
+
 ### “The release executable is missing”
 
 The selected ZIP is incomplete. Do not retry or restage that version. Publish a higher version from a complete `publish` directory. `package-update.ps1` and `install-stable-update-feed.ps1` both require `TreadmillRunner.Gateway.exe`, `TreadmillRunner.Migrations.exe`, and `Updates\update-helper.ps1`.

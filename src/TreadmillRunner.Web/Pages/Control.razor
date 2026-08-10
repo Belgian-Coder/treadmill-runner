@@ -37,14 +37,14 @@
                 </svg>
                 <span class="visually-hidden">@WakeLockAccessibleLabel</span>
             </span>
-            <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" title="Full screen"><span aria-hidden="true">⛶</span></button>
+            <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" title="Full screen"><AppIcon Name="expand" /></button>
         </div>
     </header>
 
     @if (HasUnknownOutcome)
     {
         <section class="safety-banner" role="alert" aria-label="Unknown command safety notice">
-            <span class="safety-icon" aria-hidden="true">!</span>
+            <span class="safety-icon"><AppIcon Name="alert" /></span>
             <p><strong>Use physical Stop now.</strong> A command outcome is uncertain; the dashboard will not retry it.</p>
         </section>
     }
@@ -168,7 +168,7 @@
                                    MarkerX="@(LatestMeasuredPoint is { } latest ? ChartX(latest.Elapsed) : null)"
                                    MarkerY="@(LatestMeasuredPoint is { } marker ? ChartY(marker.MeasuredSpeedKph, ChartBand.Speed) : null)">
                     <HeaderActions>
-                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Collapse graph" : "Expand graph")"><span aria-hidden="true">@(focusMode == ControlFocusMode.Chart ? "↙" : "↗")</span></button>
+                            <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Collapse graph" : "Expand graph")"><AppIcon Name="@(focusMode == ControlFocusMode.Chart ? "shrink" : "chart-expand")" /></button>
                     </HeaderActions>
                 </LiveProgressChart>
 
@@ -181,13 +181,13 @@
                     <p class="control-command-status" role="status">@actionStatus</p>
                     @if (session.Live.SessionState == SessionState.Running)
                     {
-                        <button class="touch-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon" aria-hidden="true">Ⅱ</span><span>Pause</span></button>
+                        <button class="touch-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon"><AppIcon Name="pause" /></span><span>Pause</span></button>
                     }
                     else
                     {
-                        <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume ? "Hold to resume" : "Hold to start")</span></button>
+                        <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume ? "Hold to resume" : "Hold to start")</span></button>
                     }
-                    <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
+                    <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
                 </section>
                 @if (session.HeartRateTarget is not null)
                 {
@@ -245,7 +245,7 @@
 @if (isStopDecisionOpen)
 {
     <DetailSheet BackdropId="stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="stop-decision-title" OnDismiss="KeepSessionPausedAsync">
-        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync">×</button></header>
+        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync"><AppIcon Name="close" /></button></header>
         <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
         <div class="stop-decision-actions">
             <button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button>

@@ -20,7 +20,7 @@ if (-not $resolvedOutput.StartsWith($allowedPrefix, [System.StringComparison]::O
 if (-not (Test-Path -LiteralPath $resolvedPublish -PathType Container)) { throw 'PublishPath is missing.' }
 if (-not (Test-Path -LiteralPath $resolvedCertificate -PathType Leaf)) { throw 'PublicCertificatePath is missing.' }
 if (Test-Path -LiteralPath $resolvedOutput) { throw 'The installer bundle already exists and will not be overwritten.' }
-foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1')) {
+foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1', 'Updates\service-guardian.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $resolvedPublish $required) -PathType Leaf)) {
         throw "PublishPath is missing $required."
     }

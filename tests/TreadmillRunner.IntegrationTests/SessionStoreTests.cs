@@ -59,6 +59,10 @@ public sealed class SessionStoreTests : IAsyncLifetime
       "simulator-note",
       "Runner changed pace from the console.",
       armedAt.AddSeconds(4)));
+    await store.AppendEventAsync(sessionId, new SessionWarningEvent(
+      "second-note",
+      "Runner held the revised pace.",
+      armedAt.AddSeconds(5)));
     await store.FinalizeAsync(new SessionSummary(
       sessionId,
       ids.ProfileId,
@@ -86,7 +90,8 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.Equal(2, stored.Samples.Count);
     Assert.Equal(1, stored.Samples[1].Sequence);
     Assert.Equal(6.6, stored.Samples[1].MeasuredSpeedKph);
-    Assert.IsType<SessionWarningEvent>(Assert.Single(stored.Events));
+    Assert.Equal(2, stored.Events.Count);
+    Assert.Equal("simulator-note", Assert.IsType<SessionWarningEvent>(stored.Events[0]).Code);
     Assert.Equal(5, stored.Debrief?.PerceivedExertion);
     Assert.Equal("Comfortable finish.", stored.Debrief?.Note);
 

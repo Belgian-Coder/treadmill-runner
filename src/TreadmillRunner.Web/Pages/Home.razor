@@ -25,7 +25,7 @@
         </header>
 
         <section class="safety-banner" aria-label="Safety notice">
-            <span class="safety-icon" aria-hidden="true">!</span>
+            <span class="safety-icon"><AppIcon Name="alert" /></span>
             <p><strong>Physical controls remain authoritative.</strong> Use the safety key or console Stop whenever browser control is unavailable or uncertain.</p>
         </section>
 
@@ -79,13 +79,13 @@
             <div class="run-actions">
                 @if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
                 {
-                    <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold"><span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to resume")</span></button>
+                    <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to resume")</span></button>
                 }
                 else
                 {
-                    <button class="touch-action pause-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon" aria-hidden="true">Ⅱ</span><span>Pause</span></button>
+                    <button class="touch-action pause-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon"><AppIcon Name="pause" /></span><span>Pause</span></button>
                 }
-                <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
+                <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
             </div>
             @if (session.HeartRateTarget is not null)
             {
@@ -163,7 +163,7 @@
         </header>
 
         <section class="safety-banner" aria-label="Remote start safety notice">
-            <span class="safety-icon" aria-hidden="true">!</span>
+            <span class="safety-icon"><AppIcon Name="alert" /></span>
             <p><strong>Confirm the belt is clear and wear the safety key.</strong> The physical Stop remains authoritative. Never rely on Bluetooth disconnect to stop the belt.</p>
         </section>
 
@@ -191,9 +191,9 @@
                     @onkeydown="StartKeyDownAsync"
                     @onkeyup="CancelStartHold"
                     @onblur="CancelStartHold">
-                <span class="media-control__icon" aria-hidden="true">▶</span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")</span>
+                <span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")</span>
             </button>
-            <button class="touch-action danger-action media-control media-control--stop" type="button" aria-label="Stop" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon" aria-hidden="true">■</span><span>Stop / end</span></button>
+            <button class="touch-action danger-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
             <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
         </section>
 
@@ -213,7 +213,7 @@
         </header>
 
         <section class="safety-banner" aria-label="Safety notice">
-            <span class="safety-icon" aria-hidden="true">!</span>
+            <span class="safety-icon"><AppIcon Name="alert" /></span>
             <p><strong>Safety key and physical Stop required.</strong><span class="desktop-safety-detail"> Remote Start appears only for an exact model and firmware with hardware-verified capability; otherwise use the physical console.</span></p>
         </section>
 
@@ -239,7 +239,7 @@
                 @if (selectedProfileId is not null)
                 {
                     <section class="next-run-card" aria-label="Recommended next run">
-                        <span class="next-run-card__icon" aria-hidden="true">→</span>
+                        <span class="next-run-card__icon"><AppIcon Name="arrow-right" /></span>
                         <span class="next-run-card__copy">
                             <small>Next for @SelectedProfileName</small>
                             @if (CalendarNeedsChoice)
@@ -285,13 +285,13 @@
                 else
                 {
                     <section class="next-run-card" aria-label="Runner required">
-                        <span class="next-run-card__icon" aria-hidden="true">?</span>
+                        <span class="next-run-card__icon"><AppIcon Name="help" /></span>
                         <span class="next-run-card__copy"><small>Runner required</small><strong>Choose who is running</strong><span>Use the runner control in the navigation bar. The app remembers it.</span></span>
                     </section>
                 }
 
                 <details class="choose-another-run">
-                    <summary>Choose another run</summary>
+                    <summary>Other workout</summary>
                     <div class="choose-another-run__content">
                 <section class="workout-picker" aria-label="Choose workout">
                     <div class="workout-picker__heading"><strong>Workout</strong><span>@VisibleWorkoutChoices.Count available</span></div>
@@ -317,10 +317,10 @@
                             {
                                 <p class="empty-state">No training plans match this view.</p>
                             }
-                            @foreach (WorkoutProgramView program in FilteredProgramChoices)
+                            @foreach (WorkoutProgramSummaryView program in FilteredProgramChoices)
                             {
                                 <article class="run-program-card">
-                                    <span><strong>@program.Name</strong><small>@program.Category · @program.CompletedItemCount/@program.Items.Count complete</small></span>
+                                    <span><strong>@program.Name</strong><small>@program.Category · @program.CompletedItemCount/@program.ItemCount complete</small></span>
                                     @if (program.Run is not null && ProgramChoice(program) is { } nextChoice)
                                     {
                                         <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(nextChoice)">Next workout</button>
@@ -439,7 +439,7 @@
 @if (isStopDecisionOpen)
 {
     <DetailSheet BackdropId="home-stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="home-stop-decision-title" OnDismiss="KeepSessionPausedAsync">
-        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync">×</button></header>
+        <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync"><AppIcon Name="close" /></button></header>
         <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
         <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Reset progress</strong><span>Go back to the first step. Recording totals stay intact.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button></div>
     </DetailSheet>
@@ -451,7 +451,7 @@
     private CancellationTokenSource? preflightRefreshCancellation;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private IReadOnlyList<WorkoutSummaryView> workouts = Array.Empty<WorkoutSummaryView>();
-    private IReadOnlyList<WorkoutProgramView> programs = Array.Empty<WorkoutProgramView>();
+    private IReadOnlyList<WorkoutProgramSummaryView> programs = Array.Empty<WorkoutProgramSummaryView>();
     private IReadOnlyList<CalendarSeriesView> calendarSeries = Array.Empty<CalendarSeriesView>();
     private IReadOnlyList<WorkoutReuseView> reusableWorkouts = Array.Empty<WorkoutReuseView>();
     private TreadmillMaintenanceSnapshot? maintenance;
@@ -488,6 +488,7 @@
     private bool isStopDecisionOpen;
     private bool openStopDecisionPending;
     private bool sessionActionBusy;
+    private int workoutSelectionGeneration;
     private DotNetObjectReference<Home>? stopDecisionModalReference;
     private PendingProgramStart? pendingProgramStart;
     private static readonly (string Label, int Flag)[] ScheduleWeekdays =
@@ -497,8 +498,7 @@
     private DateOnly programScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
     private int programScheduleWeekdayMask = 37;
     private int RequiredTrainingDays => pendingProgramStart is { } pending
-        ? Math.Max(1, pending.Program.Items.Where(static item => item.WeekNumber is not null)
-            .GroupBy(static item => item.WeekNumber).Select(static group => group.Count()).DefaultIfEmpty(3).Max())
+        ? pending.Program.RequiredTrainingDays
         : 3;
     private bool CanConfirmProgramSchedule =>
         Enumerable.Range(0, 7).Count(bit => ((programScheduleWeekdayMask >> bit) & 1) == 1) == RequiredTrainingDays &&
@@ -540,7 +540,7 @@
                 .ToArray();
         }
     }
-    private IReadOnlyList<WorkoutProgramView> FilteredProgramChoices => programs
+    private IReadOnlyList<WorkoutProgramSummaryView> FilteredProgramChoices => programs
         .Where(program => string.IsNullOrWhiteSpace(workoutSearch) ||
             program.Name.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ||
             (program.Description?.Contains(workoutSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
@@ -574,7 +574,7 @@
                     calendar.IsRepeat ? null : calendar.ProgramItemId);
             }
             if (CalendarNeedsChoice) return null;
-            WorkoutProgramView? active = programs.FirstOrDefault(static program => program.Run is not null && !program.IsComplete && program.NextItemId is not null);
+            WorkoutProgramSummaryView? active = programs.FirstOrDefault(static program => program.Run is not null && !program.IsComplete && program.NextItemId is not null);
             if (active is not null) return ProgramChoice(active);
             if (RecentReusableRuns.FirstOrDefault() is { } recent) return ChoiceFromReuse(recent);
             return ManualWorkout is { } manual ? ChoiceFromSummary(manual) with { Context = "Manual fallback", SelectionSource = "Manual" } : null;
@@ -686,6 +686,7 @@
 
     private async Task SelectProfileAsync(Guid profileId)
     {
+        int selectionGeneration = ++workoutSelectionGeneration;
         selectedProfileId = profileId;
         selectedRevisionId = null;
         selectedWorkoutLabel = null;
@@ -695,7 +696,8 @@
         await ActiveProfile.SetAsync(profileId);
         await LoadCuePreferencesAsync(profileId);
         await LoadProfilePlanningAsync();
-        await ApplyRecommendationAsync();
+        if (workoutSelectionGeneration == selectionGeneration && selectedProfileId == profileId)
+            await ApplyRecommendationAsync();
     }
 
     private void ActiveProfileChanged(Guid? profileId)
@@ -704,6 +706,7 @@
         {
             if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume) return;
             if (selectedProfileId == profileId) return;
+            int selectionGeneration = ++workoutSelectionGeneration;
             selectedProfileId = profileId;
             selectedRevisionId = null;
             selectedWorkoutLabel = null;
@@ -715,7 +718,8 @@
             {
                 await LoadCuePreferencesAsync(selected);
                 await LoadProfilePlanningAsync();
-                await ApplyRecommendationAsync();
+                if (workoutSelectionGeneration == selectionGeneration && selectedProfileId == profileId)
+                    await ApplyRecommendationAsync();
                 actionStatus = $"{SelectedProfileName} selected. Choose a workout.";
             }
             StateHasChanged();
@@ -732,6 +736,7 @@
 
     private async Task SelectWorkoutAsync(WorkoutChoice choice)
     {
+        workoutSelectionGeneration++;
         selectedRevisionId = choice.RevisionId;
         selectedWorkoutLabel = choice.Name;
         selectedWorkoutSource = choice.SelectionSource;
@@ -804,7 +809,7 @@
         {
             planningCalendar = null;
             calendarSeries = Array.Empty<CalendarSeriesView>();
-            programs = Array.Empty<WorkoutProgramView>();
+            programs = Array.Empty<WorkoutProgramSummaryView>();
             reusableWorkouts = Array.Empty<WorkoutReuseView>();
             return;
         }
@@ -815,8 +820,8 @@
             $"api/planning/calendar/{profileId}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
         calendarSeries = await Http.GetFromJsonAsync<CalendarSeriesView[]>(
             $"api/planning/calendar/series?profileId={profileId}") ?? Array.Empty<CalendarSeriesView>();
-        programs = await Http.GetFromJsonAsync<WorkoutProgramView[]>(
-            $"api/planning/programs?profileId={profileId}") ?? Array.Empty<WorkoutProgramView>();
+        programs = await Http.GetFromJsonAsync<WorkoutProgramSummaryView[]>(
+            $"api/planning/programs?profileId={profileId}") ?? Array.Empty<WorkoutProgramSummaryView>();
         reusableWorkouts = await Http.GetFromJsonAsync<WorkoutReuseView[]>(
             $"api/planning/workouts/reuse?profileId={profileId}&take=3") ?? Array.Empty<WorkoutReuseView>();
     }
@@ -875,29 +880,27 @@
         return programs.Select(ProgramChoice).OfType<WorkoutChoice>();
     }
 
-    private WorkoutChoice? ProgramChoice(WorkoutProgramView program)
+    private WorkoutChoice? ProgramChoice(WorkoutProgramSummaryView program)
     {
         if (program.Run is null || program.NextItemId is not { } itemId || program.NextWorkoutRevisionId is not { } revisionId) return null;
-        WorkoutProgramItemView? item = program.Items.FirstOrDefault(candidate => candidate.Id == itemId);
-        if (item is null) return null;
         WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == revisionId);
         return new WorkoutChoice(
             revisionId,
-            item.WorkoutName,
+            program.NextWorkoutName ?? summary?.Name ?? "Next workout",
             summary?.Description,
-            $"{program.Name} · workout {program.CompletedItemCount + 1} of {program.Items.Count}",
-            $"Revision {item.WorkoutRevisionNumber} · {DurationLabel(item.DurationMinutes)}",
+            $"{program.Name} · workout {program.CompletedItemCount + program.SkippedItemCount + 1} of {program.ItemCount}",
+            $"Revision {program.NextWorkoutRevisionNumber ?? summary?.CurrentRevisionNumber ?? 1} · {DurationLabel(program.NextWorkoutDurationMinutes ?? summary?.DurationMinutes)}",
             DateOnly.MinValue,
             "Program",
             program.Run.Id,
-            item.Id);
+            itemId);
     }
 
-    private async Task StartProgramAsync(WorkoutProgramView program, bool restart)
+    private async Task StartProgramAsync(WorkoutProgramSummaryView program, bool restart)
     {
         if (selectedProfileId is not { } profileId) return;
         string action = restart ? "restart" : "start";
-        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         using HttpResponseMessage response = await Http.PostAsJsonAsync(
             $"api/planning/programs/{program.Id}/{action}",
             new WorkoutProgramStartRequest(Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version,
@@ -916,9 +919,9 @@
         await ApplyRecommendationAsync();
     }
 
-    private void RequestProgramStart(WorkoutProgramView program, bool restart)
+    private void RequestProgramStart(WorkoutProgramSummaryView program, bool restart)
     {
-        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         pendingProgramStart = new PendingProgramStart(program, restart, active);
         programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
         programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
@@ -975,8 +978,8 @@
             ? "Abandon and start"
             : pending.Restart ? "Reset and restart" : "Start plan";
 
-    private static string ProgramProgress(WorkoutProgramView program) =>
-        program.Run is null ? $"{program.Items.Count} workouts" : program.IsComplete ? "complete" : $"{program.CompletedItemCount} of {program.Items.Count} complete";
+    private static string ProgramProgress(WorkoutProgramSummaryView program) =>
+        program.Run is null ? $"{program.ItemCount} workouts" : program.IsComplete ? "complete" : $"{program.CompletedItemCount} of {program.ItemCount} complete";
 
     private static string DurationLabel(double? durationMinutes) => durationMinutes is null ? "Distance-based" : $"{durationMinutes:0} min";
 
@@ -992,7 +995,7 @@
         ? $"Revision {revision?.ToString() ?? "saved"}"
         : $"{workout.ExpandedStepCount} steps · {(workout.DurationMinutes is null ? "Distance-based" : $"{workout.DurationMinutes:0} min")}";
 
-    private sealed record PendingProgramStart(WorkoutProgramView Program, bool Restart, WorkoutProgramView? Active);
+    private sealed record PendingProgramStart(WorkoutProgramSummaryView Program, bool Restart, WorkoutProgramSummaryView? Active);
     private sealed record ExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
     private sealed record QuickStartSuggestionView(Guid? SuggestedProfileId, string Reason, bool RequiresConfirmation);
     private sealed record QuickStartView(QuickStartSuggestionView Suggestion, string? ProfileName);
@@ -1028,7 +1031,7 @@
                 if (attempt < 11) await Task.Delay(TimeSpan.FromSeconds(1), refresh.Token);
             }
 
-            actionStatus = "Some pre-run checks are still waiting. Wake nearby devices, then select the workout again or use Connect / retry on Devices.";
+            actionStatus = "Some pre-run checks are still waiting. Wake nearby devices, then select the workout again or use Connect on Devices.";
         }
         catch (OperationCanceledException) when (refresh.IsCancellationRequested)
         {

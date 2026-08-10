@@ -34,7 +34,7 @@ if (-not (Test-Path -LiteralPath $resolvedPublish -PathType Container)) { throw 
 if ($resolvedFeed.StartsWith($resolvedPublish + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw 'The update feed cannot be inside the publish input.'
 }
-foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1')) {
+foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1', 'Updates\service-guardian.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $resolvedPublish $required) -PathType Leaf)) {
         throw "The publish input is missing $required."
     }

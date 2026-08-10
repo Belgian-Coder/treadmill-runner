@@ -14,11 +14,14 @@ $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -ErrorAction
 $checks = [ordered]@{
     TaskHasProtectedRoots = $task.Actions.Arguments -like '*-InstallRoot*' -and $task.Actions.Arguments -like '*-DataRoot*'
     HelperExists = Test-Path 'C:\Program Files\TreadmillRunner\updater\update-helper.ps1' -PathType Leaf
+    GuardianExists = Test-Path 'C:\Program Files\TreadmillRunner\updater\service-guardian.ps1' -PathType Leaf
     CertificateExists = Test-Path 'C:\Program Files\TreadmillRunner\updater\signing.cer' -PathType Leaf
     PendingPlanExists = Test-Path 'C:\ProgramData\TreadmillRunner\updates\plans\pending-activation.json' -PathType Leaf
     StageExists = Test-Path (Join-Path 'C:\ProgramData\TreadmillRunner\updates\staging' $Version) -PathType Container
     BackupExists = $null -ne (Get-ChildItem 'C:\ProgramData\TreadmillRunner\backups\pre-update-*.db' -ErrorAction SilentlyContinue | Select-Object -First 1)
+    ServiceControlDiagnosticsEnabled = (Get-WinEvent -ListLog 'Microsoft-Windows-Services/Diagnostic' -ErrorAction SilentlyContinue).IsEnabled
 }
+$guardianTask = Get-ScheduledTask -TaskName 'TreadmillRunnerGuardian' -ErrorAction SilentlyContinue
 if (-not [string]::IsNullOrWhiteSpace($ExportLatestJournalPath)) {
     $projectRoot = Split-Path -Parent $PSScriptRoot
     $artifactRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'artifacts'))
@@ -71,4 +74,6 @@ if ($ExitWithJournalCode) {
     LastRunTime = $taskInfo.LastRunTime
     TaskState = $task.State
     Action = $task.Actions.Arguments
+    GuardianTaskState = if ($null -eq $guardianTask) { 'Missing' } else { [string]$guardianTask.State }
+    GuardianTaskPrincipal = if ($null -eq $guardianTask) { '' } else { [string]$guardianTask.Principal.UserId }
 }

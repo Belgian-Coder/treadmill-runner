@@ -363,7 +363,14 @@ public static class CalendarPlanningEndpoints
 
     IReadOnlyList<VersionedCalendarSeries> storedSeries = await calendarStore.ListByProfileAsync(profileId, cancellationToken);
     CalendarSeriesDefinition[] definitions = storedSeries.Select(static item => item.Series).ToArray();
-    IReadOnlyList<StoredWorkoutProgramProgress> programs = await programStore.ListAsync(profileId, cancellationToken);
+    IReadOnlyDictionary<Guid, VersionedCalendarSeries> seriesById = storedSeries.ToDictionary(static item => item.Series.Id);
+    IReadOnlyList<StoredWorkoutProgramProgress> programs = await programStore.ListActiveScheduledAsync(profileId, cancellationToken);
+    IReadOnlyDictionary<DateOnly, StoredTrainingDaySelection> selections = (await calendarStore.ListSelectionsAsync(
+      profileId, from, to, cancellationToken)).ToDictionary(static selection => selection.Date);
+    int dayCount = to.DayNumber - from.DayNumber + 1;
+    DateOnly[] rangeDates = Enumerable.Range(0, dayCount).Select(from.AddDays).ToArray();
+    IReadOnlyDictionary<DateOnly, TrainingDaySelection> effectiveByDate = rangeDates
+      .ToDictionary(date => date, date => TrainingDaySelectionResolver.ResolveDay(definitions, profileId, date));
     var scheduledProgramItems = programs
       .Where(static program => program.Run is { Status: WorkoutProgramRunStatus.Active, Schedule: not null })
       .SelectMany(program => WorkoutProgramScheduleProjector
@@ -372,44 +379,55 @@ public static class CalendarPlanningEndpoints
         .Select(item => new { Program = program, Scheduled = item }))
       .GroupBy(static item => item.Scheduled.Date)
       .ToDictionary(static group => group.Key, static group => group.ToArray());
-    var revisionCache = new Dictionary<Guid, StoredWorkoutRevision>();
+
+    var revisionIds = effectiveByDate.Values
+      .SelectMany(static selection => selection.Options)
+      .Select(static option => option.WorkoutRevisionId)
+      .Concat(scheduledProgramItems.Values
+        .SelectMany(static items => items)
+        .SelectMany(static item => item.Scheduled.Item.Alternatives
+          .Select(static alternative => alternative.WorkoutRevisionId)
+          .Prepend(item.Scheduled.Item.WorkoutRevisionId)))
+      .Distinct()
+      .ToArray();
+    IReadOnlyDictionary<Guid, StoredWorkoutRevision> revisionCache = (await workoutStore.FindRevisionsAsync(
+      revisionIds, cancellationToken)).ToDictionary(static revision => revision.Id);
+    IReadOnlyDictionary<Guid, string> titleCache = revisionCache.ToDictionary(
+      static pair => pair.Key,
+      static pair => ReadWorkoutTitle(pair.Value.DefinitionJson));
+
     List<CalendarDayDto> days = [];
-    for (DateOnly date = from; date <= to; date = date.AddDays(1))
+    foreach (DateOnly date in rangeDates)
     {
-      TrainingDaySelection effective = TrainingDaySelectionResolver.ResolveDay(definitions, profileId, date);
+      TrainingDaySelection effective = effectiveByDate[date];
       scheduledProgramItems.TryGetValue(date, out var programItems);
       if (effective.Options.Count == 0 && programItems is null)
       {
         continue;
       }
 
-      StoredTrainingDaySelection? selection = await calendarStore.FindSelectionAsync(profileId, date, cancellationToken);
+      selections.TryGetValue(date, out StoredTrainingDaySelection? selection);
       var options = new List<CalendarOptionDto>(effective.Options.Count + (programItems?.Length ?? 0));
       foreach (TrainingDayOption option in effective.Options)
       {
-        if (!revisionCache.TryGetValue(option.WorkoutRevisionId, out StoredWorkoutRevision? revision))
+        if (!revisionCache.TryGetValue(option.WorkoutRevisionId, out StoredWorkoutRevision? revision) ||
+            !seriesById.TryGetValue(option.SeriesId, out VersionedCalendarSeries? series))
         {
-          revision = await workoutStore.FindRevisionAsync(option.WorkoutRevisionId, cancellationToken);
-          if (revision is null)
-          {
-            continue;
-          }
-
-          revisionCache.Add(option.WorkoutRevisionId, revision);
+          continue;
         }
 
         options.Add(new CalendarOptionDto(
           option.SeriesId,
-          storedSeries.Single(item => item.Series.Id == option.SeriesId).Series.ScheduleGroupId,
-          storedSeries.Single(item => item.Series.Id == option.SeriesId).Series.Name,
+          series.Series.ScheduleGroupId,
+          series.Series.Name,
           option.WorkoutRevisionId,
-          ReadWorkoutTitle(revision.DefinitionJson),
+          titleCache[option.WorkoutRevisionId],
           revision.RevisionNumber,
           option.DisplayOrder,
           selection?.CalendarSeriesId == option.SeriesId && selection.WorkoutRevisionId == option.WorkoutRevisionId));
       }
 
-      foreach (var programItem in programItems ?? [])
+      foreach (var programItem in (programItems ?? []).Reverse())
       {
         WorkoutProgramRun run = programItem.Program.Run!;
         WorkoutProgramItem item = programItem.Scheduled.Item;
@@ -420,16 +438,14 @@ public static class CalendarPlanningEndpoints
         {
           if (!revisionCache.TryGetValue(revisionId, out StoredWorkoutRevision? revision))
           {
-            revision = await workoutStore.FindRevisionAsync(revisionId, cancellationToken);
-            if (revision is null) continue;
-            revisionCache.Add(revisionId, revision);
+            continue;
           }
           options.Insert(0, new CalendarOptionDto(
             run.Id,
             run.Id,
             programItem.Program.Program.CurrentRevision.Name,
             revisionId,
-            ReadWorkoutTitle(revision.DefinitionJson),
+            titleCache[revisionId],
             revision.RevisionNumber,
             displayOrder,
             IsSelected: !programItem.Scheduled.IsRepeat && item.Alternatives.Count == 0,
@@ -527,7 +543,8 @@ public static class CalendarPlanningEndpoints
   {
     try
     {
-      DateOnly today = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
+      DateOnly today = await store.GetScheduleLocalDateAsync(
+        request.ProfileId, runId, timeProvider.GetUtcNow(), cancellationToken);
       WorkoutProgramDefaultDaysPreview preview = await store.PreviewDefaultDaysChangeAsync(
         request.ProfileId,
         runId,
@@ -569,7 +586,8 @@ public static class CalendarPlanningEndpoints
       if (await receiptStore.FindAsync(operationId, cancellationToken) is { } receipt)
         return Replay(receipt, operationType, requestFingerprint);
       DateTimeOffset now = timeProvider.GetUtcNow();
-      DateOnly today = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
+      DateOnly today = await store.GetScheduleLocalDateAsync(
+        request.ProfileId, runId, timeProvider.GetUtcNow(), cancellationToken);
       WorkoutProgramDefaultDaysPreview outcome = await store.ApplyDefaultDaysChangeAsync(
         request.ProfileId,
         runId,

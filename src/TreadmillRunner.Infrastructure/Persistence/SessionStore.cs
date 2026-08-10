@@ -210,6 +210,7 @@ public sealed class SessionStore(
     RequireId(sessionId, nameof(sessionId));
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     WorkoutSessionEntity? session = await context.WorkoutSessions.AsNoTracking()
+      .AsSplitQuery()
       .Include(candidate => candidate.Samples)
       .Include(candidate => candidate.Events)
       .SingleOrDefaultAsync(candidate => candidate.Id == sessionId, cancellationToken);
@@ -234,7 +235,14 @@ public sealed class SessionStore(
     // canonical representation directly rather than loading an unbounded history to the client.
     string originClause = includeSystemTests ? string.Empty : " AND \"SessionOrigin\" <> 'SystemTest'";
     string sql = """
-        SELECT * FROM "WorkoutSessions"
+        SELECT "Id", "UserProfileId", "UserProfileName", "WorkoutRevisionId",
+          "WorkoutProgramRunId", "WorkoutProgramItemId", "SelectionSource", "SessionOrigin",
+          "WorkoutTitle", "State", "ArmedAtUtc", "StartedAtUtc", "EndedAtUtc",
+          "DurationSeconds", "DistanceKilometers", "EstimatedCalories", "AverageHeartRateBpm",
+          "MaximumHeartRateBpm", "AverageSpeedKph", "AverageInclinePercent", "MetricAlgorithmVersion",
+          "ControllerConfigurationJson", "RecoveryCheckpointJson", "RecoveryCheckpointUpdatedAtUtc",
+          "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc"
+        FROM "WorkoutSessions"
         WHERE "UserProfileId" = {0}
           AND "StartedAtUtc" IS NOT NULL
           AND "EndedAtUtc" IS NOT NULL
@@ -307,6 +315,7 @@ public sealed class SessionStore(
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     List<WorkoutSessionEntity> candidates = await context.WorkoutSessions.AsNoTracking()
+      .AsSplitQuery()
       .Include(candidate => candidate.Samples)
       .Include(candidate => candidate.Events)
       .Where(candidate => candidate.State == nameof(SessionState.Running) &&

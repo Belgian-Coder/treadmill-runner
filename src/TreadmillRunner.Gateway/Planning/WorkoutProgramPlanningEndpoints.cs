@@ -14,6 +14,7 @@ public static class WorkoutProgramPlanningEndpoints
   {
     RouteGroupBuilder group = endpoints.MapGroup("/api/planning/programs");
     group.MapGet("/", ListAsync);
+    group.MapGet("/{id:guid}", FindAsync);
     group.MapPost("/", CreateAsync);
     group.MapPost("/{id:guid}/revisions", AppendRevisionAsync);
     group.MapPost("/{id:guid}/archive", ArchiveAsync);
@@ -30,14 +31,33 @@ public static class WorkoutProgramPlanningEndpoints
     IWorkoutStore workoutStore,
     CancellationToken cancellationToken)
   {
-    IReadOnlyList<StoredWorkoutProgramProgress> programs = await store.ListAsync(profileId, cancellationToken);
-    StoredWorkoutProgramProgress[] visiblePrograms = SelectCanonicalPrograms(programs).ToArray();
-    var result = new List<WorkoutProgramDto>(visiblePrograms.Length);
-    foreach (StoredWorkoutProgramProgress program in visiblePrograms)
+    IReadOnlyList<StoredWorkoutProgramSummary> programs = await store.ListSummariesAsync(profileId, cancellationToken);
+    StoredWorkoutProgramSummary[] visiblePrograms = SelectCanonicalProgramSummaries(programs).ToArray();
+    Dictionary<Guid, WorkoutRevisionDisplay> revisionDisplays = await LoadRevisionDisplaysAsync(
+      workoutStore,
+      visiblePrograms
+        .Where(static program => program.NextWorkoutRevisionId is not null)
+        .Select(static program => program.NextWorkoutRevisionId!.Value),
+      cancellationToken);
+    var result = new List<WorkoutProgramSummaryDto>(visiblePrograms.Length);
+    foreach (StoredWorkoutProgramSummary program in visiblePrograms)
     {
-      result.Add(await ToDtoAsync(program, workoutStore, cancellationToken));
+      result.Add(ToSummaryDto(program, revisionDisplays));
     }
     return TypedResults.Ok(result);
+  }
+
+  private static async Task<IResult> FindAsync(
+    Guid id,
+    Guid? profileId,
+    IWorkoutProgramStore store,
+    IWorkoutStore workoutStore,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutProgramProgress? program = await store.FindProgressAsync(id, profileId, cancellationToken);
+    return program is null
+      ? TypedResults.NotFound()
+      : TypedResults.Ok(await ToDtoAsync(program, workoutStore, cancellationToken));
   }
 
   private static async Task<IResult> CreateAsync(
@@ -162,6 +182,26 @@ public static class WorkoutProgramPlanningEndpoints
     }
   }
 
+  private static IEnumerable<StoredWorkoutProgramSummary> SelectCanonicalProgramSummaries(
+    IReadOnlyList<StoredWorkoutProgramSummary> programs)
+  {
+    IEnumerable<StoredWorkoutProgramSummary> active = programs.Where(static item => !item.IsArchived);
+    foreach (StoredWorkoutProgramSummary custom in active.Where(static item => item.TemplateId is null))
+      yield return custom;
+
+    foreach (IGrouping<(Guid? OwnerProfileId, string TemplateId), StoredWorkoutProgramSummary> group in active
+      .Where(static item => item.TemplateId is not null)
+      .GroupBy(static item => (item.OwnerProfileId, item.TemplateId!),
+        EqualityComparer<(Guid? OwnerProfileId, string TemplateId)>.Default))
+    {
+      yield return group
+        .OrderByDescending(static item => item.Run?.Status == WorkoutProgramRunStatus.Active)
+        .ThenByDescending(static item => ParseTemplateVersion(item.TemplateVersion))
+        .ThenByDescending(static item => item.CreatedAtUtc)
+        .First();
+    }
+  }
+
   private static Version ParseTemplateVersion(string? value) =>
     Version.TryParse(value, out Version? version) ? version : new Version(0, 0);
 
@@ -214,12 +254,13 @@ public static class WorkoutProgramPlanningEndpoints
   private static async Task<IResult> PreviewClearUpcomingAsync(
     Guid runId,
     Guid profileId,
-    DateOnly today,
     IWorkoutProgramStore store,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken)
   {
     try
     {
+      DateOnly today = await store.GetScheduleLocalDateAsync(profileId, runId, timeProvider.GetUtcNow(), cancellationToken);
       return TypedResults.Ok(await store.PreviewClearUpcomingAsync(profileId, runId, today, cancellationToken));
     }
     catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { message = exception.Message }); }
@@ -234,23 +275,26 @@ public static class WorkoutProgramPlanningEndpoints
     CancellationToken cancellationToken)
   {
     const string operationType = "program.run.clear-upcoming";
-    string fingerprint = PlanningOperationFingerprint.Compute(new
-    {
-      RunId = runId,
-      request.ProfileId,
-      request.ExpectedRunVersion,
-      request.Today,
-    });
+    string fingerprint = string.Empty;
     try
     {
       ValidateOperationId(request.OperationId);
+      DateOnly today = await store.GetScheduleLocalDateAsync(
+        request.ProfileId, runId, timeProvider.GetUtcNow(), cancellationToken);
+      fingerprint = PlanningOperationFingerprint.Compute(new
+      {
+        RunId = runId,
+        request.ProfileId,
+        request.ExpectedRunVersion,
+        Today = today,
+      });
       if (await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } receipt)
         return Replay(receipt, operationType, fingerprint);
       DateTimeOffset now = timeProvider.GetUtcNow();
       WorkoutProgramClearUpcomingPreview result = await store.ClearUpcomingAsync(
         request.ProfileId,
         runId,
-        request.Today,
+        today,
         request.ExpectedRunVersion,
         WriteOperation(request.OperationId, operationType, 200, new { }, now, fingerprint),
         cancellationToken);
@@ -366,34 +410,36 @@ public static class WorkoutProgramPlanningEndpoints
     IWorkoutStore workoutStore,
     CancellationToken cancellationToken)
   {
+    Dictionary<Guid, WorkoutRevisionDisplay> revisionDisplays = await LoadRevisionDisplaysAsync(
+      workoutStore,
+      stored.Program.CurrentRevision.Items.SelectMany(static item =>
+        item.Alternatives.Select(static alternative => alternative.WorkoutRevisionId)
+          .Prepend(item.WorkoutRevisionId)),
+      cancellationToken);
     var items = new List<WorkoutProgramItemDto>(stored.Program.CurrentRevision.Items.Count);
     foreach (WorkoutProgramItem item in stored.Program.CurrentRevision.Items)
     {
-      StoredWorkoutRevision revision = await workoutStore.FindRevisionAsync(item.WorkoutRevisionId, cancellationToken)
-        ?? throw new ArgumentException($"Workout revision {item.WorkoutRevisionId} was not found.");
-      using JsonDocument json = JsonDocument.Parse(revision.DefinitionJson);
-      string name = json.RootElement.GetProperty("title").GetString() ?? "Workout";
+      WorkoutRevisionDisplay revision = FindRequiredRevisionDisplay(revisionDisplays, item.WorkoutRevisionId);
       var alternatives = new List<WorkoutProgramAlternativeDto>(item.Alternatives.Count);
       foreach (WorkoutProgramAlternative alternative in item.Alternatives)
       {
-        StoredWorkoutRevision alternativeRevision = await workoutStore.FindRevisionAsync(alternative.WorkoutRevisionId, cancellationToken)
-          ?? throw new ArgumentException($"Workout revision {alternative.WorkoutRevisionId} was not found.");
-        using JsonDocument alternativeJson = JsonDocument.Parse(alternativeRevision.DefinitionJson);
+        WorkoutRevisionDisplay alternativeRevision = FindRequiredRevisionDisplay(
+          revisionDisplays, alternative.WorkoutRevisionId);
         alternatives.Add(new WorkoutProgramAlternativeDto(
           alternative.WorkoutRevisionId,
           alternative.DisplayOrder,
           alternative.Variant,
-          alternativeJson.RootElement.GetProperty("title").GetString() ?? "Workout",
+          alternativeRevision.Name,
           alternativeRevision.RevisionNumber,
-          DurationMinutes(alternativeJson.RootElement)));
+          alternativeRevision.DurationMinutes));
       }
       items.Add(new WorkoutProgramItemDto(
         item.Id,
         item.WorkoutRevisionId,
         item.Position,
-        name,
+        revision.Name,
         revision.RevisionNumber,
-        DurationMinutes(json.RootElement),
+        revision.DurationMinutes,
         item.WeekNumber,
         item.SessionNumber,
         item.Phase,
@@ -420,12 +466,82 @@ public static class WorkoutProgramPlanningEndpoints
       progress?.SkippedItemCount ?? 0);
   }
 
+  private static WorkoutProgramSummaryDto ToSummaryDto(
+    StoredWorkoutProgramSummary stored,
+    IReadOnlyDictionary<Guid, WorkoutRevisionDisplay> revisionDisplays)
+  {
+    WorkoutRevisionDisplay? nextRevision = stored.NextWorkoutRevisionId is { } nextRevisionId &&
+      revisionDisplays.TryGetValue(nextRevisionId, out WorkoutRevisionDisplay? display)
+        ? display
+        : null;
+    return new WorkoutProgramSummaryDto(
+      stored.Id,
+      stored.IsArchived,
+      stored.RevisionId,
+      stored.RevisionNumber,
+      stored.Name,
+      stored.Description,
+      stored.Category,
+      stored.ItemCount,
+      stored.Run is null ? null : ToDto(stored.Run),
+      stored.CompletedItemCount,
+      stored.NextItemId,
+      stored.NextWorkoutRevisionId,
+      nextRevision?.Name,
+      nextRevision?.RevisionNumber,
+      nextRevision?.DurationMinutes,
+      stored.IsComplete,
+      stored.RequiredTrainingDays,
+      stored.TemplateId,
+      stored.TemplateVersion,
+      stored.OwnerProfileId,
+      stored.SkippedItemCount);
+  }
+
+  private static async Task<Dictionary<Guid, WorkoutRevisionDisplay>> LoadRevisionDisplaysAsync(
+    IWorkoutStore workoutStore,
+    IEnumerable<Guid> revisionIds,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutRevision[] revisions = (await workoutStore.FindRevisionsAsync(
+      revisionIds.Distinct().ToArray(), cancellationToken)).ToArray();
+    return revisions.ToDictionary(static revision => revision.Id, DescribeRevision);
+  }
+
+  private static WorkoutRevisionDisplay FindRequiredRevisionDisplay(
+    IReadOnlyDictionary<Guid, WorkoutRevisionDisplay> revisionDisplays,
+    Guid revisionId) => revisionDisplays.TryGetValue(revisionId, out WorkoutRevisionDisplay? display)
+      ? display
+      : throw new ArgumentException($"Workout revision {revisionId} was not found.");
+
+  private static WorkoutRevisionDisplay DescribeRevision(StoredWorkoutRevision revision)
+  {
+    using JsonDocument json = JsonDocument.Parse(revision.DefinitionJson);
+    return new WorkoutRevisionDisplay(
+      revision.RevisionNumber,
+      json.RootElement.GetProperty("title").GetString() ?? "Workout",
+      DurationMinutes(json.RootElement));
+  }
+
+  private sealed record WorkoutRevisionDisplay(
+    int RevisionNumber,
+    string Name,
+    double? DurationMinutes);
+
+  /*
+   * Keep this method close to the DTO conversion because the summary endpoint
+   * deliberately loads only the next workout revision, not each program item.
+   */
   private static double? DurationMinutes(JsonElement root)
   {
     (long ticks, bool distance) = CountDuration(root.GetProperty("blocks"));
     return distance ? null : TimeSpan.FromTicks(ticks).TotalMinutes;
   }
 
+  /*
+   * The display cache above is intentionally populated once per endpoint call;
+   * this avoids reparsing the same canonical workout JSON for repeated choices.
+   */
   private static (long Ticks, bool HasDistance) CountDuration(JsonElement blocks)
   {
     long ticks = 0;

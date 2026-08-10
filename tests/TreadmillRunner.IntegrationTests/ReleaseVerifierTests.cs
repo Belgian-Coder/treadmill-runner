@@ -112,6 +112,15 @@ public sealed class ReleaseVerifierTests : IDisposable
 
     Assert.Equal(ReleaseValidationStatus.UnsafeArchive, result.Status);
     Assert.Contains("TreadmillRunner.Migrations.exe", result.Message, StringComparison.Ordinal);
+
+    byte[] missingGuardian = Package(
+      ("TreadmillRunner.Gateway.exe", "binary"),
+      ("TreadmillRunner.Migrations.exe", "migrations"),
+      ("Updates/update-helper.ps1", "helper"));
+    ReleaseValidationResult guardianResult = await new ReleaseVerifier(_certificate)
+      .VerifyPackageAsync(SignedManifest(missingGuardian), new MemoryStream(missingGuardian));
+    Assert.Equal(ReleaseValidationStatus.UnsafeArchive, guardianResult.Status);
+    Assert.Contains("Updates/service-guardian.ps1", guardianResult.Message, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -189,7 +198,8 @@ public sealed class ReleaseVerifierTests : IDisposable
   private static byte[] ValidPackage() => Package(
     ("TreadmillRunner.Gateway.exe", "gateway"),
     ("TreadmillRunner.Migrations.exe", "migrations"),
-    ("Updates/update-helper.ps1", "helper"));
+    ("Updates/update-helper.ps1", "helper"),
+    ("Updates/service-guardian.ps1", "guardian"));
 
   private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 }

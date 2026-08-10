@@ -104,9 +104,10 @@ $certificatePath = Assert-UnderRoot -Path (Join-Path $updaterRoot 'signing.cer')
 $databasePath = Assert-UnderRoot -Path (Join-Path $dataRoot 'data\treadmillrunner.db') -Root $dataRoot
 $databaseBackupPath = Assert-UnderRoot -Path (Join-Path $dataRoot "backups\pre-update-$transactionId.db") -Root $dataRoot
 $journalPath = Assert-UnderRoot -Path (Join-Path $planRoot "transaction-$transactionId.json") -Root $dataRoot
+$maintenanceMarkerPath = Assert-UnderRoot -Path (Join-Path $dataRoot 'updates\service-maintenance.lock') -Root $dataRoot
 $healthUri = [Uri]$HealthUrl
 
-foreach ($path in @($releaseRoot, $stagingRoot, $stagePath, $manifestPath, $certificatePath, $databasePath, $databaseBackupPath, $journalPath)) {
+foreach ($path in @($releaseRoot, $stagingRoot, $stagePath, $manifestPath, $certificatePath, $databasePath, $databaseBackupPath, $journalPath, $maintenanceMarkerPath)) {
   Assert-NoReparsePoint -Path $path -StopAt $(if ($path.StartsWith($installRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $installRoot } else { $dataRoot })
 }
 
@@ -174,6 +175,7 @@ if (Test-Path -LiteralPath $incomingPath) { throw 'The update transaction worksp
 New-Item -ItemType Directory -Path $incomingPath | Out-Null
 $incomingCreated = $true
 $previousImagePath = $null
+$maintenanceMarkerCreated = $false
 try {
   $archive = [System.IO.Compression.ZipFile]::OpenRead($packagePath)
   try {
@@ -191,7 +193,7 @@ try {
       $destination = [System.IO.Path]::GetFullPath((Join-Path $incomingPath $entryPath))
       [void](Assert-UnderRoot -Path $destination -Root $incomingPath)
     }
-    foreach ($requiredEntry in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates/update-helper.ps1')) {
+    foreach ($requiredEntry in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates/update-helper.ps1', 'Updates/service-guardian.ps1')) {
       if (-not $paths.Contains($requiredEntry)) { throw "The signed package is missing $requiredEntry." }
     }
   }
@@ -223,6 +225,11 @@ try {
   }
   $currentVersion = [Version]$currentVersionText
   if ([Version]$version -le $currentVersion) { throw 'The signed release is not newer than the installed release.' }
+  [System.IO.File]::WriteAllText(
+    $maintenanceMarkerPath,
+    "update $transactionId $([DateTimeOffset]::UtcNow.ToString('O'))",
+    [System.Text.UTF8Encoding]::new($false))
+  $maintenanceMarkerCreated = $true
   Stop-Service -Name $serviceName -Force
   if (Test-Path -LiteralPath $migrationBundle -PathType Leaf) {
     & $migrationBundle --connection "Data Source=$databasePath"
@@ -253,6 +260,9 @@ catch {
   throw
 }
 finally {
+  if ($maintenanceMarkerCreated -and (Test-Path -LiteralPath $maintenanceMarkerPath)) {
+    Remove-Item -LiteralPath $maintenanceMarkerPath -Force -ErrorAction SilentlyContinue
+  }
   if ($incomingCreated -and (Test-Path -LiteralPath $incomingPath)) {
     Remove-Item -LiteralPath $incomingPath -Recurse -Force -ErrorAction SilentlyContinue
   }

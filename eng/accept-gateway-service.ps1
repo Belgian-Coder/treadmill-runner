@@ -19,6 +19,18 @@ if ($service.PathName -notmatch '\\TreadmillRunner\\releases\\[^\\]+\\TreadmillR
 
 $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -ErrorAction Stop
 if ($task.Principal.UserId -ne 'SYSTEM') { throw 'The privileged updater task is not owned by SYSTEM.' }
+$guardianTask = Get-ScheduledTask -TaskName 'TreadmillRunnerGuardian' -ErrorAction Stop
+if ($guardianTask.Principal.UserId -ne 'SYSTEM' -or $guardianTask.State -eq 'Disabled') {
+    throw 'The local service guardian is not enabled under SYSTEM.'
+}
+if ($guardianTask.Actions.Execute -ne 'powershell.exe' -or
+    $guardianTask.Actions.Arguments -notmatch 'service-guardian\.ps1') {
+    throw 'The local service guardian action is not the protected guardian script.'
+}
+$serviceDiagnosticLog = Get-WinEvent -ListLog 'Microsoft-Windows-Services/Diagnostic' -ErrorAction Stop
+if (-not $serviceDiagnosticLog.IsEnabled -or $serviceDiagnosticLog.MaximumSizeInBytes -ne 4194304) {
+    throw 'The bounded Windows service-control diagnostic log is not enabled.'
+}
 $firewall = Get-NetFirewallRule -DisplayName 'TreadmillRunner Private LAN' -ErrorAction Stop
 if ($firewall.Profile -notmatch 'Private' -or $firewall.Enabled -ne 'True') {
     throw 'The gateway firewall rule is not restricted to the Private profile.'
@@ -37,7 +49,7 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and $status.currentVers
 }
 $lanResponse = Invoke-WebRequest -Uri "http://${LanAddress}:5180/" -UseBasicParsing -TimeoutSec 5
 if ($lanResponse.StatusCode -ne 200) { throw 'The private-LAN UI is unavailable.' }
-$session = Invoke-WebRequest -Uri 'http://127.0.0.1:5180/api/live/session' -UseBasicParsing -SkipHttpErrorCheck -TimeoutSec 5
+$session = Invoke-WebRequest -Uri 'http://127.0.0.1:5180/api/live/session' -UseBasicParsing -TimeoutSec 5
 if ($session.StatusCode -notin 204, 200) { throw 'The live-session status endpoint is unavailable.' }
 
 $evidence = [pscustomobject]@{
@@ -45,6 +57,9 @@ $evidence = [pscustomobject]@{
     ServiceAccount = $service.StartName
     ImagePath = $service.PathName
     UpdateTaskState = $task.State
+    GuardianTaskState = $guardianTask.State
+    ServiceControlDiagnosticLogEnabled = $serviceDiagnosticLog.IsEnabled
+    ServiceControlDiagnosticLogMaximumBytes = $serviceDiagnosticLog.MaximumSizeInBytes
     CurrentVersion = $status.currentVersion
     UpdateState = $status.state
     LoopbackReady = $readyResponse.StatusCode

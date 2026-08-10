@@ -16,6 +16,7 @@ public static class WorkoutProgramLimits
   public const int MaximumDescriptionLength = 2_000;
   public const int MaximumCategoryLength = 40;
   public const int MaximumItems = 1_000;
+  public const int MaximumAlternativesPerItem = 20;
 }
 
 public sealed record WorkoutProgramAlternative
@@ -54,6 +55,8 @@ public sealed record WorkoutProgramItem
     if (sessionNumber is < 1) throw new ArgumentOutOfRangeException(nameof(sessionNumber));
     if (phase?.Trim().Length > 80) throw new ArgumentException("Program phase is too long.", nameof(phase));
     WorkoutProgramAlternative[] normalizedAlternatives = (alternatives ?? []).OrderBy(static option => option.DisplayOrder).ToArray();
+    if (normalizedAlternatives.Length > WorkoutProgramLimits.MaximumAlternativesPerItem)
+      throw new ArgumentOutOfRangeException(nameof(alternatives), $"A program item can contain at most {WorkoutProgramLimits.MaximumAlternativesPerItem} alternatives.");
     if (normalizedAlternatives.Any(option => option.WorkoutRevisionId == workoutRevisionId) ||
         normalizedAlternatives.Select(static option => option.WorkoutRevisionId).Distinct().Count() != normalizedAlternatives.Length ||
         normalizedAlternatives.Select(static option => option.DisplayOrder).Distinct().Count() != normalizedAlternatives.Length)
@@ -166,9 +169,22 @@ public sealed record WorkoutProgramSchedule
       throw new ArgumentException("The first training date must be one of the selected training days.", nameof(startDate));
     ArgumentException.ThrowIfNullOrWhiteSpace(timeZoneId);
     if (timeZoneId.Trim().Length > 100) throw new ArgumentException("Time zone ID is too long.", nameof(timeZoneId));
+    string normalizedTimeZoneId = timeZoneId.Trim();
+    try
+    {
+      _ = TimeZoneInfo.FindSystemTimeZoneById(normalizedTimeZoneId);
+    }
+    catch (TimeZoneNotFoundException exception)
+    {
+      throw new ArgumentException("The time zone ID is unavailable on this system.", nameof(timeZoneId), exception);
+    }
+    catch (InvalidTimeZoneException exception)
+    {
+      throw new ArgumentException("The time zone ID is invalid.", nameof(timeZoneId), exception);
+    }
     StartDate = startDate;
     Weekdays = weekdays;
-    TimeZoneId = timeZoneId.Trim();
+    TimeZoneId = normalizedTimeZoneId;
   }
 
   public DateOnly StartDate { get; }
@@ -216,6 +232,7 @@ public static class WorkoutProgramScheduleProjector
       while (!schedule.Weekdays.HasFlag(ToFlag(cursor.DayOfWeek))) cursor = cursor.AddDays(1);
       if (cursor > to) break;
       if (cursor >= from) result.Add(new ScheduledWorkoutProgramItem(cursor, item));
+      if (cursor == DateOnly.MaxValue) break;
       cursor = cursor.AddDays(1);
     }
     return result;
@@ -238,16 +255,18 @@ public static class WorkoutProgramScheduleProjector
     {
       while (!schedule.Weekdays.HasFlag(ToFlag(cursor.DayOfWeek))) cursor = cursor.AddDays(1);
       DateOnly original = cursor;
-      cursor = cursor.AddDays(1);
+      bool atMaximumDate = cursor == DateOnly.MaxValue;
+      if (!atMaximumDate) cursor = cursor.AddDays(1);
       if (overrideMap.TryGetValue(item.Id, out WorkoutProgramScheduleOverride? scheduleOverride))
       {
-        if (scheduleOverride.IsSkipped) continue;
-        items.Add(new ScheduledWorkoutProgramItem(scheduleOverride.TargetDate ?? original, item, original));
+        if (!scheduleOverride.IsSkipped)
+          items.Add(new ScheduledWorkoutProgramItem(scheduleOverride.TargetDate ?? original, item, original));
       }
       else
       {
         items.Add(new ScheduledWorkoutProgramItem(original, item, original));
       }
+      if (atMaximumDate) break;
     }
 
     Dictionary<Guid, WorkoutProgramItem> itemMap = revision.Items.ToDictionary(static item => item.Id);

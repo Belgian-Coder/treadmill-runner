@@ -231,7 +231,9 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       },
     });
     Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-    Guid workoutId = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("workoutId").GetGuid();
+    JsonElement createdWorkout = await created.Content.ReadFromJsonAsync<JsonElement>();
+    Guid workoutId = createdWorkout.GetProperty("workoutId").GetGuid();
+    Guid revisionId = createdWorkout.GetProperty("revisionId").GetGuid();
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.GetByRole(AriaRole.Button, new() { Name = "Standalone workouts", Exact = true }).ClickAsync();
@@ -258,7 +260,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(details).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Close workout details", Exact = true }).ClickAsync();
     await Expect(details).ToBeHiddenAsync();
-    string revisionRoute = $"**/api/planning/workouts/{workoutId:D}/revisions";
+    string revisionRoute = $"**/api/planning/workouts/revisions/{revisionId:D}";
     await Page.RouteAsync(revisionRoute, route => route.FulfillAsync(new RouteFulfillOptions { Status = 503, Body = "{}", ContentType = "application/json" }));
     await card.GetByRole(AriaRole.Button, new() { Name = "View details", Exact = true }).ClickAsync();
     await Expect(details.GetByRole(AriaRole.Alert)).ToContainTextAsync("could not be loaded");
@@ -289,11 +291,23 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
     await scenario.ConfigureBrowserAsync(Page);
     await Page.SetViewportSizeAsync(width, height);
+    int programDetailRequests = 0;
+    Page.Request += (_, request) =>
+    {
+      Uri uri = new(request.Url);
+      if (request.Method == "GET" &&
+          uri.AbsolutePath.StartsWith("/api/planning/programs/", StringComparison.OrdinalIgnoreCase))
+      {
+        Interlocked.Increment(ref programDetailRequests);
+      }
+    };
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
     await Page.GetByLabel("Search training plans", new() { Exact = true }).FillAsync("Stronger 10K");
     await Expect(Page.Locator(".program-card .template-program-groups")).ToHaveCountAsync(0);
+    Assert.Equal(0, programDetailRequests);
     await Page.GetByRole(AriaRole.Button, new() { Name = "View Stronger 10K", Exact = true }).ClickAsync();
+    Assert.Equal(1, programDetailRequests);
     ILocator dialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Stronger 10K", Exact = true })).ToBeVisibleAsync();
     LocatorBoundingBoxResult? bounds = await dialog.BoundingBoxAsync();
@@ -304,6 +318,133 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await dialog.Locator(".program-session-detail").First.ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Dialog).GetByText("Workout structure", new() { Exact = true })).ToBeVisibleAsync();
     await AssertNoOverflowAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Header_runner_switch_refreshes_workouts_profiles_and_history()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    int runnerTwoProgramRequests = 0;
+    int runnerTwoHistoryRequests = 0;
+    await Page.RouteAsync("**/api/planning/programs?*", async route =>
+    {
+      if (new Uri(route.Request.Url).Query.Contains(scenario.SecondProfileId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        Interlocked.Increment(ref runnerTwoProgramRequests);
+      await route.ContinueAsync();
+    });
+    await Page.RouteAsync("**/api/history?*", async route =>
+    {
+      if (new Uri(route.Request.Url).Query.Contains(scenario.SecondProfileId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        Interlocked.Increment(ref runnerTwoHistoryRequests);
+      await route.ContinueAsync();
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.SelectActiveRunnerAsync("Marc");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "My training plans", Exact = true }).ClickAsync();
+    ILocator first5K = Page.Locator(".program-card").Filter(new() { HasText = "First 5K" });
+    await Expect(first5K.GetByRole(AriaRole.Button, new() { Name = "Restart", Exact = true })).ToBeVisibleAsync();
+    await Page.SelectActiveRunnerAsync(GalleryScenario.SecondProfileName);
+    await Expect(first5K.GetByRole(AriaRole.Button, new() { Name = "Start plan", Exact = true })).ToBeVisibleAsync();
+    Assert.True(runnerTwoProgramRequests > 0);
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator runnerTwoRow = Page.Locator(".profile-row").Filter(new() { HasText = GalleryScenario.SecondProfileName });
+    await Expect(runnerTwoRow.Locator(".integration-badge")).ToContainTextAsync("Active in this browser");
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "History", Exact = true })).ToBeVisibleAsync();
+    Assert.True(runnerTwoHistoryRequests > 0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Profile_save_network_failure_reenables_save_for_retry()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await Page.RouteAsync("**/api/planning/profiles/*", async route =>
+    {
+      if (string.Equals(route.Request.Method, "PUT", StringComparison.OrdinalIgnoreCase))
+      {
+        await route.AbortAsync();
+        return;
+      }
+
+      await route.ContinueAsync();
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator marcRow = Page.Locator(".profile-row").Filter(new() { HasText = "Marc" }).First;
+    await marcRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+    await Page.GetByLabel("Display name", new() { Exact = true }).FillAsync($"Marc retry {Guid.NewGuid():N}");
+    ILocator save = Page.GetByRole(AriaRole.Button, new() { Name = "Save profile", Exact = true });
+    await save.ClickAsync();
+    await Expect(Page.GetByText("The profile could not reach the local gateway.", new() { Exact = false })).ToBeVisibleAsync();
+    await Expect(save).ToBeEnabledAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Calendar_load_failure_is_retryable_without_freezing_the_page()
+  {
+    Page.PageError += (_, exception) => output.WriteLine("Browser page error: {0}", exception);
+    Page.Console += (_, message) => output.WriteLine("Browser console {0}: {1}", message.Type, message.Text);
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    int rangeRequests = 0;
+    await Page.RouteAsync($"**/api/planning/calendar/{scenario.MarcProfileId:D}?*", async route =>
+    {
+      if (Interlocked.Increment(ref rangeRequests) == 1)
+      {
+        await route.FulfillAsync(new()
+        {
+          Status = 503,
+          ContentType = "application/json",
+          Body = "{\"message\":\"temporary calendar failure\"}",
+        });
+      }
+      else
+      {
+        await route.ContinueAsync();
+      }
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
+    await Expect(Page.GetByText("The calendar could not be loaded from the local gateway.", new() { Exact = false })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Retry calendar", Exact = true }).ClickAsync();
+
+    await Expect(Page.GetByText("The calendar could not be loaded from the local gateway.", new() { Exact = false })).ToHaveCountAsync(0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
+    Assert.True(rangeRequests >= 2);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Calendar_ignores_a_stale_profile_response_after_switching_runners()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    var releaseMarcRange = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync($"**/api/planning/calendar/{scenario.MarcProfileId:D}?*", async route =>
+    {
+      await releaseMarcRange.Task;
+      try { await route.ContinueAsync(); }
+      catch (PlaywrightException) { }
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByLabel("Choose active runner", new() { Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Radio, new() { Name = GalleryScenario.SecondProfileName, Exact = true }).ClickAsync();
+    await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true })).ToContainTextAsync(GalleryScenario.SecondProfileName);
+    await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync($"Showing {GalleryScenario.SecondProfileName}’s calendar.");
+
+    releaseMarcRange.TrySetResult();
+    await Page.WaitForTimeoutAsync(250);
+    await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true })).ToContainTextAsync(GalleryScenario.SecondProfileName);
+    await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync($"Showing {GalleryScenario.SecondProfileName}’s calendar.");
   }
 
   [Fact]
@@ -457,7 +598,9 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
     await Expect(Page.Locator(".profile-context-picker")).ToHaveCountAsync(0);
     await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Marc");
-    await Page.Locator(".calendar-agenda-week").Filter(new() { HasText = "10 Aug" }).Locator("summary").ClickAsync();
+    ILocator agendaWeek = Page.Locator(".calendar-agenda-week").Filter(new() { HasText = "10 Aug" });
+    if (!await agendaWeek.EvaluateAsync<bool>("element => element.open"))
+      await agendaWeek.Locator("summary").ClickAsync();
     ILocator manageButton = Page.Locator(".calendar-agenda .calendar-option-manage").First;
     await Expect(manageButton).ToBeVisibleAsync();
     await manageButton.ClickAsync();
@@ -515,6 +658,107 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · shift the rest", Exact = false })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false })).ToHaveCountAsync(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Calendar_live_program_training_days_round_trip_preserves_mask_and_dates()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    string profileName = $"Calendar days {Guid.NewGuid():N}";
+    Guid profileId = await CreateProfileAsync(profileName);
+    Guid programId = Guid.Empty;
+    Guid runId = Guid.Empty;
+
+    try
+    {
+      using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+      using HttpResponseMessage createResponse = await client.PostAsJsonAsync("/api/planning/programs", new
+      {
+        operationId = Guid.NewGuid(),
+        name = $"Live calendar days {Guid.NewGuid():N}",
+        description = "Browser regression for real program calendar rescheduling.",
+        category = "5K",
+        ownerProfileId = profileId,
+        items = new[]
+        {
+          new { workoutRevisionId = scenario.FeaturedWorkoutRevisionId },
+          new { workoutRevisionId = scenario.FeaturedWorkoutRevisionId },
+          new { workoutRevisionId = scenario.FeaturedWorkoutRevisionId },
+        },
+      });
+      createResponse.EnsureSuccessStatusCode();
+      JsonElement created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+      programId = created.GetProperty("id").GetGuid();
+      Guid revisionId = created.GetProperty("revisionId").GetGuid();
+      int firstMask = 37; // Monday, Wednesday, Saturday.
+      DateOnly startDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), firstMask);
+
+      using HttpResponseMessage startResponse = await client.PostAsJsonAsync($"/api/planning/programs/{programId:D}/start", new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        expectedProgramRevisionId = revisionId,
+        expectedActiveRunId = (Guid?)null,
+        expectedActiveRunVersion = (int?)null,
+        scheduledStartDate = startDate,
+        scheduledWeekdayMask = firstMask,
+        scheduleTimeZoneId = "Europe/Brussels",
+      });
+      startResponse.EnsureSuccessStatusCode();
+      JsonElement started = await startResponse.Content.ReadFromJsonAsync<JsonElement>();
+      runId = started.GetProperty("id").GetGuid();
+
+      await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri,
+        new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await Page.SelectActiveRunnerAsync(profileName);
+      await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true }))
+        .ToContainTextAsync(profileName);
+
+      await ChangeLiveProgramDaysAsync(37, 69);
+      await AssertProgramCalendarUsesMaskAsync(client, profileId, runId, expectedMask: 69);
+
+      await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await ChangeLiveProgramDaysAsync(69, 37);
+      await AssertProgramCalendarUsesMaskAsync(client, profileId, runId, expectedMask: 37);
+
+      await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+      await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
+      await AssertProgramCalendarUsesMaskAsync(client, profileId, runId, expectedMask: 37);
+    }
+    finally
+    {
+      using HttpClient cleanupClient = new() { BaseAddress = gateway.BaseAddress };
+      if (runId != Guid.Empty)
+      {
+        using HttpResponseMessage previewResponse = await cleanupClient.GetAsync(
+          $"/api/planning/programs/runs/{runId:D}/clear-upcoming/preview?profileId={profileId:D}");
+        if (previewResponse.IsSuccessStatusCode)
+        {
+          JsonElement preview = await previewResponse.Content.ReadFromJsonAsync<JsonElement>();
+          if (preview.GetProperty("canApply").GetBoolean())
+          {
+            using HttpResponseMessage clearResponse = await cleanupClient.PostAsJsonAsync(
+              $"/api/planning/programs/runs/{runId:D}/clear-upcoming",
+              new
+              {
+                operationId = Guid.NewGuid(),
+                profileId,
+                expectedRunVersion = preview.GetProperty("runVersion").GetInt32(),
+              });
+            clearResponse.EnsureSuccessStatusCode();
+          }
+        }
+      }
+      JsonElement[] profiles = (await cleanupClient.GetFromJsonAsync<JsonElement[]>("/api/planning/profiles")) ?? [];
+      JsonElement profile = Assert.Single(profiles, candidate => candidate.GetProperty("id").GetGuid() == profileId);
+      using HttpResponseMessage archiveResponse = await cleanupClient.PostAsJsonAsync(
+        $"/api/planning/profiles/{profileId:D}/archive",
+        new { operationId = Guid.NewGuid(), expectedVersion = profile.GetProperty("version").GetInt32() });
+      archiveResponse.EnsureSuccessStatusCode();
+    }
+
+    Assert.NotEqual(Guid.Empty, programId);
   }
 
   [Fact]
@@ -795,6 +1039,92 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     JsonElement profile = await response.Content.ReadFromJsonAsync<JsonElement>();
     return profile.GetProperty("id").GetGuid();
   }
+
+  private async Task ChangeLiveProgramDaysAsync(int currentMask, int targetMask)
+  {
+    ILocator manageButton = Page.Locator(".calendar-month .calendar-option-shell--program .calendar-option-manage").First;
+    await Expect(manageButton).ToBeVisibleAsync();
+    await manageButton.ClickAsync();
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Change training days", Exact = true })).ToBeVisibleAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Change training days", Exact = true }).ClickAsync();
+    ILocator picker = dialog.Locator(".default-days-picker");
+    foreach ((string label, int flag) in new[] { ("Mon", 1), ("Tue", 2), ("Wed", 4), ("Thu", 8), ("Fri", 16), ("Sat", 32), ("Sun", 64) })
+    {
+      ILocator dayButton = picker.GetByRole(AriaRole.Button, new() { Name = label, Exact = true });
+      bool shouldBeSelected = (targetMask & flag) != 0;
+      bool isSelected = string.Equals(await dayButton.GetAttributeAsync("aria-pressed"), "true", StringComparison.OrdinalIgnoreCase);
+      Assert.Equal((currentMask & flag) != 0, isSelected);
+      if (shouldBeSelected != isSelected)
+      {
+        await dayButton.ClickAsync();
+      }
+    }
+
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true })).ToBeEnabledAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByText("New days", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm all future changes", Exact = true })).ToBeEnabledAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm all future changes", Exact = true }).ClickAsync();
+    await Expect(dialog).ToBeHiddenAsync();
+  }
+
+  private static async Task AssertProgramCalendarUsesMaskAsync(HttpClient client, Guid profileId, Guid runId, int expectedMask)
+  {
+    DateOnly from = DateOnly.FromDateTime(DateTime.Today);
+    DateOnly to = from.AddDays(60);
+    JsonElement range = (await client.GetFromJsonAsync<JsonElement>(
+      $"/api/planning/calendar/{profileId:D}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}"))!;
+    List<(DateOnly Date, int Mask)> sessions = [];
+    foreach (JsonElement day in range.GetProperty("days").EnumerateArray())
+    {
+      DateOnly date = DateOnly.Parse(day.GetProperty("date").GetString()!);
+      foreach (JsonElement option in day.GetProperty("options").EnumerateArray())
+      {
+        if (option.GetProperty("source").GetString() != "Program" ||
+            option.GetProperty("programRunId").GetGuid() != runId)
+        {
+          continue;
+        }
+
+        sessions.Add((date, option.GetProperty("programWeekdayMask").GetInt32()));
+      }
+    }
+
+    Assert.Equal(3, sessions.Count);
+    Assert.All(sessions, session =>
+    {
+      Assert.Equal(expectedMask, session.Mask);
+      Assert.True((expectedMask & WeekdayFlag(session.Date.DayOfWeek)) != 0,
+        $"Program session {session.Date:yyyy-MM-dd} did not use mask {expectedMask}.");
+    });
+  }
+
+  private static DateOnly NextSelectedDate(DateOnly date, int mask)
+  {
+    for (int offset = 0; offset < 7; offset++)
+    {
+      DateOnly candidate = date.AddDays(offset);
+      if ((mask & WeekdayFlag(candidate.DayOfWeek)) != 0)
+      {
+        return candidate;
+      }
+    }
+
+    throw new InvalidOperationException($"Mask {mask} did not select a weekday.");
+  }
+
+  private static int WeekdayFlag(DayOfWeek day) => day switch
+  {
+    DayOfWeek.Monday => 1,
+    DayOfWeek.Tuesday => 2,
+    DayOfWeek.Wednesday => 4,
+    DayOfWeek.Thursday => 8,
+    DayOfWeek.Friday => 16,
+    DayOfWeek.Saturday => 32,
+    DayOfWeek.Sunday => 64,
+    _ => throw new ArgumentOutOfRangeException(nameof(day)),
+  };
 
   private async Task AssertNoOverflowAsync()
   {

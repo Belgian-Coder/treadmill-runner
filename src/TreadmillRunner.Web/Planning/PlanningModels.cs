@@ -133,6 +133,29 @@ public sealed record WorkoutProgramRunView(
   int ScheduledWeekdayMask = 0,
   string? ScheduleTimeZoneId = null);
 
+public sealed record WorkoutProgramSummaryView(
+  Guid Id,
+  bool IsArchived,
+  Guid RevisionId,
+  int RevisionNumber,
+  string Name,
+  string? Description,
+  string Category,
+  int ItemCount,
+  WorkoutProgramRunView? Run,
+  int CompletedItemCount,
+  Guid? NextItemId,
+  Guid? NextWorkoutRevisionId,
+  string? NextWorkoutName,
+  int? NextWorkoutRevisionNumber,
+  double? NextWorkoutDurationMinutes,
+  bool IsComplete,
+  int RequiredTrainingDays,
+  string? TemplateId = null,
+  string? TemplateVersion = null,
+  Guid? OwnerProfileId = null,
+  int SkippedItemCount = 0);
+
 public sealed record WorkoutProgramView(
   Guid Id,
   bool IsArchived,

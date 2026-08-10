@@ -1,4 +1,5 @@
 @page "/profiles"
+@implements IDisposable
 @using TreadmillRunner.Core.Profiles
 @using TreadmillRunner.Core.Household
 @using System.Text.Json
@@ -150,6 +151,11 @@
     private string? message;
     private Guid pendingSaveOperationId = Guid.NewGuid();
     private Guid pendingArchiveOperationId = Guid.NewGuid();
+    private int profileChangeGeneration;
+    private int reloadGeneration;
+    private CancellationTokenSource? reloadCancellation;
+
+    protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -164,27 +170,54 @@
         StateHasChanged();
     }
 
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        if (profileId == activeProfileId) return;
+        _ = InvokeAsync(() => ApplyActiveProfileAsync(profileId));
+    }
+
+    private async Task ApplyActiveProfileAsync(Guid? profileId)
+    {
+        int generation = ++profileChangeGeneration;
+        activeProfileId = profileId;
+        await ReloadAsync();
+        if (generation != profileChangeGeneration || activeProfileId != profileId) return;
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task ReloadAsync()
     {
+        reloadCancellation?.Cancel();
+        reloadCancellation?.Dispose();
+        reloadCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = reloadCancellation.Token;
+        int generation = ++reloadGeneration;
         loading = true;
         try
         {
-            profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
+            List<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles", cancellationToken) ?? [];
+            if (generation != reloadGeneration) return;
+            profiles = loadedProfiles;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (HttpRequestException)
         {
-            message = "Profiles are temporarily unavailable.";
+            if (generation == reloadGeneration)
+                message = "Profiles are temporarily unavailable.";
         }
         finally
         {
-            loading = false;
+            if (generation == reloadGeneration)
+            {
+                loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
     private async Task SelectAsync(ProfileView profile)
     {
         await ActiveProfile.SetAsync(profile.Id);
-        activeProfileId = profile.Id;
         message = $"{profile.DisplayName} is active in this browser.";
     }
 
@@ -234,47 +267,57 @@
 
     private async Task SaveAsync(EditContext _)
     {
+        if (saving) return;
         saving = true;
         message = null;
-        var request = new ProfileUpsertRequest(
-            pendingSaveOperationId,
-            form.DisplayName,
-            form.UnitSystem,
-            form.WeightKilograms,
-            form.MaximumHeartRateBpm,
-            form.MaximumSpeedKph,
-            form.HeartRateZones.Select(static zone => new HeartRateZoneView(
-                zone.Number,
-                zone.Name,
-                zone.MinimumBpm,
-                zone.MaximumBpm)).ToArray(),
-            editingId is null ? null : editingVersion,
-            form.HeartRateIncreaseStepKph,
-            form.HeartRateIncreaseCooldownSeconds,
-            form.HeartRateDecreaseStepKph,
-            form.HeartRateDecreaseCooldownSeconds);
-
-        HttpResponseMessage response = editingId is null
-            ? await Http.PostAsJsonAsync("api/planning/profiles", request)
-            : await Http.PutAsJsonAsync($"api/planning/profiles/{editingId}", request);
-        if (response.IsSuccessStatusCode)
+        try
         {
-            ProfileView? saved = await response.Content.ReadFromJsonAsync<ProfileView>();
-            if (saved is not null && activeProfileId is null)
+            var request = new ProfileUpsertRequest(
+                pendingSaveOperationId,
+                form.DisplayName,
+                form.UnitSystem,
+                form.WeightKilograms,
+                form.MaximumHeartRateBpm,
+                form.MaximumSpeedKph,
+                form.HeartRateZones.Select(static zone => new HeartRateZoneView(
+                    zone.Number,
+                    zone.Name,
+                    zone.MinimumBpm,
+                    zone.MaximumBpm)).ToArray(),
+                editingId is null ? null : editingVersion,
+                form.HeartRateIncreaseStepKph,
+                form.HeartRateIncreaseCooldownSeconds,
+                form.HeartRateDecreaseStepKph,
+                form.HeartRateDecreaseCooldownSeconds);
+
+            using HttpResponseMessage response = editingId is null
+                ? await Http.PostAsJsonAsync("api/planning/profiles", request)
+                : await Http.PutAsJsonAsync($"api/planning/profiles/{editingId}", request);
+            if (response.IsSuccessStatusCode)
             {
-                await SelectAsync(saved);
+                ProfileView? saved = await response.Content.ReadFromJsonAsync<ProfileView>();
+                if (saved is not null && activeProfileId is null)
+                {
+                    await SelectAsync(saved);
+                }
+
+                message = $"{saved?.DisplayName ?? form.DisplayName} saved.";
+                ResetForm();
+                await ReloadAsync();
             }
-
-            message = $"{saved?.DisplayName ?? form.DisplayName} saved.";
-            ResetForm();
-            await ReloadAsync();
+            else
+            {
+                message = "The profile could not be saved. Check each value and try again.";
+            }
         }
-        else
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
-            message = "The profile could not be saved. Check each value and try again.";
+            message = "The profile could not reach the local gateway. Check the connection and try again.";
         }
-
-        saving = false;
+        finally
+        {
+            saving = false;
+        }
     }
 
     private async Task ArchiveAsync()
@@ -412,6 +455,13 @@
 
     private static bool IsLegacyPlaceholderZone(IReadOnlyList<ZoneForm> zones) =>
         zones is [{ Number: 1, Name: "Zone 1", MinimumBpm: 100, MaximumBpm: 120 }];
+
+    public void Dispose()
+    {
+        ActiveProfile.Changed -= ActiveProfileChanged;
+        reloadCancellation?.Cancel();
+        reloadCancellation?.Dispose();
+    }
 
     private static string Initial(string name) => string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[0].ToString().ToUpperInvariant();
 

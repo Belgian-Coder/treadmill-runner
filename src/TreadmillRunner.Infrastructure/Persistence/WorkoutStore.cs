@@ -43,6 +43,7 @@ public interface IWorkoutStore
   Task<StoredWorkoutRevision> CreateAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default, WorkoutKind kind = WorkoutKind.Structured);
   Task<StoredWorkoutRevision> AppendRevisionAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<StoredWorkoutRevision?> FindRevisionAsync(Guid revisionId, CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<StoredWorkoutRevision>> FindRevisionsAsync(IReadOnlyCollection<Guid> revisionIds, CancellationToken cancellationToken = default);
   Task<IReadOnlyList<StoredWorkoutRevision>> ListRevisionsAsync(Guid workoutId, CancellationToken cancellationToken = default);
   Task RecordImportAsync(ImportAuditRecord audit, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<ImportConfirmationOutcome> ConfirmImportAsync(PersistenceWriteOperation operation, Guid previewId, Guid workoutId, WorkoutDefinition definition, ImportAuditRecord audit, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
@@ -249,6 +250,34 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
         revision.ContentSha256,
         revision.CreatedAtUtc))
       .SingleOrDefaultAsync(cancellationToken);
+  }
+
+  public async Task<IReadOnlyList<StoredWorkoutRevision>> FindRevisionsAsync(
+    IReadOnlyCollection<Guid> revisionIds,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(revisionIds);
+    Guid[] requestedIds = revisionIds
+      .Where(static revisionId => revisionId != Guid.Empty)
+      .Distinct()
+      .ToArray();
+    if (requestedIds.Length == 0)
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      return [];
+    }
+
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await context.WorkoutRevisions.AsNoTracking()
+      .Where(revision => requestedIds.Contains(revision.Id))
+      .Select(revision => new StoredWorkoutRevision(
+        revision.Id,
+        revision.WorkoutId,
+        revision.RevisionNumber,
+        revision.DefinitionJson,
+        revision.ContentSha256,
+        revision.CreatedAtUtc))
+      .ToArrayAsync(cancellationToken);
   }
 
   public async Task<IReadOnlyList<StoredWorkoutRevision>> ListRevisionsAsync(

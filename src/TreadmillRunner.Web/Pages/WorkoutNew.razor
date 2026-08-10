@@ -1,4 +1,5 @@
 @page "/workouts/new"
+@implements IDisposable
 @using System.Globalization
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -124,6 +125,8 @@
     private string? pendingDraft;
     private string? draftKey;
     private CancellationTokenSource? draftDebounce;
+    private Guid? activeProfileId;
+    private int profileGeneration;
     private readonly List<BlockForm> copiedBlocks = [];
     private IReadOnlyList<WorkoutBlockInput> PreviewBlocks => form.Blocks.Select(ToInput).ToArray();
     private int SelectedBlockCount => EnumerateBlocks(form.Blocks).Count(static block => block.Selected);
@@ -137,6 +140,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ActiveProfile.Changed += ActiveProfileChanged;
         existingWorkouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts")
             ?? Array.Empty<WorkoutSummaryView>();
     }
@@ -187,27 +191,52 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        int generation = profileGeneration;
         Guid? profileId = await ActiveProfile.GetAsync();
-        draftKey = $"{profileId?.ToString("N") ?? "household"}.workout.{WorkoutId?.ToString("N") ?? "new"}";
+        if (generation != profileGeneration) return;
+        activeProfileId = profileId;
+        draftKey = BuildDraftKey(profileId);
         pendingDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", draftKey);
+        if (generation != profileGeneration) return;
         if (pendingDraft is not null) StateHasChanged();
     }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        int generation = ++profileGeneration;
+        activeProfileId = profileId;
+        _ = InvokeAsync(() => ApplyActiveProfileAsync(profileId, generation));
+    }
+
+    private async Task ApplyActiveProfileAsync(Guid? profileId, int generation)
+    {
+        string nextDraftKey = BuildDraftKey(profileId);
+        draftDebounce?.Cancel();
+        draftKey = nextDraftKey;
+        pendingDraft = await JS.InvokeAsync<string?>("treadmillRunnerDrafts.load", nextDraftKey);
+        if (generation != profileGeneration || activeProfileId != profileId) return;
+        QueueDraftSave();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string BuildDraftKey(Guid? profileId) =>
+        $"{profileId?.ToString("N") ?? "household"}.workout.{WorkoutId?.ToString("N") ?? "new"}";
 
     private void QueueDraftSave()
     {
         draftDebounce?.Cancel();
         draftDebounce = new CancellationTokenSource();
-        _ = SaveDraftAfterDelayAsync(draftDebounce.Token);
+        _ = SaveDraftAfterDelayAsync(draftDebounce.Token, draftKey);
     }
 
-    private async Task SaveDraftAfterDelayAsync(CancellationToken cancellationToken)
+    private async Task SaveDraftAfterDelayAsync(CancellationToken cancellationToken, string? key)
     {
         try
         {
             await Task.Delay(450, cancellationToken);
-            if (draftKey is null) return;
+            if (key is null) return;
             string payload = System.Text.Json.JsonSerializer.Serialize(new WorkoutDraft(form.Name, form.Description, form.Blocks.Select(ToInput).ToArray()));
-            bool saved = await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", draftKey, payload);
+            bool saved = await JS.InvokeAsync<bool>("treadmillRunnerDrafts.save", key, payload);
             if (!saved) message = "Browser draft recovery is unavailable because this draft is too large or local storage is unavailable.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
@@ -502,6 +531,13 @@
     }
 
     private static BlockForm NewRepeatBlock() => new() { Kind = "repeat", Children = [new()] };
+
+    public void Dispose()
+    {
+        ActiveProfile.Changed -= ActiveProfileChanged;
+        draftDebounce?.Cancel();
+        draftDebounce?.Dispose();
+    }
 
     private async Task SaveAsync(EditContext _)
     {

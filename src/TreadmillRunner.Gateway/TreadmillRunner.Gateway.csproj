@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <Content Include="Updates\update-helper.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Updates\service-guardian.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\garmin\garmin_activity_adapter.py" Link="tools\garmin\garmin_activity_adapter.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\garmin\requirements.lock.txt" Link="tools\garmin\requirements.lock.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\garmin\THIRD-PARTY-NOTICES.md" Link="tools\garmin\THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

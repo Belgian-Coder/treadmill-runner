@@ -14,6 +14,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $serviceName = 'TreadmillRunnerGateway'
 $taskName = 'TreadmillRunnerUpdate'
+$guardianTaskName = 'TreadmillRunnerGuardian'
+$serviceDiagnosticLog = 'Microsoft-Windows-Services/Diagnostic'
 if ($RepairUpdateInfrastructureOnly) {
     $runningTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($null -ne $runningTask -and $runningTask.State -eq 'Running') {
@@ -29,7 +31,7 @@ if (-not (Test-Path -LiteralPath $resolvedCertificate -PathType Leaf)) { throw '
 if ((Get-Item -LiteralPath $resolvedRelease).Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
     throw 'ReleasePath cannot be a reparse point.'
 }
-foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1')) {
+foreach ($required in @('TreadmillRunner.Gateway.exe', 'TreadmillRunner.Migrations.exe', 'Updates\update-helper.ps1', 'Updates\service-guardian.ps1')) {
     if (-not (Test-Path -LiteralPath (Join-Path $resolvedRelease $required) -PathType Leaf)) {
         throw "ReleasePath is missing $required."
     }
@@ -46,12 +48,19 @@ $stagingRoot = Join-Path $resolvedDataRoot 'updates\staging'
 $planRoot = Join-Path $resolvedDataRoot 'updates\plans'
 $certificateTarget = Join-Path $updaterRoot 'signing.cer'
 $helperTarget = Join-Path $updaterRoot 'update-helper.ps1'
+$guardianTarget = Join-Path $updaterRoot 'service-guardian.ps1'
 $executableTarget = Join-Path $targetRelease 'TreadmillRunner.Gateway.exe'
+$maintenanceMarkerPath = Join-Path $resolvedDataRoot 'updates\service-maintenance.lock'
 
 if (-not $PSCmdlet.ShouldProcess($serviceName, $(if ($RepairUpdateInfrastructureOnly) { 'Repair protected update infrastructure' } else { "Install release $Version and configure the Windows Service" }))) { return }
 foreach ($directory in @($releaseRoot, $updaterRoot, (Split-Path -Parent $databasePath), $dataProtectionKeyPath, $backupRoot, $feedRoot, $stagingRoot, $planRoot)) {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
 }
+[System.IO.File]::WriteAllText(
+    $maintenanceMarkerPath,
+    "installer $Version $([DateTimeOffset]::UtcNow.ToString('O'))",
+    [System.Text.UTF8Encoding]::new($false))
+try {
 if (Test-Path -LiteralPath $targetRelease) {
     if (-not $RepairUpdateInfrastructureOnly) { throw 'The immutable target release already exists.' }
 } else {
@@ -59,6 +68,7 @@ if (Test-Path -LiteralPath $targetRelease) {
     Copy-Item -LiteralPath $resolvedRelease -Destination $targetRelease -Recurse
 }
 Copy-Item -LiteralPath (Join-Path $resolvedRelease 'Updates\update-helper.ps1') -Destination $helperTarget -Force
+Copy-Item -LiteralPath (Join-Path $resolvedRelease 'Updates\service-guardian.ps1') -Destination $guardianTarget -Force
 Copy-Item -LiteralPath $resolvedCertificate -Destination $certificateTarget -Force
 
 if (-not (Test-Path -LiteralPath $databasePath)) {
@@ -89,6 +99,9 @@ else {
     }
 }
 & sc.exe failure $serviceName 'reset=' 86400 'actions=' restart/5000/restart/15000/restart/60000 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Windows Service recovery actions could not be configured.' }
+& sc.exe failureflag $serviceName 1 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Windows Service non-crash recovery could not be configured.' }
 
 $serviceRegistry = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
 $serviceEnvironment = @(
@@ -143,6 +156,34 @@ $registeredTask.SetSecurityDescriptor(
     "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;$serviceSid)",
     0)
 
+$guardianAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -DataRoot "{1}" -HealthUrl "{2}"' -f
+        $guardianTarget, $resolvedDataRoot, 'http://127.0.0.1:5180/health/live')
+$guardianTriggers = @(
+    (New-ScheduledTaskTrigger -AtStartup),
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1))
+)
+$guardianSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1) `
+    -MultipleInstances IgnoreNew -StartWhenAvailable
+Register-ScheduledTask -TaskName $guardianTaskName -Action $guardianAction -Trigger $guardianTriggers `
+    -Principal $taskPrincipal -Settings $guardianSettings -Force | Out-Null
+
+$diagnosticLog = Get-WinEvent -ListLog $serviceDiagnosticLog -ErrorAction Stop
+$diagnosticLogNeedsEnable = -not $diagnosticLog.IsEnabled
+if ($diagnosticLog.IsEnabled -and $diagnosticLog.MaximumSizeInBytes -ne 4194304) {
+    & wevtutil.exe sl $serviceDiagnosticLog /e:false /q:true
+    if ($LASTEXITCODE -ne 0) { throw 'The Windows service-control diagnostic log could not be paused for reconfiguration.' }
+    $diagnosticLogNeedsEnable = $true
+}
+if ($diagnosticLog.MaximumSizeInBytes -ne 4194304) {
+    & wevtutil.exe sl $serviceDiagnosticLog /ms:4194304 /q:true
+    if ($LASTEXITCODE -ne 0) { throw 'The Windows service-control diagnostic log size could not be bounded.' }
+}
+if ($diagnosticLogNeedsEnable) {
+    & wevtutil.exe sl $serviceDiagnosticLog /e:true /q:true
+    if ($LASTEXITCODE -ne 0) { throw 'The bounded Windows service-control diagnostic log could not be enabled.' }
+}
+
 $firewallName = 'TreadmillRunner Private LAN'
 Remove-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue
 New-NetFirewallRule -DisplayName $firewallName -Direction Inbound -Action Allow -Protocol TCP `
@@ -162,3 +203,7 @@ do {
     Start-Sleep -Seconds 2
 } while ([DateTimeOffset]::UtcNow -lt $deadline)
 throw 'The installed gateway did not become ready within 120 seconds.'
+}
+finally {
+    Remove-Item -LiteralPath $maintenanceMarkerPath -Force -ErrorAction SilentlyContinue
+}

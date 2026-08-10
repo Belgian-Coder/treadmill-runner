@@ -18,6 +18,7 @@ public interface ICalendarStore
   Task<bool> DeleteGroupAsync(Guid seriesId, IReadOnlyDictionary<Guid, int> expectedVersions, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task SaveSelectionAsync(StoredTrainingDaySelection selection, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<StoredTrainingDaySelection?> FindSelectionAsync(Guid userProfileId, DateOnly date, CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<StoredTrainingDaySelection>> ListSelectionsAsync(Guid userProfileId, DateOnly from, DateOnly to, CancellationToken cancellationToken = default);
 }
 
 public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> contextFactory) : ICalendarStore
@@ -141,10 +142,13 @@ public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> co
       .SingleOrDefaultAsync(candidate => candidate.Id == seriesId, cancellationToken)
       ?? throw new KeyNotFoundException($"Calendar series {seriesId} was not found.");
     RequireVersion(selected.Version, expectedVersion);
-    List<CalendarSeriesEntity> group = await Query(context)
-      .Where(candidate => candidate.UserProfileId == selected.UserProfileId && candidate.ScheduleGroupId == selected.ScheduleGroupId)
+    List<CalendarSeriesEntity> allSeries = await Query(context)
+      .Where(candidate => candidate.UserProfileId == selected.UserProfileId)
       .OrderBy(candidate => candidate.StartDate)
       .ToListAsync(cancellationToken);
+    List<CalendarSeriesEntity> group = allSeries
+      .Where(candidate => candidate.ScheduleGroupId == selected.ScheduleGroupId)
+      .ToList();
     if (moveFollowing && (expectedGroupVersions is null || expectedGroupVersions.Count != group.Count ||
         group.Any(segment => !expectedGroupVersions.TryGetValue(segment.Id, out int version) || version != segment.Version)))
     {
@@ -162,8 +166,13 @@ public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> co
         nameof(sourceDate));
     }
 
-    bool targetCollision = HasOccurrence(group, selected.UserProfileId, targetDate);
-    if ((!moveFollowing && targetCollision) || (moveFollowing && targetDate < sourceDate && targetCollision))
+    bool groupTargetCollision = HasOccurrence(group, selected.UserProfileId, targetDate);
+    bool otherGroupTargetCollision = HasOccurrence(
+      allSeries.Where(candidate => candidate.ScheduleGroupId != selected.ScheduleGroupId).ToArray(),
+      selected.UserProfileId,
+      targetDate);
+    if ((!moveFollowing && (groupTargetCollision || otherGroupTargetCollision)) ||
+        (moveFollowing && (otherGroupTargetCollision || targetDate < sourceDate && groupTargetCollision)))
     {
       throw new ArgumentException("The target date already contains a session from this workout group.", nameof(targetDate));
     }
@@ -171,6 +180,19 @@ public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> co
     {
       throw new ArgumentException(
         "Moving this and later sessions to that earlier date would overlap existing sessions in the workout group. Move only this session or choose a later date.",
+        nameof(targetDate));
+    }
+    if (moveFollowing && HasCrossGroupContinuationCollision(
+      allSeries,
+      group,
+      selected,
+      sourceDate,
+      targetDate,
+      dayOffset,
+      continuationSeriesId))
+    {
+      throw new ArgumentException(
+        "Moving this and later sessions would overlap another workout group. Choose dates that remain empty for the entire shifted sequence.",
         nameof(targetDate));
     }
 
@@ -321,11 +343,32 @@ public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> co
       .SingleOrDefaultAsync(cancellationToken);
   }
 
+  public async Task<IReadOnlyList<StoredTrainingDaySelection>> ListSelectionsAsync(
+    Guid userProfileId,
+    DateOnly from,
+    DateOnly to,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await context.TrainingDaySelections.AsNoTracking()
+      .Where(selection => selection.UserProfileId == userProfileId &&
+        selection.LocalDate >= from && selection.LocalDate <= to)
+      .OrderBy(static selection => selection.LocalDate)
+      .Select(static selection => new StoredTrainingDaySelection(
+        selection.UserProfileId,
+        selection.LocalDate,
+        selection.CalendarSeriesId,
+        selection.WorkoutRevisionId,
+        selection.SelectedAtUtc))
+      .ToArrayAsync(cancellationToken);
+  }
+
   private static IQueryable<CalendarSeriesEntity> Query(TreadmillRunnerDbContext context) =>
     context.CalendarSeries
       .Include(series => series.Options)
       .Include(series => series.Exceptions)
-      .ThenInclude(exception => exception.Options);
+      .ThenInclude(exception => exception.Options)
+      .AsSplitQuery();
 
   private static CalendarSeriesEntity CreateEntity(CalendarSeriesDefinition series, DateTimeOffset nowUtc, int version) => new()
   {
@@ -421,6 +464,104 @@ public sealed class CalendarStore(IDbContextFactory<TreadmillRunnerDbContext> co
     return TrainingDaySelectionResolver
       .ResolveRange(shifted, selected.UserProfileId, targetDate, sourceDate.AddDays(-1))
       .Any(day => preservedDates.Contains(day.Date));
+  }
+
+  private static bool HasCrossGroupContinuationCollision(
+    IReadOnlyList<CalendarSeriesEntity> allSeries,
+    IReadOnlyList<CalendarSeriesEntity> group,
+    CalendarSeriesEntity selected,
+    DateOnly sourceDate,
+    DateOnly targetDate,
+    int dayOffset,
+    Guid continuationSeriesId)
+  {
+    List<CalendarSeriesDefinition> shifted = [];
+    if (selected.StartDate < sourceDate)
+    {
+      shifted.Add(ShiftedContinuationDefinition(selected, sourceDate, targetDate, dayOffset, continuationSeriesId));
+    }
+    else
+    {
+      shifted.Add(ShiftedDefinition(selected, dayOffset));
+    }
+
+    shifted.AddRange(group
+      .Where(candidate => candidate.Id != selected.Id && candidate.StartDate >= sourceDate)
+      .Select(candidate => ShiftedDefinition(candidate, dayOffset)));
+
+    CalendarSeriesDefinition[] otherGroups = allSeries
+      .Where(candidate => candidate.ScheduleGroupId != selected.ScheduleGroupId)
+      .Select(Map)
+      .Select(static versioned => versioned.Series)
+      .ToArray();
+    return shifted.Any(moved => otherGroups.Any(other => HasOccurrenceOverlap(moved, other)));
+  }
+
+  private static bool HasOccurrenceOverlap(CalendarSeriesDefinition first, CalendarSeriesDefinition second)
+  {
+    DateOnly from = first.Recurrence.StartDate > second.Recurrence.StartDate
+      ? first.Recurrence.StartDate
+      : second.Recurrence.StartDate;
+    DateOnly through = MinDate(first.Recurrence.EndDate, second.Recurrence.EndDate);
+    if (through < from) return false;
+
+    int periodDays = LeastCommonMultiple(first.Recurrence.IntervalWeeks, second.Recurrence.IntervalWeeks) * 7;
+    int firstWindowDays = Math.Min(periodDays - 1, through.DayNumber - from.DayNumber);
+    DateOnly firstWindowEnd = from.AddDays(firstWindowDays);
+    DateOnly? recurringCandidate = null;
+    for (DateOnly date = from; ; date = date.AddDays(1))
+    {
+      if (first.Recurrence.OccursOn(date) && second.Recurrence.OccursOn(date))
+      {
+        recurringCandidate = date;
+        break;
+      }
+
+      if (date == firstWindowEnd) break;
+    }
+
+    if (recurringCandidate is { } candidate)
+    {
+      for (DateOnly date = candidate; date <= through;)
+      {
+        if (HasBothOptions(first, second, date)) return true;
+        if (date.DayNumber > through.DayNumber - periodDays) break;
+        date = date.AddDays(periodDays);
+      }
+    }
+
+    foreach (DateOnly exceptionDate in first.Exceptions.Select(static exception => exception.Date)
+      .Concat(second.Exceptions.Select(static exception => exception.Date))
+      .Where(date => date >= from && date <= through)
+      .Distinct())
+    {
+      if (HasBothOptions(first, second, exceptionDate)) return true;
+    }
+
+    return false;
+  }
+
+  private static bool HasBothOptions(CalendarSeriesDefinition first, CalendarSeriesDefinition second, DateOnly date)
+  {
+    TrainingDaySelection selection = TrainingDaySelectionResolver.ResolveDay([first, second], first.UserProfileId, date);
+    return selection.Options.Any(option => option.SeriesId == first.Id) &&
+      selection.Options.Any(option => option.SeriesId == second.Id);
+  }
+
+  private static DateOnly MinDate(DateOnly? first, DateOnly? second) =>
+    first is null ? second ?? DateOnly.MaxValue : second is null ? first.Value : (first.Value <= second.Value ? first.Value : second.Value);
+
+  private static int LeastCommonMultiple(int first, int second)
+  {
+    int greatestCommonDivisor = GreatestCommonDivisor(first, second);
+    return checked(first / greatestCommonDivisor * second);
+  }
+
+  private static int GreatestCommonDivisor(int first, int second)
+  {
+    while (second != 0)
+      (first, second) = (second, first % second);
+    return first;
   }
 
   private static CalendarSeriesDefinition ShiftedContinuationDefinition(

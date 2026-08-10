@@ -111,6 +111,10 @@
                 </article>
             }
         </div>
+        @if (sessions.Count == historyTake && historyTake < MaximumHistoryTake)
+        {
+            <div class="card-actions"><button class="secondary-action" type="button" @onclick="LoadOlderAsync">Load older history</button></div>
+        }
         @if (FilteredSessions.Count == 0)
         {
             <div class="empty-state"><p>No runs match these filters.</p><button class="secondary-action" type="button" @onclick="ClearFilters">Clear filters</button></div>
@@ -123,7 +127,7 @@
     <DetailSheet BackdropId="history-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog session-details-dialog" LabelledBy="history-details-title" OnDismiss="CloseSessionDetailsAsync">
         <header class="workout-details-header">
             <div><p class="eyebrow">@selectedSummary.Status · @selectedSummary.UserProfileName</p><h2 id="history-details-title">@selectedSummary.WorkoutTitle</h2></div>
-            <button class="icon-action" type="button" aria-label="Close session details" autofocus @onclick="CloseSessionDetailsAsync">×</button>
+            <button class="icon-action" type="button" aria-label="Close session details" autofocus @onclick="CloseSessionDetailsAsync"><AppIcon Name="close" /></button>
         </header>
         @if (sessionDetailsLoading)
         {
@@ -148,11 +152,16 @@
     private IReadOnlyList<SessionSummary> sessions = Array.Empty<SessionSummary>();
     private WeeklySessionTotals? weekly;
     private LocalInsightsView? insights;
-    private string searchText = string.Empty;
-    private string statusFilter = "all";
-    private string periodFilter = "30";
+    private string searchTextValue = string.Empty;
+    private string statusFilterValue = "all";
+    private string periodFilterValue = "30";
+    private string searchText { get => searchTextValue; set { searchTextValue = value; RefreshFilteredSessions(); } }
+    private string statusFilter { get => statusFilterValue; set { statusFilterValue = value; RefreshFilteredSessions(); } }
+    private string periodFilter { get => periodFilterValue; set { periodFilterValue = value; RefreshFilteredSessions(); } }
     private bool HasFilters => !string.IsNullOrWhiteSpace(searchText) || statusFilter != "all" || periodFilter != "30";
     private bool showTests;
+    private const int MaximumHistoryTake = 5000;
+    private int historyTake = 500;
     private Guid? profileId;
     private bool loading = true;
     private bool summaryUnavailable;
@@ -164,36 +173,51 @@
     private string? sessionDetailsError;
     private DotNetObjectReference<History>? sessionDetailsModalReference;
     private CancellationTokenSource? sessionDetailsCancellation;
+    private CancellationTokenSource? historyLoadCancellation;
+    private int historyLoadGeneration;
+    private IReadOnlyList<SessionSummary> filteredSessions = Array.Empty<SessionSummary>();
 
-    private IReadOnlyList<SessionSummary> FilteredSessions
+    private IReadOnlyList<SessionSummary> FilteredSessions => filteredSessions;
+
+    private void RefreshFilteredSessions()
     {
-        get
+        IEnumerable<SessionSummary> filtered = sessions;
+        filtered = filtered.Where(session => showTests
+            ? session.Origin == SessionOrigin.SystemTest
+            : session.Origin != SessionOrigin.SystemTest);
+        if (!string.IsNullOrWhiteSpace(searchTextValue))
         {
-            IEnumerable<SessionSummary> filtered = sessions;
-            filtered = filtered.Where(session => showTests
-                ? session.Origin == SessionOrigin.SystemTest
-                : session.Origin != SessionOrigin.SystemTest);
-            if (!string.IsNullOrWhiteSpace(searchText))
-            {
-                filtered = filtered.Where(session => session.WorkoutTitle.Contains(searchText, StringComparison.CurrentCultureIgnoreCase));
-            }
-            if (statusFilter != "all")
-            {
-                filtered = filtered.Where(session => string.Equals(session.Status.ToString(), statusFilter, StringComparison.Ordinal));
-            }
-            if (int.TryParse(periodFilter, out int days))
-            {
-                DateTimeOffset cutoff = DateTimeOffset.Now.AddDays(-days);
-                filtered = filtered.Where(session => session.StartedAt.ToLocalTime() >= cutoff);
-            }
-            return filtered.OrderByDescending(static session => session.StartedAt).ToArray();
+            filtered = filtered.Where(session => session.WorkoutTitle.Contains(searchTextValue, StringComparison.CurrentCultureIgnoreCase));
         }
+        if (statusFilterValue != "all")
+        {
+            filtered = filtered.Where(session => string.Equals(session.Status.ToString(), statusFilterValue, StringComparison.Ordinal));
+        }
+        if (int.TryParse(periodFilterValue, out int days))
+        {
+            DateTimeOffset cutoff = DateTimeOffset.Now.AddDays(-days);
+            filtered = filtered.Where(session => session.StartedAt.ToLocalTime() >= cutoff);
+        }
+        filteredSessions = filtered.OrderByDescending(static session => session.StartedAt).ToArray();
     }
 
     protected override async Task OnInitializedAsync()
     {
+        ActiveProfile.Changed += ActiveProfileChanged;
         profileId = await ActiveProfile.GetAsync();
         await LoadAsync();
+    }
+
+    private void ActiveProfileChanged(Guid? selectedProfileId)
+    {
+        if (profileId == selectedProfileId) return;
+        _ = InvokeAsync(async () =>
+        {
+            profileId = selectedProfileId;
+            historyTake = 500;
+            if (selectedSummary is not null) await CloseSessionDetailsAsync();
+            await LoadAsync();
+        });
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -294,32 +318,60 @@
     {
         if (showTests == value) return;
         showTests = value;
+        historyTake = 500;
+        await LoadAsync();
+    }
+
+    private async Task LoadOlderAsync()
+    {
+        historyTake = Math.Min(MaximumHistoryTake, historyTake + 500);
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
+        historyLoadCancellation?.Cancel();
+        historyLoadCancellation?.Dispose();
+        historyLoadCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = historyLoadCancellation.Token;
+        int generation = ++historyLoadGeneration;
+        Guid? requestedProfileId = profileId;
         loading = true;
         loadError = null;
         summaryUnavailable = false;
         sessions = Array.Empty<SessionSummary>();
+        RefreshFilteredSessions();
         weekly = null;
         insights = null;
-        if (profileId is not { } selected)
+        if (requestedProfileId is not { } selected)
         {
             loading = false;
             return;
         }
         try
         {
-            sessions = await Http.GetFromJsonAsync<SessionSummary[]>($"api/history?profileId={selected}&take=5000&includeTests={showTests.ToString().ToLowerInvariant()}")
+            SessionSummary[] loadedSessions = await Http.GetFromJsonAsync<SessionSummary[]>(
+                $"api/history?profileId={selected}&take={historyTake}&includeTests={showTests.ToString().ToLowerInvariant()}", cancellationToken)
                 ?? Array.Empty<SessionSummary>();
+            if (generation != historyLoadGeneration || profileId != requestedProfileId) return;
+            sessions = loadedSessions;
+            RefreshFilteredSessions();
             if (!showTests)
             {
                 try
                 {
-                    weekly = await Http.GetFromJsonAsync<WeeklySessionTotals>($"api/history/weekly?profileId={selected}");
-                    insights = await Http.GetFromJsonAsync<LocalInsightsView>($"api/local-first/profiles/{selected}/insights");
+                    Task<WeeklySessionTotals?> weeklyTask = Http.GetFromJsonAsync<WeeklySessionTotals>(
+                        $"api/history/weekly?profileId={selected}", cancellationToken);
+                    Task<LocalInsightsView?> insightsTask = Http.GetFromJsonAsync<LocalInsightsView>(
+                        $"api/local-first/profiles/{selected}/insights", cancellationToken);
+                    await Task.WhenAll(weeklyTask, insightsTask);
+                    if (generation != historyLoadGeneration || profileId != requestedProfileId) return;
+                    weekly = await weeklyTask;
+                    insights = await insightsTask;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
                 }
                 catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
                 {
@@ -327,13 +379,14 @@
                 }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             loadError = "History could not be loaded from the local gateway. No stored data was changed.";
         }
         finally
         {
-            loading = false;
+            if (generation == historyLoadGeneration) loading = false;
         }
     }
 
@@ -347,9 +400,10 @@
 
     private void ClearFilters()
     {
-        searchText = string.Empty;
-        statusFilter = "all";
-        periodFilter = "30";
+        searchTextValue = string.Empty;
+        statusFilterValue = "all";
+        periodFilterValue = "30";
+        RefreshFilteredSessions();
     }
 
     private sealed record LocalInsightsView(LocalTrendView Trends, LocalTrendView WeeklyTrends, LocalTrendView MonthlyTrends, IReadOnlyList<LocalGoalView> Goals);
@@ -358,6 +412,9 @@
 
     public async ValueTask DisposeAsync()
     {
+        ActiveProfile.Changed -= ActiveProfileChanged;
+        historyLoadCancellation?.Cancel();
+        historyLoadCancellation?.Dispose();
         sessionDetailsCancellation?.Cancel();
         sessionDetailsCancellation?.Dispose();
         sessionDetailsCancellation = null;

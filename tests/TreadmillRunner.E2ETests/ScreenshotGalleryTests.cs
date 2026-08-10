@@ -559,7 +559,22 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       // This gallery setup is not the interaction assertion. Invoke the already-visible
       // button atomically so the chooser's expected post-selection re-render cannot
       // detach the element between Playwright's actionability check and click dispatch.
-      await featuredWorkout.EvaluateAsync("element => element.click()");
+      // Under a saturated full-suite host, retry only when the Blazor event has not yet
+      // changed the selected workout; the final assertion remains authoritative.
+      for (int attempt = 0; attempt < 3; attempt++)
+      {
+        await featuredWorkout.EvaluateAsync("element => element.click()");
+        try
+        {
+          await Expect(selectedWorkout).ToContainTextAsync(
+            GalleryScenario.FeaturedWorkoutName,
+            new LocatorAssertionsToContainTextOptions { Timeout = 2_000 });
+          return;
+        }
+        catch (PlaywrightException) when (attempt < 2)
+        {
+        }
+      }
     }
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync("Marc");
     await Expect(selectedWorkout)

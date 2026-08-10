@@ -23,6 +23,27 @@ public sealed record StoredWorkoutProgramProgress(
   IReadOnlyList<WorkoutProgramExtraOccurrence>? ExtraOccurrences = null,
   IReadOnlySet<Guid>? CompletedItemIds = null);
 
+public sealed record StoredWorkoutProgramSummary(
+  Guid Id,
+  bool IsArchived,
+  DateTimeOffset CreatedAtUtc,
+  Guid RevisionId,
+  int RevisionNumber,
+  string Name,
+  string? Description,
+  string Category,
+  int ItemCount,
+  WorkoutProgramRun? Run,
+  int CompletedItemCount,
+  Guid? NextItemId,
+  Guid? NextWorkoutRevisionId,
+  bool IsComplete,
+  int RequiredTrainingDays,
+  string? TemplateId = null,
+  string? TemplateVersion = null,
+  Guid? OwnerProfileId = null,
+  int SkippedItemCount = 0);
+
 public sealed record WorkoutProgramScheduleImpact(
   Guid ProgramItemId,
   int Position,
@@ -71,7 +92,10 @@ public sealed record WorkoutProgramClearUpcomingPreview(
 
 public interface IWorkoutProgramStore
 {
+  Task<IReadOnlyList<StoredWorkoutProgramSummary>> ListSummariesAsync(Guid? userProfileId = null, CancellationToken cancellationToken = default);
   Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListAsync(Guid? userProfileId = null, CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListActiveScheduledAsync(Guid userProfileId, CancellationToken cancellationToken = default);
+  Task<StoredWorkoutProgramProgress?> FindProgressAsync(Guid programId, Guid? userProfileId = null, CancellationToken cancellationToken = default);
   Task<StoredWorkoutProgram?> FindAsync(Guid programId, CancellationToken cancellationToken = default);
   Task<WorkoutProgramRevision> CreateAsync(WorkoutProgramRevision revision, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<WorkoutProgramRevision> AppendRevisionAsync(WorkoutProgramRevision revision, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
@@ -83,6 +107,7 @@ public interface IWorkoutProgramStore
   Task<WorkoutProgramScheduleChangePreview> ApplyScheduleChangeAsync(Guid userProfileId, Guid runId, Guid itemId, WorkoutProgramScheduleAction action, DateOnly? targetDate, int expectedRunVersion, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
   Task<WorkoutProgramDefaultDaysPreview> PreviewDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, CancellationToken cancellationToken = default);
   Task<WorkoutProgramDefaultDaysPreview> ApplyDefaultDaysChangeAsync(Guid userProfileId, Guid runId, WeekdayFlags weekdays, DateOnly effectiveDate, DateOnly today, int expectedRunVersion, string expectedRevision, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
+  Task<DateOnly> GetScheduleLocalDateAsync(Guid userProfileId, Guid runId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<WorkoutProgramClearUpcomingPreview> PreviewClearUpcomingAsync(Guid userProfileId, Guid runId, DateOnly today, CancellationToken cancellationToken = default);
   Task<WorkoutProgramClearUpcomingPreview> ClearUpcomingAsync(Guid userProfileId, Guid runId, DateOnly today, int expectedRunVersion, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
 }
@@ -95,6 +120,130 @@ public sealed class WorkoutProgramStore(
   {
     Converters = { new JsonStringEnumConverter() },
   };
+
+  public async Task<IReadOnlyList<StoredWorkoutProgramSummary>> ListSummariesAsync(
+    Guid? userProfileId = null,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutProgramRevisionEntity[] latestRevisions = await context.WorkoutProgramRevisions.AsNoTracking()
+      .Include(static revision => revision.WorkoutProgram)
+      .Where(revision => revision.RevisionNumber == context.WorkoutProgramRevisions
+        .Where(candidate => candidate.WorkoutProgramId == revision.WorkoutProgramId)
+        .Max(candidate => candidate.RevisionNumber))
+      .Where(revision => userProfileId == null || revision.OwnerProfileId == null || revision.OwnerProfileId == userProfileId)
+      .OrderBy(revision => revision.Name)
+      .ToArrayAsync(cancellationToken);
+
+    WorkoutProgramRunEntity[] activeRuns = userProfileId is null
+      ? []
+      : await context.WorkoutProgramRuns.AsNoTracking()
+        .Where(run => run.UserProfileId == userProfileId && run.Status == nameof(WorkoutProgramRunStatus.Active))
+        .ToArrayAsync(cancellationToken);
+    Guid[] activeRevisionIds = activeRuns.Select(static run => run.WorkoutProgramRevisionId).Distinct().ToArray();
+    WorkoutProgramRevisionEntity[] activeRevisions = activeRevisionIds.Length == 0
+      ? []
+      : await context.WorkoutProgramRevisions.AsNoTracking()
+        .Where(revision => activeRevisionIds.Contains(revision.Id))
+        .ToArrayAsync(cancellationToken);
+    Dictionary<Guid, WorkoutProgramRevisionEntity> activeRevisionByProgram = activeRevisions
+      .ToDictionary(static revision => revision.WorkoutProgramId);
+    Dictionary<Guid, WorkoutProgramRunEntity> activeRunByRevision = activeRuns
+      .ToDictionary(static run => run.WorkoutProgramRevisionId);
+
+    Guid[] selectedRevisionIds = latestRevisions
+      .Select(latest => activeRevisionByProgram.GetValueOrDefault(latest.WorkoutProgramId)?.Id ?? latest.Id)
+      .Distinct()
+      .ToArray();
+    WorkoutProgramItemEntity[] selectedItems = selectedRevisionIds.Length == 0
+      ? []
+      : await context.WorkoutProgramItems.AsNoTracking()
+        .Where(item => selectedRevisionIds.Contains(item.WorkoutProgramRevisionId))
+        .OrderBy(static item => item.WorkoutProgramRevisionId)
+        .ThenBy(static item => item.Position)
+        .ToArrayAsync(cancellationToken);
+    ILookup<Guid, WorkoutProgramItemEntity> itemsByRevision = selectedItems
+      .ToLookup(static item => item.WorkoutProgramRevisionId);
+
+    Guid[] activeRunIds = activeRuns.Select(static run => run.Id).ToArray();
+    WorkoutSessionEntity[] completedRows = activeRunIds.Length == 0
+      ? []
+      : await context.WorkoutSessions.AsNoTracking()
+        .Where(session => session.WorkoutProgramRunId != null &&
+          activeRunIds.Contains(session.WorkoutProgramRunId.Value) &&
+          session.WorkoutProgramItemId != null &&
+          session.State == nameof(SessionState.Completed))
+        .ToArrayAsync(cancellationToken);
+    var completedByRun = completedRows
+      .GroupBy(static row => row.WorkoutProgramRunId!.Value)
+      .ToDictionary(static group => group.Key, static group => group.Select(static row => row.WorkoutProgramItemId!.Value).ToHashSet());
+
+    WorkoutProgramScheduleOverrideEntity[] skippedRows = activeRunIds.Length == 0
+      ? []
+      : await context.WorkoutProgramScheduleOverrides.AsNoTracking()
+        .Where(scheduleOverride => activeRunIds.Contains(scheduleOverride.WorkoutProgramRunId) && scheduleOverride.IsSkipped)
+        .ToArrayAsync(cancellationToken);
+    var skippedByRun = skippedRows
+      .GroupBy(static row => row.WorkoutProgramRunId)
+      .ToDictionary(static group => group.Key, static group => group.Select(static row => row.WorkoutProgramItemId).ToHashSet());
+
+    var result = new List<StoredWorkoutProgramSummary>(latestRevisions.Length);
+    foreach (WorkoutProgramRevisionEntity latest in latestRevisions)
+    {
+      WorkoutProgramRevisionEntity revision = activeRevisionByProgram.GetValueOrDefault(latest.WorkoutProgramId) ?? latest;
+      activeRunByRevision.TryGetValue(revision.Id, out WorkoutProgramRunEntity? runEntity);
+      WorkoutProgramItemEntity[] revisionItems = itemsByRevision[revision.Id].ToArray();
+      int itemCount = revisionItems.Length;
+      int? maximumTrainingDays = revisionItems
+        .Where(static item => item.WeekNumber is not null)
+        .GroupBy(static item => item.WeekNumber)
+        .Select(static group => (int?)group.Count())
+        .DefaultIfEmpty()
+        .Max();
+      int requiredTrainingDays = maximumTrainingDays ?? 3;
+
+      HashSet<Guid> completedItemIds = runEntity is not null && completedByRun.TryGetValue(runEntity.Id, out HashSet<Guid>? completed)
+        ? completed
+        : [];
+      HashSet<Guid> skippedItemIds = runEntity is not null && skippedByRun.TryGetValue(runEntity.Id, out HashSet<Guid>? skipped)
+        ? skipped
+        : [];
+      WorkoutProgramItemEntity? next = revisionItems.FirstOrDefault(item =>
+        !completedItemIds.Contains(item.Id) && !skippedItemIds.Contains(item.Id));
+
+      int skippedCount = 0;
+      int completedCount = 0;
+      if (runEntity is not null)
+      {
+        int processedCount = next?.Position - 1 ?? itemCount;
+        skippedCount = revisionItems.Count(item => item.Position <= processedCount && skippedItemIds.Contains(item.Id));
+        completedCount = processedCount - skippedCount;
+      }
+
+      result.Add(new StoredWorkoutProgramSummary(
+        revision.WorkoutProgramId,
+        latest.WorkoutProgram.IsArchived,
+        latest.WorkoutProgram.CreatedAtUtc,
+        revision.Id,
+        revision.RevisionNumber,
+        revision.Name,
+        revision.Description,
+        revision.Category,
+        itemCount,
+        runEntity is null ? null : MapRun(runEntity),
+        completedCount,
+        next?.Id,
+        next?.WorkoutRevisionId,
+        next is null && runEntity is not null,
+        requiredTrainingDays,
+        revision.TemplateId,
+        revision.TemplateVersion,
+        revision.OwnerProfileId,
+        skippedCount));
+    }
+    return result;
+  }
+
   public async Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListAsync(
     Guid? userProfileId = null,
     CancellationToken cancellationToken = default)
@@ -139,6 +288,115 @@ public sealed class WorkoutProgramStore(
     }
 
     return result;
+  }
+
+  public async Task<IReadOnlyList<StoredWorkoutProgramProgress>> ListActiveScheduledAsync(
+    Guid userProfileId,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutProgramRunEntity[] runs = await context.WorkoutProgramRuns.AsNoTracking()
+      .Where(run => run.UserProfileId == userProfileId &&
+        run.Status == nameof(WorkoutProgramRunStatus.Active) &&
+        run.ScheduledStartDate != null)
+      .ToArrayAsync(cancellationToken);
+    var result = new List<StoredWorkoutProgramProgress>(runs.Length);
+    foreach (WorkoutProgramRunEntity runEntity in runs)
+    {
+      WorkoutProgramRevisionEntity revisionEntity = await context.WorkoutProgramRevisions.AsNoTracking()
+        .Include(static revision => revision.WorkoutProgram)
+        .Include(static revision => revision.Items)
+        .ThenInclude(static item => item.Alternatives)
+        .SingleAsync(revision => revision.Id == runEntity.WorkoutProgramRevisionId, cancellationToken);
+      WorkoutProgramRevision revision = MapRevision(revisionEntity);
+      WorkoutProgramRun run = MapRun(runEntity);
+      result.Add(new StoredWorkoutProgramProgress(
+        new StoredWorkoutProgram(
+          revisionEntity.WorkoutProgramId,
+          revisionEntity.WorkoutProgram.IsArchived,
+          revisionEntity.WorkoutProgram.CreatedAtUtc,
+          revision),
+        run,
+        await CalculateProgressAsync(context, revision, runEntity.Id, cancellationToken),
+        await LoadOverridesAsync(context, runEntity.Id, cancellationToken),
+        await LoadExtrasAsync(context, runEntity.Id, cancellationToken),
+        await LoadCompletedItemIdsAsync(context, runEntity.Id, cancellationToken)));
+    }
+    return result;
+  }
+
+  public async Task<DateOnly> GetScheduleLocalDateAsync(
+    Guid userProfileId,
+    Guid runId,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    string? timeZoneId = await context.WorkoutProgramRuns.AsNoTracking()
+      .Where(run => run.Id == runId && run.UserProfileId == userProfileId && run.ScheduledStartDate != null)
+      .Select(static run => run.ScheduleTimeZoneId)
+      .SingleOrDefaultAsync(cancellationToken);
+    if (string.IsNullOrWhiteSpace(timeZoneId))
+      throw new KeyNotFoundException($"Scheduled training plan run {runId} was not found for this runner.");
+    TimeZoneInfo timeZone;
+    try
+    {
+      timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+    }
+    catch (TimeZoneNotFoundException exception)
+    {
+      throw new ArgumentException("The training plan uses an unavailable time zone.", nameof(runId), exception);
+    }
+    catch (InvalidTimeZoneException exception)
+    {
+      throw new ArgumentException("The training plan uses an invalid time zone.", nameof(runId), exception);
+    }
+    return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(nowUtc, timeZone).DateTime);
+  }
+
+  public async Task<StoredWorkoutProgramProgress?> FindProgressAsync(
+    Guid programId,
+    Guid? userProfileId = null,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutProgramRunEntity? runEntity = userProfileId is null
+      ? null
+      : await context.WorkoutProgramRuns.AsNoTracking()
+        .Where(run => run.UserProfileId == userProfileId && run.Status == nameof(WorkoutProgramRunStatus.Active))
+        .Join(context.WorkoutProgramRevisions.AsNoTracking().Where(revision => revision.WorkoutProgramId == programId),
+          run => run.WorkoutProgramRevisionId,
+          revision => revision.Id,
+          (run, _) => run)
+        .SingleOrDefaultAsync(cancellationToken);
+    Guid? selectedRevisionId = runEntity?.WorkoutProgramRevisionId ?? await context.WorkoutProgramRevisions.AsNoTracking()
+      .Where(revision => revision.WorkoutProgramId == programId)
+      .OrderByDescending(static revision => revision.RevisionNumber)
+      .Select(static revision => (Guid?)revision.Id)
+      .FirstOrDefaultAsync(cancellationToken);
+    if (selectedRevisionId is null) return null;
+
+    WorkoutProgramEntity? entity = await context.WorkoutPrograms.AsNoTracking()
+      .Include(program => program.Revisions.Where(revision => revision.Id == selectedRevisionId.Value))
+      .ThenInclude(revision => revision.Items)
+      .ThenInclude(item => item.Alternatives)
+      .SingleOrDefaultAsync(program => program.Id == programId, cancellationToken);
+    if (entity is null) return null;
+    StoredWorkoutProgram program = MapProgram(entity, selectedRevisionId);
+    WorkoutProgramRun? run = runEntity is null ? null : MapRun(runEntity);
+    WorkoutProgramProgress? progress = runEntity is null
+      ? null
+      : await CalculateProgressAsync(context, program.CurrentRevision, runEntity.Id, cancellationToken);
+    IReadOnlyList<WorkoutProgramScheduleOverride>? scheduleOverrides = runEntity is null
+      ? null
+      : await LoadOverridesAsync(context, runEntity.Id, cancellationToken);
+    IReadOnlyList<WorkoutProgramExtraOccurrence>? extraOccurrences = runEntity is null
+      ? null
+      : await LoadExtrasAsync(context, runEntity.Id, cancellationToken);
+    IReadOnlySet<Guid>? completedItemIds = runEntity is null
+      ? null
+      : await LoadCompletedItemIdsAsync(context, runEntity.Id, cancellationToken);
+    return new StoredWorkoutProgramProgress(program, run, progress, scheduleOverrides, extraOccurrences, completedItemIds);
   }
 
   public async Task<StoredWorkoutProgram?> FindAsync(Guid programId, CancellationToken cancellationToken = default)
@@ -566,7 +824,7 @@ public sealed class WorkoutProgramStore(
     IReadOnlyList<ScheduledWorkoutProgramItem> effective = WorkoutProgramScheduleProjector.ProjectAll(
       revision, run, overrides, extras);
     HashSet<Guid> completed = (await LoadCompletedItemIdsAsync(context, runId, cancellationToken)).ToHashSet();
-    HashSet<Guid> explicitOverrides = overrides.Select(static item => item.ProgramItemId).ToHashSet();
+    HashSet<Guid> explicitOverrides = FindExplicitScheduleOverrideIds(revision, run, overrides);
     ScheduledWorkoutProgramItem[] eligible = effective
       .Where(item => !item.IsRepeat && item.Date >= effectiveDate &&
         !completed.Contains(item.Item.Id) && !explicitOverrides.Contains(item.Item.Id))
@@ -575,20 +833,44 @@ public sealed class WorkoutProgramStore(
     if (eligible.Length == 0) return Blocked("No future generated sessions are eligible; completed runs and explicit exceptions are preserved.");
 
     var impacts = new List<WorkoutProgramDefaultDaysImpact>(eligible.Length);
+    HashSet<Guid> eligibleIds = eligible.Select(static occurrence => occurrence.Item.Id).ToHashSet();
     DateOnly firstEligibleDate = eligible[0].Date > effectiveDate ? eligible[0].Date : effectiveDate;
     DateOnly cursor = NextSelectedDate(firstEligibleDate, weekdays);
-    foreach (ScheduledWorkoutProgramItem occurrence in eligible)
+    DateOnly? previousDate = null;
+    foreach (ScheduledWorkoutProgramItem occurrence in effective
+      .Where(static occurrence => !occurrence.IsRepeat)
+      .OrderBy(static occurrence => occurrence.Item.Position))
     {
-      impacts.Add(new(occurrence.Item.Id, occurrence.Item.Position, occurrence.Date, cursor));
-      cursor = NextSelectedDate(cursor.AddDays(1), weekdays);
+      if (eligibleIds.Contains(occurrence.Item.Id))
+      {
+        if (previousDate is { } prior && cursor <= prior)
+          cursor = NextSelectedDate(prior.AddDays(1), weekdays);
+        impacts.Add(new(occurrence.Item.Id, occurrence.Item.Position, occurrence.Date, cursor));
+        previousDate = cursor;
+        cursor = NextSelectedDate(cursor.AddDays(1), weekdays);
+      }
+      else
+      {
+        if (previousDate is { } prior && occurrence.Date <= prior)
+          return Blocked("The new training days would change the workout order around a preserved session. Move that session first or choose a later effective date.");
+        previousDate = occurrence.Date;
+        if (cursor <= occurrence.Date)
+          cursor = NextSelectedDate(occurrence.Date.AddDays(1), weekdays);
+      }
     }
     HashSet<Guid> affectedIds = impacts.Select(static impact => impact.ProgramItemId).ToHashSet();
     HashSet<DateOnly> occupied = effective
       .Where(item => item.IsRepeat || !affectedIds.Contains(item.Item.Id))
       .Select(static item => item.Date)
       .ToHashSet();
+    DateOnly[] externalCollisions = await LoadCalendarCollisionDatesAsync(
+      context, userProfileId, impacts.Select(static impact => impact.NewDate), cancellationToken);
     DateOnly[] collisions = impacts.Where(impact => occupied.Contains(impact.NewDate))
-      .Select(static impact => impact.NewDate).Distinct().Order().ToArray();
+      .Select(static impact => impact.NewDate)
+      .Concat(externalCollisions)
+      .Distinct()
+      .Order()
+      .ToArray();
     int preserved = effective.Count(item => item.IsRepeat || completed.Contains(item.Item.Id) || explicitOverrides.Contains(item.Item.Id) || item.Date < effectiveDate)
       + overrides.Count(static item => item.IsSkipped);
     string revisionValue = ComputeDefaultDaysRevision(
@@ -667,8 +949,9 @@ public sealed class WorkoutProgramStore(
     if ((action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing or
          WorkoutProgramScheduleAction.Repeat or WorkoutProgramScheduleAction.RepeatAndShift) && targetDate is null)
       return Blocked("Choose a target date.");
-    if (targetDate is { } requestedDate && Math.Abs(requestedDate.DayNumber - originalItem.Date.DayNumber) > 366)
-      return Blocked("Choose a date within one year of the planned session.");
+    DateOnly moveReferenceDate = current?.Date ?? originalItem.Date;
+    if (targetDate is { } requestedDate && Math.Abs(requestedDate.DayNumber - moveReferenceDate.DayNumber) > 365)
+      return Blocked("Choose a date within one year of the currently scheduled session.");
     if (action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing or WorkoutProgramScheduleAction.Skip or WorkoutProgramScheduleAction.Restore)
     {
       if (selectedCompleted) return Blocked("Completed plan sessions cannot be moved, skipped, or restored. Use Repeat workout instead.");
@@ -718,13 +1001,35 @@ public sealed class WorkoutProgramStore(
         }
     }
 
+    DateOnly[] chronologyCollisions = [];
+    if ((action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing) &&
+        targetDate is { } chronologyTarget)
+    {
+      DateOnly? latestPriorDate = effective
+        .Where(item => !item.IsRepeat && item.Item.Position < selectedItem.Position)
+        .Select(static item => (DateOnly?)item.Date)
+        .Max();
+      if (latestPriorDate is { } priorDate && chronologyTarget <= priorDate)
+        chronologyCollisions = [chronologyTarget];
+    }
+
     HashSet<Guid> affectedItems = impacts.Where(static impact => !impact.IsRepeat).Select(static impact => impact.ProgramItemId).ToHashSet();
     HashSet<DateOnly> occupied = effective
       .Where(item => item.IsRepeat || !affectedItems.Contains(item.Item.Id))
       .Select(static item => item.Date)
       .ToHashSet();
+    DateOnly[] externalCollisions = await LoadCalendarCollisionDatesAsync(
+      context,
+      userProfileId,
+      impacts.Where(static impact => impact.NewDate is not null).Select(static impact => impact.NewDate!.Value),
+      cancellationToken);
     DateOnly[] collisions = impacts.Where(impact => impact.NewDate is { } date && occupied.Contains(date))
-      .Select(impact => impact.NewDate!.Value).Distinct().Order().ToArray();
+      .Select(impact => impact.NewDate!.Value)
+      .Concat(externalCollisions)
+      .Concat(chronologyCollisions)
+      .Distinct()
+      .Order()
+      .ToArray();
     string message = action switch
     {
       WorkoutProgramScheduleAction.Skip => "This plan step will be skipped and progression will continue to the next step.",
@@ -737,7 +1042,9 @@ public sealed class WorkoutProgramStore(
     bool collisionBlocksMove = collisions.Length > 0 &&
       action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing or WorkoutProgramScheduleAction.Restore;
     if (collisionBlocksMove)
-      message = $"That change would place two plan sessions on {string.Join(", ", collisions.Select(static date => date.ToString("d MMM yyyy")))}. Choose an empty date instead.";
+      message = chronologyCollisions.Length != 0
+        ? "This session would move before an earlier plan session. Choose a date after the prior session."
+        : $"That change would place two plan sessions on {string.Join(", ", collisions.Select(static date => date.ToString("d MMM yyyy")))}. Choose an empty date instead.";
     else if (collisions.Length > 0)
       message += $" Warning: {collisions.Length} date(s) will contain more than one session.";
     return new(runId, itemId, action, runEntity.Version, !collisionBlocksMove, message, impacts, collisions);
@@ -783,6 +1090,66 @@ public sealed class WorkoutProgramStore(
       .Where(item => item.WorkoutProgramRunId == runId)
       .Select(item => new WorkoutProgramScheduleOverride(item.WorkoutProgramItemId, item.TargetDate, item.IsSkipped))
       .ToArrayAsync(cancellationToken);
+
+  private static HashSet<Guid> FindExplicitScheduleOverrideIds(
+    WorkoutProgramRevision revision,
+    WorkoutProgramRun run,
+    IReadOnlyCollection<WorkoutProgramScheduleOverride> overrides)
+  {
+    Dictionary<Guid, DateOnly> generatedDates = WorkoutProgramScheduleProjector.ProjectAll(revision, run)
+      .Where(static occurrence => !occurrence.IsRepeat)
+      .ToDictionary(static occurrence => occurrence.Item.Id, static occurrence => occurrence.Date);
+    return overrides
+      .Where(scheduleOverride => scheduleOverride.IsSkipped ||
+        scheduleOverride.TargetDate is not { } targetDate ||
+        !generatedDates.TryGetValue(scheduleOverride.ProgramItemId, out DateOnly generatedDate) ||
+        targetDate != generatedDate)
+      .Select(static scheduleOverride => scheduleOverride.ProgramItemId)
+      .ToHashSet();
+  }
+
+  private static async Task<DateOnly[]> LoadCalendarCollisionDatesAsync(
+    TreadmillRunnerDbContext context,
+    Guid userProfileId,
+    IEnumerable<DateOnly> proposedDates,
+    CancellationToken cancellationToken)
+  {
+    DateOnly[] dates = proposedDates.Distinct().Order().ToArray();
+    if (dates.Length == 0) return [];
+    CalendarSeriesEntity[] entities = await context.CalendarSeries.AsNoTracking()
+      .Include(static series => series.Options)
+      .Include(static series => series.Exceptions)
+      .ThenInclude(static exception => exception.Options)
+      .Where(series => series.UserProfileId == userProfileId)
+      .ToArrayAsync(cancellationToken);
+    if (entities.Length == 0) return [];
+    CalendarSeriesDefinition[] definitions = entities.Select(MapCalendarSeries).ToArray();
+    return dates.Where(date =>
+      TrainingDaySelectionResolver.ResolveDay(definitions, userProfileId, date).Options.Count > 0).ToArray();
+  }
+
+  private static CalendarSeriesDefinition MapCalendarSeries(CalendarSeriesEntity entity) => new(
+    entity.Id,
+    entity.UserProfileId,
+    entity.Name,
+    entity.TimeZoneId,
+    new WeeklyRecurrence(
+      entity.StartDate,
+      entity.EndDate,
+      entity.IntervalWeeks,
+      (WeekdayFlags)entity.WeekdayMask),
+    entity.Options.OrderBy(static option => option.DisplayOrder)
+      .Select(static option => new WorkoutAlternative(option.WorkoutRevisionId, option.DisplayOrder)).ToArray(),
+    entity.Exceptions.OrderBy(static exception => exception.LocalDate)
+      .Select(static exception => new CalendarExceptionDefinition(
+        exception.LocalDate,
+        Enum.TryParse(exception.Kind, ignoreCase: true, out CalendarExceptionKind kind) && Enum.IsDefined(kind)
+          ? kind
+          : throw new InvalidOperationException($"Unsupported calendar exception kind '{exception.Kind}'."),
+        exception.Options.OrderBy(static option => option.DisplayOrder)
+          .Select(static option => new WorkoutAlternative(option.WorkoutRevisionId, option.DisplayOrder)).ToArray()))
+      .ToArray(),
+    entity.ScheduleGroupId);
 
   private static async Task<IReadOnlyList<WorkoutProgramExtraOccurrence>> LoadExtrasAsync(
     TreadmillRunnerDbContext context,

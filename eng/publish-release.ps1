@@ -94,6 +94,7 @@ try {
         'TreadmillRunner.Gateway.dll',
         'TreadmillRunner.Migrations.exe',
         'Updates\update-helper.ps1',
+        'Updates\service-guardian.ps1',
         'tools\garmin\runtime\python.exe',
         'tools\garmin\runtime\LICENSE.txt',
         'tools\garmin\THIRD-PARTY-NOTICES.md',

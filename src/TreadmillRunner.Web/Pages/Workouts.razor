@@ -156,7 +156,7 @@
                 else
                 {
                     <div class="program-card-list">
-                        @foreach (WorkoutProgramView program in FilteredPrograms)
+                        @foreach (WorkoutProgramSummaryView program in FilteredPrograms)
                         {
                             <article class="program-card @(selectedProgramDetails?.Id == program.Id ? "program-card--selected" : null)">
                                 <button class="program-card__select" type="button" @onclick="() => OpenProgramDetailsAsync(program)" aria-label="View @program.Name" aria-describedby="@ProgramDescriptionId(program)">
@@ -329,7 +329,7 @@
                     </dl>
                     <div class="sticky-actions program-editor__save">
                         <span>@programDraft.Items.Count workout(s) · exact revisions</span>
-                        <button class="primary-action" type="button" @onclick="SaveProgramAsync" disabled="@(!CanSaveProgram)">@(editingProgramId is null ? "Create plan" : "Save new revision")</button>
+                        <button class="primary-action" type="button" @onclick="SaveProgramAsync" disabled="@(!CanSaveProgram || programSaveBusy)">@(programSaveBusy ? "Saving…" : editingProgramId is null ? "Create plan" : "Save new revision")</button>
                     </div>
                 </section>
             }
@@ -448,7 +448,7 @@
     <DetailSheet BackdropId="program-details-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog program-details-dialog" LabelledBy="program-details-title" OnDismiss="CloseProgramDetailsAsync">
         <header class="workout-details-header">
             <div><p class="eyebrow">@selectedProgram.Category · @ProgramProgress(selectedProgram)</p><h2 id="program-details-title">@selectedProgram.Name</h2></div>
-            <button class="icon-action" type="button" aria-label="Close training plan details" autofocus @onclick="CloseProgramDetailsAsync">×</button>
+            <button class="icon-action" type="button" aria-label="Close training plan details" autofocus @onclick="CloseProgramDetailsAsync"><AppIcon Name="close" /></button>
         </header>
         <p class="workout-description">@(string.IsNullOrWhiteSpace(selectedProgram.Description) ? "No description." : selectedProgram.Description)</p>
         <dl class="workout-details-overview" aria-label="Training plan overview">
@@ -499,7 +499,7 @@
 @if (scheduledWorkout is { } workoutToSchedule)
 {
     <DetailSheet BackdropId="workout-schedule-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog workout-schedule-dialog" LabelledBy="workout-schedule-title" OnDismiss="CloseWorkoutScheduleAsync">
-        <header class="workout-details-header"><div><p class="eyebrow">Recurring workout</p><h2 id="workout-schedule-title">Schedule @workoutToSchedule.Name</h2></div><button class="icon-action" type="button" aria-label="Close workout schedule" autofocus @onclick="CloseWorkoutScheduleAsync">×</button></header>
+        <header class="workout-details-header"><div><p class="eyebrow">Recurring workout</p><h2 id="workout-schedule-title">Schedule @workoutToSchedule.Name</h2></div><button class="icon-action" type="button" aria-label="Close workout schedule" autofocus @onclick="CloseWorkoutScheduleAsync"><AppIcon Name="close" /></button></header>
         <p class="field-help">This creates calendar occurrences for @ActiveProfileName. It never starts the treadmill.</p>
         <div class="form-grid">
             <label class="field field--wide">Schedule name<input maxlength="160" @bind="workoutScheduleName" /></label>
@@ -514,6 +514,10 @@
                 <label><input type="checkbox" checked="@((workoutScheduleWeekdayMask & flag) != 0)" @onchange="args => ToggleWorkoutScheduleWeekday(flag, args)" />@label</label>
             }
         </fieldset>
+        @if ((workoutScheduleWeekdayMask & WeekdayFlag(workoutScheduleStartDate.DayOfWeek)) == 0)
+        {
+            <p class="field-error" role="alert">The start date must be one of the selected training days.</p>
+        }
         <div class="card-actions workout-details-actions"><button class="secondary-action" type="button" disabled="@workoutScheduleBusy" @onclick="CloseWorkoutScheduleAsync">Cancel</button><button class="primary-action" type="button" disabled="@(!CanSaveWorkoutSchedule || workoutScheduleBusy)" @onclick="SaveWorkoutScheduleAsync">@(workoutScheduleBusy ? "Saving…" : "Save schedule")</button></div>
     </DetailSheet>
 }
@@ -526,7 +530,7 @@
                     <p class="eyebrow">@DetailEyebrow</p>
                     <h2 id="workout-details-title">@DetailName</h2>
                 </div>
-                <button class="icon-action" type="button" aria-label="Close workout details" autofocus @onclick="CloseWorkoutDetailsAsync">×</button>
+                <button class="icon-action" type="button" aria-label="Close workout details" autofocus @onclick="CloseWorkoutDetailsAsync"><AppIcon Name="close" /></button>
             </header>
             <p class="workout-description">@DetailDescription</p>
             @if (selectedWorkoutDetails is not null)
@@ -587,7 +591,7 @@
     ];
     private List<ProfileView> profiles = [];
     private List<WorkoutSummaryView> workouts = [];
-    private List<WorkoutProgramView> programs = [];
+    private List<WorkoutProgramSummaryView> programs = [];
     private List<PremadePlanCatalogView> premadePlans = [];
     private bool loading = true;
     private string? message;
@@ -622,7 +626,11 @@
     private string? selectedPremadeId;
     private PremadePlanPreviewView? premadePreview;
     private bool premadeBusy;
+    private int premadePreviewGeneration;
+    private CancellationTokenSource? premadePreviewCancellation;
     private WorkoutProgramView? selectedProgramDetails;
+    private int programDetailsGeneration;
+    private CancellationTokenSource? programDetailsCancellation;
     private bool openProgramDetailsPending;
     private DotNetObjectReference<Workouts>? programDetailsModalReference;
     private WorkoutSummaryView? scheduledWorkout;
@@ -637,7 +645,9 @@
     private DotNetObjectReference<Workouts>? workoutScheduleModalReference;
     private bool CanSaveWorkoutSchedule => activeProfileId is not null && scheduledWorkout is not null &&
         !string.IsNullOrWhiteSpace(workoutScheduleName) && workoutScheduleIntervalWeeks is >= 1 and <= 52 &&
-        workoutScheduleWeekdayMask != 0 && (workoutScheduleEndDate is null || workoutScheduleEndDate >= workoutScheduleStartDate);
+        workoutScheduleWeekdayMask != 0 &&
+        (workoutScheduleWeekdayMask & WeekdayFlag(workoutScheduleStartDate.DayOfWeek)) != 0 &&
+        (workoutScheduleEndDate is null || workoutScheduleEndDate >= workoutScheduleStartDate);
     private WorkoutSummaryView? selectedWorkoutDetails;
     private string? selectedPlanWorkoutName;
     private string? selectedPlanWorkoutContext;
@@ -648,6 +658,12 @@
     private string? workoutDetailsError;
     private bool openWorkoutDetailsPending;
     private DotNetObjectReference<Workouts>? workoutDetailsModalReference;
+    private int workoutDetailsGeneration;
+    private CancellationTokenSource? workoutDetailsCancellation;
+    private int profileApplyGeneration;
+    private int reloadGeneration;
+    private CancellationTokenSource? reloadCancellation;
+    private bool programSaveBusy;
     private string DetailName => selectedWorkoutDetails?.Name ?? selectedPlanWorkoutName ?? "Workout";
     private string DetailEyebrow => selectedWorkoutDetails is not null
         ? $"{selectedWorkoutDetails.StructureLabel} · Revision {selectedWorkoutDetails.CurrentRevisionNumber}"
@@ -659,8 +675,7 @@
     private int programScheduleWeekdayMask = 37;
     private string ActiveProfileName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "selected runner";
     private int RequiredTrainingDays => pendingProgramStart is { } pending
-        ? Math.Max(1, pending.Program.Items.Where(static item => item.WeekNumber is not null)
-            .GroupBy(static item => item.WeekNumber).Select(static group => group.Count()).DefaultIfEmpty(3).Max())
+        ? pending.Program.RequiredTrainingDays
         : 3;
     private bool CanConfirmProgramSchedule =>
         CountSelectedWeekdays(programScheduleWeekdayMask) == RequiredTrainingDays &&
@@ -698,7 +713,7 @@
         }
     }
 
-    private IReadOnlyList<WorkoutProgramView> FilteredPrograms => programs
+    private IReadOnlyList<WorkoutProgramSummaryView> FilteredPrograms => programs
         .Where(program => programCategory == "All" || string.Equals(program.Category, programCategory, StringComparison.CurrentCultureIgnoreCase))
         .Where(program => string.IsNullOrWhiteSpace(programSearch) || program.Name.Contains(programSearch, StringComparison.CurrentCultureIgnoreCase) || (program.Description?.Contains(programSearch, StringComparison.CurrentCultureIgnoreCase) ?? false))
         .OrderBy(static program => program.Category, StringComparer.CurrentCultureIgnoreCase)
@@ -732,6 +747,8 @@
         }
     }
 
+    protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
+
     protected override async Task OnInitializedAsync()
     {
         activeProfileId = await ActiveProfile.GetAsync();
@@ -739,7 +756,7 @@
         if (string.Equals(RequestedMode, "programs", StringComparison.OrdinalIgnoreCase)) libraryMode = "programs";
         if (AddRevisionId is { } revisionId)
         {
-            WorkoutProgramView? program = EditPlanId is { } planId ? programs.FirstOrDefault(item => item.Id == planId) : null;
+            WorkoutProgramSummaryView? program = EditPlanId is { } planId ? programs.FirstOrDefault(item => item.Id == planId) : null;
             if (program is null) await NewProgram(); else await EditProgram(program);
             if (pendingProgramDraft is not null) await ContinueProgramDraftAsync();
             await AddCreatedWorkoutAsync(revisionId);
@@ -768,30 +785,99 @@
         }
     }
 
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        if (profileId == activeProfileId) return;
+        _ = InvokeAsync(() => ApplyActiveProfileAsync(profileId));
+    }
+
+    private async Task ApplyActiveProfileAsync(Guid? profileId)
+    {
+        int generation = ++profileApplyGeneration;
+        bool hadOpenModal = scheduledWorkout is not null || selectedProgramDetails is not null ||
+            selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null;
+        premadePreviewCancellation?.Cancel();
+        premadePreviewCancellation?.Dispose();
+        premadePreviewCancellation = null;
+        programDetailsCancellation?.Cancel();
+        programDetailsCancellation?.Dispose();
+        programDetailsCancellation = null;
+        workoutDetailsCancellation?.Cancel();
+        workoutDetailsCancellation?.Dispose();
+        workoutDetailsCancellation = null;
+        premadePreviewGeneration++;
+        programDetailsGeneration++;
+        workoutDetailsGeneration++;
+        activeProfileId = profileId;
+        selectedPremadeId = null;
+        premadePreview = null;
+        pendingProgramStart = null;
+        scheduledWorkout = null;
+        selectedProgramDetails = null;
+        selectedWorkoutDetails = null;
+        selectedPlanWorkoutName = null;
+        selectedPlanWorkoutContext = null;
+        selectedDetailRevisionId = null;
+        selectedDetailRevisionNumber = 0;
+        selectedWorkoutRevision = null;
+        workoutDetailsError = null;
+        workoutDetailsLoading = false;
+        openProgramDetailsPending = false;
+        openWorkoutSchedulePending = false;
+        openWorkoutDetailsPending = false;
+        if (hadOpenModal)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
+            catch (JSDisconnectedException) { }
+        }
+
+        await ReloadAsync();
+        if (generation != profileApplyGeneration || activeProfileId != profileId) return;
+        message = profiles.FirstOrDefault(profile => profile.Id == profileId) is { } profile
+            ? $"Showing training for {profile.DisplayName}."
+            : null;
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task ReloadAsync()
     {
+        reloadCancellation?.Cancel();
+        reloadCancellation?.Dispose();
+        reloadCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = reloadCancellation.Token;
+        int generation = ++reloadGeneration;
+        Guid? requestedProfileId = activeProfileId;
         loading = true;
         try
         {
-            profiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles") ?? [];
-            if (activeProfileId is null && profiles.Count == 1)
+            List<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles", cancellationToken) ?? [];
+            if (requestedProfileId is null && loadedProfiles.Count == 1)
             {
-                activeProfileId = profiles[0].Id;
-                await ActiveProfile.SetAsync(profiles[0].Id);
+                requestedProfileId = loadedProfiles[0].Id;
+                activeProfileId = requestedProfileId;
+                await ActiveProfile.SetAsync(requestedProfileId.Value);
             }
-            workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts") ?? [];
-            string programUrl = activeProfileId is { } profileId ? $"api/planning/programs?profileId={profileId}" : "api/planning/programs";
-            programs = await Http.GetFromJsonAsync<List<WorkoutProgramView>>(programUrl) ?? [];
-            string catalogUrl = activeProfileId is { } selectedProfileId ? $"api/planning/premade-plans?profileId={selectedProfileId}" : "api/planning/premade-plans";
-            premadePlans = await Http.GetFromJsonAsync<List<PremadePlanCatalogView>>(catalogUrl) ?? [];
+            if (generation != reloadGeneration || activeProfileId != requestedProfileId) return;
+            profiles = loadedProfiles;
+            workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts", cancellationToken) ?? [];
+            string programUrl = requestedProfileId is { } profileId ? $"api/planning/programs?profileId={profileId}" : "api/planning/programs";
+            programs = await Http.GetFromJsonAsync<List<WorkoutProgramSummaryView>>(programUrl, cancellationToken) ?? [];
+            string catalogUrl = requestedProfileId is { } selectedProfileId ? $"api/planning/premade-plans?profileId={selectedProfileId}" : "api/planning/premade-plans";
+            premadePlans = await Http.GetFromJsonAsync<List<PremadePlanCatalogView>>(catalogUrl, cancellationToken) ?? [];
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (HttpRequestException)
         {
-            message = "The workout library is temporarily unavailable.";
+            if (generation == reloadGeneration)
+                message = "The workout library is temporarily unavailable.";
         }
         finally
         {
-            loading = false;
+            if (generation == reloadGeneration)
+            {
+                loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -806,7 +892,7 @@
         libraryMode = "programs";
         programSearch = string.Empty;
         programCategory = "All";
-        WorkoutProgramView? installed = programs.FirstOrDefault(program =>
+        WorkoutProgramSummaryView? installed = programs.FirstOrDefault(program =>
             string.Equals(program.TemplateId, premadePreview?.Template.Id, StringComparison.Ordinal));
         if (installed is not null)
         {
@@ -821,6 +907,11 @@
 
     private async Task SelectPremadeAsync(PremadePlanCatalogView plan)
     {
+        premadePreviewCancellation?.Cancel();
+        premadePreviewCancellation?.Dispose();
+        premadePreviewCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = premadePreviewCancellation.Token;
+        int generation = ++premadePreviewGeneration;
         selectedPremadeId = plan.Id;
         premadePreview = null;
         if (activeProfileId is not { } profileId)
@@ -830,11 +921,17 @@
         }
         try
         {
-            premadePreview = await Http.GetFromJsonAsync<PremadePlanPreviewView>($"api/planning/premade-plans/{Uri.EscapeDataString(plan.Id)}/preview?profileId={profileId:D}&version={Uri.EscapeDataString(plan.Version)}");
+            PremadePlanPreviewView? preview = await Http.GetFromJsonAsync<PremadePlanPreviewView>(
+                $"api/planning/premade-plans/{Uri.EscapeDataString(plan.Id)}/preview?profileId={profileId:D}&version={Uri.EscapeDataString(plan.Version)}",
+                cancellationToken);
+            if (generation == premadePreviewGeneration && activeProfileId == profileId && selectedPremadeId == plan.Id)
+                premadePreview = preview;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (HttpRequestException)
         {
-            message = "This premade plan could not be checked right now.";
+            if (generation == premadePreviewGeneration)
+                message = "This premade plan could not be checked right now.";
         }
     }
 
@@ -914,8 +1011,10 @@
         await LoadProgramDraftAsync();
     }
 
-    private async Task EditProgram(WorkoutProgramView program)
+    private async Task EditProgram(WorkoutProgramSummaryView summary)
     {
+        WorkoutProgramView? program = await LoadProgramDetailsAsync(summary);
+        if (program is null) return;
         editingProgramId = program.Id;
         programDraft = new ProgramDraft
         {
@@ -934,11 +1033,39 @@
         await LoadProgramDraftAsync();
     }
 
-    private async Task OpenProgramDetailsAsync(WorkoutProgramView program)
+    private async Task OpenProgramDetailsAsync(WorkoutProgramSummaryView summary)
     {
+        WorkoutProgramView? program = await LoadProgramDetailsAsync(summary);
+        if (program is null) return;
         selectedProgramDetails = program;
         openProgramDetailsPending = true;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<WorkoutProgramView?> LoadProgramDetailsAsync(WorkoutProgramSummaryView program)
+    {
+        programDetailsCancellation?.Cancel();
+        programDetailsCancellation?.Dispose();
+        programDetailsCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = programDetailsCancellation.Token;
+        int generation = ++programDetailsGeneration;
+        Guid? requestedProfileId = activeProfileId;
+        try
+        {
+            string profileQuery = requestedProfileId is { } profileId ? $"?profileId={profileId:D}" : string.Empty;
+            WorkoutProgramView? details = await Http.GetFromJsonAsync<WorkoutProgramView>(
+                $"api/planning/programs/{program.Id:D}{profileQuery}", cancellationToken);
+            if (generation != programDetailsGeneration || activeProfileId != requestedProfileId) return null;
+            if (details is null) message = "The training-plan details are no longer available. Reload and try again.";
+            return details;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return null; }
+        catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException)
+        {
+            if (generation == programDetailsGeneration)
+                message = "The training-plan details could not be loaded right now.";
+            return null;
+        }
     }
 
     private async Task CloseProgramDetailsAsync()
@@ -1131,26 +1258,38 @@
 
     private async Task SaveProgramAsync()
     {
-        if (!CanSaveProgram) return;
-        var request = new WorkoutProgramSaveRequest(
-            Guid.NewGuid(), programDraft.Name.Trim(), string.IsNullOrWhiteSpace(programDraft.Description) ? null : programDraft.Description.Trim(), programDraft.Category,
-            programDraft.Items.Select(static item => new WorkoutProgramItemInput(item.WorkoutRevisionId)).ToArray(),
-            programDraft.IsHouseholdTemplate ? null : activeProfileId);
-        string url = editingProgramId is { } programId ? $"api/planning/programs/{programId}/revisions" : "api/planning/programs";
-        using HttpResponseMessage response = await Http.PostAsJsonAsync(url, request);
-        message = response.IsSuccessStatusCode ? $"{programDraft.Name} saved." : "The training plan could not be saved.";
-        if (!response.IsSuccessStatusCode) return;
-        await DiscardProgramDraftAsync();
-        showProgramEditor = false;
-        editingProgramId = null;
-        await ReloadAsync();
+        if (!CanSaveProgram || programSaveBusy) return;
+        programSaveBusy = true;
+        try
+        {
+            var request = new WorkoutProgramSaveRequest(
+                Guid.NewGuid(), programDraft.Name.Trim(), string.IsNullOrWhiteSpace(programDraft.Description) ? null : programDraft.Description.Trim(), programDraft.Category,
+                programDraft.Items.Select(static item => new WorkoutProgramItemInput(item.WorkoutRevisionId)).ToArray(),
+                programDraft.IsHouseholdTemplate ? null : activeProfileId);
+            string url = editingProgramId is { } programId ? $"api/planning/programs/{programId}/revisions" : "api/planning/programs";
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(url, request);
+            message = response.IsSuccessStatusCode ? $"{programDraft.Name} saved." : "The training plan could not be saved.";
+            if (!response.IsSuccessStatusCode) return;
+            await DiscardProgramDraftAsync();
+            showProgramEditor = false;
+            editingProgramId = null;
+            await ReloadAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            message = "The training plan could not be saved. Try again.";
+        }
+        finally
+        {
+            programSaveBusy = false;
+        }
     }
 
-    private async Task StartProgramAsync(WorkoutProgramView program, bool restart)
+    private async Task StartProgramAsync(WorkoutProgramSummaryView program, bool restart)
     {
         if (activeProfileId is not { } profileId) return;
         string action = restart ? "restart" : "start";
-        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         using HttpResponseMessage response = await Http.PostAsJsonAsync(
             $"api/planning/programs/{program.Id}/{action}",
             new WorkoutProgramStartRequest(Guid.NewGuid(), profileId, program.RevisionId, active?.Run?.Id, active?.Run?.Version,
@@ -1162,9 +1301,9 @@
         else if (response.StatusCode == System.Net.HttpStatusCode.Conflict) { message = "The active plan changed in another browser. Review the latest progress and try again."; await ReloadAsync(); }
     }
 
-    private void RequestProgramStart(WorkoutProgramView program, bool restart)
+    private void RequestProgramStart(WorkoutProgramSummaryView program, bool restart)
     {
-        WorkoutProgramView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
+        WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         pendingProgramStart = new PendingProgramStart(program, restart, active);
         programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
         programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
@@ -1175,13 +1314,7 @@
     private async Task SelectProfileAsync(Guid profileId)
     {
         if (activeProfileId == profileId) return;
-        activeProfileId = profileId;
-        selectedPremadeId = null;
-        premadePreview = null;
-        pendingProgramStart = null;
         await ActiveProfile.SetAsync(profileId);
-        await ReloadAsync();
-        message = $"Showing training for {ActiveProfileName}.";
     }
 
     private void ToggleProgramWeekday(int flag)
@@ -1237,6 +1370,7 @@
 
     private async Task OpenWorkoutDetailsAsync(WorkoutSummaryView workout)
     {
+        InvalidateWorkoutDetailsLoad();
         selectedWorkoutDetails = workout;
         selectedPlanWorkoutName = null;
         selectedPlanWorkoutContext = null;
@@ -1247,7 +1381,7 @@
         workoutDetailsLoading = true;
         openWorkoutDetailsPending = true;
         await InvokeAsync(StateHasChanged);
-        await LoadWorkoutDetailsAsync();
+        await LoadWorkoutDetailsAsync(workout.CurrentRevisionId);
     }
 
     private async Task OpenProgramWorkoutDetailsAsync(
@@ -1256,6 +1390,7 @@
         int workoutRevisionNumber,
         string context)
     {
+        InvalidateWorkoutDetailsLoad();
         selectedWorkoutDetails = null;
         selectedPlanWorkoutName = workoutName;
         selectedPlanWorkoutContext = context;
@@ -1266,7 +1401,7 @@
         workoutDetailsLoading = true;
         openWorkoutDetailsPending = true;
         await InvokeAsync(StateHasChanged);
-        await LoadWorkoutDetailsAsync();
+        await LoadWorkoutDetailsAsync(workoutRevisionId);
     }
 
     private PremadePlanWorkoutView? PremadeWorkout(string key) =>
@@ -1276,6 +1411,7 @@
     {
         PremadePlanWorkoutView? workout = PremadeWorkout(workoutKey);
         if (workout is null) return;
+        InvalidateWorkoutDetailsLoad();
         selectedWorkoutDetails = null;
         selectedPlanWorkoutName = workout.Name;
         selectedPlanWorkoutContext = context;
@@ -1324,34 +1460,46 @@
             alternative.WorkoutRevisionNumber,
             $"{program.Name} · Week {item.WeekNumber ?? 1} · Session {item.SessionNumber ?? item.Position} · {VariantLabel(alternative.Variant)}");
 
-    private async Task LoadWorkoutDetailsAsync()
+    private void InvalidateWorkoutDetailsLoad()
     {
-        if (selectedDetailRevisionId is not { } revisionId) return;
+        workoutDetailsCancellation?.Cancel();
+        workoutDetailsCancellation?.Dispose();
+        workoutDetailsCancellation = null;
+        workoutDetailsGeneration++;
+    }
+
+    private async Task LoadWorkoutDetailsAsync(Guid? requestedRevisionId = null)
+    {
+        Guid? selectedRevisionId = requestedRevisionId ?? selectedDetailRevisionId;
+        if (selectedRevisionId is not { } revisionId) return;
+        workoutDetailsCancellation?.Cancel();
+        workoutDetailsCancellation?.Dispose();
+        workoutDetailsCancellation = new CancellationTokenSource();
+        CancellationToken cancellationToken = workoutDetailsCancellation.Token;
+        int generation = ++workoutDetailsGeneration;
         workoutDetailsLoading = true;
         workoutDetailsError = null;
         try
         {
-            if (selectedWorkoutDetails is { } workout)
-            {
-                List<WorkoutRevisionView> revisions = await Http.GetFromJsonAsync<List<WorkoutRevisionView>>($"api/planning/workouts/{workout.Id:D}/revisions") ?? [];
-                selectedWorkoutRevision = revisions.FirstOrDefault(revision => revision.RevisionId == revisionId);
-            }
-            else
-            {
-                selectedWorkoutRevision = await Http.GetFromJsonAsync<WorkoutRevisionView>($"api/planning/workouts/revisions/{revisionId:D}");
-            }
+            WorkoutRevisionView? revision = await Http.GetFromJsonAsync<WorkoutRevisionView>(
+                $"api/planning/workouts/revisions/{revisionId:D}", cancellationToken);
+            if (generation != workoutDetailsGeneration || selectedDetailRevisionId != revisionId) return;
+            selectedWorkoutRevision = revision;
             if (selectedWorkoutRevision is null)
             {
                 workoutDetailsError = "The current workout revision is no longer available. Reload the library and try again.";
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (HttpRequestException)
         {
-            workoutDetailsError = "The workout structure could not be loaded right now.";
+            if (generation == workoutDetailsGeneration)
+                workoutDetailsError = "The workout structure could not be loaded right now.";
         }
         finally
         {
-            workoutDetailsLoading = false;
+            if (generation == workoutDetailsGeneration)
+                workoutDetailsLoading = false;
         }
     }
 
@@ -1359,6 +1507,7 @@
 
     private async Task CloseWorkoutDetailsAsync()
     {
+        InvalidateWorkoutDetailsLoad();
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         workoutDetailsModalReference = null;
         selectedWorkoutDetails = null;
@@ -1399,7 +1548,7 @@
         if (response.IsSuccessStatusCode) { pendingArchiveOperations.Remove(workout.Id); await ReloadAsync(); }
     }
 
-    private async Task ArchiveProgramAsync(WorkoutProgramView program)
+    private async Task ArchiveProgramAsync(WorkoutProgramSummaryView program)
     {
         using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/planning/programs/{program.Id}/archive", new { operationId = Guid.NewGuid() });
         message = response.IsSuccessStatusCode ? $"{program.Name} archived." : "The training plan could not be archived.";
@@ -1407,7 +1556,7 @@
     }
 
     private void RequestArchive(WorkoutSummaryView workout) => pendingArchive = new PendingArchive(ArchiveKind.Workout, workout.Id, workout.Name);
-    private void RequestArchive(WorkoutProgramView program) => pendingArchive = new PendingArchive(ArchiveKind.Program, program.Id, program.Name);
+    private void RequestArchive(WorkoutProgramSummaryView program) => pendingArchive = new PendingArchive(ArchiveKind.Program, program.Id, program.Name);
     private void CancelArchive() => pendingArchive = null;
 
     private async Task ConfirmArchiveAsync()
@@ -1420,7 +1569,7 @@
             if (workout is not null) await ArchiveWorkoutAsync(workout);
             return;
         }
-        WorkoutProgramView? program = programs.FirstOrDefault(candidate => candidate.Id == pending.Id);
+        WorkoutProgramSummaryView? program = programs.FirstOrDefault(candidate => candidate.Id == pending.Id);
         if (program is not null) await ArchiveProgramAsync(program);
     }
 
@@ -1468,27 +1617,37 @@
         pendingProgramDraft = null;
     }
 
+    private static string ProgramProgress(WorkoutProgramSummaryView program) => program.Run is null
+        ? $"{program.ItemCount} workouts"
+        : program.IsComplete
+            ? program.SkippedItemCount > 0 ? $"Complete · {program.SkippedItemCount} skipped" : "Complete"
+            : $"{program.CompletedItemCount} complete{(program.SkippedItemCount > 0 ? $" · {program.SkippedItemCount} skipped" : string.Empty)} · {program.ItemCount - program.CompletedItemCount - program.SkippedItemCount} remaining";
     private static string ProgramProgress(WorkoutProgramView program) => program.Run is null
         ? $"{program.Items.Count} workouts"
         : program.IsComplete
             ? program.SkippedItemCount > 0 ? $"Complete · {program.SkippedItemCount} skipped" : "Complete"
             : $"{program.CompletedItemCount} complete{(program.SkippedItemCount > 0 ? $" · {program.SkippedItemCount} skipped" : string.Empty)} · {program.Items.Count - program.CompletedItemCount - program.SkippedItemCount} remaining";
-    private static string NextWorkoutLabel(WorkoutProgramView program)
+    private static string NextWorkoutLabel(WorkoutProgramSummaryView program)
     {
         if (program.IsComplete)
         {
             return "Plan complete";
         }
 
+        return program.NextWorkoutName ?? "No session yet";
+    }
+    private static string NextWorkoutLabel(WorkoutProgramView program)
+    {
+        if (program.IsComplete) return "Plan complete";
         WorkoutProgramItemView? next = program.NextItemId is { } nextId
             ? program.Items.FirstOrDefault(item => item.Id == nextId)
             : program.Items.OrderBy(static item => item.Position).FirstOrDefault();
         return next?.WorkoutName ?? "No session yet";
     }
-    private static string ProgramDescriptionId(WorkoutProgramView program) => $"program-description-{program.Id:N}";
-    private static string ProgramAccessibleDescription(WorkoutProgramView program) =>
+    private static string ProgramDescriptionId(WorkoutProgramSummaryView program) => $"program-description-{program.Id:N}";
+    private static string ProgramAccessibleDescription(WorkoutProgramSummaryView program) =>
         $"{program.Category} plan. Next: {NextWorkoutLabel(program)}. {ProgramProgress(program)}.";
-    private static double ProgramProgressPercent(WorkoutProgramView program) => program.Items.Count == 0 ? 0 : Math.Clamp((program.CompletedItemCount + program.SkippedItemCount) * 100d / program.Items.Count, 0, 100);
+    private static double ProgramProgressPercent(WorkoutProgramSummaryView program) => program.ItemCount == 0 ? 0 : Math.Clamp((program.CompletedItemCount + program.SkippedItemCount) * 100d / program.ItemCount, 0, 100);
     private static string DurationLabel(double? minutes) => minutes is null ? "Distance" : $"{minutes:0} min";
     private static string VariantLabel(string variant) => variant switch
     {
@@ -1508,14 +1667,23 @@
     }
 
     private sealed record ProgramDraftItem(Guid WorkoutRevisionId, string WorkoutName, int WorkoutRevisionNumber, double? DurationMinutes);
-    private sealed record PendingProgramStart(WorkoutProgramView Program, bool Restart, WorkoutProgramView? Active);
+    private sealed record PendingProgramStart(WorkoutProgramSummaryView Program, bool Restart, WorkoutProgramSummaryView? Active);
     private sealed record PendingArchive(ArchiveKind Kind, Guid Id, string Name);
     private enum ArchiveKind { Workout, Program }
 
     public async ValueTask DisposeAsync()
     {
+        ActiveProfile.Changed -= ActiveProfileChanged;
         programDraftDebounce?.Cancel();
         programDraftDebounce?.Dispose();
+        reloadCancellation?.Cancel();
+        reloadCancellation?.Dispose();
+        premadePreviewCancellation?.Cancel();
+        premadePreviewCancellation?.Dispose();
+        programDetailsCancellation?.Cancel();
+        programDetailsCancellation?.Dispose();
+        workoutDetailsCancellation?.Cancel();
+        workoutDetailsCancellation?.Dispose();
         if (scheduledWorkout is not null || selectedProgramDetails is not null || selectedWorkoutDetails is not null || selectedPlanWorkoutName is not null)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }

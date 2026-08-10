@@ -175,6 +175,7 @@ public sealed class ReleaseVerifier(X509Certificate2 signingCertificate) : IRele
         "TreadmillRunner.Gateway.exe",
         "TreadmillRunner.Migrations.exe",
         "Updates/update-helper.ps1",
+        "Updates/service-guardian.ps1",
       })
       {
         if (!paths.Contains(requiredPath))

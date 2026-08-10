@@ -14,12 +14,14 @@ public sealed class ReleaseScriptContractTests
   [InlineData("create-update-acceptance-feed.ps1")]
   [InlineData("select-update-acceptance-fixture.ps1")]
   [InlineData("install-gateway-service.ps1")]
+  [InlineData("accept-gateway-service.ps1")]
   [InlineData("publish-release.ps1")]
   [InlineData("Install-TreadmillRunner.ps1")]
   [InlineData("new-installer-bundle.ps1")]
   [InlineData("create-github-release.ps1")]
   [InlineData("test.ps1")]
   [InlineData("playwright.ps1")]
+  [InlineData("inspect-service-recovery.ps1")]
   [InlineData("validate-connectiq.ps1")]
   [InlineData("verify-change.ps1")]
   public async Task Release_script_has_valid_PowerShell_syntax(string scriptName)
@@ -120,6 +122,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("TreadmillRunner.Gateway.exe", script, StringComparison.Ordinal);
     Assert.Contains("TreadmillRunner.Migrations.exe", script, StringComparison.Ordinal);
     Assert.Contains("Updates\\update-helper.ps1", script, StringComparison.Ordinal);
+    Assert.Contains("Updates\\service-guardian.ps1", script, StringComparison.Ordinal);
     Assert.Contains("stable.manifest.json", script, StringComparison.Ordinal);
   }
 
@@ -143,6 +146,7 @@ public sealed class ReleaseScriptContractTests
     await File.WriteAllTextAsync(Path.Combine(publish, "TreadmillRunner.Gateway.exe"), "gateway");
     await File.WriteAllTextAsync(Path.Combine(publish, "TreadmillRunner.Migrations.exe"), "migrations");
     await File.WriteAllTextAsync(Path.Combine(publish, "Updates", "update-helper.ps1"), "helper");
+    await File.WriteAllTextAsync(Path.Combine(publish, "Updates", "service-guardian.ps1"), "guardian");
     try
     {
       var startInfo = new ProcessStartInfo
@@ -170,6 +174,7 @@ public sealed class ReleaseScriptContractTests
       Assert.True(process.ExitCode == 0, $"Windows PowerShell packaging failed: {error}{Environment.NewLine}{output}");
       using ZipArchive package = ZipFile.OpenRead(Path.Combine(feed, "treadmillrunner-91.0.0-win-x64.zip"));
       Assert.Contains(package.Entries, entry => entry.FullName == "Updates/update-helper.ps1");
+      Assert.Contains(package.Entries, entry => entry.FullName == "Updates/service-guardian.ps1");
     }
     finally
     {
@@ -192,6 +197,8 @@ public sealed class ReleaseScriptContractTests
     Assert.DoesNotContain("GetAssemblyName($currentExecutable)", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("$plan.SigningCertificatePath", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("SigningCertificatePath =", manager, StringComparison.Ordinal);
+    Assert.Contains("service-maintenance.lock", helper, StringComparison.Ordinal);
+    Assert.Contains("$maintenanceMarkerCreated", helper, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -208,6 +215,77 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("$dataProtectionKeyPath = Join-Path $resolvedDataRoot 'data\\keys'", script, StringComparison.Ordinal);
     Assert.Contains("Persistence__DataProtectionKeyPath=$dataProtectionKeyPath", script, StringComparison.Ordinal);
     Assert.Contains("$dataProtectionKeyPath, $backupRoot", script, StringComparison.Ordinal);
+    Assert.Contains("Updates\\service-guardian.ps1", script, StringComparison.Ordinal);
+    Assert.Contains("TreadmillRunnerGuardian", script, StringComparison.Ordinal);
+    Assert.Contains("service-maintenance.lock", script, StringComparison.Ordinal);
+    Assert.Contains("failureflag $serviceName 1", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Service_guardian_recovers_only_outside_maintenance_and_bounds_its_log()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "service-guardian.ps1"));
+
+    Assert.Contains("service-maintenance.lock", script, StringComparison.Ordinal);
+    Assert.Contains("$maximumLogBytes = 1MB", script, StringComparison.Ordinal);
+    Assert.Contains("service-guardian.previous.log", script, StringComparison.Ordinal);
+    Assert.Contains("service-guardian-state.json", script, StringComparison.Ordinal);
+    Assert.Contains("Microsoft-Windows-Services/Diagnostic", script, StringComparison.Ordinal);
+    Assert.Contains("clientProcessId", script, StringComparison.Ordinal);
+    Assert.Contains("parentProcessId", script, StringComparison.Ordinal);
+    Assert.Contains("controlCode", script, StringComparison.Ordinal);
+    Assert.Contains("Get-WinEvent", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("CommandLine", script, StringComparison.Ordinal);
+    Assert.Contains("Start-Service -Name $ServiceName", script, StringComparison.Ordinal);
+    Assert.Contains("recovery-complete", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("Stop-Service", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Service_installer_enables_a_bounded_service_control_diagnostic_channel()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-gateway-service.ps1"));
+
+    Assert.Contains("Microsoft-Windows-Services/Diagnostic", script, StringComparison.Ordinal);
+    Assert.Contains("wevtutil.exe sl $serviceDiagnosticLog /ms:4194304 /q:true", script, StringComparison.Ordinal);
+    Assert.Contains("wevtutil.exe sl $serviceDiagnosticLog /e:true /q:true", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public async Task Service_guardian_honors_the_maintenance_marker_under_Windows_PowerShell_5_1()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.GuardianTests", Guid.NewGuid().ToString("N"));
+    string updates = Path.Combine(root, "updates");
+    Directory.CreateDirectory(updates);
+    await File.WriteAllTextAsync(Path.Combine(updates, "service-maintenance.lock"), "test");
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[]
+      {
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+        Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "service-guardian.ps1"),
+        "-ServiceName", "TreadmillRunnerMissingTestService",
+        "-DataRoot", root,
+      }) startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Guardian did not honor maintenance: {error}{Environment.NewLine}{output}");
+      Assert.False(File.Exists(Path.Combine(root, "logs", "service-guardian.log")));
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
   }
 
   private static string FindProjectRoot()
