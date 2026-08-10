@@ -37,6 +37,21 @@ public sealed class WindowsBleReadOnlyContractTests
   }
 
   [Fact]
+  public void Command_response_cccd_is_cached_per_retained_connection()
+  {
+    var cache = new CccdConfigurationCache();
+    const GattClientCharacteristicConfigurationDescriptorValue mode =
+      GattClientCharacteristicConfigurationDescriptorValue.Indicate;
+
+    Assert.Null(cache.ConfiguredMode);
+    Assert.True(cache.NeedsConfiguration(mode));
+    cache.MarkConfigured(mode);
+    Assert.False(cache.NeedsConfiguration(mode));
+    cache.Reset();
+    Assert.True(cache.NeedsConfiguration(mode));
+  }
+
+  [Fact]
   public async Task Command_connection_is_separate_and_precancellation_prevents_hardware_access()
   {
     var transport = new WindowsBleCentralTransport();

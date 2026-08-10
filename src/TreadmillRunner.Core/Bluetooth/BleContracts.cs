@@ -30,6 +30,15 @@ public interface IBleCentralTransport
       CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Multiplexes passive BLE advertisements so concurrent callers share one
+/// underlying adapter scan.
+/// </summary>
+public interface IBleAdvertisementBroker
+{
+  IAsyncEnumerable<BleAdvertisement> ScanAsync(CancellationToken cancellationToken = default);
+}
+
 public interface IBleCommandCentralTransport
 {
   ValueTask<IBleCommandConnection> ConnectCommandAsync(

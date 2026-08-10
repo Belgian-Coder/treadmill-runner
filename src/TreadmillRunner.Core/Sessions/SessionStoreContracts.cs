@@ -1,4 +1,5 @@
 using TreadmillRunner.Core.Control;
+using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Workouts;
 
 namespace TreadmillRunner.Core.Sessions;
@@ -97,6 +98,15 @@ public sealed record StoredWorkoutSession(
     IReadOnlyList<SessionSample> Samples,
     IReadOnlyList<SessionEvent> Events);
 
+public sealed record StoredWorkoutSessionDisplay(
+    StoredWorkoutSession Session,
+    int TotalSampleCount);
+
+public static class SessionDisplayLimits
+{
+  public const int MaximumSamples = 240;
+}
+
 public sealed record SessionRecoveryCheckpoint(
   Guid SessionId,
   DateTimeOffset SavedAtUtc,
@@ -162,6 +172,11 @@ public interface ISessionStore
 
   Task AppendSampleAsync(SessionSample sample, CancellationToken cancellationToken = default);
 
+  Task AppendSampleAndRecoveryCheckpointAsync(
+    SessionSample sample,
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default);
+
   Task AppendEventAsync(
     Guid sessionId,
     SessionEvent sessionEvent,
@@ -173,6 +188,15 @@ public interface ISessionStore
 
   Task<StoredWorkoutSession?> FindAsync(
     Guid sessionId,
+    CancellationToken cancellationToken = default);
+
+  Task<StoredWorkoutSessionDisplay?> FindDisplayAsync(
+    Guid sessionId,
+    CancellationToken cancellationToken = default);
+
+  Task<SessionAnalytics?> CalculateAnalyticsAsync(
+    Guid sessionId,
+    IReadOnlyList<HeartRateZone> heartRateZones,
     CancellationToken cancellationToken = default);
 
   Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(

@@ -288,6 +288,7 @@ public static class DeviceEnrollmentEndpoints
           ? new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Disconnected, 0, device.DisplayName, device.ProtocolId, null, null, null)
           : new DeviceConnectionSnapshot(DeviceRole.HeartRate, heartRate.State, heartRate.ConnectionGeneration, heartRate.DisplayName, device.ProtocolId, null, heartRate.ObservedAt, heartRate.Fault);
       BleReliabilityIncident? latest = deviceIncidents.FirstOrDefault();
+      int activeFailureCount = coordinator.ActiveReliabilityFailureCount(device.Id);
       return new BleDeviceReliabilityDto(
         device.Id,
         device.DisplayName,
@@ -298,7 +299,7 @@ public static class DeviceEnrollmentEndpoints
         deviceIncidents.Length,
         deviceIncidents.Count(incident => incident.RecoveredAtUtc is not null),
         currentOutage?.StartedAtUtc,
-        currentOutage?.FailedAttemptCount ?? 0,
+        Math.Max(currentOutage?.FailedAttemptCount ?? 0, activeFailureCount),
         lastRecovered?.RecoveryDuration?.TotalSeconds,
         longestRecovery,
         latest?.FailureKind.ToString(),
@@ -313,7 +314,7 @@ public static class DeviceEnrollmentEndpoints
 
   private static async Task<IResult> ScanAsync(
     int durationSeconds,
-    IBleCentralTransport transport,
+    IBleAdvertisementBroker advertisementBroker,
     TreadmillProtocolRegistry protocols,
     CancellationToken cancellationToken)
   {
@@ -328,7 +329,7 @@ public static class DeviceEnrollmentEndpoints
     var advertisements = new Dictionary<string, BleAdvertisement>(StringComparer.Ordinal);
     try
     {
-      await foreach (BleAdvertisement advertisement in transport.ScanAsync(timeout.Token))
+      await foreach (BleAdvertisement advertisement in advertisementBroker.ScanAsync(timeout.Token))
       {
         if (!advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current) ||
             advertisement.SignalStrength > current.SignalStrength)

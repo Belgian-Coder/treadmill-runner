@@ -233,9 +233,19 @@ public sealed class LocalFirstExperienceStore(IDbContextFactory<TreadmillRunnerD
   {
     RequireId(profileId, nameof(profileId));
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    ProgressionRecommendationEntity[] entities = await context.ProgressionRecommendations.AsNoTracking()
-      .Where(item => item.UserProfileId == profileId).ToArrayAsync(cancellationToken);
-    return entities.OrderByDescending(item => item.CreatedAtUtc).Take(50).Select(Map).ToArray();
+    ProgressionRecommendationEntity[] entities = await context.ProgressionRecommendations
+      .FromSqlInterpolated($"""
+        SELECT "Id", "OperationId", "UserProfileId", "WorkoutSessionId", "Action",
+          "Reason", "AlgorithmVersion", "EvidenceJson", "Status", "CreatedAtUtc",
+          "DecidedAtUtc", "Version"
+        FROM "ProgressionRecommendations"
+        WHERE "UserProfileId" = {profileId}
+        ORDER BY "CreatedAtUtc" DESC
+        LIMIT 50
+        """)
+      .AsNoTracking()
+      .ToArrayAsync(cancellationToken);
+    return entities.Select(Map).ToArray();
   }
 
   public async Task<VersionedLocalBackupPolicy?> GetBackupPolicyAsync(CancellationToken cancellationToken = default)
@@ -299,8 +309,17 @@ public sealed class LocalFirstExperienceStore(IDbContextFactory<TreadmillRunnerD
   {
     if (take is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(take));
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    BackupVerificationEntity[] entities = await context.BackupVerifications.AsNoTracking().ToArrayAsync(cancellationToken);
-    return entities.OrderByDescending(item => item.CompletedAtUtc).Take(take)
+    BackupVerificationEntity[] entities = await context.BackupVerifications
+      .FromSqlInterpolated($"""
+        SELECT "Id", "LocalBackupPolicyId", "BackupPath", "Status", "Detail", "BackupBytes",
+          "StartedAtUtc", "CompletedAtUtc"
+        FROM "BackupVerifications"
+        ORDER BY "CompletedAtUtc" DESC
+        LIMIT {take}
+        """)
+      .AsNoTracking()
+      .ToArrayAsync(cancellationToken);
+    return entities
       .Select(item => new StoredBackupVerification(item.Id, item.LocalBackupPolicyId, item.BackupPath, item.Status, item.Detail, item.BackupBytes, item.StartedAtUtc, item.CompletedAtUtc))
       .ToArray();
   }

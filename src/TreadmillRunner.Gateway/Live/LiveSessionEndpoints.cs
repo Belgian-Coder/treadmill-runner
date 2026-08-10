@@ -619,18 +619,21 @@ public static class LiveSessionEndpoints
     ISessionStore store,
     CancellationToken cancellationToken)
   {
-    StoredWorkoutSession? session = await store.FindAsync(sessionId, cancellationToken);
-    if (session is null)
+    StoredWorkoutSessionDisplay? display = await store.FindDisplayAsync(sessionId, cancellationToken);
+    if (display is null)
     {
       return Results.NotFound();
     }
 
-    SessionAnalytics analytics = SessionAnalyticsCalculator.Calculate(
+    StoredWorkoutSession session = display.Session;
+    SessionAnalytics? analytics = await store.CalculateAnalyticsAsync(
       sessionId,
-      session.Samples,
-      session.Events,
-      ReadProfileHeartRateZones(session.Definition.ControllerConfigurationJson));
-    IReadOnlyList<SessionSample> displaySamples = HistoryDisplaySampler.Select(session.Samples);
+      ReadProfileHeartRateZones(session.Definition.ControllerConfigurationJson),
+      cancellationToken);
+    if (analytics is null)
+    {
+      return Results.NotFound();
+    }
     return Results.Ok(new
     {
       session.Definition,
@@ -645,8 +648,8 @@ public static class LiveSessionEndpoints
       session.AverageSpeedKph,
       session.AverageInclinePercent,
       session.Debrief,
-      Samples = displaySamples,
-      TotalSampleCount = session.Samples.Count,
+      Samples = session.Samples,
+      TotalSampleCount = display.TotalSampleCount,
       Events = session.Events.Select(ToHistoryEvent).ToArray(),
       Analytics = analytics,
     });

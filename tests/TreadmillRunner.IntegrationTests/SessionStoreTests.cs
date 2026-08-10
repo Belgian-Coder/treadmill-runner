@@ -2,7 +2,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Control;
+using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Workouts;
+using TreadmillRunner.Gateway.Live;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -169,6 +171,104 @@ public sealed class SessionStoreTests : IAsyncLifetime
 
     Assert.Equal(SessionState.Running, recovered.Session.State);
     Assert.Equal(checkpoint, recovered.Checkpoint);
+  }
+
+  [Fact]
+  public async Task Sample_and_recovery_checkpoint_commit_together_and_roll_back_together()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-06T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(new NewWorkoutSession(
+      sessionId, ids.ProfileId, "Runner", ids.RevisionId, "Recovery run", started.AddSeconds(-2),
+      "{}", SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.Hardware));
+    await store.MarkRunningAsync(sessionId, started);
+
+    SessionRecoveryCheckpoint checkpoint = new(
+      sessionId, started.AddSeconds(1), SessionState.Running, 1,
+      started, new WorkoutProgressionCheckpoint(1, TimeSpan.FromSeconds(1), 0, TimeSpan.Zero, 0),
+      0, 6, 0, null, null, HeartRateAutomationMode.Disabled, 1);
+    await store.AppendSampleAndRecoveryCheckpointAsync(
+      Sample(sessionId, 0, started.AddSeconds(1), 1, 6, 6, 120), checkpoint);
+
+    SessionRecoveryCheckpoint replacement = checkpoint with
+    {
+      SavedAtUtc = checkpoint.SavedAtUtc.AddSeconds(1),
+      SessionVersion = checkpoint.SessionVersion + 1,
+    };
+    await Assert.ThrowsAsync<DbUpdateException>(() => store.AppendSampleAndRecoveryCheckpointAsync(
+      Sample(sessionId, 0, started.AddSeconds(2), 2, 6, 6, 121), replacement));
+
+    RecoverableWorkoutSession recovered = Assert.IsType<RecoverableWorkoutSession>(await store.FindRecoverableAsync());
+    Assert.Equal(checkpoint, recovered.Checkpoint);
+    Assert.Single(recovered.Session.Samples);
+    Assert.Equal((ushort)120, recovered.Session.Samples[0].HeartRateBpm!.Value);
+  }
+
+  [Fact]
+  public async Task Display_history_query_returns_representative_samples_and_exact_analytics()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-06T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(New(sessionId, ids, started));
+    await store.MarkRunningAsync(sessionId, started.AddSeconds(1));
+    await using (var context = await factory.CreateDbContextAsync())
+    {
+      context.SessionSamples.AddRange(Enumerable.Range(0, 300).Select(sequence => new SessionSampleEntity
+      {
+        WorkoutSessionId = sessionId,
+        Sequence = sequence * 2,
+        CapturedAtUtc = started.AddSeconds(sequence),
+        ElapsedMilliseconds = sequence * 1_000,
+        PlannedSpeedKph = 6.5,
+        RequestedSpeedKph = 6.5,
+        MeasuredSpeedKph = 6.5,
+        PlannedInclinePercent = 1,
+        RequestedInclinePercent = 1,
+        MeasuredInclinePercent = 1,
+        HeartRateBpm = 120,
+        DistanceKilometers = sequence / 3_600d,
+        EstimatedCalories = sequence * .1,
+        TelemetryAgeMilliseconds = 40,
+        MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+      }));
+      context.SessionEvents.Add(new SessionEventEntity
+      {
+        Id = Guid.NewGuid(),
+        WorkoutSessionId = sessionId,
+        OccurredAtUtc = started.AddSeconds(20),
+        Kind = "session-warning",
+        DetailsJson = "{\"code\":\"note\",\"message\":\"note\",\"occurredAt\":\"2026-08-06T10:00:20Z\"}",
+      });
+      await context.SaveChangesAsync();
+    }
+
+    StoredWorkoutSession full = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+    StoredWorkoutSessionDisplay display = Assert.IsType<StoredWorkoutSessionDisplay>(await store.FindDisplayAsync(sessionId));
+    Assert.Equal(300, display.TotalSampleCount);
+    Assert.Equal(SessionDisplayLimits.MaximumSamples, display.Session.Samples.Count);
+    Assert.Equal(full.Samples[0].Sequence, display.Session.Samples[0].Sequence);
+    Assert.Equal(full.Samples[^1].Sequence, display.Session.Samples[^1].Sequence);
+    Assert.Equal(
+      HistoryDisplaySampler.Select(full.Samples).Select(static sample => sample.Sequence),
+      display.Session.Samples.Select(static sample => sample.Sequence));
+    Assert.Equal(full.Events.Count, display.Session.Events.Count);
+
+    HeartRateZone[] zones = [new HeartRateZone(1, "Easy", 100, 130)];
+    SessionAnalytics expected = SessionAnalyticsCalculator.Calculate(sessionId, full.Samples, full.Events, zones);
+    SessionAnalytics actual = Assert.IsType<SessionAnalytics>(await store.CalculateAnalyticsAsync(sessionId, zones));
+    Assert.Equal(expected.SessionId, actual.SessionId);
+    Assert.Equal(expected.HeartRateZones, actual.HeartRateZones);
+    Assert.Equal(expected.AdherencePercentage, actual.AdherencePercentage);
+    Assert.Equal(expected.AdherenceAlgorithmVersion, actual.AdherenceAlgorithmVersion);
+    Assert.Equal(expected.EventCounts, actual.EventCounts);
   }
 
   [Fact]

@@ -33,9 +33,14 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 
 ## Runtime ownership
 
-- One coordinated scanner discovers enrolled devices.
+- One singleton passive-scan broker owns the adapter watcher and fans bounded
+  advertisement streams out to enrollment, diagnostics, and reconnect callers;
+  one caller cancelling cannot stop the others.
 - One serialized treadmill command coordinator owns all characteristic-value writes through a separate command-only BLE connection. Discovery, enrollment, diagnostics, and telemetry receive only read/subscribe contracts.
 - Notification handlers copy bytes into bounded channels and return immediately.
+- First telemetry evidence is queued to a bounded lifecycle writer rather than
+  blocking notification consumption. Passive evidence remains non-controlling;
+  only an explicit verification/commissioning flow can promote capabilities.
 - Start/Stop intents carry operation ID, session ID/version/state, lease/holder, four-second expiry, and connection generation. Reconnect invalidates them; Start is consumed before its single motion-affecting write and is never retried.
 - The deterministic session engine uses `TimeProvider` and emits immutable snapshots/events.
 - SignalR publishes simulated live state at 4 Hz; durable session sampling is 1 Hz.

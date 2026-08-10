@@ -119,8 +119,7 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
 
   private Task SaveShowcaseAsync(string fileName)
   {
-    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(directory);
+    string directory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
     return Page.ScreenshotAsync(new PageScreenshotOptions
     {
       Path = Path.Combine(directory, fileName),

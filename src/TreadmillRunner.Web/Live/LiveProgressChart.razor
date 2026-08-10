@@ -46,7 +46,7 @@
             }
         </div>
         <div></div>
-        <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(SafeDuration.Ticks / 2))">
+        <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(SafeDuration.Ticks / 2))" data-endpoint="@FormatAxisTime(SafeDuration)">
             @foreach (ChartTimeTick tick in ChartTimeTicks)
             {
                 <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatAxisTime(tick.Elapsed)</span>

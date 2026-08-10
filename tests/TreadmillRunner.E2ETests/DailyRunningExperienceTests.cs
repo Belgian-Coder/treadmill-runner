@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
 using Microsoft.Playwright.Xunit;
@@ -36,7 +38,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
       if (message.Type is "error" or "warning") browserErrors.Add($"{message.Type}: {message.Text}");
     };
     SeededPlan plan = await SeedPlanAsync(
-      "preflight",
+      $"preflight-{viewportName}",
       heartRateTarget: true,
       profileDisplayName: viewportName == "iphone17-pro-max" ? "Alex Demo" : null,
       workoutDisplayName: viewportName == "iphone17-pro-max" ? "Aerobic base run" : null);
@@ -119,7 +121,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     int width,
     int height)
   {
-    SeededPlan plan = await SeedPlanAsync("live", heartRateTarget: false);
+    SeededPlan plan = await SeedPlanAsync($"live-{viewportName}", heartRateTarget: false);
     await Page.SetViewportSizeAsync(width, height);
 
     await NavigateAndSelectPlanAsync(plan);
@@ -251,7 +253,11 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
   [Trait("Category", "Browser")]
   public async Task Active_control_is_touch_usable_in_iphone_landscape()
   {
-    SeededPlan plan = await SeedPlanAsync("iphone-landscape", heartRateTarget: false);
+    SeededPlan plan = await SeedPlanAsync(
+      "iphone-landscape",
+      heartRateTarget: false,
+      profileDisplayName: "Alex Landscape",
+      workoutDisplayName: "Landscape control run");
     await Page.SetViewportSizeAsync(956, 440);
     await NavigateAndSelectPlanAsync(plan);
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
@@ -535,7 +541,9 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     string? profileDisplayName = null,
     string? workoutDisplayName = null)
   {
-    string suffix = $"{scenario}-{Guid.NewGuid():N}"[..(scenario.Length + 9)];
+    string stableSuffix = Convert.ToHexString(
+      SHA256.HashData(Encoding.UTF8.GetBytes(scenario)))[..8].ToLowerInvariant();
+    string suffix = $"{scenario}-{stableSuffix}";
     string profileName = profileDisplayName ?? $"Runner {suffix}";
     string workoutName = workoutDisplayName ?? $"Workout {suffix}";
 
@@ -686,8 +694,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   private async Task ShowcaseScreenshotAsync(string fileName)
   {
-    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(directory);
+    string directory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
       Path = Path.Combine(directory, fileName),

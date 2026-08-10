@@ -156,6 +156,46 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task History_list_query_uses_partial_ordered_index_without_temp_sort()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await using var context = await factory.CreateDbContextAsync();
+    await context.Database.MigrateAsync();
+
+    await context.Database.OpenConnectionAsync();
+    await using var command = context.Database.GetDbConnection().CreateCommand();
+    command.CommandText = """
+      EXPLAIN QUERY PLAN
+      SELECT "Id", "UserProfileId", "UserProfileName", "WorkoutRevisionId",
+        "WorkoutProgramRunId", "WorkoutProgramItemId", "SelectionSource", "SessionOrigin",
+        "WorkoutTitle", "State", "ArmedAtUtc", "StartedAtUtc", "EndedAtUtc",
+        "DurationSeconds", "DistanceKilometers", "EstimatedCalories", "AverageHeartRateBpm",
+        "MaximumHeartRateBpm", "AverageSpeedKph", "AverageInclinePercent", "MetricAlgorithmVersion",
+        "ControllerConfigurationJson", "RecoveryCheckpointJson", "RecoveryCheckpointUpdatedAtUtc",
+        "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc"
+      FROM "WorkoutSessions"
+      WHERE "UserProfileId" = '00000000-0000-0000-0000-000000000001'
+        AND "StartedAtUtc" IS NOT NULL
+        AND "EndedAtUtc" IS NOT NULL
+        AND "State" IN ('Completed', 'Stopped', 'Interrupted', 'Faulted')
+        AND "SessionOrigin" <> 'SystemTest'
+      ORDER BY "EndedAtUtc" DESC
+      LIMIT 50
+      """;
+    var plans = new List<string>();
+    await using (System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync())
+    {
+      while (await reader.ReadAsync())
+      {
+        plans.Add(reader.GetString(3));
+      }
+    }
+
+    Assert.Contains(plans, plan => plan.Contains("IX_WorkoutSessions_HistoryList", StringComparison.Ordinal));
+    Assert.DoesNotContain(plans, plan => plan.Contains("TEMP B-TREE", StringComparison.OrdinalIgnoreCase));
+  }
+
+  [Fact]
   public async Task Foreign_keys_and_operation_idempotency_are_enforced()
   {
     var factory = await CreateMigratedFactoryAsync();

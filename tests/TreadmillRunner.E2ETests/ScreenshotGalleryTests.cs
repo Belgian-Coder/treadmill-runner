@@ -711,8 +711,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await scenario.ResetSimulatorAsync(gateway.BaseAddress);
     await scenario.ConfigureBrowserAsync(Page);
     await scenario.InstallVisualDataRoutesAsync(Page);
-    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(directory);
+    string directory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
 
     await Page.SetViewportSizeAsync(1440, 1000);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
@@ -741,8 +740,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await scenario.ResetSimulatorAsync(gateway.BaseAddress);
     await scenario.ConfigureBrowserAsync(Page);
     await scenario.InstallVisualDataRoutesAsync(Page);
-    string directory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(directory);
+    string directory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
 
     await Page.SetViewportSizeAsync(1440, 1000);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });

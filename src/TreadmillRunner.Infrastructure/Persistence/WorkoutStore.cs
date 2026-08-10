@@ -39,6 +39,7 @@ public sealed record ImportConfirmationOutcome(StoredWorkoutRevision Revision, I
 public interface IWorkoutStore
 {
   Task<IReadOnlyList<StoredWorkout>> ListAsync(CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<StoredWorkout>> ListVisibleAsync(CancellationToken cancellationToken = default);
   Task<IReadOnlyList<StoredWorkoutReuse>> ListReusableAsync(Guid userProfileId, int take = 4, CancellationToken cancellationToken = default);
   Task<StoredWorkoutRevision> CreateAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default, WorkoutKind kind = WorkoutKind.Structured);
   Task<StoredWorkoutRevision> AppendRevisionAsync(Guid workoutId, WorkoutDefinition definition, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default);
@@ -82,6 +83,43 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
       .ToArray();
   }
 
+  public async Task<IReadOnlyList<StoredWorkout>> ListVisibleAsync(CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    var rows = await context.Workouts.AsNoTracking()
+      .Where(workout => !workout.IsArchived &&
+        workout.Kind != nameof(WorkoutKind.PlanInternal) &&
+        !workout.Revisions.Any(revision =>
+          context.WorkoutProgramItems.Any(item =>
+            item.WorkoutRevisionId == revision.Id && item.WorkoutProgramRevision.TemplateId != null)))
+      .OrderBy(workout => workout.Name)
+      .Select(workout => new
+      {
+        workout.Id,
+        workout.Name,
+        workout.Kind,
+        Latest = workout.Revisions.OrderByDescending(revision => revision.RevisionNumber).Select(revision => new
+        {
+          revision.RevisionNumber,
+          revision.Id,
+          revision.DefinitionJson,
+          revision.ContentSha256,
+          revision.CreatedAtUtc,
+        }).First(),
+      })
+      .ToArrayAsync(cancellationToken);
+    return rows.Select(item => new StoredWorkout(
+      item.Id,
+      item.Name,
+      Enum.Parse<WorkoutKind>(item.Kind),
+      false,
+      item.Latest.RevisionNumber,
+      item.Latest.Id,
+      item.Latest.DefinitionJson,
+      item.Latest.ContentSha256,
+      item.Latest.CreatedAtUtc)).ToArray();
+  }
+
   public async Task<IReadOnlyList<StoredWorkoutReuse>> ListReusableAsync(
     Guid userProfileId,
     int take = 4,
@@ -97,6 +135,23 @@ public sealed class WorkoutStore(IDbContextFactory<TreadmillRunnerDbContext> con
           AND "State" = 'Completed'
           AND "SessionOrigin" <> 'SystemTest'
           AND "EndedAtUtc" IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM "WorkoutRevisions" AS "EligibleRevision"
+            INNER JOIN "Workouts" AS "EligibleWorkout"
+              ON "EligibleWorkout"."Id" = "EligibleRevision"."WorkoutId"
+            WHERE "EligibleRevision"."Id" = "WorkoutSessions"."WorkoutRevisionId"
+              AND "EligibleWorkout"."IsArchived" = 0
+              AND "EligibleWorkout"."Kind" = 'Structured'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "WorkoutProgramItems" AS "ProgramItem"
+                INNER JOIN "WorkoutProgramRevisions" AS "ProgramRevision"
+                  ON "ProgramRevision"."Id" = "ProgramItem"."WorkoutProgramRevisionId"
+                WHERE "ProgramItem"."WorkoutRevisionId" = "EligibleRevision"."Id"
+                  AND "ProgramRevision"."TemplateId" IS NOT NULL
+              )
+          )
         ORDER BY "EndedAtUtc" DESC
         LIMIT 1000
         """)

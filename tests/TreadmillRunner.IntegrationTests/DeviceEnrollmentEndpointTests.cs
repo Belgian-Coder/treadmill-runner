@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TreadmillRunner.Core.Bluetooth;
+using TreadmillRunner.Core.Devices;
+using TreadmillRunner.Gateway.Devices;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -239,6 +241,40 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
     Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
   }
 
+  [Fact]
+  public async Task Reliability_report_merges_the_live_coalesced_failure_count()
+  {
+    var coordinator = new ReliabilityCountCoordinator();
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IReadOnlyDeviceCoordinator>();
+        services.AddSingleton<IReadOnlyDeviceCoordinator>(coordinator);
+      }));
+    using HttpClient client = application.CreateClient();
+    using HttpResponseMessage enrolled = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "HeartRate",
+      deviceId = $"LIVE-RELIABILITY-{Guid.NewGuid():N}",
+      displayName = "Live reliability sensor",
+      serviceUuids = new[] { HeartRate },
+      telemetryMode = (string?)null,
+      ownerProfileIds = Array.Empty<Guid>(),
+      autoConnect = false,
+    });
+    enrolled.EnsureSuccessStatusCode();
+    JsonElement enrollment = await enrolled.Content.ReadFromJsonAsync<JsonElement>();
+    Guid enrollmentId = enrollment.GetProperty("id").GetGuid();
+    coordinator.SetFailureCount(enrollmentId, 7);
+
+    JsonElement report = await client.GetFromJsonAsync<JsonElement>("/api/devices/reliability?days=7");
+    JsonElement device = Assert.Single(
+      report.GetProperty("devices").EnumerateArray(),
+      item => item.GetProperty("enrollmentId").GetGuid() == enrollmentId);
+    Assert.Equal(7, device.GetProperty("currentFailedAttemptCount").GetInt32());
+  }
+
   private sealed class AdvertisementOnlyTransport(IReadOnlyList<BleAdvertisement> advertisements) :
     IBleCentralTransport
   {
@@ -257,5 +293,35 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
       string deviceId,
       CancellationToken cancellationToken = default) =>
       throw new InvalidOperationException("The scan test must not connect to a device.");
+  }
+
+  private sealed class ReliabilityCountCoordinator : IReadOnlyDeviceCoordinator
+  {
+    private readonly Dictionary<Guid, int> _failureCounts = [];
+
+    public DeviceTelemetrySnapshot Current { get; } = new(
+      DateTimeOffset.UtcNow,
+      Disconnected(DeviceRole.Treadmill),
+      Disconnected(DeviceRole.HeartRate),
+      null,
+      null,
+      null,
+      null);
+
+    public int ActiveReliabilityFailureCount(Guid enrollmentId) =>
+      _failureCounts.GetValueOrDefault(enrollmentId);
+
+    public void SetFailureCount(Guid enrollmentId, int count) =>
+      _failureCounts[enrollmentId] = count;
+
+    private static DeviceConnectionSnapshot Disconnected(DeviceRole role) => new(
+      role,
+      DeviceConnectionState.Disconnected,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null);
   }
 }

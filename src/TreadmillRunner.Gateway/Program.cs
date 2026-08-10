@@ -155,6 +155,7 @@ builder.Services.AddSingleton<ITreadmillProtocol>(OmegaZCompatibilityProfile.Def
 builder.Services.AddSingleton<TreadmillProtocolRegistry>();
 builder.Services.AddSingleton<WindowsBleCentralTransport>();
 builder.Services.AddSingleton<IBleCentralTransport>(static services => services.GetRequiredService<WindowsBleCentralTransport>());
+builder.Services.AddSingleton<IBleAdvertisementBroker, BleAdvertisementBroker>();
 builder.Services.AddSingleton<IBleCommandCentralTransport>(static services => services.GetRequiredService<WindowsBleCentralTransport>());
 builder.Services.AddSingleton<ReadOnlyDeviceCoordinator>();
 builder.Services.AddSingleton<IReadOnlyDeviceCoordinator>(static services => services.GetRequiredService<ReadOnlyDeviceCoordinator>());

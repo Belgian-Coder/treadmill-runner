@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Core.Control;
 
@@ -12,6 +13,29 @@ public sealed class SessionStore(
     IDbContextFactory<TreadmillRunnerDbContext> contextFactory) : ISessionStore
 {
   private static readonly JsonSerializerOptions EventJsonOptions = new(JsonSerializerDefaults.Web);
+  private const string DisplaySampleSql = """
+    WITH ranked AS (
+      SELECT
+        "WorkoutSessionId", "Sequence", "CapturedAtUtc", "ElapsedMilliseconds",
+        "PlannedSpeedKph", "RequestedSpeedKph", "MeasuredSpeedKph",
+        "PlannedInclinePercent", "RequestedInclinePercent", "MeasuredInclinePercent",
+        "HeartRateBpm", "DistanceKilometers", "EstimatedCalories",
+        "TelemetryAgeMilliseconds", "MetricAlgorithmVersion",
+        ROW_NUMBER() OVER (ORDER BY "Sequence") - 1 AS "RowIndex",
+        COUNT(*) OVER () - 1 AS "LastIndex"
+      FROM "SessionSamples"
+      WHERE "WorkoutSessionId" = {0}
+    )
+    SELECT "WorkoutSessionId", "Sequence", "CapturedAtUtc", "ElapsedMilliseconds",
+      "PlannedSpeedKph", "RequestedSpeedKph", "MeasuredSpeedKph",
+      "PlannedInclinePercent", "RequestedInclinePercent", "MeasuredInclinePercent",
+      "HeartRateBpm", "DistanceKilometers", "EstimatedCalories",
+      "TelemetryAgeMilliseconds", "MetricAlgorithmVersion"
+    FROM ranked
+    WHERE CAST(("RowIndex" * 239 + "LastIndex" - 1) / "LastIndex" AS INTEGER) <
+      CAST((("RowIndex" + 1) * 239 + "LastIndex" - 1) / "LastIndex" AS INTEGER)
+    ORDER BY "Sequence"
+    """;
 
   public async Task CreateAsync(
     NewWorkoutSession session,
@@ -83,24 +107,48 @@ public sealed class SessionStore(
       throw new InvalidOperationException("The sample metric algorithm must match the session definition.");
     }
 
-    context.SessionSamples.Add(new SessionSampleEntity
+    context.SessionSamples.Add(CreateSampleEntity(sample));
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task AppendSampleAndRecoveryCheckpointAsync(
+    SessionSample sample,
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(sample);
+    ArgumentNullException.ThrowIfNull(checkpoint);
+    if (sample.SessionId != checkpoint.SessionId)
     {
-      WorkoutSessionId = sample.SessionId,
-      Sequence = sample.Sequence,
-      CapturedAtUtc = sample.CapturedAt,
-      ElapsedMilliseconds = sample.Elapsed.TotalMilliseconds,
-      PlannedSpeedKph = sample.PlannedSpeedKph,
-      RequestedSpeedKph = sample.RequestedSpeedKph,
-      MeasuredSpeedKph = sample.MeasuredSpeedKph,
-      PlannedInclinePercent = sample.PlannedInclinePercent,
-      RequestedInclinePercent = sample.RequestedInclinePercent,
-      MeasuredInclinePercent = sample.MeasuredInclinePercent,
-      HeartRateBpm = sample.HeartRateBpm,
-      DistanceKilometers = sample.DistanceKilometers,
-      EstimatedCalories = sample.EstimatedKilocalories,
-      TelemetryAgeMilliseconds = sample.TelemetryAge.TotalMilliseconds,
-      MetricAlgorithmVersion = sample.MetricAlgorithmVersion,
-    });
+      throw new ArgumentException("The sample and recovery checkpoint must belong to the same session.", nameof(checkpoint));
+    }
+
+    RequireId(checkpoint.SessionId, nameof(checkpoint.SessionId));
+    RequireUtc(checkpoint.SavedAtUtc, nameof(checkpoint.SavedAtUtc));
+    // Serialize and validate before attaching either entity so an invalid checkpoint
+    // cannot leave a sample tracked for a later caller on this context.
+    string checkpointJson = SerializeRecoveryCheckpoint(checkpoint);
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutSessionEntity session = await FindRequiredAsync(context, sample.SessionId, cancellationToken);
+    SessionState state = ParseState(session.State);
+    if (IsTerminal(state))
+    {
+      throw new InvalidOperationException($"Cannot append a sample to terminal session {sample.SessionId}.");
+    }
+
+    if (!string.Equals(
+      session.MetricAlgorithmVersion,
+      sample.MetricAlgorithmVersion,
+      StringComparison.Ordinal))
+    {
+      throw new InvalidOperationException("The sample metric algorithm must match the session definition.");
+    }
+
+    context.SessionSamples.Add(CreateSampleEntity(sample));
+    session.RecoveryCheckpointJson = checkpointJson;
+    session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
+    // A single SaveChanges call makes EF Core enlist both inserts/updates in one
+    // provider transaction; a constraint failure rolls back both mutations.
     await context.SaveChangesAsync(cancellationToken);
   }
 
@@ -217,6 +265,132 @@ public sealed class SessionStore(
     return session is null ? null : Map(session);
   }
 
+  public async Task<StoredWorkoutSessionDisplay?> FindDisplayAsync(
+    Guid sessionId,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutSessionEntity? session = await context.WorkoutSessions.AsNoTracking()
+      .SingleOrDefaultAsync(candidate => candidate.Id == sessionId, cancellationToken);
+    if (session is null)
+    {
+      return null;
+    }
+
+    SessionEventEntity[] events = await context.SessionEvents.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .ToArrayAsync(cancellationToken);
+    int totalSampleCount = await context.SessionSamples.AsNoTracking()
+      .CountAsync(candidate => candidate.WorkoutSessionId == sessionId, cancellationToken);
+    SessionSampleEntity[] samples = totalSampleCount <= SessionDisplayLimits.MaximumSamples
+      ? await context.SessionSamples.AsNoTracking()
+        .Where(candidate => candidate.WorkoutSessionId == sessionId)
+        .OrderBy(candidate => candidate.Sequence)
+        .Take(SessionDisplayLimits.MaximumSamples)
+        .ToArrayAsync(cancellationToken)
+      : await context.SessionSamples
+        .FromSqlRaw(DisplaySampleSql, sessionId)
+        .AsNoTracking()
+        .ToArrayAsync(cancellationToken);
+
+    session.Samples = samples.ToList();
+    session.Events = events.ToList();
+    return new StoredWorkoutSessionDisplay(Map(session), totalSampleCount);
+  }
+
+  public async Task<SessionAnalytics?> CalculateAnalyticsAsync(
+    Guid sessionId,
+    IReadOnlyList<HeartRateZone> heartRateZones,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    ArgumentNullException.ThrowIfNull(heartRateZones);
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    bool exists = await context.WorkoutSessions.AsNoTracking()
+      .AnyAsync(candidate => candidate.Id == sessionId, cancellationToken);
+    if (!exists)
+    {
+      return null;
+    }
+
+    var zoneTicks = heartRateZones.ToDictionary(static zone => zone.Number, static _ => 0L);
+    var eventKinds = await context.SessionEvents.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .Select(candidate => candidate.Kind)
+      .ToArrayAsync(cancellationToken);
+    var previous = default(AnalyticsSampleProjection?);
+    int eligible = 0;
+    int adherent = 0;
+    await foreach (AnalyticsSampleProjection sample in context.SessionSamples.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .OrderBy(candidate => candidate.Sequence)
+      .Select(candidate => new AnalyticsSampleProjection(
+        candidate.Sequence,
+        candidate.CapturedAtUtc,
+        candidate.ElapsedMilliseconds,
+        candidate.PlannedSpeedKph,
+        candidate.MeasuredSpeedKph,
+        candidate.PlannedInclinePercent,
+        candidate.MeasuredInclinePercent,
+        candidate.HeartRateBpm))
+      .AsAsyncEnumerable()
+      .WithCancellation(cancellationToken))
+    {
+      if (previous is not null &&
+          (sample.Sequence <= previous.Sequence ||
+           sample.CapturedAtUtc < previous.CapturedAtUtc ||
+           sample.ElapsedMilliseconds < previous.ElapsedMilliseconds))
+      {
+        throw new InvalidOperationException("Stored samples must have increasing sequence, capture time, and elapsed time.");
+      }
+
+      if (previous is not null && sample.HeartRateBpm is { } heartRate)
+      {
+        HeartRateZone? zone = heartRateZones.SingleOrDefault(candidate =>
+          heartRate >= candidate.MinimumBpm && heartRate <= candidate.MaximumBpm);
+        if (zone is not null)
+        {
+          long elapsedTicks = TimeSpan.FromMilliseconds(sample.ElapsedMilliseconds).Ticks -
+            TimeSpan.FromMilliseconds(previous.ElapsedMilliseconds).Ticks;
+          zoneTicks[zone.Number] = checked(zoneTicks[zone.Number] + elapsedTicks);
+        }
+      }
+
+      if (sample.PlannedSpeedKph is not null || sample.PlannedInclinePercent is not null)
+      {
+        eligible++;
+        bool speedMatches = sample.PlannedSpeedKph is not { } plannedSpeed ||
+          Math.Abs(sample.MeasuredSpeedKph - plannedSpeed) <= SessionMetricAlgorithms.SpeedAdherenceToleranceKph;
+        bool inclineMatches = sample.PlannedInclinePercent is not { } plannedIncline ||
+          Math.Abs(sample.MeasuredInclinePercent - plannedIncline) <= SessionMetricAlgorithms.InclineAdherenceTolerancePercent;
+        if (speedMatches && inclineMatches)
+        {
+          adherent++;
+        }
+      }
+
+      previous = sample;
+    }
+
+    var zoneDurations = heartRateZones
+      .OrderBy(static zone => zone.Number)
+      .Select(zone => new HeartRateZoneDuration(zone.Number, zone.Name, TimeSpan.FromTicks(zoneTicks[zone.Number])))
+      .ToArray();
+    var counts = new SessionEventCounts(
+      eventKinds.Count(static kind => kind == "manual-speed-override"),
+      eventKinds.Count(static kind => kind == "manual-incline-override"),
+      eventKinds.Count(static kind => kind == "session-paused"),
+      eventKinds.Count(static kind => kind == "device-disconnected"),
+      eventKinds.Count(static kind => kind == "session-warning"));
+    return new SessionAnalytics(
+      sessionId,
+      Array.AsReadOnly(zoneDurations),
+      eligible == 0 ? 100 : (double)adherent / eligible * 100,
+      SessionMetricAlgorithms.AdherenceV1,
+      counts);
+  }
+
   public async Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
     Guid userProfileId,
     int take = 50,
@@ -302,9 +476,7 @@ public sealed class SessionStore(
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     WorkoutSessionEntity session = await FindRequiredAsync(context, checkpoint.SessionId, cancellationToken);
     if (IsTerminal(ParseState(session.State))) return;
-    string json = JsonSerializer.Serialize(checkpoint, EventJsonOptions);
-    if (Encoding.UTF8.GetByteCount(json) > 16_384)
-      throw new InvalidOperationException("The bounded session recovery checkpoint is too large.");
+    string json = SerializeRecoveryCheckpoint(checkpoint);
     session.RecoveryCheckpointJson = json;
     session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
     await context.SaveChangesAsync(cancellationToken);
@@ -567,6 +739,36 @@ public sealed class SessionStore(
     TimeSpan.FromMilliseconds(entity.TelemetryAgeMilliseconds),
     entity.MetricAlgorithmVersion);
 
+  private static SessionSampleEntity CreateSampleEntity(SessionSample sample) => new()
+  {
+    WorkoutSessionId = sample.SessionId,
+    Sequence = sample.Sequence,
+    CapturedAtUtc = sample.CapturedAt,
+    ElapsedMilliseconds = sample.Elapsed.TotalMilliseconds,
+    PlannedSpeedKph = sample.PlannedSpeedKph,
+    RequestedSpeedKph = sample.RequestedSpeedKph,
+    MeasuredSpeedKph = sample.MeasuredSpeedKph,
+    PlannedInclinePercent = sample.PlannedInclinePercent,
+    RequestedInclinePercent = sample.RequestedInclinePercent,
+    MeasuredInclinePercent = sample.MeasuredInclinePercent,
+    HeartRateBpm = sample.HeartRateBpm,
+    DistanceKilometers = sample.DistanceKilometers,
+    EstimatedCalories = sample.EstimatedKilocalories,
+    TelemetryAgeMilliseconds = sample.TelemetryAge.TotalMilliseconds,
+    MetricAlgorithmVersion = sample.MetricAlgorithmVersion,
+  };
+
+  private static string SerializeRecoveryCheckpoint(SessionRecoveryCheckpoint checkpoint)
+  {
+    string json = JsonSerializer.Serialize(checkpoint, EventJsonOptions);
+    if (Encoding.UTF8.GetByteCount(json) > 16_384)
+    {
+      throw new InvalidOperationException("The bounded session recovery checkpoint is too large.");
+    }
+
+    return json;
+  }
+
   private static SessionEventEntity CreateEventEntity(Guid sessionId, SessionEvent sessionEvent) => new()
   {
     Id = Guid.NewGuid(),
@@ -599,6 +801,16 @@ public sealed class SessionStore(
     where TEvent : SessionEvent =>
     JsonSerializer.Deserialize<TEvent>(entity.DetailsJson, EventJsonOptions)
       ?? throw new InvalidOperationException($"Stored event {entity.Id} is invalid.");
+
+  private sealed record AnalyticsSampleProjection(
+    long Sequence,
+    DateTimeOffset CapturedAtUtc,
+    double ElapsedMilliseconds,
+    double? PlannedSpeedKph,
+    double MeasuredSpeedKph,
+    double? PlannedInclinePercent,
+    double MeasuredInclinePercent,
+    ushort? HeartRateBpm);
 
   private static SessionState ParseState(string value) =>
     Enum.TryParse(value, ignoreCase: false, out SessionState state)

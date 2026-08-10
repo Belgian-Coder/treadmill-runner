@@ -30,8 +30,11 @@ $headRevision = (& git -C $projectRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headRevision)) { throw 'The source revision could not be determined.' }
 $contentLines = [System.Collections.Generic.List[string]]::new()
 $contentLines.Add($headRevision)
-$contentLines.Add((& git -C $projectRoot diff --binary HEAD -- src Directory.Build.props).ForEach({ [string]$_ }) -join "`n")
+$sourceDiff = @(& git -C $projectRoot diff --binary HEAD -- src Directory.Build.props)
+if ($LASTEXITCODE -ne 0) { throw 'The reviewed source diff could not be determined.' }
+$contentLines.Add(($sourceDiff | ForEach-Object { [string]$_ }) -join "`n")
 $untrackedSource = @(& git -C $projectRoot ls-files --others --exclude-standard -- src Directory.Build.props) | Sort-Object
+if ($LASTEXITCODE -ne 0) { throw 'The untracked source set could not be determined.' }
 foreach ($relative in $untrackedSource) {
     $sourcePath = Join-Path $projectRoot $relative
     if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {

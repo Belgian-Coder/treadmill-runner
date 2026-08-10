@@ -25,5 +25,5 @@ Hardware provenance is recorded in [Stage 2 read-only FTMS evidence](../protocol
 
 - `OmegaZCompatibilityProfile` retains its exact `JFTMOmega Z` prefix and additionally accepts only an unnamed advertisement containing both `1816` and `1826`.
 - `EnrollDeviceRequest` carries `AdvertisedName` separately from `DisplayName`, so a synthesized operator label cannot become protocol identity evidence.
-- The Devices page forwards the raw advertised name. Enrollment remains `Unknown` until characteristic reads advance its evidence, and the default Omega capabilities keep every control flag false.
+- The Devices page forwards the raw advertised name. Enrollment remains `Unknown` until characteristic reads advance its evidence, and the default Omega capabilities keep every control flag false. Passive first-telemetry evidence is persisted asynchronously as `PassivelyObserved`; matching model/firmware never promotes controls before explicit verification/commissioning.
 - Focused protocol and hosted endpoint tests cover the positive signature, named and incomplete negatives, request identity separation, and all control flags.

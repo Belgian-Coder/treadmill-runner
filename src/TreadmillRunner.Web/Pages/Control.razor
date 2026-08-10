@@ -17,7 +17,19 @@
 
 <section id="control-dashboard" class="control-page control-page--@FocusClass control-page--@DisplayStyleClass" aria-labelledby="control-title">
     <header class="dashboard-header control-page__header">
-        <div><p class="eyebrow">Run</p><h1 id="control-title">@DashboardTitle</h1></div>
+        <div class="control-title-block">
+            <p class="eyebrow">Run</p>
+            <div class="control-title-line">
+                <h1 id="control-title">@DashboardTitle</h1>
+                @if (session is not null)
+                {
+                    <span class="control-runner-context" aria-label="Active runner: @session.UserProfileName" title="Active runner: @session.UserProfileName">
+                        <AppIcon Name="runner" />
+                        <span>@session.UserProfileName</span>
+                    </span>
+                }
+            </div>
+        </div>
         <div class="control-header-actions">
             <span class="connection-state" role="status">@connectionStatus</span>
             <HeartRateStatus Compact="true" />
@@ -150,7 +162,7 @@
 
                 <LiveProgressChart TitleId="control-chart-title"
                                    Eyebrow="This run"
-                                   Heading="Live progress"
+                                   Heading="Progress"
                                    Title="@session.WorkoutTitle"
                                    CssClass="@(focusMode == ControlFocusMode.Chart ? "control-live-chart--focused" : null)"
                                    SpeedAxisMaximum="@SpeedAxisMaximum"

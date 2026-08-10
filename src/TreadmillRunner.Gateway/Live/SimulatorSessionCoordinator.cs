@@ -1358,8 +1358,9 @@ public sealed class LiveSessionCoordinator(
           {
             using IServiceScope sampleScope = scopeFactory.CreateScope();
             ISessionStore store = sampleScope.ServiceProvider.GetRequiredService<ISessionStore>();
-            await store.AppendSampleAsync(CreateSample(active, now), cancellationToken);
-            await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
+            SessionSample sample = CreateSample(active, now);
+            SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
+            await store.AppendSampleAndRecoveryCheckpointAsync(sample, checkpoint, cancellationToken);
           }
         }
 
@@ -1718,6 +1719,9 @@ public sealed class LiveSessionCoordinator(
       RecoveryState = SessionRecoveryState.RestartTracking,
       RecoveredAfterRestart = true,
       RestartRecoveryDeadlineUtc = timeProvider.GetUtcNow().AddSeconds(30),
+      NextSequence = stored.Samples.Count == 0
+        ? 0
+        : checked(stored.Samples.Max(static sample => sample.Sequence) + 1),
     };
     active.DesiredHeartRateAutomationMode = checkpoint.DesiredHeartRateAutomationMode;
     active.HeartRateAutomationMode = active.RequiresHeartRate

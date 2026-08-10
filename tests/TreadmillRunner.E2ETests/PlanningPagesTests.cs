@@ -41,7 +41,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Profiles", Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "New profile", Exact = true }).ClickAsync();
-    string profileName = $"{name}-{Guid.NewGuid():N}";
+    string profileName = $"{name}-runner";
     await Page.GetByLabel("Display name").FillAsync(profileName);
     await Page.GetByLabel("Maximum heart rate").FillAsync("190");
     await Page.GetByLabel("Maximum heart rate").BlurAsync();
@@ -163,9 +163,30 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await AssertTouchTargetsAsync(Page.Locator(".calendar-date-button"), $"calendar-month-{width}x{height}");
     double[] monthViewport = await Page.Locator(".calendar-month-scroll").EvaluateAsync<double[]>(
       "element => [element.clientWidth, element.scrollWidth]");
-    Assert.True(monthViewport[1] <= monthViewport[0] + 1,
-      $"The full seven-day month must be visible without a hidden horizontal scroll at {width}x{height}; " +
-      $"clientWidth={monthViewport[0]:0.0}, scrollWidth={monthViewport[1]:0.0}.");
+    ILocator scrollHint = Page.Locator(".calendar-scroll-hint");
+    if (width <= 360)
+    {
+      Assert.True(monthViewport[1] > monthViewport[0] + 1,
+        $"The narrow month should preserve 44px day targets inside a deliberate scroll region; " +
+        $"clientWidth={monthViewport[0]:0.0}, scrollWidth={monthViewport[1]:0.0}.");
+      await Expect(scrollHint).ToBeVisibleAsync();
+      await Expect(scrollHint).ToContainTextAsync("Swipe sideways");
+    }
+    else
+    {
+      Assert.True(monthViewport[1] <= monthViewport[0] + 1,
+        $"The full seven-day month must be visible without a hidden horizontal scroll at {width}x{height}; " +
+        $"clientWidth={monthViewport[0]:0.0}, scrollWidth={monthViewport[1]:0.0}.");
+      await Expect(scrollHint).ToBeHiddenAsync();
+    }
+    LocatorBoundingBoxResult? scrollRegionBox = await Page.Locator(".calendar-month-scroll").BoundingBoxAsync();
+    LocatorBoundingBoxResult? calendarPanelBox = await Page.Locator(".calendar-agenda-panel").BoundingBoxAsync();
+    Assert.NotNull(scrollRegionBox);
+    Assert.NotNull(calendarPanelBox);
+    Assert.True(scrollRegionBox.X >= calendarPanelBox.X - 1 &&
+                scrollRegionBox.X + scrollRegionBox.Width <= calendarPanelBox.X + calendarPanelBox.Width + 1,
+      $"The month grid must remain visually contained by its panel at {width}x{height}: " +
+      $"grid={scrollRegionBox}, panel={calendarPanelBox}.");
     await Expect(monthTable.Locator("thead th").Last).ToContainTextAsync("Sun");
     await Expect(Page.Locator(".calendar-selected-day")).ToBeVisibleAsync();
     await Expect(Page.Locator(".calendar-marker-key")).ToContainTextAsync("The number shows scheduled sessions.");
@@ -273,7 +294,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
   [Trait("Category", "Browser")]
   public async Task Workout_library_exposes_descriptions_stats_and_search_filters()
   {
-    string unique = $"Searchable hills {Guid.NewGuid():N}";
+    const string unique = "Searchable hills fixture";
     using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
     using HttpResponseMessage created = await client.PostAsJsonAsync("/api/planning/workouts", new
     {
@@ -696,8 +717,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(dialog).ToContainTextAsync("Sessions moving");
     await Expect(dialog).ToContainTextAsync("Date unavailable");
     Assert.Equal(0, defaultDaysApplyRequests);
-    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(showcaseDirectory);
+    string showcaseDirectory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
       Path = Path.Combine(showcaseDirectory, "tr-030-training-days-preview.png"),

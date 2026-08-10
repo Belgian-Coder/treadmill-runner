@@ -20,6 +20,7 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
   private readonly ulong _bluetoothAddress;
   private readonly CancellationTokenSource _disposeCancellation = new();
   private readonly SemaphoreSlim _exchangeGate = new(1, 1);
+  private readonly CccdConfigurationCache _responseCccd = new();
   private BluetoothLEDevice? _device;
   private GattDeviceService? _service;
   private GattCharacteristic? _characteristic;
@@ -152,14 +153,18 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
       characteristic.ValueChanged += handler;
       try
       {
-        GattCommunicationStatus subscribeStatus = await characteristic
-          .WriteClientCharacteristicConfigurationDescriptorAsync(subscriptionMode)
-          .AsTask(operationCancellation)
-          .ConfigureAwait(false);
-        WindowsBleStatus.ThrowIfFailed(
-          subscribeStatus,
-          null,
-          $"subscribe command response {characteristicUuid:D}");
+        if (_responseCccd.NeedsConfiguration(subscriptionMode))
+        {
+          GattCommunicationStatus subscribeStatus = await characteristic
+            .WriteClientCharacteristicConfigurationDescriptorAsync(subscriptionMode)
+            .AsTask(operationCancellation)
+            .ConfigureAwait(false);
+          WindowsBleStatus.ThrowIfFailed(
+            subscribeStatus,
+            null,
+            $"subscribe command response {characteristicUuid:D}");
+          _responseCccd.MarkConfigured(subscriptionMode);
+        }
 
         using DataWriter writer = new();
         writer.WriteBytes(value.ToArray());
@@ -210,7 +215,7 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
       await _exchangeGate.WaitAsync();
       try
       {
-        if (_characteristic is not null)
+        if (_characteristic is not null && _responseCccd.ConfiguredMode is not null)
         {
           try
           {
@@ -221,6 +226,7 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
           {
             // Native disposal remains the final cleanup boundary.
           }
+          _responseCccd.Reset();
         }
         _service?.Dispose();
         _device?.Dispose();

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -103,8 +105,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
           $"Stop must remain visible in {displayStyle} at {width}x{height}: {stopBox}.");
       }
 
-      string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-      Directory.CreateDirectory(showcaseDirectory);
+      string showcaseDirectory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
       await Page.ScreenshotAsync(new PageScreenshotOptions
       {
         Path = Path.Combine(showcaseDirectory, $"tr-031-control-{displayStyle.ToLowerInvariant()}-{viewport}.png"),
@@ -191,6 +192,17 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       await PrepareActiveControlAsync(plan);
 
       await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(plan.ProfileName);
+      ILocator compactRunnerContext = Page.Locator(".control-runner-context");
+      if (height <= 500)
+      {
+        await Expect(compactRunnerContext).ToBeVisibleAsync();
+        await Expect(compactRunnerContext).ToContainTextAsync(plan.ProfileName);
+        await Expect(compactRunnerContext).ToHaveAttributeAsync("aria-label", $"Active runner: {plan.ProfileName}");
+      }
+      else
+      {
+        await Expect(compactRunnerContext).ToBeHiddenAsync();
+      }
       await Expect(Page.Locator(".control-command-status")).ToContainTextAsync("Session running");
       await Expect(Page.Locator(".control-command-status")).Not.ToContainTextAsync("Hold Start");
 
@@ -303,6 +315,29 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Balanced", Exact = true }))
         .ToHaveAttributeAsync("aria-pressed", "true");
       await Page.EvaluateAsync("window.scrollTo(0, 0)");
+
+      if (width <= 360)
+      {
+        ILocator overviewAxis = Page.Locator(".control-console-grid--balanced .chart-time-scale");
+        await Expect(overviewAxis).ToHaveAttributeAsync("data-endpoint", "3:00");
+        LocatorBoundingBoxResult? overviewAxisBox = await overviewAxis.BoundingBoxAsync();
+        LocatorBoundingBoxResult? overviewDockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+        Assert.NotNull(overviewAxisBox);
+        Assert.NotNull(overviewDockBox);
+        Assert.True(overviewAxisBox.Y + overviewAxisBox.Height <= overviewDockBox.Y - 4,
+          $"The compact overview time axis must clear the motion dock at {width}x{height}: axis={overviewAxisBox}, dock={overviewDockBox}.");
+      }
+
+      if (width <= 650 && height > 500)
+      {
+        LocatorBoundingBoxResult? initialDetailsBox = await Page.Locator(".control-details").BoundingBoxAsync();
+        LocatorBoundingBoxResult? initialDockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+        Assert.NotNull(initialDetailsBox);
+        Assert.NotNull(initialDockBox);
+        Assert.True(initialDetailsBox.Y >= initialDockBox.Y + initialDockBox.Height - 1,
+          $"Technical details must not begin behind the fixed motion dock at {width}x{height}: details={initialDetailsBox}, dock={initialDockBox}.");
+      }
+
       await Page.ScreenshotAsync(new PageScreenshotOptions
       {
         Path = Path.Combine(screenshotDirectory, $"control-active-{width}x{height}.png"),
@@ -570,8 +605,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       FullPage = false,
     });
 
-    string showcaseDirectory = Path.Combine(gateway.ProjectRoot, "screenshots", "showcase");
-    Directory.CreateDirectory(showcaseDirectory);
+    string showcaseDirectory = ScreenshotArtifactPaths.ShowcaseDirectory(gateway.ProjectRoot);
     if (viewport is "desktop" or "iphone17-pro-max" or "iphone17-pro-max-landscape")
     {
       await Page.ScreenshotAsync(new PageScreenshotOptions
@@ -991,8 +1025,10 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
   private async Task<SeededPlan> SeedPlanAsync(string scenario)
   {
-    string suffix = $"{scenario}-{Guid.NewGuid():N}"[..(scenario.Length + 9)];
-    string profileName = $"Alex {Guid.NewGuid():N}"[..10];
+    string stableSuffix = Convert.ToHexString(
+      SHA256.HashData(Encoding.UTF8.GetBytes(scenario)))[..8].ToLowerInvariant();
+    string suffix = $"{scenario}-{stableSuffix}";
+    string profileName = $"Alex {stableSuffix[..5]}";
     string workoutName = $"Control run {suffix}";
     using HttpClient client = CreateClient();
     using HttpResponseMessage profileResponse = await client.PostAsJsonAsync("/api/planning/profiles", new

@@ -1,6 +1,6 @@
 # TreadmillRunner screen gallery
 
-This folder contains the small, curated public showcase under `showcase/`. The complete local Playwright gallery is generated under `output/playwright/gallery/` so repeated validation does not clutter this source-controlled evidence folder. Both locations are ignored unless an image is deliberately promoted into the public showcase. Run:
+This folder contains the small, curated public showcase under `showcase/`. The complete local Playwright gallery is generated under `output/playwright/gallery/` and feature-specific showcase candidates under `output/playwright/showcase/`, so repeated validation never rewrites source-controlled evidence. Run:
 
 ```powershell
 ./eng/playwright.ps1 -Configuration Release
@@ -18,4 +18,4 @@ TR-031 keeps eight committed readability captures under `showcase/tr-031-control
 
 TR-031 also keeps `showcase/tr-031-calendar-workout-details.png`, `showcase/tr-031-history-session-details.png`, and `showcase/tr-031-history-session-details-mobile.png`. They prove that calendar occurrences and recorded history cards open an in-place detail sheet: planned items show the immutable expanded workout graph and change table, while recorded sessions show persisted planned/requested/measured telemetry and every stored event in order. These read-only evidence views contain no treadmill Start or Stop command.
 
-Do not edit the PNG files manually; update the page or browser fixture and rerun Playwright. A fresh public clone contains this README plus the curated `showcase/` evidence and creates the disposable local gallery under `output/playwright/gallery/` on its first browser run.
+Do not edit the PNG files manually; update the page or browser fixture and rerun Playwright. An unchanged browser run leaves the worktree clean. To deliberately refresh the curated public images after visual review, set `TREADMILLRUNNER_UPDATE_SHOWCASE=1` for that Playwright run, review the resulting tracked PNG changes, and commit only the accepted captures. A fresh public clone contains this README plus the curated `showcase/` evidence and creates disposable local evidence under `output/playwright/` on its first browser run.

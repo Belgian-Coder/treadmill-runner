@@ -122,11 +122,14 @@ The local signer is deliberately non-exportable and must not be placed in GitHub
   -ReleaseNotes 'Describe the user-visible changes in this version.'
 ```
 
-The script requires `main` to exactly match `origin/main`, runs Release and browser validation locally, publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated `v<version>` tag, creates a draft, uploads and verifies every expected asset, then publishes it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
+The script requires a version newer than every published release and requires `main` to exactly match `origin/main`. It runs Release and browser validation locally, then rechecks that validation changed neither the commit nor any tracked or untracked file and that `origin/main` is still the validated commit. Only then does it publish and sign locally, create the end-user installer and checksum file, push an annotated `v<version>` tag, create a draft, upload and verify every expected asset, and publish it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
+
+Normal browser and release validation writes showcase candidates under ignored `output/playwright/showcase/`, never over the source-controlled public gallery. To intentionally refresh a committed PNG, run Playwright with `TREADMILLRUNNER_UPDATE_SHOWCASE=1`, review and commit the evidence, clear the opt-in, and rerun the release command. The release command never hides or discards a validation-produced worktree change.
 
 #### Interrupted release recovery
 
 - Rerun the same command with the **same version and exactly the same release notes**. Existing immutable build/package output is reused.
+- A new version is built in an explicit `.staging-<version>-<id>` directory and moved into its immutable version directory only after publish, signing, package/offline-bundle checks, installer provenance checks, and checksums pass. If an interrupted run leaves that explicit staging directory—or leaves a partial official version directory—the script fails closed; inspect/remove only that exact generated directory and rerun rather than mixing artifacts.
 - A local tag is reused only when it resolves to the current `main` commit. A conflicting local or remote tag is rejected and never overwritten.
 - An existing GitHub Release is resumed only while it is still a draft. Expected assets are replaced from the locally verified set, checked again by name, and only then published.
 - If the release is already published, its tag and assets are immutable. Fixes require a higher version; never delete or move a published tag to reuse its version.

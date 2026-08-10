@@ -47,8 +47,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     services.AddSingleton(_factory);
     services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
     await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
     var coordinator = new ReadOnlyDeviceCoordinator(
-      provider.GetRequiredService<IServiceScopeFactory>(), new ScriptedBleTransport(), TimeProvider.System,
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
       new ApplicationMaintenanceState(),
       NullLogger<ReadOnlyDeviceCoordinator>.Instance);
 
@@ -94,9 +97,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     services.AddSingleton(_factory);
     services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
     await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
     var coordinator = new ReadOnlyDeviceCoordinator(
       provider.GetRequiredService<IServiceScopeFactory>(),
-      new ScriptedBleTransport(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
       TimeProvider.System,
       new ApplicationMaintenanceState(),
       NullLogger<ReadOnlyDeviceCoordinator>.Instance);
@@ -129,6 +134,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       Assert.Equal((ushort)142, snapshot.HeartRateBpm);
       Assert.Equal((byte)86, snapshot.SelectedHeartRateBatteryPercent);
       Assert.NotNull(snapshot.SelectedHeartRateBatteryObservedAt);
+      Assert.NotNull(transport.FirstHeartRateNotificationAt);
+      Assert.NotNull(transport.FirstBatterySubscriptionAt);
+      Assert.True(transport.FirstHeartRateNotificationAt <= transport.FirstBatterySubscriptionAt);
       Assert.True(snapshot.Treadmill.ConnectionGeneration > 0);
       Assert.True(snapshot.HeartRate.ConnectionGeneration > 0);
       Assert.NotNull(snapshot.ReportedCapabilities!.SpeedRange);
@@ -146,6 +154,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       }
 
       Assert.NotNull(observed.Enrollment.LastVerifiedAtUtc);
+      Assert.Equal("OMEGA Z", observed.Enrollment.ModelNumber);
+      Assert.Equal("V10.23.17", observed.Enrollment.FirmwareRevision);
       Assert.NotNull(observed.Enrollment.Capabilities!.SpeedRange);
       Assert.False(observed.Enrollment.Capabilities.CanStartRemotely);
 
@@ -206,6 +216,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     var coordinator = new ReadOnlyDeviceCoordinator(
       provider.GetRequiredService<IServiceScopeFactory>(),
       transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
       TimeProvider.System,
       new ApplicationMaintenanceState(),
       NullLogger<ReadOnlyDeviceCoordinator>.Instance);
@@ -256,6 +267,58 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     }
   }
 
+  [Fact]
+  public async Task Shutdown_does_not_wait_for_blocked_evidence_or_reliability_persistence()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(Treadmill(), now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    transport.DisconnectAfterFirstTreadmillNotification = true;
+    await using var broker = new BleAdvertisementBroker(
+      transport,
+      NullLogger<BleAdvertisementBroker>.Instance);
+    var maintenance = new BlockingMaintenanceState();
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      broker,
+      TimeProvider.System,
+      maintenance,
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var mutationTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (maintenance.MutationAttempts == 0 || !transport.TreadmillFailureObserved)
+      {
+        await Task.Delay(25, mutationTimeout.Token);
+      }
+
+      Task stop = coordinator.StopAsync(CancellationToken.None);
+      try
+      {
+        await stop.WaitAsync(TimeSpan.FromSeconds(2));
+      }
+      catch
+      {
+        maintenance.AllowMutations();
+        await stop.WaitAsync(TimeSpan.FromSeconds(2));
+        throw;
+      }
+    }
+    finally
+    {
+      coordinator.Dispose();
+    }
+  }
+
   private static DeviceEnrollment Treadmill() => new(
     Guid.NewGuid(), DeviceRole.Treadmill, "A1B2C3D4E5F6", "horizon-omega-z", new string('a', 64),
     "Horizon Omega Z", null, null, TreadmillTelemetryMode.Ftms,
@@ -270,6 +333,30 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   private static PersistenceWriteOperation Op(string type, DateTimeOffset now) => new(
     Guid.NewGuid(), type, 200, "{}", now, new string('0', 64));
 
+  private sealed class BlockingMaintenanceState : IApplicationMaintenanceState
+  {
+    private int _mutationAttempts;
+    private volatile bool _allowMutations;
+
+    public int MutationAttempts => Volatile.Read(ref _mutationAttempts);
+
+    public bool IsActive => false;
+
+    public bool TryBegin() => false;
+
+    public void End() { }
+
+    public bool TryBeginMutation()
+    {
+      Interlocked.Increment(ref _mutationAttempts);
+      return _allowMutations;
+    }
+
+    public void EndMutation() { }
+
+    public void AllowMutations() => _allowMutations = true;
+  }
+
   private sealed class ScriptedBleTransport : IBleCentralTransport
   {
     private static readonly Guid Ftms = Expand(0x1826);
@@ -278,10 +365,19 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private static readonly Guid SpeedRange = Expand(0x2AD4);
     private static readonly Guid InclineRange = Expand(0x2AD5);
     private static readonly Guid ControlPoint = Expand(0x2AD9);
+    private static readonly Guid DeviceInformationService = Expand(0x180A);
+    private static readonly Guid ModelNumber = Expand(0x2A24);
+    private static readonly Guid FirmwareRevision = Expand(0x2A26);
     private static readonly Guid HeartRateService = Expand(0x180D);
     private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
     private static readonly Guid BatteryService = Expand(0x180F);
     private static readonly Guid BatteryLevel = Expand(0x2A19);
+
+    public DateTimeOffset? FirstHeartRateNotificationAt { get; private set; }
+    public DateTimeOffset? FirstBatterySubscriptionAt { get; private set; }
+    public bool DisconnectAfterFirstTreadmillNotification { get; set; }
+    private int _treadmillFailureObserved;
+    public bool TreadmillFailureObserved => Volatile.Read(ref _treadmillFailureObserved) != 0;
 
     public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
       [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -293,9 +389,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     public ValueTask<IBleConnection> ConnectAsync(
       string deviceId,
       CancellationToken cancellationToken = default) =>
-      ValueTask.FromResult<IBleConnection>(new Connection(deviceId));
+      ValueTask.FromResult<IBleConnection>(new Connection(deviceId, this));
 
-    private sealed class Connection(string deviceId) : IBleConnection
+    private sealed class Connection(string deviceId, ScriptedBleTransport owner) : IBleConnection
     {
       public string DeviceId { get; } = deviceId;
 
@@ -312,6 +408,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
             new BleCharacteristic(Ftms, InclineRange, true, false, false),
             new BleCharacteristic(Ftms, ControlPoint, false, true, true),
             new BleCharacteristic(Ftms, TreadmillData, false, false, true),
+          ]),
+          new BleService(DeviceInformationService,
+          [
+            new BleCharacteristic(DeviceInformationService, ModelNumber, true, false, false),
+            new BleCharacteristic(DeviceInformationService, FirmwareRevision, true, false, false),
           ])]
           :
           [
@@ -330,6 +431,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       {
         byte[] value = characteristicUuid == BatteryLevel
           ? [87]
+          : characteristicUuid == ModelNumber
+            ? System.Text.Encoding.UTF8.GetBytes("OMEGA Z")
+          : characteristicUuid == FirmwareRevision
+            ? System.Text.Encoding.UTF8.GetBytes("V10.23.17")
           : characteristicUuid == Feature
           ? [0, 0, 0, 0, 3, 0, 0, 0]
           : characteristicUuid == SpeedRange
@@ -344,12 +449,21 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
       {
         await Task.Yield();
+        if (characteristicUuid == HeartRateMeasurement)
+          owner.FirstHeartRateNotificationAt ??= DateTimeOffset.UtcNow;
+        if (characteristicUuid == BatteryLevel)
+          owner.FirstBatterySubscriptionAt ??= DateTimeOffset.UtcNow;
         byte[] value = characteristicUuid == BatteryLevel
           ? [86]
           : characteristicUuid == TreadmillData
           ? [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00]
           : [0x00, DeviceId.Contains("GARMIN", StringComparison.Ordinal) ? (byte)135 : (byte)142];
         yield return new BleNotification(serviceUuid, characteristicUuid, value, DateTimeOffset.UtcNow);
+        if (characteristicUuid == TreadmillData && owner.DisconnectAfterFirstTreadmillNotification)
+        {
+          Volatile.Write(ref owner._treadmillFailureObserved, 1);
+          throw new WindowsBleDisconnectedException();
+        }
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
       }
     }

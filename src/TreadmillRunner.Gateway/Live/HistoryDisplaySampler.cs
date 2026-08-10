@@ -4,7 +4,7 @@ namespace TreadmillRunner.Gateway.Live;
 
 internal static class HistoryDisplaySampler
 {
-  internal const int MaximumSamples = 240;
+  internal const int MaximumSamples = SessionDisplayLimits.MaximumSamples;
 
   internal static IReadOnlyList<SessionSample> Select(IReadOnlyList<SessionSample> storedSamples)
   {

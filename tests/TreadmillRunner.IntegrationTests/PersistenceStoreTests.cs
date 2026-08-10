@@ -125,9 +125,84 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
       Guid.NewGuid(), policy.Id, Path.Combine(backupDirectory, "backup.db"), "Verified",
       "Full SQLite integrity check passed.", 4096, now.AddMinutes(6), now.AddMinutes(7));
     await store.RecordBackupVerificationAsync(verification);
+    await store.RecordBackupVerificationAsync(verification with
+    {
+      Id = Guid.NewGuid(),
+      StartedAtUtc = now.AddMinutes(8),
+      CompletedAtUtc = now.AddMinutes(9),
+      Detail = "Second verification.",
+    });
+    await store.RecordBackupVerificationAsync(verification with
+    {
+      Id = Guid.NewGuid(),
+      StartedAtUtc = now.AddMinutes(10),
+      CompletedAtUtc = now.AddMinutes(11),
+      Detail = "Latest verification.",
+    });
 
     Assert.Equal(policy, await store.GetBackupPolicyAsync());
-    Assert.Equal(verification, Assert.Single(await store.ListBackupVerificationsAsync(10)));
+    IReadOnlyList<StoredBackupVerification> recentBackups = await store.ListBackupVerificationsAsync(2);
+    Assert.Equal(2, recentBackups.Count);
+    Assert.Equal("Latest verification.", recentBackups[0].Detail);
+    Assert.Equal("Second verification.", recentBackups[1].Detail);
+
+    var workout = new WorkoutEntity
+    {
+      Id = Guid.NewGuid(),
+      Name = "Recommendation source",
+      CreatedAtUtc = now,
+    };
+    var revision = new WorkoutRevisionEntity
+    {
+      Id = Guid.NewGuid(),
+      RevisionNumber = 1,
+      DefinitionJson = "{\"blocks\":[],\"schemaVersion\":1,\"title\":\"Recommendation source\"}",
+      ContentSha256 = new string('a', 64),
+      CreatedAtUtc = now,
+    };
+    workout.Revisions.Add(revision);
+    var recommendationSessions = Enumerable.Range(0, 51).Select(index => new WorkoutSessionEntity
+    {
+      Id = Guid.NewGuid(),
+      UserProfileId = profile.Id,
+      UserProfileName = profile.DisplayName,
+      WorkoutRevisionId = revision.Id,
+      SelectionSource = "Library",
+      SessionOrigin = "Simulator",
+      WorkoutTitle = "Recommendation source",
+      State = "Completed",
+      ArmedAtUtc = now.AddMinutes(index),
+      StartedAtUtc = now.AddMinutes(index),
+      EndedAtUtc = now.AddMinutes(index + 1),
+      MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+      ControllerConfigurationJson = "{}",
+    }).ToArray();
+    var recommendations = recommendationSessions.Select((session, index) => new ProgressionRecommendationEntity
+    {
+      Id = Guid.NewGuid(),
+      OperationId = Guid.NewGuid(),
+      UserProfileId = profile.Id,
+      WorkoutSessionId = session.Id,
+      Action = ProgressionAction.Advance.ToString(),
+      Reason = "A recommendation.",
+      AlgorithmVersion = LocalProgressionAdviser.AlgorithmVersion,
+      EvidenceJson = "{}",
+      Status = "Pending",
+      CreatedAtUtc = now.AddMinutes(index),
+      Version = 1,
+    }).ToArray();
+    await using (var context = await _factory.CreateDbContextAsync())
+    {
+      context.Workouts.Add(workout);
+      context.WorkoutSessions.AddRange(recommendationSessions);
+      context.ProgressionRecommendations.AddRange(recommendations);
+      await context.SaveChangesAsync();
+    }
+    IReadOnlyList<StoredProgressionRecommendation> recentRecommendations =
+      await store.ListRecommendationsAsync(profile.Id);
+    Assert.Equal(50, recentRecommendations.Count);
+    Assert.Equal(recommendations[^1].Id, recentRecommendations[0].Id);
+    Assert.Equal(recommendations[1].Id, recentRecommendations[^1].Id);
   }
 
   [Fact]
@@ -178,6 +253,57 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
     await using var context = await _factory.CreateDbContextAsync();
     Assert.Equal(2, await context.ImportAudits.CountAsync());
     Assert.Equal(3, await context.OperationReceipts.CountAsync());
+  }
+
+  [Fact]
+  public async Task Visible_workout_query_filters_archived_and_program_owned_rows_server_side()
+  {
+    var workouts = new WorkoutStore(_factory);
+    var now = DateTimeOffset.Parse("2026-08-02T08:00:00Z");
+    Guid visibleId = Guid.NewGuid();
+    Guid archivedId = Guid.NewGuid();
+    Guid internalId = Guid.NewGuid();
+    StoredWorkoutRevision visibleRevision = await workouts.CreateAsync(
+      visibleId, Definition("Visible", 7), now, Op("workout.create", now));
+    await workouts.CreateAsync(archivedId, Definition("Archived", 7), now.AddMinutes(1), Op("workout.create", now));
+    await workouts.CreateAsync(internalId, Definition("Program owned", 7), now.AddMinutes(2), Op("workout.create", now));
+    await workouts.SetArchivedAsync(archivedId, true, Op("workout.archive", now.AddMinutes(3)));
+
+    await using (var context = await _factory.CreateDbContextAsync())
+    {
+      var program = new WorkoutProgramEntity { Id = Guid.NewGuid(), CreatedAtUtc = now };
+      var programRevision = new WorkoutProgramRevisionEntity
+      {
+        Id = Guid.NewGuid(),
+        WorkoutProgramId = program.Id,
+        RevisionNumber = 1,
+        Name = "Installed plan",
+        Category = "Test",
+        ContentSha256 = new string('b', 64),
+        TemplateId = "test-template",
+        CreatedAtUtc = now,
+      };
+      var item = new WorkoutProgramItemEntity
+      {
+        Id = Guid.NewGuid(),
+        WorkoutProgramRevisionId = programRevision.Id,
+        WorkoutRevisionId = (await context.WorkoutRevisions.SingleAsync(item => item.WorkoutId == internalId)).Id,
+        Position = 1,
+      };
+      context.AddRange(program, programRevision, item);
+      await context.SaveChangesAsync();
+    }
+
+    IReadOnlyList<StoredWorkout> broad = await workouts.ListAsync();
+    Assert.Equal(3, broad.Count);
+    Assert.Contains(broad, item => item.Id == archivedId && item.IsArchived);
+    Assert.Contains(broad, item => item.Id == internalId && item.Kind == WorkoutKind.PlanInternal);
+
+    IReadOnlyList<StoredWorkout> visible = await workouts.ListVisibleAsync();
+    StoredWorkout only = Assert.Single(visible);
+    Assert.Equal(visibleId, only.Id);
+    Assert.Equal(visibleRevision.Id, only.LatestRevisionId);
+    Assert.Equal("Visible", only.Name);
   }
 
   [Fact]
@@ -238,6 +364,35 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
     Assert.Equal(structured.Id, reusable.WorkoutRevisionId);
     Assert.Equal(2, reusable.CompletionCount);
     Assert.Equal(now.AddHours(2), reusable.LastCompletedAtUtc);
+  }
+
+  [Fact]
+  public async Task Workout_reuse_applies_the_candidate_limit_after_excluding_non_reusable_sessions()
+  {
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T08:00:00Z");
+    UserProfile profile = Profile(Guid.NewGuid(), "Deep Reuse Runner");
+    await new ProfileStore(_factory).CreateAsync(profile, now, Op("profile.create", now));
+    var workouts = new WorkoutStore(_factory);
+    StoredWorkoutRevision reusable = await workouts.CreateAsync(
+      Guid.NewGuid(), Definition("Older reusable run", 6.5), now, Op("workout.create", now));
+    StoredWorkoutRevision manual = await workouts.CreateAsync(
+      Guid.NewGuid(), Definition("Recent manual run", 0.8), now, Op("workout.create", now), kind: WorkoutKind.ManualTemplate);
+
+    await using (TreadmillRunnerDbContext context = await _factory.CreateDbContextAsync())
+    {
+      var sessions = new List<WorkoutSessionEntity>(1001)
+      {
+        CompletedSession(profile, reusable.Id, "Older reusable run", now.AddMinutes(-1)),
+      };
+      sessions.AddRange(Enumerable.Range(1, 1000).Select(index =>
+        CompletedSession(profile, manual.Id, "Recent manual run", now.AddMinutes(index))));
+      context.WorkoutSessions.AddRange(sessions);
+      await context.SaveChangesAsync();
+    }
+
+    StoredWorkoutReuse result = Assert.Single(await workouts.ListReusableAsync(profile.Id, take: 1));
+    Assert.Equal(reusable.Id, result.WorkoutRevisionId);
+    Assert.Equal(now.AddMinutes(-1), result.LastCompletedAtUtc);
   }
 
   [Fact]
@@ -327,6 +482,31 @@ public sealed class PersistenceStoreTests : IAsyncLifetime
       $"UPDATE CalendarExceptions SET Kind = {"99"} WHERE CalendarSeriesId = {series.Id}");
     await Assert.ThrowsAsync<InvalidOperationException>(() => store.FindAsync(series.Id));
   }
+
+  private static WorkoutSessionEntity CompletedSession(
+    UserProfile profile,
+    Guid workoutRevisionId,
+    string workoutTitle,
+    DateTimeOffset endedAtUtc) => new()
+    {
+      Id = Guid.NewGuid(),
+      UserProfileId = profile.Id,
+      UserProfileName = profile.DisplayName,
+      WorkoutRevisionId = workoutRevisionId,
+      SelectionSource = "Library",
+      SessionOrigin = "Simulator",
+      WorkoutTitle = workoutTitle,
+      State = "Completed",
+      ArmedAtUtc = endedAtUtc.AddMinutes(-21),
+      StartedAtUtc = endedAtUtc.AddMinutes(-20),
+      EndedAtUtc = endedAtUtc,
+      DurationSeconds = TimeSpan.FromMinutes(20).TotalSeconds,
+      DistanceKilometers = 2,
+      EstimatedCalories = 120,
+      AverageSpeedKph = 6,
+      AverageInclinePercent = 1,
+      MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+    };
 
   private static UserProfile Profile(Guid id, string name) => new(
     id, name, UnitSystem.Metric, 72.5, null, null,

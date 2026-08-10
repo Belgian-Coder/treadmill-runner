@@ -748,6 +748,10 @@ public sealed class TreadmillRunnerDbContext(
     session.HasIndex(entity => new { entity.UserProfileId, entity.ArmedAtUtc });
     session.HasIndex(entity => entity.State);
     session.HasIndex(entity => new { entity.UserProfileId, entity.SessionOrigin, entity.EndedAtUtc });
+    session.HasIndex(entity => new { entity.UserProfileId, entity.EndedAtUtc })
+      .IsDescending(false, true)
+      .HasDatabaseName("IX_WorkoutSessions_HistoryList")
+      .HasFilter("\"StartedAtUtc\" IS NOT NULL AND \"EndedAtUtc\" IS NOT NULL AND \"State\" IN ('Completed', 'Stopped', 'Interrupted', 'Faulted') AND \"SessionOrigin\" <> 'SystemTest'");
     session.HasIndex(entity => new { entity.WorkoutProgramRunId, entity.WorkoutProgramItemId })
       .IsUnique()
       .HasFilter("\"State\" = 'Completed' AND \"WorkoutProgramRunId\" IS NOT NULL");

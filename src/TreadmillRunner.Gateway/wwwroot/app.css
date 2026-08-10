@@ -398,6 +398,10 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .control-page { width: min(980px, 100%); margin: 0 auto; display: grid; gap: .8rem; }
 .control-page h1 { margin: .15rem 0; font-size: clamp(2rem, 5vw, 3.35rem); letter-spacing: -.06em; }
 .control-page__header { padding-bottom: .15rem; }
+.control-title-line { display: flex; min-width: 0; align-items: center; gap: .55rem; }
+.control-runner-context { display: none; min-width: 0; align-items: center; gap: .3rem; color: #c8fff2; font-size: .75rem; font-weight: 750; }
+.control-runner-context .ui-icon { width: 1rem; height: 1rem; flex: 0 0 1rem; }
+.control-runner-context > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .control-empty { display: grid; justify-items: start; gap: .8rem; }
 .control-empty h2, .control-empty p { margin: 0; }
 .control-empty p:not(.eyebrow) { max-width: 46rem; color: #abc4c1; line-height: 1.55; }
@@ -915,6 +919,19 @@ body.immersive-view { overflow: hidden; }
   .control-rail .eyebrow { font-size: .55rem; }
 }
 
+@media (max-width: 650px) and (min-height: 501px) {
+  .control-details { margin-top: calc(8rem + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 360px) {
+  .control-console-grid--balanced .control-chart-heading .eyebrow { display: none; }
+  .control-console-grid--balanced .control-chart-heading h2 { margin-top: 0; font-size: .85rem; white-space: nowrap; }
+  .control-console-grid--balanced .control-live-chart .control-chart { height: 72px; }
+  .control-console-grid--balanced .chart-plot-grid { margin-top: .45rem; }
+  .control-console-grid--balanced .chart-time-scale span { display: none; }
+  .control-console-grid--balanced .chart-time-scale::after { display: block; content: "0–" attr(data-endpoint); }
+}
+
 @media (orientation: landscape) and (max-height: 500px) {
   body:has(.control-page) .site-header { display: none; }
   .app-shell:has(.control-page) { padding: .35rem max(.45rem, env(safe-area-inset-right)) .35rem max(.45rem, env(safe-area-inset-left)); }
@@ -924,6 +941,7 @@ body.immersive-view { overflow: hidden; }
   .control-header-actions { display: flex; }
   .control-page__header .eyebrow { display: none; }
   .control-page h1 { font-size: 1.55rem; }
+  .control-runner-context { display: inline-flex; max-width: 9rem; }
   .control-console-grid { grid-template-columns: 120px minmax(0, 1fr) 120px; gap: .45rem; }
   .control-console-grid--chart { grid-template-columns: 72px minmax(0, 1fr) 72px; }
   .control-console-grid--controls { grid-template-columns: 156px minmax(0, 1fr) 156px; }
@@ -1799,6 +1817,20 @@ h1:focus-visible {
   gap: .85rem;
 }
 
+.calendar-scroll-hint {
+  display: none;
+  align-items: center;
+  gap: .35rem;
+  margin: 0;
+  color: #a9c4c1;
+  font-size: .7rem;
+}
+
+.calendar-scroll-hint .ui-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
 .calendar-month-scroll {
   width: 100%;
   min-width: 0;
@@ -2301,12 +2333,11 @@ h1:focus-visible {
   }
 
   .calendar-month-scroll {
-    width: calc(100vw - 2px);
-    max-width: none;
-    margin-right: 0;
-    margin-left: calc(50% - 50vw + 1px);
-    overflow-x: hidden;
-    scrollbar-gutter: auto;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    overflow-x: auto;
+    scrollbar-gutter: stable;
     border-radius: .65rem;
   }
 
@@ -2314,6 +2345,12 @@ h1:focus-visible {
     width: 100%;
     min-width: 316px;
     border-spacing: .06rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .calendar-scroll-hint {
+    display: flex;
   }
 }
 

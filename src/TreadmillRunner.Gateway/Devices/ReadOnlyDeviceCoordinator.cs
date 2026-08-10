@@ -17,6 +17,7 @@ public interface IReadOnlyDeviceCoordinator
 {
   DeviceTelemetrySnapshot Current { get; }
   bool HasTreadmillEnrollment => false;
+  int ActiveReliabilityFailureCount(Guid enrollmentId) => 0;
   DeviceTelemetrySnapshot CurrentForProfile(Guid? profileId) => Current;
   Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
   Task PrepareForRunAsync(
@@ -37,6 +38,7 @@ public interface IReadOnlyDeviceCoordinator
 public sealed class ReadOnlyDeviceCoordinator(
   IServiceScopeFactory scopeFactory,
   IBleCentralTransport transport,
+  IBleAdvertisementBroker advertisementBroker,
   TimeProvider timeProvider,
   IApplicationMaintenanceState maintenanceState,
   ILogger<ReadOnlyDeviceCoordinator> logger) : BackgroundService, IReadOnlyDeviceCoordinator
@@ -47,6 +49,9 @@ public sealed class ReadOnlyDeviceCoordinator(
   private static readonly TimeSpan TelemetrySilenceTimeout = TimeSpan.FromSeconds(30);
   private static readonly TimeSpan ReconnectDiscoveryTimeout = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan ReliabilityRetention = TimeSpan.FromDays(90);
+  private static readonly TimeSpan ReliabilityPruneInterval = TimeSpan.FromHours(1);
+  private static readonly TimeSpan ReliabilityLagThreshold = TimeSpan.FromSeconds(1);
+  private static readonly TimeSpan ReliabilityLogThrottle = TimeSpan.FromMinutes(1);
   private static readonly TimeSpan HeartRateFreshnessLimit = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan PreparationDemandDuration = TimeSpan.FromMinutes(2);
   private static readonly TimeSpan ManualConnectionDemandDuration = TimeSpan.FromMinutes(2);
@@ -60,17 +65,35 @@ public sealed class ReadOnlyDeviceCoordinator(
   private readonly Dictionary<Guid, DateTimeOffset> _manualConnectionDemandExpirations = [];
   private readonly HashSet<Guid> _explicitlyDisconnectedEnrollmentIds = [];
   private readonly BleReconnectPolicy _reconnectPolicy = new();
-  private readonly Channel<ReliabilityWrite> _reliabilityWrites = Channel.CreateUnbounded<ReliabilityWrite>(
-    new UnboundedChannelOptions
+  private readonly Channel<ReliabilityWriteEnvelope> _reliabilityWrites = Channel.CreateBounded<ReliabilityWriteEnvelope>(
+    new BoundedChannelOptions(32)
     {
       SingleReader = true,
       SingleWriter = false,
+      FullMode = BoundedChannelFullMode.Wait,
+    });
+  private readonly Channel<EvidenceWrite> _evidenceWrites = Channel.CreateBounded<EvidenceWrite>(
+    new BoundedChannelOptions(MaximumHeartRateWorkers + 1)
+    {
+      SingleReader = true,
+      SingleWriter = false,
+      FullMode = BoundedChannelFullMode.Wait,
     });
   private IReadOnlyList<HeartRateDeviceAssignment> _assignments = [];
   private long _nextGeneration;
   private bool _hasTreadmillEnrollment;
   private RunConnectionDemand? _runConnectionDemand;
+  private DateTimeOffset? _lastReliabilityPruneAtUtc;
+  private DateTimeOffset? _lastReliabilityPressureLogAtUtc;
+  private long _reliabilityDroppedCount;
+  private long _reliabilityLaggedCount;
+  private long _evidenceDroppedCount;
   private DeviceTelemetrySnapshot _snapshot = EmptySnapshot(timeProvider.GetUtcNow());
+
+  internal ReliabilityWriterMetrics ReliabilityMetrics => new(
+    Interlocked.Read(ref _reliabilityDroppedCount),
+    Interlocked.Read(ref _reliabilityLaggedCount),
+    Interlocked.Read(ref _evidenceDroppedCount));
 
   public DeviceTelemetrySnapshot Current
   {
@@ -88,6 +111,16 @@ public sealed class ReadOnlyDeviceCoordinator(
     get
     {
       lock (_sync) return _hasTreadmillEnrollment;
+    }
+  }
+
+  public int ActiveReliabilityFailureCount(Guid enrollmentId)
+  {
+    lock (_sync)
+    {
+      return _reliabilityIncidents.TryGetValue(enrollmentId, out ReliabilityIncidentRuntime? incident)
+        ? incident.FailedAttemptCount
+        : 0;
     }
   }
 
@@ -232,7 +265,8 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
-    Task reliabilityWriter = RunReliabilityWriterAsync(CancellationToken.None);
+    Task reliabilityWriter = RunReliabilityWriterAsync(stoppingToken);
+    Task evidenceWriter = RunEvidenceWriterAsync(stoppingToken);
     try
     {
       while (!stoppingToken.IsCancellationRequested)
@@ -254,9 +288,17 @@ public sealed class ReadOnlyDeviceCoordinator(
       await Task.WhenAll(workers.Select(static worker => worker.Task));
       foreach (DeviceWorker worker in workers) worker.Cancellation.Dispose();
       _reliabilityWrites.Writer.TryComplete();
+      _evidenceWrites.Writer.TryComplete();
       try
       {
         await reliabilityWriter;
+      }
+      catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+      {
+      }
+      try
+      {
+        await evidenceWriter;
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {
@@ -503,7 +545,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     discovery.CancelAfter(ReconnectDiscoveryTimeout);
     try
     {
-      await foreach (BleAdvertisement advertisement in transport
+      await foreach (BleAdvertisement advertisement in advertisementBroker
         .ScanAsync(discovery.Token)
         .WithCancellation(discovery.Token))
       {
@@ -616,17 +658,16 @@ public sealed class ReadOnlyDeviceCoordinator(
           readyPublished = true;
         }
         primaryTelemetryObserved(notification.ObservedAt);
-        if (!evidencePersisted)
+        if (!evidencePersisted && TryEnqueueEvidencePersistence(
+          enrollment,
+          enrollmentVersion,
+          model,
+          firmware,
+          reported,
+          generation,
+          notification.ObservedAt))
         {
           evidencePersisted = true;
-          await TryPersistEvidenceAsync(
-            enrollment,
-            enrollmentVersion,
-            model,
-            firmware,
-            reported,
-            notification.ObservedAt,
-            cancellationToken);
         }
       }
 
@@ -661,17 +702,16 @@ public sealed class ReadOnlyDeviceCoordinator(
             vendorReadyPublished = true;
           }
           primaryTelemetryObserved(notification.ObservedAt);
-          if (!vendorEvidencePersisted)
+          if (!vendorEvidencePersisted && TryEnqueueEvidencePersistence(
+            enrollment,
+            enrollmentVersion,
+            vendorModel,
+            vendorFirmware,
+            enrollment.Capabilities,
+            generation,
+            notification.ObservedAt))
           {
             vendorEvidencePersisted = true;
-            await TryPersistEvidenceAsync(
-              enrollment,
-              enrollmentVersion,
-              vendorModel,
-              vendorFirmware,
-              enrollment.Capabilities,
-              notification.ObservedAt,
-              cancellationToken);
           }
         }
       }
@@ -692,12 +732,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     var evidencePersisted = false;
     var readyPublished = false;
     using var batteryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-    Task batteryTask = RunOptionalBatteryAsync(
-      connection,
-      enrollment,
-      services,
-      generation,
-      batteryCancellation.Token);
+    Task? batteryTask = null;
     try
     {
       await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
@@ -724,29 +759,40 @@ public sealed class ReadOnlyDeviceCoordinator(
           readyPublished = true;
         }
         primaryTelemetryObserved(notification.ObservedAt);
-        if (!evidencePersisted)
+        if (!evidencePersisted && TryEnqueueEvidencePersistence(
+          enrollment,
+          enrollmentVersion,
+          model,
+          firmware,
+          capabilities: null,
+          generation,
+          notification.ObservedAt))
         {
           evidencePersisted = true;
-          await TryPersistEvidenceAsync(
+        }
+        if (batteryTask is null)
+        {
+          batteryTask = RunOptionalBatteryAsync(
+            connection,
             enrollment,
-            enrollmentVersion,
-            model,
-            firmware,
-            null,
-            notification.ObservedAt,
-            cancellationToken);
+            services,
+            generation,
+            batteryCancellation.Token);
         }
       }
     }
     finally
     {
       batteryCancellation.Cancel();
-      try
+      if (batteryTask is not null)
       {
-        await batteryTask;
-      }
-      catch (OperationCanceledException) when (batteryCancellation.IsCancellationRequested)
-      {
+        try
+        {
+          await batteryTask;
+        }
+        catch (OperationCanceledException) when (batteryCancellation.IsCancellationRequested)
+        {
+        }
       }
     }
   }
@@ -913,6 +959,92 @@ public sealed class ReadOnlyDeviceCoordinator(
     return string.IsNullOrWhiteSpace(text) ? null : text[..Math.Min(text.Length, 100)];
   }
 
+  private bool TryEnqueueEvidencePersistence(
+    DeviceEnrollment enrollment,
+    int enrollmentVersion,
+    string? model,
+    string? firmware,
+    TreadmillCapabilities? capabilities,
+    long generation,
+    DateTimeOffset observedAt)
+  {
+    // A telemetry callback may outlive the worker generation that produced it.
+    // Drop stale evidence rather than allowing an old device session to mutate
+    // the current enrollment record.
+    if (!IsCurrentGeneration(enrollment, generation)) return true;
+
+    if (_evidenceWrites.Writer.TryWrite(new EvidenceWrite(
+      enrollment,
+      enrollmentVersion,
+      model,
+      firmware,
+      capabilities,
+      generation,
+      observedAt))
+    ) return true;
+
+    Interlocked.Increment(ref _evidenceDroppedCount);
+    return false;
+  }
+
+  private async Task RunEvidenceWriterAsync(CancellationToken cancellationToken)
+  {
+    await foreach (EvidenceWrite write in _evidenceWrites.Reader.ReadAllAsync(cancellationToken))
+    {
+      if (!IsCurrentGeneration(write.Enrollment, write.ConnectionGeneration)) continue;
+      var persisted = false;
+      for (var attempt = 1; attempt <= 3; attempt++)
+      {
+        if (!IsCurrentGeneration(write.Enrollment, write.ConnectionGeneration)) break;
+        try
+        {
+          await TryPersistEvidenceAsync(
+            write.Enrollment,
+            write.EnrollmentVersion,
+            write.Model,
+            write.Firmware,
+            write.Capabilities,
+            write.ObservedAt,
+            cancellationToken);
+          persisted = true;
+          break;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+          return;
+        }
+        catch (Exception exception) when (attempt < 3)
+        {
+          logger.LogWarning(
+            exception,
+            "A BLE evidence write failed; retrying bounded persistence attempt {Attempt}.",
+            attempt);
+          await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), timeProvider, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+          logger.LogWarning(
+            exception,
+            "A BLE evidence write failed after bounded retries without affecting telemetry.");
+        }
+      }
+
+      if (!persisted && IsCurrentGeneration(write.Enrollment, write.ConnectionGeneration))
+        Interlocked.Increment(ref _evidenceDroppedCount);
+    }
+  }
+
+  private bool IsCurrentGeneration(DeviceEnrollment enrollment, long generation)
+  {
+    lock (_sync)
+    {
+      return enrollment.Role == DeviceRole.Treadmill
+        ? _snapshot.Treadmill.ConnectionGeneration == generation
+        : _heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime) &&
+          runtime.Connection.ConnectionGeneration == generation;
+    }
+  }
+
   private async Task TryPersistEvidenceAsync(
     DeviceEnrollment enrollment,
     int enrollmentVersion,
@@ -922,12 +1054,12 @@ public sealed class ReadOnlyDeviceCoordinator(
     DateTimeOffset observedAt,
     CancellationToken cancellationToken)
   {
-    if (!maintenanceState.TryBeginMutation()) return;
+    while (!maintenanceState.TryBeginMutation())
+      await Task.Delay(TimeSpan.FromMilliseconds(250), timeProvider, cancellationToken);
     try
     {
       using IServiceScope scope = scopeFactory.CreateScope();
       bool preserveHardwareVerification = enrollment.Evidence == TreadmillCapabilityEvidence.HardwareVerified;
-      bool acceptedProfile = AcceptedTreadmillControlProfile.Matches(enrollment, model, firmware);
       await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>().UpdateEvidenceAsync(
         enrollment.Id,
         enrollmentVersion,
@@ -935,10 +1067,8 @@ public sealed class ReadOnlyDeviceCoordinator(
         firmware,
         preserveHardwareVerification
           ? MergeVerifiedCapabilities(enrollment.Capabilities, capabilities)
-          : acceptedProfile
-            ? AcceptedTreadmillControlProfile.Enable(capabilities)
-            : capabilities,
-        preserveHardwareVerification || acceptedProfile
+          : capabilities,
+        preserveHardwareVerification
           ? TreadmillCapabilityEvidence.HardwareVerified
           : TreadmillCapabilityEvidence.PassivelyObserved,
         observedAt,
@@ -1074,12 +1204,22 @@ public sealed class ReadOnlyDeviceCoordinator(
       if (!_reliabilityIncidents.Remove(enrollment.Id, out incident)) return;
     }
 
-    EnqueueReliabilityWrite(new ResolveReliabilityWrite(
+    var resolve = new ResolveReliabilityWrite(
       enrollment.Id,
       generation,
-      0,
+      Math.Max(0, incident.FailedAttemptCount - 1),
       incident.MaximumReconnectDelay,
-      observedAt));
+      observedAt);
+    if (!EnqueueReliabilityWrite(resolve))
+    {
+      // Keep the episode open so the next fresh telemetry sample can retry the
+      // resolve after bounded queue pressure.
+      lock (_sync)
+      {
+        if (!_reliabilityIncidents.ContainsKey(enrollment.Id))
+          _reliabilityIncidents[enrollment.Id] = incident with { BeginQueued = false };
+      }
+    }
   }
 
   private void RecordReliabilityFailure(
@@ -1090,47 +1230,91 @@ public sealed class ReadOnlyDeviceCoordinator(
     TimeSpan reconnectDelay,
     DateTimeOffset occurredAtUtc)
   {
+    bool enqueueBegin;
     lock (_sync)
     {
       if (_reliabilityIncidents.TryGetValue(enrollment.Id, out ReliabilityIncidentRuntime? incident))
       {
+        enqueueBegin = !incident.BeginQueued;
         _reliabilityIncidents[enrollment.Id] = incident with
         {
           FailedAttemptCount = incident.FailedAttemptCount + 1,
           MaximumReconnectDelay = reconnectDelay > incident.MaximumReconnectDelay
             ? reconnectDelay
             : incident.MaximumReconnectDelay,
+          BeginQueued = true,
         };
       }
       else
       {
-        _reliabilityIncidents[enrollment.Id] = new ReliabilityIncidentRuntime(1, reconnectDelay);
+        enqueueBegin = true;
+        _reliabilityIncidents[enrollment.Id] = new ReliabilityIncidentRuntime(1, reconnectDelay, true);
       }
     }
 
-    EnqueueReliabilityWrite(new BeginReliabilityWrite(
-      enrollment.Id,
-      enrollment.Role,
-      enrollment.DisplayName,
-      generation,
-      failureKind,
-      sanitizedFault,
-      reconnectDelay,
-      occurredAtUtc));
+    if (enqueueBegin && !EnqueueReliabilityWrite(new BeginReliabilityWrite(
+        enrollment.Id,
+        enrollment.Role,
+        enrollment.DisplayName,
+        generation,
+        failureKind,
+        sanitizedFault,
+        reconnectDelay,
+        occurredAtUtc)))
+    {
+      // Permit the next failure to retry the first event after queue pressure.
+      lock (_sync)
+      {
+        if (_reliabilityIncidents.TryGetValue(enrollment.Id, out ReliabilityIncidentRuntime? incident))
+          _reliabilityIncidents[enrollment.Id] = incident with { BeginQueued = false };
+      }
+    }
   }
 
-  private void EnqueueReliabilityWrite(ReliabilityWrite write)
+  private bool EnqueueReliabilityWrite(ReliabilityWrite write)
   {
-    if (!_reliabilityWrites.Writer.TryWrite(write))
+    if (_reliabilityWrites.Writer.TryWrite(new ReliabilityWriteEnvelope(write, timeProvider.GetUtcNow())))
+      return true;
+
+    Interlocked.Increment(ref _reliabilityDroppedCount);
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    bool logPressure;
+    lock (_sync)
     {
-      logger.LogWarning("The bounded BLE reliability recorder dropped an event while persistence was unavailable.");
+      logPressure = _lastReliabilityPressureLogAtUtc is not { } last ||
+        now - last >= ReliabilityLogThrottle;
+      if (logPressure) _lastReliabilityPressureLogAtUtc = now;
     }
+    if (logPressure)
+      logger.LogWarning(
+        "The bounded BLE reliability recorder dropped events while persistence was unavailable. Dropped={DroppedCount}.",
+        Interlocked.Read(ref _reliabilityDroppedCount));
+    return false;
   }
 
   private async Task RunReliabilityWriterAsync(CancellationToken cancellationToken)
   {
-    await foreach (ReliabilityWrite write in _reliabilityWrites.Reader.ReadAllAsync(cancellationToken))
+    await foreach (ReliabilityWriteEnvelope envelope in _reliabilityWrites.Reader.ReadAllAsync(cancellationToken))
     {
+      if (timeProvider.GetUtcNow() - envelope.EnqueuedAtUtc > ReliabilityLagThreshold)
+      {
+        Interlocked.Increment(ref _reliabilityLaggedCount);
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        bool logLag;
+        lock (_sync)
+        {
+          logLag = _lastReliabilityPressureLogAtUtc is not { } last ||
+            now - last >= ReliabilityLogThrottle;
+          if (logLag) _lastReliabilityPressureLogAtUtc = now;
+        }
+        if (logLag)
+          logger.LogWarning(
+            "The BLE reliability recorder is lagging while persistence is unavailable. LaggedCount={LaggedCount}.",
+            Interlocked.Read(ref _reliabilityLaggedCount));
+      }
+
+      ReliabilityWrite write = envelope.Write;
+      var persisted = false;
       for (var attempt = 1; attempt <= 3; attempt++)
       {
         try
@@ -1141,7 +1325,6 @@ public sealed class ReadOnlyDeviceCoordinator(
           {
             using IServiceScope scope = scopeFactory.CreateScope();
             IBleReliabilityStore store = scope.ServiceProvider.GetRequiredService<IBleReliabilityStore>();
-            DateTimeOffset referenceTime;
             if (write is BeginReliabilityWrite begin)
             {
               await store.BeginOrContinueIncidentAsync(
@@ -1154,7 +1337,6 @@ public sealed class ReadOnlyDeviceCoordinator(
                 begin.ReconnectDelay,
                 begin.OccurredAtUtc,
                 cancellationToken);
-              referenceTime = begin.OccurredAtUtc;
             }
             else if (write is ResolveReliabilityWrite resolve)
             {
@@ -1165,16 +1347,19 @@ public sealed class ReadOnlyDeviceCoordinator(
                 resolve.MaximumReconnectDelay,
                 resolve.RecoveredAtUtc,
                 cancellationToken);
-              referenceTime = resolve.RecoveredAtUtc;
             }
             else continue;
-            await store.PruneRecoveredBeforeAsync(referenceTime - ReliabilityRetention, cancellationToken);
+            persisted = true;
           }
           finally
           {
             maintenanceState.EndMutation();
           }
           break;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+          return;
         }
         catch (Exception exception) when (attempt < 3)
         {
@@ -1186,6 +1371,63 @@ public sealed class ReadOnlyDeviceCoordinator(
           logger.LogWarning(exception, "A sanitized BLE reliability incident could not be persisted after bounded retries.");
         }
       }
+
+      if (!persisted)
+      {
+        lock (_sync)
+        {
+          if (write is BeginReliabilityWrite begin &&
+              _reliabilityIncidents.TryGetValue(begin.EnrollmentId, out ReliabilityIncidentRuntime? incident))
+          {
+            _reliabilityIncidents[begin.EnrollmentId] = incident with { BeginQueued = false };
+          }
+          else if (write is ResolveReliabilityWrite resolve &&
+                   !_reliabilityIncidents.ContainsKey(resolve.EnrollmentId))
+          {
+            _reliabilityIncidents[resolve.EnrollmentId] = new ReliabilityIncidentRuntime(
+              Math.Max(1, resolve.AdditionalFailedAttempts + 1),
+              resolve.MaximumReconnectDelay,
+              false);
+          }
+        }
+      }
+
+      if (persisted)
+        await TryPruneReliabilityAsync(cancellationToken);
+    }
+  }
+
+  private async Task TryPruneReliabilityAsync(CancellationToken cancellationToken)
+  {
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    lock (_sync)
+    {
+      if (_lastReliabilityPruneAtUtc is { } last && now - last < ReliabilityPruneInterval) return;
+      _lastReliabilityPruneAtUtc = now;
+    }
+
+    try
+    {
+      while (!maintenanceState.TryBeginMutation())
+        await Task.Delay(TimeSpan.FromMilliseconds(250), timeProvider, cancellationToken);
+      try
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IBleReliabilityStore>()
+          .PruneRecoveredBeforeAsync(now - ReliabilityRetention, cancellationToken);
+      }
+      finally
+      {
+        maintenanceState.EndMutation();
+      }
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      return;
+    }
+    catch (Exception exception)
+    {
+      logger.LogWarning(exception, "A throttled BLE reliability retention prune failed.");
     }
   }
 
@@ -1451,11 +1693,30 @@ public sealed class ReadOnlyDeviceCoordinator(
       now - last <= HeartRateFreshnessLimit;
   }
 
+  internal sealed record ReliabilityWriterMetrics(
+    long DroppedCount,
+    long LaggedCount,
+    long EvidenceDroppedCount);
+
   private sealed record ReliabilityIncidentRuntime(
     int FailedAttemptCount,
-    TimeSpan MaximumReconnectDelay);
+    TimeSpan MaximumReconnectDelay,
+    bool BeginQueued);
 
   private abstract record ReliabilityWrite;
+
+  private sealed record ReliabilityWriteEnvelope(
+    ReliabilityWrite Write,
+    DateTimeOffset EnqueuedAtUtc);
+
+  private sealed record EvidenceWrite(
+    DeviceEnrollment Enrollment,
+    int EnrollmentVersion,
+    string? Model,
+    string? Firmware,
+    TreadmillCapabilities? Capabilities,
+    long ConnectionGeneration,
+    DateTimeOffset ObservedAt);
 
   private sealed record BeginReliabilityWrite(
     Guid EnrollmentId,

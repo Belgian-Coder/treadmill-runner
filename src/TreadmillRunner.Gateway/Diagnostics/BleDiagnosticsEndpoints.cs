@@ -19,7 +19,7 @@ public static class BleDiagnosticsEndpoints
 
   private static async Task<IResult> ScanAsync(
       int durationSeconds,
-      IBleCentralTransport transport,
+      IBleAdvertisementBroker advertisementBroker,
       HttpContext httpContext,
       ILoggerFactory loggerFactory,
       CancellationToken cancellationToken)
@@ -38,7 +38,7 @@ public static class BleDiagnosticsEndpoints
 
     try
     {
-      await foreach (var advertisement in transport.ScanAsync(timeout.Token).WithCancellation(timeout.Token))
+      await foreach (var advertisement in advertisementBroker.ScanAsync(timeout.Token).WithCancellation(timeout.Token))
       {
         if (string.IsNullOrWhiteSpace(advertisement.DeviceId))
         {

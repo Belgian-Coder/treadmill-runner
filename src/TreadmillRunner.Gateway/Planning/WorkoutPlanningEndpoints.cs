@@ -30,9 +30,8 @@ public static class WorkoutPlanningEndpoints
 
   private static async Task<IResult> ListAsync(IWorkoutStore store, CancellationToken cancellationToken)
   {
-    IReadOnlyList<StoredWorkout> workouts = await store.ListAsync(cancellationToken);
+    IReadOnlyList<StoredWorkout> workouts = await store.ListVisibleAsync(cancellationToken);
     return TypedResults.Ok(workouts
-      .Where(static workout => !workout.IsArchived && workout.Kind != WorkoutKind.PlanInternal)
       .Select(ToSummary)
       .ToArray());
   }

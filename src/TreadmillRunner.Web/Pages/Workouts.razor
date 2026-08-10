@@ -635,7 +635,7 @@
     private DotNetObjectReference<Workouts>? programDetailsModalReference;
     private WorkoutSummaryView? scheduledWorkout;
     private string workoutScheduleName = string.Empty;
-    private DateOnly workoutScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly workoutScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), 37);
     private DateOnly? workoutScheduleEndDate;
     private int workoutScheduleIntervalWeeks = 1;
     private int workoutScheduleWeekdayMask = 37;
@@ -1079,10 +1079,10 @@
     {
         scheduledWorkout = workout;
         workoutScheduleName = workout.Name;
-        workoutScheduleStartDate = DateOnly.FromDateTime(DateTime.Today);
         workoutScheduleEndDate = null;
         workoutScheduleIntervalWeeks = 1;
         workoutScheduleWeekdayMask = 37;
+        workoutScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), workoutScheduleWeekdayMask);
         workoutScheduleAlternativeRevisionId = null;
         openWorkoutSchedulePending = true;
         await InvokeAsync(StateHasChanged);
