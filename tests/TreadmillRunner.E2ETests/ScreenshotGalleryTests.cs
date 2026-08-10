@@ -661,7 +661,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByText("143 bpm", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Preferred", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("86%", new() { Exact = false }).First).ToBeVisibleAsync();
-        ILocator connectActions = Page.GetByRole(AriaRole.Button, new() { Name = "Connect / retry", Exact = true });
+        ILocator connectActions = Page.GetByRole(AriaRole.Button, new() { Name = "Connect", Exact = true });
         ILocator disconnectActions = Page.GetByRole(AriaRole.Button, new() { Name = "Disconnect", Exact = true });
         await Expect(connectActions).ToHaveCountAsync(3);
         await Expect(disconnectActions).ToHaveCountAsync(3);

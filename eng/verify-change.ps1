@@ -44,13 +44,15 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($BrowserFilter)) {
         $testAssembly = Join-Path $projectRoot "tests\TreadmillRunner.E2ETests\bin\$Configuration\net10.0\TreadmillRunner.E2ETests.dll"
         $gatewayExecutable = Join-Path $projectRoot 'artifacts\e2e-host\TreadmillRunner.Gateway.exe'
+        $gatewayPublishStamp = Join-Path $projectRoot 'artifacts\e2e-host\.publish-complete'
         $browserBuildIsCurrent = (Test-Path -LiteralPath $testAssembly -PathType Leaf) -and
-            (Test-Path -LiteralPath $gatewayExecutable -PathType Leaf)
+            (Test-Path -LiteralPath $gatewayExecutable -PathType Leaf) -and
+            (Test-Path -LiteralPath $gatewayPublishStamp -PathType Leaf)
 
         if ($browserBuildIsCurrent) {
             $buildTime = @(
                 (Get-Item -LiteralPath $testAssembly).LastWriteTimeUtc
-                (Get-Item -LiteralPath $gatewayExecutable).LastWriteTimeUtc
+                (Get-Item -LiteralPath $gatewayPublishStamp).LastWriteTimeUtc
             ) | Sort-Object | Select-Object -First 1
             $inputRoots = @(
                 (Join-Path $projectRoot 'src'),

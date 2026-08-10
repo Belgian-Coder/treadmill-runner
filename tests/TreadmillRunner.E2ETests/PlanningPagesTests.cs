@@ -103,28 +103,71 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
-    if (width <= 1200)
+    ILocator calendarView = Page.GetByRole(AriaRole.Group, new() { Name = "Calendar view", Exact = true });
+    ILocator agendaView = calendarView.GetByRole(AriaRole.Button, new() { Name = "Agenda", Exact = true });
+    ILocator monthView = calendarView.GetByRole(AriaRole.Button, new() { Name = "Month", Exact = true });
+    await Expect(agendaView).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(monthView).ToHaveAttributeAsync("aria-pressed", "false");
+    await monthView.ClickAsync();
+    await Expect(monthView).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(agendaView).ToHaveAttributeAsync("aria-pressed", "false");
+    ILocator monthTable = Page.Locator("table.calendar-month");
+    await Expect(monthTable).ToBeVisibleAsync();
+    await Expect(monthTable.Locator("caption")).ToContainTextAsync("Training calendar");
+    await Expect(monthTable.Locator("thead th")).ToHaveCountAsync(7);
+    Assert.InRange(await monthTable.Locator("tbody tr").CountAsync(), 5, 6);
+    Assert.True(await monthTable.Locator("tbody td").CountAsync() >= 35,
+      "The native month table must expose all visible calendar days.");
+    await AssertTouchTargetsAsync(Page.Locator(".calendar-date-button"), $"{name}-month");
+    await agendaView.ClickAsync();
+    await Expect(agendaView).ToHaveAttributeAsync("aria-pressed", "true");
+    await Expect(monthView).ToHaveAttributeAsync("aria-pressed", "false");
+    if (await Page.Locator(".calendar-agenda-week").CountAsync() > 0)
     {
-      await Expect(Page.Locator("[role='grid'][aria-label^='Training calendar']")).ToBeHiddenAsync();
-      if (await Page.Locator(".calendar-agenda-week").CountAsync() > 0)
-      {
-        await Expect(Page.Locator("[aria-label^='Training agenda']")).ToBeVisibleAsync();
-      }
-      else
-      {
-        await Expect(Page.GetByText("No workouts are planned this month.", new() { Exact = false })).ToBeVisibleAsync();
-      }
+      await Expect(Page.Locator("[aria-label^='Training agenda']")).ToBeVisibleAsync();
     }
     else
     {
-      await Expect(Page.Locator("[role='grid'][aria-label^='Training calendar']")).ToBeVisibleAsync();
-      Assert.True(await Page.GetByRole(AriaRole.Gridcell).CountAsync() >= 35);
+      await Expect(Page.GetByText("No workouts are planned this month.", new() { Exact = false })).ToBeVisibleAsync();
     }
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Previous month", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Next month", Exact = true })).ToBeVisibleAsync();
     await AssertTouchTargetsAsync(Page.GetByRole(AriaRole.Button), name);
     await AssertNoOverflowAsync();
     await ScreenshotAsync($"{name}-calendar.png");
+  }
+
+  [Theory]
+  [InlineData(1920, 1080)]
+  [InlineData(390, 844)]
+  [InlineData(844, 390)]
+  [InlineData(360, 800)]
+  [InlineData(320, 800)]
+  [Trait("Category", "Browser")]
+  public async Task Month_view_keeps_week_rows_touchable_and_bounded_at_supported_widths(int width, int height)
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Month", Exact = true }).ClickAsync();
+    ILocator monthTable = Page.Locator("table.calendar-month");
+    await Expect(monthTable).ToBeVisibleAsync();
+    Assert.InRange(await monthTable.Locator("tbody tr").CountAsync(), 5, 6);
+    await AssertTouchTargetsAsync(Page.Locator(".calendar-date-button"), $"calendar-month-{width}x{height}");
+    await AssertNoOverflowAsync();
+
+    string directory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "tr-036");
+    Directory.CreateDirectory(directory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(directory, $"calendar-month-{width}x{height}.png"),
+      FullPage = false,
+    });
   }
 
   [Theory]
@@ -436,14 +479,13 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
-    await Page.GetByLabel("Choose active runner", new() { Exact = true }).ClickAsync();
-    await Page.GetByRole(AriaRole.Radio, new() { Name = GalleryScenario.SecondProfileName, Exact = true }).ClickAsync();
-    await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true })).ToContainTextAsync(GalleryScenario.SecondProfileName);
+    await Page.SelectActiveRunnerAsync(GalleryScenario.SecondProfileName);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(GalleryScenario.SecondProfileName);
     await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync($"Showing {GalleryScenario.SecondProfileName}’s calendar.");
 
     releaseMarcRange.TrySetResult();
     await Page.WaitForTimeoutAsync(250);
-    await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true })).ToContainTextAsync(GalleryScenario.SecondProfileName);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(GalleryScenario.SecondProfileName);
     await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync($"Showing {GalleryScenario.SecondProfileName}’s calendar.");
   }
 
@@ -712,8 +754,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri,
         new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
       await Page.SelectActiveRunnerAsync(profileName);
-      await Expect(Page.GetByLabel("Choose active runner", new() { Exact = true }))
-        .ToContainTextAsync(profileName);
+      await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(profileName);
 
       await ChangeLiveProgramDaysAsync(37, 69);
       await AssertProgramCalendarUsesMaskAsync(client, profileId, runId, expectedMask: 69);
@@ -1042,7 +1083,10 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   private async Task ChangeLiveProgramDaysAsync(int currentMask, int targetMask)
   {
-    ILocator manageButton = Page.Locator(".calendar-month .calendar-option-shell--program .calendar-option-manage").First;
+    ILocator manageButton = Page.GetByRole(AriaRole.Button, new()
+    {
+      NameRegex = new System.Text.RegularExpressions.Regex("^Manage "),
+    }).First;
     await Expect(manageButton).ToBeVisibleAsync();
     await manageButton.ClickAsync();
     ILocator dialog = Page.GetByRole(AriaRole.Dialog);

@@ -85,7 +85,7 @@
                 {
                     <button class="touch-action pause-action media-control media-control--pause" type="button" @onclick="PauseAsync" disabled="@(!CanPause)"><span class="media-control__icon"><AppIcon Name="pause" /></span><span>Pause</span></button>
                 }
-                <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
+                <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
             </div>
             @if (session.HeartRateTarget is not null)
             {
@@ -193,7 +193,7 @@
                     @onblur="CancelStartHold">
                 <span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")</span>
             </button>
-            <button class="touch-action danger-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
+            <button class="touch-action danger-action media-control media-control--stop" type="button" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
             <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
         </section>
 

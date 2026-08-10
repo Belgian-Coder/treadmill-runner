@@ -12,6 +12,58 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
         { "desktop-full-hd", 1920, 1080 },
     };
 
+  public static TheoryData<string, int, int> NarrowViewports => new()
+    {
+        { "phone-portrait", 390, 844 },
+        { "phone-landscape", 844, 390 },
+        { "compact-portrait", 360, 800 },
+        { "minimum-portrait", 320, 800 },
+    };
+
+  [Theory]
+  [MemberData(nameof(NarrowViewports))]
+  [Trait("Category", "Browser")]
+  public async Task Run_shell_has_safe_gutters_without_horizontal_overflow_at_narrow_viewports(
+    string viewport,
+    int width,
+    int height)
+  {
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
+      .ToBeVisibleAsync(new() { Timeout = 30_000 });
+
+    bool hasHorizontalOverflow = await Page.EvaluateAsync<bool>(
+      "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1");
+    Assert.False(hasHorizontalOverflow, $"Run shell overflowed horizontally at {viewport} ({width}x{height}).");
+
+    bool hasSafeGutters = await Page.EvaluateAsync<bool>("""
+      () => {
+        const shellElement = document.querySelector('.app-shell');
+        const page = document.querySelector('.runner-page')?.getBoundingClientRect();
+        if (!shellElement || !page) return false;
+        const shell = getComputedStyle(shellElement);
+        return parseFloat(shell.paddingLeft) >= 8 &&
+          parseFloat(shell.paddingRight) >= 8 &&
+          page.left >= 8 &&
+          window.innerWidth - page.right >= 8;
+      }
+      """);
+    Assert.True(hasSafeGutters, $"Run shell must retain a visible side gutter at {viewport} ({width}x{height}).");
+
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "tr-036");
+    Directory.CreateDirectory(screenshotDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(screenshotDirectory, $"run-ready-{width}x{height}.png"),
+      FullPage = false,
+    });
+  }
+
   [Theory]
   [MemberData(nameof(Viewports))]
   [Trait("Category", "Browser")]
@@ -125,12 +177,12 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
     await Expect(Page.GetByText("Verified Start, Stop, speed, and incline controls are enabled. Prepare a new session to use them.", new() { Exact = true }))
       .ToBeVisibleAsync();
 
-    await treadmillCard.GetByRole(AriaRole.Button, new() { Name = "Connect / retry", Exact = true }).ClickAsync();
+    await treadmillCard.GetByRole(AriaRole.Button, new() { Name = "Connect", Exact = true }).ClickAsync();
     await Expect(Page.GetByText("Horizon Omega Z connected with fresh telemetry. End the run or use Disconnect when you are finished.", new() { Exact = true }))
       .ToBeVisibleAsync(new() { Timeout = 5_000 });
 
     await treadmillCard.GetByRole(AriaRole.Button, new() { Name = "Disconnect", Exact = true }).ClickAsync();
-    await Expect(Page.GetByText("Horizon Omega Z disconnected. It will reconnect when you prepare a run or press Connect / retry.", new() { Exact = true }))
+    await Expect(Page.GetByText("Horizon Omega Z disconnected. It will reconnect when you prepare a run or press Connect.", new() { Exact = true }))
       .ToBeVisibleAsync(new() { Timeout = 5_000 });
 
     Assert.Contains(actions, action => action.Method == "PUT" &&

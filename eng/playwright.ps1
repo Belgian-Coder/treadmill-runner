@@ -23,6 +23,7 @@ $report = Join-Path $evidenceDir 'readiness.json'
 $project = Join-Path $projectRoot 'tests\TreadmillRunner.E2ETests\TreadmillRunner.E2ETests.csproj'
 $gatewayProject = Join-Path $projectRoot 'src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj'
 $publishedHost = Join-Path $projectRoot 'artifacts\e2e-host'
+$publishStamp = Join-Path $publishedHost '.publish-complete'
 $wasmCleaner = Join-Path $PSScriptRoot 'clean-wasm-publish.ps1'
 $databaseScript = Join-Path $PSScriptRoot 'database.ps1'
 $databaseTemplate = Join-Path $projectRoot 'artifacts\e2e-template\e2e-template.db'
@@ -33,11 +34,29 @@ $runBaseName = "browser-$runStamp"
 $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
     $TimeoutMinutes
 }
+
 elseif ([string]::Equals($Filter, 'Category=Browser', [System.StringComparison]::OrdinalIgnoreCase)) {
     5
 }
 else {
     2
+}
+
+function Remove-GeneratedDirectory {
+    param([Parameter(Mandatory)][string] $Path)
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if (-not (Test-Path -LiteralPath $Path)) { return }
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if (-not (Test-Path -LiteralPath $Path)) { return }
+            if ($attempt -eq 3) { throw }
+            Start-Sleep -Milliseconds 200
+        }
+    }
 }
 
 if (-not $resolvedResults.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -190,22 +209,28 @@ try {
         & dotnet restore $project --locked-mode
         if ($LASTEXITCODE -ne 0) { throw 'Playwright project restore failed.' }
 
-        & dotnet build $project --configuration $Configuration --no-restore
+        & dotnet build $project --configuration $Configuration --no-restore --disable-build-servers
         if ($LASTEXITCODE -ne 0) { throw 'Playwright project build failed.' }
 
         & $wasmCleaner -Configuration $Configuration
         if ($LASTEXITCODE -ne 0) { throw 'Generated WebAssembly publish-state cleanup failed.' }
 
         if (Test-Path -LiteralPath $resolvedArtifacts) {
-            Remove-Item -LiteralPath $resolvedArtifacts -Recurse -Force
+            Remove-GeneratedDirectory -Path $resolvedArtifacts
         }
-        & dotnet publish $gatewayProject --configuration $Configuration --no-restore --output $resolvedArtifacts
+        & dotnet publish $gatewayProject --configuration $Configuration --no-restore --disable-build-servers --output $resolvedArtifacts -m:1
         if ($LASTEXITCODE -ne 0) { throw 'Published E2E gateway build failed.' }
+        [System.IO.File]::WriteAllText(
+            $publishStamp,
+            [DateTimeOffset]::UtcNow.ToString('O'),
+            [System.Text.UTF8Encoding]::new($false))
     }
     else {
         $testAssembly = Join-Path $projectRoot "tests\TreadmillRunner.E2ETests\bin\$Configuration\net10.0\TreadmillRunner.E2ETests.dll"
         $gatewayExecutable = Join-Path $publishedHost 'TreadmillRunner.Gateway.exe'
-        if (-not (Test-Path -LiteralPath $testAssembly) -or -not (Test-Path -LiteralPath $gatewayExecutable)) {
+        if (-not (Test-Path -LiteralPath $testAssembly) -or
+            -not (Test-Path -LiteralPath $gatewayExecutable) -or
+            -not (Test-Path -LiteralPath $publishStamp)) {
             throw '-ReuseBuild requires an existing E2E test build and published gateway. Run once without -ReuseBuild.'
         }
     }

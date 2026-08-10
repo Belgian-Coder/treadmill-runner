@@ -258,8 +258,13 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(inclineAxis.Locator("span").First).ToHaveTextAsync("10");
     await Expect(inclineAxis.Locator("span").Last).ToHaveTextAsync("1");
     string plannedSpeedPath = await Page.Locator("[data-series='planned-speed']").GetAttributeAsync("d") ?? string.Empty;
+    string plannedInclinePath = await Page.Locator("[data-series='planned-incline']").GetAttributeAsync("d") ?? string.Empty;
     Assert.True(plannedSpeedPath.Count(static character => character == 'L') >= 5,
       "The selected interval workout must be visible as a multi-segment plan overlay.");
+    Assert.True(HasVerticalSvgSegment(plannedSpeedPath),
+      "The planned speed overlay must retain vertical jumps at fixed-step boundaries.");
+    Assert.True(HasVerticalSvgSegment(plannedInclinePath),
+      "The planned incline overlay must retain vertical jumps at fixed-step boundaries.");
     await Expect(Page.GetByLabel("Technical session details", new() { Exact = true })).Not.ToHaveAttributeAsync("open", "");
     await Expect(Page.Locator(".site-header .global-hr-status")).ToHaveCountAsync(0);
     await Expect(Page.Locator(".control-header-actions .global-hr-status")).ToBeVisibleAsync();
@@ -271,7 +276,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     }
     ILocator fullscreenButton = Page.GetByRole(AriaRole.Button, new() { Name = "Toggle full-screen dashboard", Exact = true });
     await Expect(fullscreenButton).ToBeVisibleAsync();
-    await Expect(fullscreenButton).ToHaveTextAsync("⛶");
+    await Expect(fullscreenButton).ToHaveAttributeAsync("aria-label", "Toggle full-screen dashboard");
+    await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "false");
+    ILocator fullscreenIcon = fullscreenButton.Locator("svg");
+    await Expect(fullscreenIcon).ToHaveCountAsync(1);
+    await Expect(fullscreenIcon).ToHaveAttributeAsync("aria-hidden", "true");
     await Expect(Page.GetByLabel("Control safety notice", new() { Exact = true })).ToHaveCountAsync(0);
     await Expect(Page.GetByText("Physical movement detected", new() { Exact = true })).ToHaveCountAsync(0);
 
@@ -455,6 +464,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     {
       await fullscreenButton.ClickAsync();
       await Expect(Page.Locator("#control-dashboard:fullscreen")).ToBeVisibleAsync();
+      await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "true");
       Assert.Equal("control-dashboard", await Page.EvaluateAsync<string?>("document.fullscreenElement?.id"));
       LocatorBoundingBoxResult? fullscreenStopBox = await Page
         .GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })
@@ -473,11 +483,13 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       });
       await Page.EvaluateAsync("() => document.exitFullscreen()");
       await Expect(Page.Locator("#control-dashboard:fullscreen")).ToHaveCountAsync(0);
+      await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "false");
 
       await Page.EvaluateAsync(
         "() => document.getElementById('control-dashboard').requestFullscreen = () => Promise.reject(new Error('unsupported'))");
       await fullscreenButton.ClickAsync();
       await Expect(Page.Locator("#control-dashboard.control-page--immersive")).ToBeVisibleAsync();
+      await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "true");
       await Expect(Page.Locator(".control-command-status")).ToContainTextAsync("Immersive view enabled");
       await Page.ScreenshotAsync(new PageScreenshotOptions
       {
@@ -486,6 +498,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       });
       await fullscreenButton.ClickAsync();
       await Expect(Page.Locator("#control-dashboard.control-page--immersive")).ToHaveCountAsync(0);
+      await Expect(fullscreenButton).ToHaveAttributeAsync("aria-pressed", "false");
       Assert.True(await Page.Locator("#blazor-error-ui").IsHiddenAsync(),
         $"Full-screen entry/exit must not fault the Blazor control page: {string.Join(" | ", browserErrors)}");
     }
@@ -885,6 +898,22 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     });
     Assert.Equal(HttpStatusCode.Created, workoutResponse.StatusCode);
     return new SeededPlan(createdProfile.GetProperty("id").GetGuid(), profileName, workoutName);
+  }
+
+  private static bool HasVerticalSvgSegment(string path)
+  {
+    System.Text.RegularExpressions.MatchCollection matches = System.Text.RegularExpressions.Regex.Matches(
+      path,
+      @"(?<command>[ML])\s*(?<x>-?(?:\d+(?:\.\d*)?|\.\d+))\s+(?<y>-?(?:\d+(?:\.\d*)?|\.\d+))",
+      System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    var points = matches
+      .Select(match => (
+        X: double.Parse(match.Groups["x"].Value, System.Globalization.CultureInfo.InvariantCulture),
+        Y: double.Parse(match.Groups["y"].Value, System.Globalization.CultureInfo.InvariantCulture)))
+      .ToArray();
+    return points.Zip(points.Skip(1)).Any(pair =>
+      Math.Abs(pair.First.X - pair.Second.X) < 0.01 &&
+      Math.Abs(pair.First.Y - pair.Second.Y) >= 0.5);
   }
 
   private async Task SavePreferencesAsync(Guid profileId, string displayStyle)

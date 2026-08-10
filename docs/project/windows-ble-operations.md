@@ -4,7 +4,7 @@ type: operations-guide
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-04
+updated: 2026-08-10
 ---
 
 # Windows BLE read-only operations
@@ -54,7 +54,7 @@ The product coordinator keeps enrolled devices disconnected while the household 
 
 While connection demand exists, each role reconnects independently with bounded backoff. If Windows can no longer open an unpaired enrolled address from its system cache, the worker runs a cancellable five-second passive advertisement watch and retries immediately only when that exact stored address is observed. A different nearby device can never satisfy rediscovery. This discovery does not pair, subscribe, write GATT, or send a treadmill command; a peripheral that is off or not broadcasting remains truthfully unavailable and stays on the normal retry schedule only until the demand expires. Every connection attempt gets a new generation; the UI reports its state, last sample freshness, passively observed evidence, and a sanitized persistent fault. Forgetting a device cancels its worker and archives the enrollment.
 
-Devices exposes **Connect / retry** and **Disconnect** for every enrollment. Connect / retry cancels only that read-only telemetry worker, starts a fresh generation, and creates a bounded two-minute idle connection demand; it never retries a treadmill command. Disconnect cancels and disposes the selected read-only connection and closes any retained FTMS command connection without sending a command. It is rejected while a workout is armed, running, or paused because Bluetooth disconnect is not a treadmill stop mechanism. Local display names can be edited without changing Bluetooth identity or runner assignment. The accepted household `OMEGA Z` / `V10.23.17` FTMS profile restores its previously verified Start, Stop, speed, and incline authorization after re-enrollment; the owner may enable or disable those verified controls from the treadmill's advanced settings while idle. This does not authorize any other model/firmware and never enables the raw Pause opcode.
+Devices exposes concise **Connect** and **Disconnect** actions for every enrollment. **Connect** cancels only that read-only telemetry worker, starts a fresh generation, and creates a bounded two-minute idle connection demand; selecting it is the idempotent retry path, and it never retries a treadmill command. Disconnect cancels and disposes the selected read-only connection and closes any retained FTMS command connection without sending a command. It is rejected while a workout is armed, running, or paused because Bluetooth disconnect is not a treadmill stop mechanism. Local display names can be edited without changing Bluetooth identity or runner assignment. The accepted household `OMEGA Z` / `V10.23.17` FTMS profile restores its previously verified Start, Stop, speed, and incline authorization after re-enrollment; the owner may enable or disable those verified controls from the treadmill's advanced settings while idle. This does not authorize any other model/firmware and never enables the raw Pause opcode.
 
 ## Product command boundary
 

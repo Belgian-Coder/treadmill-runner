@@ -3,7 +3,7 @@
 @implements IDisposable
 
 <details @key="pickerRenderKey" class="active-runner-picker">
-    <summary aria-label="Choose active runner">
+    <summary aria-label="@ActiveRunnerLabel">
         <span aria-hidden="true">@ActiveInitial</span>
         <strong>@ActiveName</strong>
         <AppIcon Name="chevron-down" CssClass="active-runner-picker__chevron" />
@@ -33,6 +33,9 @@
     private int pickerRenderKey;
     private string ActiveName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "Choose runner";
     private string ActiveInitial => ActiveName == "Choose runner" ? "?" : ActiveName[..1].ToUpperInvariant();
+    private string ActiveRunnerLabel => ActiveName == "Choose runner"
+        ? "Choose active runner"
+        : $"Active runner: {ActiveName}. Choose runner";
 
     protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;
 

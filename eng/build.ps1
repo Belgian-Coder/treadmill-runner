@@ -17,7 +17,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
     }
 
-    dotnet build $solution --configuration $Configuration --no-restore
+    # The solution contains both the Blazor Web project and the Gateway that references it.
+    # Serial project builds prevent both nodes from mutating static-web-assets output at once.
+    dotnet build $solution --configuration $Configuration --no-restore --disable-build-servers -m:1
     if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed.' }
 }
 finally {

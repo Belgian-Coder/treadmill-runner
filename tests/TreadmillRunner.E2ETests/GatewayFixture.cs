@@ -115,7 +115,14 @@ public sealed class GatewayFixture : IAsyncLifetime
 
   private void AssertPublishedHostIsFresh(string hostPath)
   {
-    DateTime hostTimestampUtc = File.GetLastWriteTimeUtc(hostPath);
+    string publishStampPath = Path.Combine(Path.GetDirectoryName(hostPath)!, ".publish-complete");
+    if (!File.Exists(publishStampPath))
+    {
+      throw new InvalidOperationException(
+        "The published E2E gateway has no completion stamp. Run eng/playwright.ps1 without -ReuseBuild first.");
+    }
+
+    DateTime publishTimestampUtc = File.GetLastWriteTimeUtc(publishStampPath);
     string sourceRoot = Path.Combine(ProjectRoot, "src");
     string[] runtimeExtensions = [".cs", ".razor", ".csproj", ".json", ".resx", ".js", ".css"];
     string? newestInput = Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
@@ -124,7 +131,7 @@ public sealed class GatewayFixture : IAsyncLifetime
         runtimeExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))
       .OrderByDescending(File.GetLastWriteTimeUtc)
       .FirstOrDefault();
-    if (newestInput is null || File.GetLastWriteTimeUtc(newestInput) <= hostTimestampUtc) return;
+    if (newestInput is null || File.GetLastWriteTimeUtc(newestInput) <= publishTimestampUtc) return;
 
     throw new InvalidOperationException(
       $"The published E2E gateway is older than '{Path.GetRelativePath(ProjectRoot, newestInput)}'. " +

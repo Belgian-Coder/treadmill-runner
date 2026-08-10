@@ -73,8 +73,8 @@
                 <div><p class="eyebrow">Effective plan</p><h2 id="range-title">@visibleMonth.ToString("MMMM yyyy")</h2></div>
                 <div class="calendar-toolbar">
                     <div class="calendar-view-switcher" role="group" aria-label="Calendar view">
-                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Agenda)" aria-controls="calendar-agenda-view" @onclick="() => SelectCalendarView(CalendarViewMode.Agenda)"><AppIcon Name="list" /><span>Agenda</span></button>
-                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Month)" aria-controls="calendar-month-view" @onclick="() => SelectCalendarView(CalendarViewMode.Month)"><AppIcon Name="calendar" /><span>Month</span></button>
+                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Agenda ? "true" : "false")" @onclick="() => SelectCalendarView(CalendarViewMode.Agenda)"><AppIcon Name="list" /><span>Agenda</span></button>
+                        <button type="button" aria-pressed="@(calendarView == CalendarViewMode.Month ? "true" : "false")" @onclick="() => SelectCalendarView(CalendarViewMode.Month)"><AppIcon Name="calendar" /><span>Month</span></button>
                     </div>
                     <div class="calendar-navigation" role="group" aria-label="Calendar period">
                         <button class="secondary-action" type="button" aria-label="Previous month" disabled="@(!CanNavigatePreviousMonth || loading)" @onclick="() => ChangeMonthAsync(-1)"><AppIcon Name="chevron-left" /></button>
@@ -152,10 +152,10 @@
                                                 CalendarDayView? day = DayFor(date);
                                                 <td class="calendar-cell @CalendarCellClass(date)">
                                                     <button class="calendar-date-button" type="button"
-                                                            aria-pressed="@(selectedMonthDate == date)"
+                                                            aria-pressed="@(selectedMonthDate == date ? "true" : "false")"
                                                             aria-current="@(date == DateOnly.FromDateTime(DateTime.Today) ? "date" : null)"
                                                             aria-label="@CalendarDateLabel(date, day)"
-                                                            @onclick="() => SelectMonthDate(date)">
+                                                            @onclick="() => SelectMonthDateAsync(date)">
                                                         <time datetime="@date.ToString("yyyy-MM-dd")"><span>@date.Day</span></time>
                                                         @if (day?.Options.Count is > 0)
                                                         {
@@ -203,12 +203,21 @@
                             }
                             else
                             {
-                                <p class="empty-state">No workout planned for this date.</p>
+                                <p class="empty-state">
+                                    @if (HasVisibleMonthWorkouts)
+                                    {
+                                        <span>No workout planned for this date.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>No workouts are planned this month. <a href="/workouts">Open Training plans</a> to schedule one.</span>
+                                    }
+                                </p>
                             }
                         </section>
                     </div>
                 }
-                @if (calendar?.Days.Count is not > 0)
+                @if (calendarView == CalendarViewMode.Agenda && !HasVisibleMonthWorkouts)
                 {
                     <p class="empty-state">No workouts are planned this month. <a href="/workouts">Open Training plans</a> to schedule one.</p>
                 }
@@ -1690,6 +1699,10 @@
 
     private CalendarDayView? DayFor(DateOnly date) => calendar?.Days.FirstOrDefault(day => day.Date == date);
     private CalendarDayView? SelectedMonthDay => DayFor(selectedMonthDate);
+    private bool HasVisibleMonthWorkouts => calendar?.Days.Any(day =>
+        day.Date.Month == visibleMonth.Month &&
+        day.Date.Year == visibleMonth.Year &&
+        day.Options.Count > 0) == true;
 
     private IReadOnlyList<CalendarAgendaWeek> CalendarAgendaWeeks
     {
@@ -1763,7 +1776,16 @@
     }
 
     private void SelectCalendarView(CalendarViewMode view) => calendarView = view;
-    private void SelectMonthDate(DateOnly date) => selectedMonthDate = date;
+
+    private async Task SelectMonthDateAsync(DateOnly date)
+    {
+        if (date.Month != visibleMonth.Month || date.Year != visibleMonth.Year)
+        {
+            visibleMonth = new DateOnly(date.Year, date.Month, 1);
+            await ReloadCalendarAsync();
+        }
+        selectedMonthDate = date;
+    }
 
     private async Task ChangeMonthAsync(int months)
     {
@@ -1784,7 +1806,8 @@
     {
         DateOnly today = DateOnly.FromDateTime(DateTime.Today);
         if (today.Month == visibleMonth.Month && today.Year == visibleMonth.Year) return today;
-        return calendar?.Days
+        if (calendar is null) return visibleMonth;
+        return calendar.Days
             .Where(day => day.Date.Month == visibleMonth.Month && day.Date.Year == visibleMonth.Year)
             .OrderBy(static day => day.Date)
             .Select(static day => day.Date)

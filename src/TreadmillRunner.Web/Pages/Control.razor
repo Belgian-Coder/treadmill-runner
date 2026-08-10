@@ -37,7 +37,7 @@
                 </svg>
                 <span class="visually-hidden">@WakeLockAccessibleLabel</span>
             </span>
-            <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" title="Full screen"><AppIcon Name="expand" /></button>
+            <button class="secondary-action fullscreen-action" type="button" @onclick="ToggleFullscreenAsync" aria-label="Toggle full-screen dashboard" aria-pressed="@(isFullscreenMode ? "true" : "false")" title="@(isFullscreenMode ? "Exit full screen" : "Full screen")"><AppIcon Name="@(isFullscreenMode ? "shrink" : "expand")" /></button>
         </div>
     </header>
 
@@ -187,7 +187,7 @@
                     {
                         <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume ? "Hold to resume" : "Hold to start")</span></button>
                     }
-                    <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" aria-label="Stop treadmill" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
+                    <button class="touch-action danger-action stop-action media-control media-control--stop" type="button" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
                 </section>
                 @if (session.HeartRateTarget is not null)
                 {
@@ -291,6 +291,7 @@
     private bool sessionActionBusy;
     private DotNetObjectReference<Control>? stopDecisionModalReference;
     private bool hasRendered;
+    private bool isFullscreenMode;
     private WakeLockStatusView? wakeLockStatus;
     private int? startHoldSecondsRemaining;
     private double speedChartMaximum = 10;
@@ -405,6 +406,7 @@
         {
             hasRendered = true;
             wakeLockReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("treadmillRunnerView.initializeFullscreenTracking", "control-dashboard", wakeLockReference);
             await UpdateWakeLockAsync();
             if (Gateway.Current.WantsControl is false) await TakeControlAsync(restoring: true);
         }
@@ -928,6 +930,7 @@
         try
         {
             string mode = await JS.InvokeAsync<string>("treadmillRunnerView.toggleFullscreen", "control-dashboard");
+            isFullscreenMode = mode is "native" or "fallback";
             if (string.Equals(mode, "fallback", StringComparison.Ordinal))
                 actionStatus = "Immersive view enabled because native full screen is unavailable.";
             else if (string.Equals(mode, "unavailable", StringComparison.Ordinal))
@@ -938,6 +941,13 @@
             actionStatus = "Full screen could not be opened; controls remain available here.";
         }
     }
+
+    [JSInvokable]
+    public Task FullscreenStatusChanged(bool active) => InvokeAsync(() =>
+    {
+        isFullscreenMode = active;
+        StateHasChanged();
+    });
 
     private async Task UpdateWakeLockAsync()
     {
@@ -1180,6 +1190,8 @@
         if (hasRendered)
         {
             try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeRunWakeLock"); }
+            catch (JSDisconnectedException) { }
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeFullscreenTracking"); }
             catch (JSDisconnectedException) { }
         }
         wakeLockReference?.Dispose();

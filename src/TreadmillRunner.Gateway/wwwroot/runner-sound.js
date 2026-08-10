@@ -104,6 +104,9 @@ window.treadmillRunnerView = {
   wakeLockVisibilityHandler: null,
   wakeLockStatusCallback: null,
   lastWakeLockStatusKey: null,
+  fullscreenStatusCallback: null,
+  fullscreenChangeHandler: null,
+  fullscreenElementId: null,
   initializeAutoHideHeader: function (elementId) {
     this.disposeAutoHideHeader();
     const header = document.getElementById(elementId);
@@ -198,6 +201,28 @@ window.treadmillRunnerView = {
   closeModal: function () {
     if (this.modalCleanup) this.modalCleanup();
     this.modalCleanup = null;
+  },
+  initializeFullscreenTracking: function (elementId, dotnetReference) {
+    this.disposeFullscreenTracking();
+    this.fullscreenElementId = elementId;
+    this.fullscreenStatusCallback = dotnetReference;
+    this.fullscreenChangeHandler = async () => {
+      const element = document.getElementById(this.fullscreenElementId);
+      const active = document.fullscreenElement === element || element?.classList.contains("control-page--immersive") === true;
+      try {
+        await this.fullscreenStatusCallback?.invokeMethodAsync("FullscreenStatusChanged", active);
+      } catch {
+        this.fullscreenStatusCallback = null;
+      }
+    };
+    document.addEventListener("fullscreenchange", this.fullscreenChangeHandler);
+    this.fullscreenChangeHandler();
+  },
+  disposeFullscreenTracking: function () {
+    if (this.fullscreenChangeHandler) document.removeEventListener("fullscreenchange", this.fullscreenChangeHandler);
+    this.fullscreenChangeHandler = null;
+    this.fullscreenStatusCallback = null;
+    this.fullscreenElementId = null;
   },
   toggleFullscreen: async function (elementId) {
     if (document.fullscreenElement) {
