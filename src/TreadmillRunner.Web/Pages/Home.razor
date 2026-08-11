@@ -1151,14 +1151,39 @@
         preflightRefreshCancellation = refresh;
         try
         {
-            for (var attempt = 0; attempt < 12; attempt++)
+            var successfulPolls = 0;
+            var transientFailures = 0;
+            while (true)
             {
-                PreflightSnapshot? loaded = await Http.GetFromJsonAsync<PreflightSnapshot>(
-                    $"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}",
-                    refresh.Token);
+                PreflightSnapshot? loaded;
+                try
+                {
+                    loaded = await Http.GetFromJsonAsync<PreflightSnapshot>(
+                        $"api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}",
+                        refresh.Token);
+                }
+                catch (OperationCanceledException) when (refresh.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+                {
+                    if (!IsCurrentPreflightSelection(profileGeneration, profileId, workoutGeneration, revisionId)) return;
+                    transientFailures++;
+                    actionStatus = transientFailures < 4
+                        ? "Reconnecting pre-run checks…"
+                        : "Pre-run checks are unavailable. Retrying…";
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(
+                        transientFailures < 4 ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(5),
+                        refresh.Token);
+                    continue;
+                }
                 if (!IsCurrentPreflightSelection(profileGeneration, profileId, workoutGeneration, revisionId)) return;
                 if (loaded is not null && (loaded.UserProfileId != profileId || loaded.WorkoutRevisionId != revisionId))
                     throw new JsonException("The preflight response did not match the selected runner and workout.");
+                transientFailures = 0;
+                successfulPolls++;
                 preflight = loaded;
                 if (loaded?.IsReady == true)
                 {
@@ -1167,13 +1192,14 @@
                     return;
                 }
 
-                actionStatus = "Connecting the devices needed for this run…";
+                actionStatus = successfulPolls < 12
+                    ? "Connecting the devices needed for this run…"
+                    : "Some pre-run checks are still waiting. Retrying in the background…";
                 await InvokeAsync(StateHasChanged);
-                if (attempt < 11) await Task.Delay(TimeSpan.FromSeconds(1), refresh.Token);
+                await Task.Delay(
+                    successfulPolls < 12 ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(5),
+                    refresh.Token);
             }
-
-            actionStatus = "Some pre-run checks are still waiting. Wake nearby devices, then select the workout again or use Connect on Devices.";
-            await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) when (refresh.IsCancellationRequested)
         {

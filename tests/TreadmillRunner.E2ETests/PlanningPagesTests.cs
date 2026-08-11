@@ -1210,34 +1210,46 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Guid firstId = await CreateProfileAsync(firstName);
     Guid secondId = await CreateProfileAsync(secondName);
     Guid workoutRevisionId = await CreateWorkoutAsync(workoutName);
-    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
 
-    async Task CreateTodayScheduleAsync(Guid profileId, string scheduleName)
-    {
-      using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
-      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
-      {
-        operationId = Guid.NewGuid(),
-        profileId,
-        name = scheduleName,
-        timeZoneId = "Europe/Brussels",
-        startDate = today,
-        endDate = today,
-        intervalWeeks = 1,
-        weekdayMask = WeekdayFlag(today.DayOfWeek),
-        alternatives = new[] { new { workoutRevisionId, displayOrder = 0 } },
-        exceptions = Array.Empty<object>(),
-        expectedVersion = (int?)null,
-      });
-      response.EnsureSuccessStatusCode();
-    }
-
-    await CreateTodayScheduleAsync(firstId, "Rapid switch schedule A");
-    await CreateTodayScheduleAsync(secondId, "Rapid switch schedule B");
+    await CreateTodayScheduleAsync(firstId, workoutRevisionId, "Rapid switch schedule A");
+    await CreateTodayScheduleAsync(secondId, workoutRevisionId, "Rapid switch schedule B");
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(firstName);
+
+    await Page.RouteAsync("**/api/live/preflight?**", async route =>
+    {
+      if (!TryGetProfileId(new Uri(route.Request.Url), out Guid requestedProfileId) ||
+          requestedProfileId != firstId && requestedProfileId != secondId)
+      {
+        await route.ContinueAsync();
+        return;
+      }
+
+      try
+      {
+        string requestedName = requestedProfileId == firstId ? firstName : secondName;
+        string expectedDuration = requestedProfileId == firstId ? "00:10:00" : "00:20:00";
+        string intensityLabel = requestedProfileId == firstId ? "Easy pace" : "Planned pace";
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 200,
+          ContentType = "application/json",
+          Body = WaitingPreflightJson(
+            requestedProfileId,
+            requestedName,
+            workoutRevisionId,
+            workoutName,
+            expectedDuration: expectedDuration,
+            intensityLabel: intensityLabel),
+        });
+      }
+      catch (PlaywrightException)
+      {
+        // Superseded retry requests can be canceled by the next profile selection.
+      }
+    });
 
     ILocator picker = Page.Locator("details.active-runner-picker");
     foreach (string name in new[] { secondName, firstName, secondName, firstName, secondName })
@@ -1252,6 +1264,72 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
     await Expect(Page.Locator(".selection-summary").GetByText("00:20:00", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator(".selection-summary").GetByText("Planned pace", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Pre-run checks are temporarily unavailable. Try selecting the workout again.", new() { Exact = true })).ToHaveCountAsync(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Run_page_preflight_recovers_after_transient_failures_and_extended_reconnect_without_reselection()
+  {
+    string profileName = $"Retry runner {Guid.NewGuid():N}";
+    string workoutName = $"Retry workout {Guid.NewGuid():N}";
+    Guid profileId = await CreateProfileAsync(profileName);
+    Guid workoutRevisionId = await CreateWorkoutAsync(workoutName);
+    await CreateTodayScheduleAsync(profileId, workoutRevisionId, "Transient retry schedule");
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("() => localStorage.removeItem('treadmillrunner.active-profile')");
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    int requestCount = 0;
+    TaskCompletionSource<int> recovered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.RouteAsync("**/api/live/preflight?**", async route =>
+    {
+      if (!TryGetProfileId(new Uri(route.Request.Url), out Guid requestedProfileId) || requestedProfileId != profileId)
+      {
+        await route.ContinueAsync();
+        return;
+      }
+
+      try
+      {
+        int attempt = Interlocked.Increment(ref requestCount);
+        if (attempt <= 3)
+        {
+          await route.FulfillAsync(new RouteFulfillOptions
+          {
+            Status = 503,
+            ContentType = "application/json",
+            Body = "{\"error\":\"Transient readiness failure\"}",
+          });
+          return;
+        }
+
+        bool isReady = attempt > 15;
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 200,
+          ContentType = "application/json",
+          Body = WaitingPreflightJson(profileId, profileName, workoutRevisionId, workoutName, isReady),
+        });
+        if (isReady) recovered.TrySetResult(attempt);
+      }
+      catch (PlaywrightException)
+      {
+        // Page teardown can cancel a later retry after the successful response.
+      }
+    });
+
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { profileId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    Assert.True(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(25)) >= 16);
+    Assert.True(Volatile.Read(ref requestCount) >= 16);
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(profileName);
+    await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
+    await Expect(Page.Locator(".selection-summary").GetByText("00:20:00", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".selection-summary").GetByText("Planned pace", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Gateway ready — take control when you are prepared.", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Pre-run checks are temporarily unavailable. Try selecting the workout again.", new() { Exact = true })).ToHaveCountAsync(0);
   }
 
@@ -1472,6 +1550,71 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     response.EnsureSuccessStatusCode();
     JsonElement saved = await response.Content.ReadFromJsonAsync<JsonElement>();
     return saved.GetProperty("revisionId").GetGuid();
+  }
+
+  private async Task CreateTodayScheduleAsync(Guid profileId, Guid workoutRevisionId, string scheduleName)
+  {
+    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+    using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+    {
+      operationId = Guid.NewGuid(),
+      profileId,
+      name = scheduleName,
+      timeZoneId = "Europe/Brussels",
+      startDate = today,
+      endDate = today,
+      intervalWeeks = 1,
+      weekdayMask = WeekdayFlag(today.DayOfWeek),
+      alternatives = new[] { new { workoutRevisionId, displayOrder = 0 } },
+      exceptions = Array.Empty<object>(),
+      expectedVersion = (int?)null,
+    });
+    response.EnsureSuccessStatusCode();
+  }
+
+  private static string WaitingPreflightJson(
+    Guid profileId,
+    string profileName,
+    Guid workoutRevisionId,
+    string workoutName,
+    bool isReady = false,
+    string expectedDuration = "00:20:00",
+    string intensityLabel = "Planned pace")
+  {
+    object treadmillCheck = new
+    {
+      id = "treadmill",
+      label = "Treadmill",
+      status = isReady ? 0 : 2,
+      detail = isReady ? "Connected and ready." : "Waiting for a nearby treadmill.",
+    };
+    return JsonSerializer.Serialize(new
+    {
+      capturedAt = DateTimeOffset.UtcNow,
+      userProfileId = profileId,
+      userProfileName = profileName,
+      workoutRevisionId,
+      workoutTitle = workoutName,
+      expectedDuration,
+      intensityLabel,
+      requiresHeartRate = false,
+      selectedHeartRateSource = 0,
+      checks = new[] { treadmillCheck },
+      canStartRemotely = false,
+      canStopRemotely = false,
+      minimumStartSpeedKph = (double?)null,
+      canSetSpeedRemotely = false,
+      canSetInclineRemotely = false,
+      canPauseRemotely = false,
+      speedRange = (object?)null,
+      inclineRange = (object?)null,
+      heartRateAutomationMode = 0,
+      heartRateAutomationReason = (string?)null,
+      targetEvaluations = Array.Empty<object>(),
+      isReady,
+      readinessBlockers = isReady ? Array.Empty<object>() : new[] { treadmillCheck },
+    });
   }
 
   private static bool TryGetProfileId(Uri uri, out Guid profileId)
