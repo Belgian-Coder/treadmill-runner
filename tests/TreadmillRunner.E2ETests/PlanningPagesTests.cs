@@ -1280,6 +1280,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     await Page.EvaluateAsync("() => localStorage.removeItem('treadmillrunner.active-profile')");
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.Clock.InstallAsync(new ClockInstallOptions());
 
     int requestCount = 0;
     TaskCompletionSource<int> recovered = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1320,10 +1321,16 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       }
     });
 
-    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { profileId.ToString("D") });
-    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    await picker.Locator("summary").ClickAsync();
+    await picker.GetByRole(AriaRole.Radio, new() { Name = profileName, Exact = true }).ClickAsync();
+    for (var step = 0; step < 30 && !recovered.Task.IsCompleted; step++)
+    {
+      await Page.Clock.RunForAsync(5_000);
+      await Task.Delay(25);
+    }
 
-    Assert.True(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(25)) >= 16);
+    Assert.True(await recovered.Task.WaitAsync(TimeSpan.FromSeconds(5)) >= 16);
     Assert.True(Volatile.Read(ref requestCount) >= 16);
     await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(profileName);
     await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
