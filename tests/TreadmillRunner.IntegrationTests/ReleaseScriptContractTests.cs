@@ -125,6 +125,8 @@ public sealed class ReleaseScriptContractTests
   {
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "publish-release.ps1"));
     string buildProps = File.ReadAllText(Path.Combine(ProjectRoot, "Directory.Build.props"));
+    string webProject = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Web", "TreadmillRunner.Web.csproj"));
+    string gatewayProject = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "TreadmillRunner.Gateway.csproj"));
 
     Assert.Contains("git -C $projectRoot diff --binary HEAD -- src Directory.Build.props", script, StringComparison.Ordinal);
     Assert.Contains("$sourceDiff = @(& git -C $projectRoot diff --binary HEAD -- src Directory.Build.props)", script, StringComparison.Ordinal);
@@ -136,6 +138,12 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("sourceRevision = $headRevision", script, StringComparison.Ordinal);
     Assert.Contains("buildId = $buildId", script, StringComparison.Ordinal);
     Assert.Contains("TreadmillRunnerBuildId", buildProps, StringComparison.Ordinal);
+    Assert.Contains("dotnet workload list", script, StringComparison.Ordinal);
+    Assert.Contains("wasm-tools", script, StringComparison.Ordinal);
+    Assert.Contains("clean-wasm-publish.ps1", script, StringComparison.Ordinal);
+    Assert.Contains("<PublishTrimmed>true</PublishTrimmed>", webProject, StringComparison.Ordinal);
+    Assert.Contains("<WasmEnableHotReload>false</WasmEnableHotReload>", webProject, StringComparison.Ordinal);
+    Assert.Contains("GlobalPropertiesToRemove=\"PublishTrimmed\"", gatewayProject, StringComparison.Ordinal);
   }
 
   [Fact]

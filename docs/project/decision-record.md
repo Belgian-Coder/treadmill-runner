@@ -46,7 +46,8 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 ## Engineering decisions
 
 - Five production projects: Core, Protocols, Infrastructure, Gateway, Web.
-- Vertical slices inside Gateway/Web; no mediator, repository facade, message broker, microservices, IIS, container, MSIX, trimming, or AOT for v1.
+- Vertical slices inside Gateway/Web; no mediator, repository facade, message broker, microservices, IIS, container, MSIX, or AOT for v1.
+- Release WebAssembly is trimmed with the pinned SDK's `wasm-tools` workload, stale WebCIL output is removed before every release publish, and Release Hot Reload assets are disabled. The release entry point fails closed if the optimization workload is missing. Global prerender and Interactive Auto remain rejected: browser-local profile/control-lease state, JavaScript interop, and live gateway supervision are client-only boundaries, while the static boot shell provides the safe immediate paint.
 - Core/Protocols contain no WinRT. Infrastructure owns Windows BLE and SQLite.
 - Treadmill support is adapter-based: portable `ITreadmillProtocol`
   implementations provide identity matching, reported features/ranges, and separately hardware-verified capability declarations, and

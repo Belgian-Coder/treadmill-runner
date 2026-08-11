@@ -24,6 +24,13 @@ $publishPath = Join-Path $releaseRoot 'publish'
 if (Test-Path -LiteralPath $releaseRoot) {
     throw "Release output already exists and will not be overwritten: $releaseRoot"
 }
+
+$installedWorkloads = (& dotnet workload list | Out-String)
+if ($LASTEXITCODE -ne 0) { throw 'Installed .NET workloads could not be inspected.' }
+if ($installedWorkloads -notmatch '(?m)^wasm-tools\s') {
+    throw 'Release publishing requires the wasm-tools workload so the WebAssembly client is trimmed and optimized. Run: dotnet workload install wasm-tools'
+}
+
 New-Item -ItemType Directory -Path $publishPath -Force | Out-Null
 
 $headRevision = (& git -C $projectRoot rev-parse HEAD).Trim()
@@ -53,6 +60,9 @@ $buildId = ([System.BitConverter]::ToString($contentHash)).Replace('-', '').ToLo
 
 Push-Location $projectRoot
 try {
+    & (Join-Path $PSScriptRoot 'clean-wasm-publish.ps1') -Configuration Release
+    if ($LASTEXITCODE -ne 0) { throw 'Generated Release WebAssembly state could not be cleaned.' }
+
     dotnet restore TreadmillRunner.slnx --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
     dotnet publish src\TreadmillRunner.Gateway\TreadmillRunner.Gateway.csproj `

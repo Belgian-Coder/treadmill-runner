@@ -9,7 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TreadmillRunner.Web\TreadmillRunner.Web.csproj" />
+    <ProjectReference Include="..\TreadmillRunner.Web\TreadmillRunner.Web.csproj"
+                      GlobalPropertiesToRemove="PublishTrimmed" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">

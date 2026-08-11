@@ -31,11 +31,11 @@
           "Microsoft.AspNetCore.SignalR.Client.Core": "10.0.10"
         }
       },
-      "Microsoft.DotNet.HotReload.WebAssembly.Browser": {
+      "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[10.0.110, )",
-        "resolved": "10.0.110",
-        "contentHash": "v2QuCGg7GLcuILPU+S57gi2bnLMcROOBFvLjqFKb3fF420eimHOmmZdALkRkd+qMku83SaGLy2bsL8Z1WFWbVw=="
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "f5VCIE7AJpd5YvzNTeMGVzQIgyE9tX+AreTYwQF+REbu+DZo/2Ae+jNSwhPEYrVz6RRkd7y8ubXjk6Nn6Ka+Cg=="
       },
       "Microsoft.NET.Sdk.WebAssembly.Pack": {
         "type": "Direct",

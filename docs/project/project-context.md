@@ -40,7 +40,7 @@ Commands are project-owned under `eng/`: `bootstrap.ps1`, `build.ps1`, `test.ps1
 - The calendar expands weekly recurrence in `Europe/Brussels`, supports alternatives and skip/add/replace exceptions, and persists a chosen alternative by profile and local date. A move, following-session shift, restore, or default training-day change is rejected if any resulting date is already occupied, so one plan never silently double-books a day. Removing upcoming sessions is explicitly scoped to the selected plan and leaves completed history intact.
 - The file-backed SQLite proof migrates, backs up online, restores to an isolated database, and compares semantic data. Live-database replacement and full disaster recovery remain TR-007.
 
-When producing a Release WebAssembly publish, use `eng/clean-wasm-publish.ps1 -Configuration Release` if generated output may be stale: `dotnet clean` can retain WebCIL assets.
+Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-release.ps1` always runs `eng/clean-wasm-publish.ps1 -Configuration Release` before its locked restore because `dotnet clean` can retain stale WebCIL assets; the release fails closed instead of silently shipping an untrimmed WebAssembly client.
 
 ## Simulated runner experience (TR-004)
 

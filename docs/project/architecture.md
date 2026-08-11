@@ -23,7 +23,9 @@ The Windows gateway owns Bluetooth, workout time, HR automation, safety state, a
 
 The trusted HTTPS origin exposes an installable manifest, a small early `window.treadmillRunnerPwa` bridge, and a root-scoped service worker. The bridge owns install-status detection, opt-in install prompting, worker registration, and explicit-click share-or-download interop. The service worker owns only network-first top-level navigation fallback to one self-contained `/offline.html` safety document for network failures and 502/503/504 responses.
 
-No application shell or application data is cached. API, SignalR, WebAssembly/framework assets, workouts, history, browser drafts, telemetry, exports, credentials, and commands remain network-only. Worker activation neither calls `skipWaiting()` nor claims active clients, so it cannot mask a new build or replace stale-client recovery. The gateway remains the sole BLE, session, persistence, and command authority.
+No application shell or application data is cached by the service worker. API, SignalR, workouts, history, browser drafts, telemetry, exports, credentials, and commands remain network-only. Fingerprinted WebAssembly/framework assets are network-delivered and may use the normal immutable browser HTTP cache, but they are never available through the offline worker. Worker activation neither calls `skipWaiting()` nor claims active clients, so it cannot mask a new build or replace stale-client recovery. The gateway remains the sole BLE, session, persistence, and command authority.
+
+Release WebAssembly builds are trimmed and optimized with the pinned SDK's `wasm-tools` workload. The release entry point first removes stale generated WebCIL state and fails closed when that workload is unavailable; it must never silently publish the unoptimized development closure. The routed application remains WebAssembly-only with prerender disabled. Global server rendering or Interactive Auto is not a launch optimization for this application because browser-local profile/lease state and live-control supervision must not be instantiated in a server circuit or serialized into initial HTML.
 
 ## Solution boundaries
 
