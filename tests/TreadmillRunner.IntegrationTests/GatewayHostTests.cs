@@ -111,6 +111,14 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Equal("text/javascript", worker.Content.Headers.ContentType?.MediaType);
     Assert.Equal("text/html", offline.Content.Headers.ContentType?.MediaType);
 
+    using HttpResponseMessage entry = await client.GetAsync("/workouts");
+    string entryDocument = await entry.Content.ReadAsStringAsync();
+    Assert.Contains("id=\"app-boot-shell\"", entryDocument, StringComparison.Ordinal);
+    Assert.Contains("Loading TreadmillRunner", entryDocument, StringComparison.Ordinal);
+    string bridgeSource = await bridge.Content.ReadAsStringAsync();
+    Assert.Contains("document.getElementById(\"main-content\")", bridgeSource, StringComparison.Ordinal);
+    Assert.Contains("shell.remove()", bridgeSource, StringComparison.Ordinal);
+
     string workerSource = await worker.Content.ReadAsStringAsync();
     Assert.Contains("event.request.mode !== \"navigate\"", workerSource, StringComparison.Ordinal);
     Assert.Contains("[502, 503, 504]", workerSource, StringComparison.Ordinal);

@@ -25,6 +25,7 @@ public sealed class PwaShellTests(GatewayFixture gateway) : PageTest, IClassFixt
 
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri);
     Assert.True(await Page.EvaluateAsync<bool>("window.isSecureContext"));
+    await Expect(Page.Locator("#app-boot-shell")).ToHaveCountAsync(0);
 
     if (state == "installable")
     {

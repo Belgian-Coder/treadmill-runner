@@ -337,9 +337,10 @@
     }
     else
     {
+        IReadOnlyList<PremadePlanCatalogView> visiblePremadePlans = FilteredPremadePlans;
         <section class="premade-plan-workspace" aria-label="Training plan templates">
             <div class="premade-plan-browser planning-panel">
-                <div class="panel-heading"><div><p class="eyebrow">Reusable starting points</p><h2>Plan templates</h2></div><span>@FilteredPremadePlans.Count plan(s)</span></div>
+                <div class="panel-heading"><div><p class="eyebrow">Reusable starting points</p><h2>Plan templates</h2></div><span>@visiblePremadePlans.Count plan(s)</span></div>
                 <p class="field-help">A template becomes one of My training plans only after you add it. Preview every session first; nothing starts automatically.</p>
                 @if (activeProfileId is null)
                 {
@@ -375,7 +376,7 @@
                 else
                 {
                     <div class="premade-plan-grid">
-                        @foreach (PremadePlanCatalogView plan in FilteredPremadePlans)
+                        @foreach (PremadePlanCatalogView plan in visiblePremadePlans)
                         {
                             <button class="premade-plan-card @(selectedPremadeId == plan.Id ? "premade-plan-card--selected" : null)" type="button" @onclick="() => SelectPremadeAsync(plan)">
                                 <span class="program-card__topline"><span class="category-pill">@plan.Goal</span><small>@plan.Experience</small></span>

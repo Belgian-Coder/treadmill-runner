@@ -6,6 +6,27 @@
   let serviceWorkerRegistered = false;
   let serviceWorkerMessage = "Offline safety is unavailable in this browser.";
 
+  const removeBootShell = () => {
+    const shell = document.getElementById("app-boot-shell");
+    if (!shell || !document.getElementById("main-content")) return false;
+    shell.remove();
+    return true;
+  };
+
+  const watchForInteractiveShell = () => {
+    if (removeBootShell()) return;
+    const observer = new MutationObserver(() => {
+      if (removeBootShell()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchForInteractiveShell, { once: true });
+  } else {
+    watchForInteractiveShell();
+  }
+
   const pwaOriginEligible = () => {
     const host = window.location.hostname.toLowerCase();
     const loopback = host === "localhost" || host.endsWith(".localhost") ||

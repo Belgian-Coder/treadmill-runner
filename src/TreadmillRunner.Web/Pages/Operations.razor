@@ -51,12 +51,15 @@
         </div>
         @if (accessLoading)
         {
-            <p class="muted-copy" role="status">Finding the server address…</p>
+            <div class="app-access-layout app-access-layout--loading" aria-busy="true">
+                <div class="app-access-qr app-access-qr--placeholder" aria-hidden="true"></div>
+                <p class="muted-copy" role="status">Finding the server address…</p>
+            </div>
         }
         else if (access?.Available == true && access.Candidates.Count > 0 && SelectedAccessCandidate is { } candidate)
         {
             <div class="app-access-layout">
-                <img class="app-access-qr" src="@AccessQrUrl" alt="QR code for @candidate.Url" @key="candidate.Id" />
+                <img class="app-access-qr" src="@AccessQrUrl" alt="QR code for @candidate.Url" width="220" height="220" fetchpriority="high" @key="candidate.Id" />
                 <div class="app-access-copy">
                     <p>@access.Message</p>
                     @if (access.Candidates.Count > 1)

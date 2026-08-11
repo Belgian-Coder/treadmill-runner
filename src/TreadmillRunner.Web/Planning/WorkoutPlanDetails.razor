@@ -66,9 +66,11 @@ else
 
     private string GraphTitleId => $"{IdPrefix}-graph-title";
     private string ChangesTitleId => $"{IdPrefix}-changes-title";
-    private IReadOnlyList<PlannedStep> Steps => Expand(Blocks);
+    private IReadOnlyList<PlannedStep> Steps { get; set; } = [];
     private double MaximumSpeed => Math.Max(1, Steps.SelectMany(static step => new[] { step.SpeedStart, step.SpeedEnd }).Where(static value => value is not null).Select(static value => value!.Value).DefaultIfEmpty(1).Max());
     private double MaximumIncline => Math.Max(1, Steps.SelectMany(static step => new[] { step.InclineStart, step.InclineEnd }).Where(static value => value is not null).Select(static value => value!.Value).DefaultIfEmpty(1).Max());
+
+    protected override void OnParametersSet() => Steps = Expand(Blocks);
 
     private static IReadOnlyList<PlannedStep> Expand(IReadOnlyList<WorkoutBlockInput> blocks)
     {

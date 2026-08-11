@@ -3,6 +3,49 @@ html, body {
     background: #071f29;
 }
 
+/* Static boot shell paints while the connected WebAssembly UI starts. */
+.app-boot-shell {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  min-height: 100dvh;
+  overflow: auto;
+  background: #071f29;
+  color: #edf8f6;
+}
+.app-boot-shell__header {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  min-height: 64px;
+  padding: .7rem clamp(1rem, 4vw, 2rem);
+  border-bottom: 1px solid #d9f9f224;
+}
+.app-boot-shell__header span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: .8rem;
+  background: #1d715f;
+  font-weight: 900;
+}
+.app-boot-shell__main { width: min(1160px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(1.5rem, 6vw, 4rem) 0; }
+.app-boot-shell__main h1 { max-width: 18ch; margin: .25rem 0 1.5rem; font-size: clamp(2rem, 6vw, 3.4rem); letter-spacing: -.05em; }
+.app-boot-shell__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.app-boot-shell__cards span {
+  min-height: 150px;
+  border: 1px solid #d9f9f224;
+  border-radius: 1rem;
+  background: linear-gradient(110deg, #0a2a33 8%, #123943 18%, #0a2a33 33%);
+  background-size: 200% 100%;
+  animation: loading-shimmer 1.4s linear infinite;
+}
+@media (max-width: 650px) {
+  .app-boot-shell__cards { grid-template-columns: minmax(0, 1fr); }
+  .app-boot-shell__cards span:not(:first-child) { display: none; }
+}
+
 .runtime-banner {
     position: sticky; top: .5rem; z-index: 1400; display: flex; align-items: center;
     justify-content: center; gap: .75rem; margin: .5rem auto; max-width: 72rem;
@@ -255,6 +298,15 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .danger-action { border-color: #ff8f806b; background: #4b2428; color: #ffe4df; }.danger-action:hover:not(:disabled) { background: #663037; }.start-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 1rem; }.start-card p { color: #b5ceca; }.hold-start-action { min-width: 11rem; touch-action: none; user-select: none; }.command-result { display: grid; gap: .25rem; padding: 1rem 1.25rem; border: 1px solid #d9f9f229; border-radius: 1rem; background: #102b35; }.command-result span { color: #b5ceca; }.command-confirmed { border-color: #74e0bd66; }.command-unknown { border-color: #ff9b7a; background: #44292b; }.command-rejected { border-color: #f5c76866; }
 .device-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .device-card { display: grid; align-content: start; gap: .7rem; }.device-card > p, .device-card > h2 { margin: 0; }
+.device-grid--loading { min-height: 220px; }
+.device-card--placeholder, .maintenance-panel--loading {
+  background: linear-gradient(110deg, #0a2a33 8%, #123943 18%, #0a2a33 33%);
+  background-size: 200% 100%;
+  animation: loading-shimmer 1.4s linear infinite;
+}
+@keyframes loading-shimmer {
+  to { background-position-x: -200%; }
+}
 .device-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: .2rem 0; }
 .device-facts div { min-width: 0; padding: .65rem; border-radius: .75rem; background: #081e278f; }.device-facts dt { color: #91abaa; font-size: .68rem; }.device-facts dd { overflow-wrap: anywhere; margin: .25rem 0 0; font-size: .8rem; font-weight: 750; }
 .device-fault { padding: .7rem; border: 1px solid #f68b8340; border-radius: .7rem; background: #6b242532; color: #ffc0ba; }
@@ -1239,6 +1291,12 @@ body.immersive-view { overflow: hidden; }
   border-radius: 1rem;
   background: #fff;
 }
+.app-access-layout--loading { min-height: 220px; }
+.app-access-qr--placeholder {
+  background: linear-gradient(110deg, #d9f9f214 8%, #d9f9f22b 18%, #d9f9f214 33%);
+  background-size: 200% 100%;
+  animation: loading-shimmer 1.4s linear infinite;
+}
 .app-access-copy {
   display: grid;
   min-width: 0;
@@ -1302,6 +1360,8 @@ body.immersive-view { overflow: hidden; }
   color: #edf8f6;
   cursor: pointer;
   text-align: left;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
 }
 .premade-plan-card:hover, .premade-plan-card--selected { border-color: #74e0bd; background: #123a3a; }
 .premade-plan-card > span:not(.program-card__topline) { color: #a9c4c1; font-size: .78rem; line-height: 1.4; }
@@ -1340,6 +1400,15 @@ body.immersive-view { overflow: hidden; }
   .premade-plan-card { min-height: 160px; }
   .template-program-groups li { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
   .template-program-phase-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.detail-change-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-access-qr--placeholder { animation: none; }
 }
 
 /* TR-031 local-first household surfaces. Keep these refinements aligned with the

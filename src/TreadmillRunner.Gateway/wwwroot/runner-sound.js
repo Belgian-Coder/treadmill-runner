@@ -183,8 +183,12 @@ window.treadmillRunnerView = {
       }
     };
     document.addEventListener("keydown", onKeyDown);
-    (dialog.querySelector("[autofocus]") || focusable()[0] || dialog).focus();
+    let focusFrame = window.requestAnimationFrame(() => {
+      focusFrame = 0;
+      (dialog.querySelector("[autofocus]") || focusable()[0] || dialog).focus({ preventScroll: true });
+    });
     this.modalCleanup = () => {
+      if (focusFrame) window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", onKeyDown);
       background.forEach(element => element.inert = false);
       if (header) header.inert = false;

@@ -20,6 +20,14 @@
 </head>
 
 <body>
+    <div id="app-boot-shell" class="app-boot-shell" role="status" aria-live="polite" aria-label="Loading TreadmillRunner">
+        <header class="app-boot-shell__header" aria-hidden="true"><span>TR</span><strong>TreadmillRunner</strong></header>
+        <main class="app-boot-shell__main" aria-hidden="true">
+            <p class="eyebrow">Connected household runner</p>
+            <h1>Loading TreadmillRunner…</h1>
+            <div class="app-boot-shell__cards"><span></span><span></span><span></span></div>
+        </main>
+    </div>
     <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
     <script src="@Assets["runner-sound.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>

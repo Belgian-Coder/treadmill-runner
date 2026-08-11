@@ -15,6 +15,15 @@
         <p><strong>The physical console remains authoritative.</strong> Connect and Disconnect only manage the local Bluetooth link; Disconnect never stops a moving treadmill. End the active session before disconnecting.</p>
     </section>
 
+    @if (initialLoading)
+    {
+        <section class="device-grid device-grid--loading" aria-label="Loading enrolled device status" aria-busy="true">
+            <article class="panel-card device-card device-card--placeholder"><p class="eyebrow">Treadmill</p><h2>Loading device…</h2><p>Checking the local Bluetooth connection.</p></article>
+            <article class="panel-card device-card device-card--placeholder"><p class="eyebrow">Heart-rate sensors</p><h2>Loading sensors…</h2><p>Checking household sensor assignments.</p></article>
+        </section>
+    }
+    else
+    {
     <section class="device-grid" aria-label="Enrolled device status">
         @{ DeviceEnrollmentView? treadmill = enrollments.FirstOrDefault(item => item.Role == "Treadmill"); }
         <article class="panel-card device-card">
@@ -127,6 +136,7 @@
             <article class="panel-card device-card"><p class="eyebrow">Heart-rate sensors</p><h2>None added</h2><p>Scan below while a Polar strap or Garmin HR Broadcast is advertising.</p></article>
         }
     </section>
+    }
     @if (!string.IsNullOrWhiteSpace(connectionActionStatus))
     {
         <p class="action-status" role="status">@connectionActionStatus</p>
@@ -186,6 +196,13 @@
             <h2 id="maintenance-unavailable-title">Maintenance status unavailable</h2>
             <p class="field-error" role="status">@maintenanceLoadError</p>
             <button class="secondary-action" type="button" @onclick="LoadMaintenanceAsync">Try again</button>
+        </section>
+    }
+    else if (initialLoading)
+    {
+        <section class="panel-card maintenance-panel maintenance-panel--loading" aria-label="Loading maintenance status" aria-busy="true">
+            <div class="panel-heading"><div><p class="eyebrow">Treadmill care</p><h2>Loading maintenance…</h2></div><span>Loading</span></div>
+            <p>Checking the local service schedule.</p>
         </section>
     }
 
@@ -337,8 +354,19 @@
     private string maintenanceLoadError = string.Empty;
     private bool maintenanceBusy;
     private Guid maintenanceEventOperationId;
+    private bool initialLoading = true;
 
-    protected override async Task OnInitializedAsync() => await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7), LoadMaintenanceAsync());
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7), LoadMaintenanceAsync());
+        }
+        finally
+        {
+            initialLoading = false;
+        }
+    }
 
     private async Task LoadMaintenanceAsync()
     {
