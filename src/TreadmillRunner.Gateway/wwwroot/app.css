@@ -1490,6 +1490,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .adviser-card > p { max-width: 62rem; line-height: 1.55; }
 .deletion-preview { border-color: #ff8f8052; }
 
+.operations-summary-card { min-height: 24.5rem; }
 .operations-summary-card .zone-list dt { color: #d9ece8; font-weight: 800; }
 .operations-summary-card .zone-list dd { color: #a9c4c1; font-family: inherit; line-height: 1.45; }
 .backup-policy-actions { display: flex; flex-wrap: wrap; gap: .65rem; padding: .7rem; }
@@ -1553,6 +1554,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 }
 
 @media (max-width: 650px) {
+  .operations-summary-card { min-height: 37.125rem; }
   .panel-heading { align-items: flex-start; gap: .35rem .75rem; }
   .panel-heading > span { text-align: left; }
   .profile-integration { margin-inline: -.1rem; padding: .75rem; }
