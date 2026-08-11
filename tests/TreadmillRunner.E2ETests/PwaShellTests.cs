@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Microsoft.Playwright.Xunit;
 
@@ -26,6 +27,7 @@ public sealed class PwaShellTests(GatewayFixture gateway) : PageTest, IClassFixt
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri);
     Assert.True(await Page.EvaluateAsync<bool>("window.isSecureContext"));
     await Expect(Page.Locator("#app-boot-shell")).ToHaveCountAsync(0);
+    await Expect(Page.Locator("#app-interactive-shell")).ToHaveClassAsync(new Regex("(?:^|\\s)is-ready(?:\\s|$)"));
 
     if (state == "installable")
     {

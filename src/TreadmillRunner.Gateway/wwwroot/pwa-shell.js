@@ -8,7 +8,9 @@
 
   const removeBootShell = () => {
     const shell = document.getElementById("app-boot-shell");
-    if (!shell || !document.getElementById("main-content")) return false;
+    const interactiveShell = document.getElementById("app-interactive-shell");
+    if (!shell || !interactiveShell || !document.getElementById("main-content")) return false;
+    interactiveShell.classList.add("is-ready");
     shell.remove();
     return true;
   };

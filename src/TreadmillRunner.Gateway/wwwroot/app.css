@@ -41,6 +41,8 @@ html, body {
   background-size: 200% 100%;
   animation: loading-shimmer 1.4s linear infinite;
 }
+.app-interactive-shell { visibility: hidden; }
+.app-interactive-shell.is-ready { visibility: visible; }
 @media (max-width: 650px) {
   .app-boot-shell__cards { grid-template-columns: minmax(0, 1fr); }
   .app-boot-shell__cards span:not(:first-child) { display: none; }

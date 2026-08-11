@@ -28,7 +28,9 @@
             <div class="app-boot-shell__cards"><span></span><span></span><span></span></div>
         </main>
     </div>
-    <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
+    <div id="app-interactive-shell" class="app-interactive-shell">
+        <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
+    </div>
     <script src="@Assets["runner-sound.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
