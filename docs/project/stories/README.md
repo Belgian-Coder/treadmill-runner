@@ -4,7 +4,7 @@ type: delivery-index
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-08
+updated: 2026-08-11
 ---
 
 # TreadmillRunner stories
@@ -35,3 +35,4 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-030 — Reschedule future workouts after changing training days](tr-030-default-training-days.md)
 - [TR-031 — Local-first household improvements](tr-031-local-first-household.md)
 - [TR-033 — Resumable Stop controls and planning ownership](tr-033-session-controls-and-planning-ownership.md)
+- [TR-037 — Connected PWA polish and offline safety](tr-037-connected-pwa-polish.md)

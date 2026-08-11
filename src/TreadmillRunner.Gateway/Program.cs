@@ -213,7 +213,10 @@ app.Use(async (context, next) =>
   if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
       path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase) ||
       path.Equals("/manifest.webmanifest", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/pwa-shell.js", StringComparison.OrdinalIgnoreCase) ||
       path.Equals("/runner-sound.js", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/service-worker.js", StringComparison.OrdinalIgnoreCase) ||
+      path.Equals("/offline.html", StringComparison.OrdinalIgnoreCase) ||
       path.Equals("/apple-touch-icon-180.png", StringComparison.OrdinalIgnoreCase) ||
       path.StartsWith("/app-icon-", StringComparison.OrdinalIgnoreCase) ||
       path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase) ||

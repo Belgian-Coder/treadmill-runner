@@ -1258,12 +1258,23 @@ body.immersive-view { overflow: hidden; }
   white-space: normal;
 }
 .app-access-copy .secondary-action { width: fit-content; }
+.pwa-install-panel {
+  display: grid;
+  gap: .7rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d9f9f224;
+}
+.pwa-install-panel h3, .pwa-install-panel p { margin: 0; }
+.pwa-install-panel .secondary-action { width: fit-content; }
+.backup-export-actions { flex-wrap: wrap; }
 
 @media (max-width: 650px) {
   .wake-lock-indicator { width: 34px; height: 34px; }
   .app-access-layout { grid-template-columns: minmax(0, 1fr); }
   .app-access-qr { justify-self: center; }
   .app-access-copy .secondary-action { width: 100%; }
+  .pwa-install-panel .secondary-action, .backup-export-actions > * { width: 100%; }
 }
 
 /* Profile-scoped premade training-plan catalog */

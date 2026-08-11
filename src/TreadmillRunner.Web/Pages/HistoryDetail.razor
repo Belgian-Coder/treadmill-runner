@@ -4,6 +4,7 @@
 @using System.Text
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>Session detail · TreadmillRunner</PageTitle>
 
@@ -52,9 +53,21 @@ else
         }
         <section class="controls-card session-export-actions" aria-label="Session exports">
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.csv")" download>Download CSV</a>
+            @if (shareSupported)
+            {
+                <button class="secondary-action" type="button" disabled="@shareBusy" @onclick="ShareCsvAsync">Share CSV</button>
+            }
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.fit")" download>Download FIT Activity</a>
+            @if (shareSupported)
+            {
+                <button class="secondary-action" type="button" disabled="@shareBusy" @onclick="ShareFitAsync">Share FIT Activity</button>
+            }
             <button class="touch-action danger-action" type="button" disabled="@previewLoading" @onclick="LoadDeletionPreviewAsync">@(previewLoading ? "Checking…" : "Delete local session")</button>
         </section>
+        @if (!string.IsNullOrWhiteSpace(shareMessage))
+        {
+            <p class="action-status" role="status" aria-live="polite">@shareMessage</p>
+        }
         <section class="panel-card adviser-card" aria-labelledby="adviser-title">
             <div class="panel-heading"><div><p class="eyebrow">Deterministic local adviser</p><h2 id="adviser-title">What next?</h2></div><span>No plan changes without confirmation</span></div>
             <p class="field-hint">Accepting or rejecting records your decision only. It never edits the saved workout or active training plan.</p>
@@ -210,6 +223,9 @@ else
     private string? loadError;
     private bool localInsightsLoading;
     private string? localInsightsMessage;
+    private bool shareSupported;
+    private bool shareBusy;
+    private string? shareMessage;
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
     private string HistoryGraphSampleSummary => session is null
         ? "No telemetry samples were persisted."
@@ -221,6 +237,47 @@ else
     {
         await LoadSessionAsync();
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            PwaStatusModel status = await JS.InvokeAsync<PwaStatusModel>("treadmillRunnerPwa.getStatus");
+            shareSupported = status.ShareSupported;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (JSException)
+        {
+            shareSupported = false;
+        }
+    }
+
+    private async Task ShareSessionAsync(string extension, string mimeType)
+    {
+        shareBusy = true;
+        shareMessage = null;
+        try
+        {
+            PwaActionResult result = await JS.InvokeAsync<PwaActionResult>(
+                "treadmillRunnerPwa.shareOrDownload",
+                $"/api/history/{SessionId}/export.{extension}",
+                $"treadmillrunner-session-{SessionId}.{extension}",
+                $"TreadmillRunner session {extension.ToUpperInvariant()}");
+            shareMessage = result.State == "Canceled" ? null : result.Message;
+        }
+        catch (JSException)
+        {
+            shareMessage = $"The browser could not share the {mimeType} file. Use Download instead.";
+        }
+        finally
+        {
+            shareBusy = false;
+        }
+    }
+
+    private Task ShareCsvAsync() => ShareSessionAsync("csv", "CSV");
+    private Task ShareFitAsync() => ShareSessionAsync("fit", "FIT Activity");
 
     private async Task LoadSessionAsync()
     {
@@ -483,6 +540,8 @@ else
     }
 
     private sealed record ChartTimeTick(TimeSpan Elapsed, double PositionPercent);
+    private sealed record PwaStatusModel(bool ShareSupported);
+    private sealed record PwaActionResult(string State, string Message);
 
     private static string EventLabel(System.Text.Json.JsonElement sessionEvent)
     {

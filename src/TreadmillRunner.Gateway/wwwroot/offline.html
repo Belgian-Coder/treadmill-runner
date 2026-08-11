@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071f29">
+  <title>Gateway unavailable · TreadmillRunner</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); background: radial-gradient(circle at top, #123640 0, #071f29 48%, #041219 100%); color: #edf8f6; }
+    main { width: min(38rem, 100%); padding: clamp(1.2rem, 5vw, 2.2rem); border: 1px solid #d9f9f22e; border-radius: 1.25rem; background: #081e27f2; box-shadow: 0 1.5rem 4rem #0008; }
+    .eyebrow { margin: 0 0 .5rem; color: #8ee6c4; font-size: .75rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 7vw, 3rem); line-height: 1.05; }
+    p { color: #c4d8d5; line-height: 1.6; }
+    .safety { margin: 1.2rem 0; padding: 1rem; border: 1px solid #ffb4a752; border-radius: .9rem; background: #3a1919b8; color: #ffe3df; }
+    .safety strong { display: block; margin-bottom: .35rem; color: #fff; }
+    a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; margin-top: .25rem; padding: .72rem 1rem; border: 1px solid #74e0bd; border-radius: .8rem; background: #174b42; color: #f4fffb; font-weight: 800; text-decoration: none; }
+    small { display: block; margin-top: 1.1rem; color: #91abaa; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Offline safety</p>
+    <h1>TreadmillRunner gateway unavailable</h1>
+    <p>This browser cannot determine the treadmill, workout, heart-rate, or Bluetooth state. No previous session information is shown because it could be stale.</p>
+    <div class="safety" role="alert">
+      <strong>Wi-Fi or Bluetooth loss does not stop the treadmill belt.</strong>
+      Use the treadmill’s physical console, safety key, or physical Stop control whenever you need to slow or stop the belt.
+    </div>
+    <p>Reconnect this device to the household Wi-Fi and make sure the TreadmillRunner NUC is running, then try again.</p>
+    <a href="/">Try the live gateway again</a>
+    <small>This page contains safety guidance only. Workouts, history, live measurements, controls, and personal data are never stored here.</small>
+  </main>
+</body>
+</html>

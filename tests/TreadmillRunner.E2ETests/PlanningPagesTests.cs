@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -560,28 +561,34 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Guid revisionId = Guid.NewGuid();
     int applyRequests = 0;
     int defaultDaysApplyRequests = 0;
+    DateOnly? previewTargetDate = null;
     await Page.RouteAsync("**/api/planning/calendar/series?*", route => route.FulfillAsync(new()
     {
       Status = 200,
       ContentType = "application/json",
       Body = "[]",
     }));
-    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/preview", route => route.FulfillAsync(new()
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/preview", async route =>
     {
-      Status = 200,
-      ContentType = "application/json",
-      Body = JsonSerializer.Serialize(new
+      using JsonDocument request = JsonDocument.Parse(route.Request.PostData!);
+      previewTargetDate = DateOnly.Parse(request.RootElement.GetProperty("targetDate").GetString()!, CultureInfo.InvariantCulture);
+      await route.FulfillAsync(new()
       {
-        runId,
-        programItemId = itemId,
-        action = "MoveOne",
-        runVersion = 4,
-        canApply = false,
-        message = "That change would place two plan sessions on 11 Aug 2026. Choose an empty date instead.",
-        impacts = new[] { new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1), isRepeat = false } },
-        collisionDates = new[] { plannedDate.AddDays(1) },
-      }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-    }));
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          runId,
+          programItemId = itemId,
+          action = "MoveOne",
+          runVersion = 4,
+          canApply = true,
+          message = "Only this session will move; later sessions keep their dates.",
+          impacts = new[] { new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = previewTargetDate, isRepeat = false } },
+          collisionDates = Array.Empty<DateOnly>(),
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+      });
+    });
     await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/apply", async route =>
     {
       Interlocked.Increment(ref applyRequests);
@@ -733,10 +740,21 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Back", Exact = true }).ClickAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Back", Exact = true }).ClickAsync();
     Assert.Equal(0, defaultDaysApplyRequests);
-    await dialog.GetByLabel("New or repeat date").FillAsync("2026-08-11");
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Choose the new date", Exact = true })).ToBeVisibleAsync();
+    ILocator moveDate = dialog.GetByLabel("Move to date", new() { Exact = true });
+    await Expect(moveDate).ToHaveValueAsync("2026-08-10");
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Preview move", Exact = true })).ToBeDisabledAsync();
+    await moveDate.FillAsync("2026-08-15");
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(showcaseDirectory, "tr-027-calendar-date-picker.png"),
+      FullPage = false,
+    });
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview move", Exact = true }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("Impact preview");
-    await Expect(dialog).ToContainTextAsync("Date unavailable");
+    await Expect(dialog).ToContainTextAsync("10 Aug → 15 Aug");
+    Assert.Equal(new DateOnly(2026, 8, 15), previewTargetDate);
     Assert.Equal(0, applyRequests);
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
@@ -749,8 +767,11 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       Path = Path.Combine(showcaseDirectory, "tr-027-calendar-move.png"),
       FullPage = false,
     });
-    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true })).ToBeDisabledAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true })).ToBeEnabledAsync();
     Assert.Equal(0, applyRequests);
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Back", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Choose the new date", Exact = true })).ToBeVisibleAsync();
+    await Expect(dialog.GetByLabel("Move to date", new() { Exact = true })).ToHaveValueAsync("2026-08-15");
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Close plan session manager", Exact = true }).ClickAsync();
     await Expect(dialog).ToBeHiddenAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Manage Earlier foundation on 10 August", Exact = true }).ClickAsync();
@@ -1473,7 +1494,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
-  public async Task Browser_drafts_are_bounded_expiring_profile_scoped_and_no_service_worker_is_registered()
+  public async Task Browser_drafts_are_bounded_expiring_profile_scoped_and_only_the_offline_safety_worker_is_registered()
   {
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
     Assert.True(await Page.EvaluateAsync<bool>("() => treadmillRunnerDrafts.save('profile-a.workout.new', '{\"name\":\"Draft A\"}')"));
@@ -1484,8 +1505,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Assert.Null(await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('corrupt')"));
     await Page.EvaluateAsync("() => localStorage.setItem('treadmillrunner.draft.v1.expired', JSON.stringify({schemaVersion:1,savedAtUtc:new Date(Date.now()-31*86400000).toISOString(),payload:'{}'}))");
     Assert.Null(await Page.EvaluateAsync<string?>("() => treadmillRunnerDrafts.load('expired')"));
-    int registrations = await Page.EvaluateAsync<int>("async () => navigator.serviceWorker ? (await navigator.serviceWorker.getRegistrations()).length : 0");
-    Assert.Equal(0, registrations);
+    string[] registrations = await Page.EvaluateAsync<string[]>("async () => navigator.serviceWorker ? (await navigator.serviceWorker.ready, (await navigator.serviceWorker.getRegistrations()).map(item => new URL(item.scope).pathname)) : []");
+    Assert.Equal(["/"], registrations);
     string manifest = await Page.EvaluateAsync<string>("async () => await (await fetch('/manifest.webmanifest', {cache:'no-store'})).text()");
     Assert.Contains("standalone", manifest, StringComparison.Ordinal);
   }

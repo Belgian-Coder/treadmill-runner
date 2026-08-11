@@ -10,6 +10,7 @@ using TreadmillRunner.Gateway.Health;
 using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Core.System;
+using System.Text.Json;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -76,6 +77,50 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     matchingRequest.Headers.Add("X-TreadmillRunner-Client-Build", AppBuildInfo.Fingerprint);
     using HttpResponseMessage matching = await client.SendAsync(matchingRequest);
     Assert.NotEqual(HttpStatusCode.Conflict, matching.StatusCode);
+  }
+
+  [Fact]
+  public async Task Pwa_manifest_and_offline_safety_assets_preserve_the_network_only_application_boundary()
+  {
+    using HttpClient client = factory.CreateClient();
+
+    using HttpResponseMessage manifestResponse = await client.GetAsync("/manifest.webmanifest");
+    Assert.Equal(HttpStatusCode.OK, manifestResponse.StatusCode);
+    Assert.Equal("application/manifest+json", manifestResponse.Content.Headers.ContentType?.MediaType);
+    Assert.Contains("no-store", manifestResponse.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+    using JsonDocument manifest = JsonDocument.Parse(await manifestResponse.Content.ReadAsStringAsync());
+    Assert.Equal("/", manifest.RootElement.GetProperty("id").GetString());
+    Assert.Equal("/", manifest.RootElement.GetProperty("scope").GetString());
+    Assert.Equal("standalone", manifest.RootElement.GetProperty("display").GetString());
+    Assert.Equal("navigate-existing", manifest.RootElement.GetProperty("launch_handler").GetProperty("client_mode").GetString());
+    string[] shortcutUrls = manifest.RootElement.GetProperty("shortcuts")
+      .EnumerateArray()
+      .Select(static shortcut => shortcut.GetProperty("url").GetString()!)
+      .ToArray();
+    Assert.Equal(["/", "/calendar", "/history", "/operations"], shortcutUrls);
+
+    using HttpResponseMessage bridge = await client.GetAsync("/pwa-shell.js");
+    using HttpResponseMessage worker = await client.GetAsync("/service-worker.js");
+    using HttpResponseMessage offline = await client.GetAsync("/offline.html");
+    foreach (HttpResponseMessage response in new[] { bridge, worker, offline })
+    {
+      Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+      Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+    Assert.Equal("text/javascript", bridge.Content.Headers.ContentType?.MediaType);
+    Assert.Equal("text/javascript", worker.Content.Headers.ContentType?.MediaType);
+    Assert.Equal("text/html", offline.Content.Headers.ContentType?.MediaType);
+
+    string workerSource = await worker.Content.ReadAsStringAsync();
+    Assert.Contains("event.request.mode !== \"navigate\"", workerSource, StringComparison.Ordinal);
+    Assert.Contains("[502, 503, 504]", workerSource, StringComparison.Ordinal);
+    Assert.DoesNotContain("skipWaiting", workerSource, StringComparison.Ordinal);
+    Assert.DoesNotContain("clients.claim", workerSource, StringComparison.Ordinal);
+    string offlineDocument = await offline.Content.ReadAsStringAsync();
+    Assert.Contains("Wi-Fi or Bluetooth loss does not stop the treadmill belt", offlineDocument, StringComparison.Ordinal);
+    Assert.Contains("physical Stop control", offlineDocument, StringComparison.Ordinal);
+    Assert.DoesNotContain("<script", offlineDocument, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("<link", offlineDocument, StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]

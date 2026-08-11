@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-08
+updated: 2026-08-11
 ---
 
 # TreadmillRunner decision record
@@ -21,6 +21,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 
 - One active controller lease; other browsers observe.
 - Profiles are selected without login on the trusted LAN.
+- Trusted private-LAN HTTPS enables install prompts, standalone launch shortcuts, native outbound file sharing, and exactly one cached offline safety document. It does not create an offline app: app shell, data, APIs, live state, credentials, and commands remain network-only, and the worker never forces takeover of an active client.
 - The gateway continues an active workout if a browser disappears.
 - Polar H10 is primary; a standard-BLE Garmin broadcast is fallback only between sessions.
 - Physical console Start is the current fallback and remains available. A future enrolled adapter may expose a hold-to-start UI only when its exact model/firmware has passed TR-006B; FTMS advertisement alone never enables it.

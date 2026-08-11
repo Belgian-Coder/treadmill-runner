@@ -1,5 +1,5 @@
 @page "/operations"
-@implements IDisposable
+@implements IAsyncDisposable
 @using System.Net.Http.Headers
 @using System.Text.Json
 @inject HttpClient Http
@@ -85,6 +85,41 @@
         {
             <p class="notice" role="status">@(access?.Message ?? "The private-LAN address is unavailable.")</p>
         }
+        <section class="pwa-install-panel" aria-labelledby="pwa-install-title">
+            <div>
+                <p class="eyebrow">Trusted HTTPS app</p>
+                <h3 id="pwa-install-title">Installed experience</h3>
+            </div>
+            @if (pwaStatus is null)
+            {
+                <p class="muted-copy" role="status">Checking browser installation support…</p>
+            }
+            else if (pwaStatus.Standalone)
+            {
+                <p><span class="sensor-badge">Installed</span> TreadmillRunner is running in its standalone app window.</p>
+            }
+            else if (!pwaStatus.SecureContext)
+            {
+                <p class="notice">Open the trusted HTTPS address before installing. The private HTTP address cannot provide this installed/offline-safety experience.</p>
+            }
+            else if (pwaStatus.InstallPromptAvailable)
+            {
+                <button class="secondary-action" type="button" @onclick="InstallPwaAsync">Install app</button>
+            }
+            else
+            {
+                <p>On iPhone or iPad, open this HTTPS address in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. In Chrome or Edge, use the browser menu’s install command when available.</p>
+            }
+            @if (pwaStatus is not null)
+            {
+                <p class="field-hint">@pwaStatus.ServiceWorkerMessage</p>
+            }
+            <p class="field-hint">An app previously installed from HTTP is a separate browser app. Remove or ignore that old icon and install again from this HTTPS address.</p>
+            @if (!string.IsNullOrWhiteSpace(pwaMessage))
+            {
+                <span class="action-status" role="status" aria-live="polite">@pwaMessage</span>
+            }
+        </section>
     </section>
 
     <section class="panel-card" aria-labelledby="database-health-title">
@@ -159,14 +194,26 @@
 
     <details class="panel-card advanced-settings">
         <summary>Backup and diagnostics</summary>
-        <div class="controls-card">
+        <div class="controls-card backup-export-actions">
             <a class="secondary-action" href="/api/operations/backup" download>Download full backup</a>
+            @if (pwaStatus?.ShareSupported == true)
+            {
+                <button class="secondary-action" type="button" disabled="@shareBusy" @onclick="ShareFullBackupAsync">Share full backup</button>
+            }
             @if (!string.IsNullOrWhiteSpace(databaseStatus?.LastBackupFileName))
             {
                 <a class="secondary-action" href="/api/operations/database/verified-backup" download>Download verified recovery backup</a>
+                @if (pwaStatus?.ShareSupported == true)
+                {
+                    <button class="secondary-action" type="button" disabled="@shareBusy" @onclick="ShareVerifiedBackupAsync">Share verified backup</button>
+                }
             }
             <a class="secondary-action" href="/api/operations/diagnostics" download>Download diagnostics</a>
         </div>
+        @if (!string.IsNullOrWhiteSpace(shareMessage))
+        {
+            <p class="action-status" role="status" aria-live="polite">@shareMessage</p>
+        }
     </details>
 
     <details class="panel-card advanced-settings">
@@ -265,6 +312,11 @@
     private bool backupLoading = true;
     private IReadOnlyList<BackupVerificationModel> backupVerifications = [];
     private bool restoreBusy;
+    private DotNetObjectReference<Operations>? pwaReference;
+    private PwaStatusModel? pwaStatus;
+    private string? pwaMessage;
+    private bool shareBusy;
+    private string? shareMessage;
 
     private AppAccessCandidateModel? SelectedAccessCandidate => access?.Candidates
         .FirstOrDefault(candidate => candidate.Id == selectedAccessCandidateId) ?? access?.Candidates.FirstOrDefault();
@@ -276,6 +328,74 @@
     {
         await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync(), LoadBackupPolicyAsync(), LoadOperationsSummaryAsync());
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        pwaReference = DotNetObjectReference.Create(this);
+        try
+        {
+            pwaStatus = await JS.InvokeAsync<PwaStatusModel>("treadmillRunnerPwa.initialize", pwaReference);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (JSException)
+        {
+            pwaMessage = "Browser installation and sharing features are temporarily unavailable.";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public Task PwaStatusChanged(PwaStatusModel status)
+    {
+        pwaStatus = status;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task InstallPwaAsync()
+    {
+        try
+        {
+            PwaActionResult result = await JS.InvokeAsync<PwaActionResult>("treadmillRunnerPwa.promptInstall");
+            pwaMessage = result.Message;
+            pwaStatus = await JS.InvokeAsync<PwaStatusModel>("treadmillRunnerPwa.getStatus");
+        }
+        catch (JSException)
+        {
+            pwaMessage = "The browser could not open its installation prompt.";
+        }
+    }
+
+    private async Task ShareFileAsync(string path, string fallbackFileName, string title)
+    {
+        shareBusy = true;
+        shareMessage = null;
+        try
+        {
+            PwaActionResult result = await JS.InvokeAsync<PwaActionResult>(
+                "treadmillRunnerPwa.shareOrDownload", path, fallbackFileName, title);
+            shareMessage = result.State == "Canceled" ? null : result.Message;
+        }
+        catch (JSException)
+        {
+            shareMessage = "The browser could not share this file. Use Download instead.";
+        }
+        finally
+        {
+            shareBusy = false;
+        }
+    }
+
+    private Task ShareFullBackupAsync() => ShareFileAsync(
+        "/api/operations/backup",
+        "treadmillrunner-backup.trb",
+        "TreadmillRunner full backup");
+
+    private Task ShareVerifiedBackupAsync() => ShareFileAsync(
+        "/api/operations/database/verified-backup",
+        "treadmillrunner-verified-backup.trb",
+        "TreadmillRunner verified recovery backup");
 
     private async Task LoadOperationsSummaryAsync()
     {
@@ -740,13 +860,29 @@
     private sealed record BackupVerificationModel(Guid Id, Guid PolicyId, string BackupPath, string Status, string Detail, long BackupBytes, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc);
     private sealed record HealthComponentModel(string Id, string State, string Detail);
     private sealed record OperationsSummaryModel(string State, IReadOnlyList<HealthComponentModel> Components);
+    public sealed record PwaStatusModel(
+        bool SecureContext,
+        bool Standalone,
+        bool InstallPromptAvailable,
+        bool ServiceWorkerSupported,
+        bool ServiceWorkerRegistered,
+        bool ShareSupported,
+        string ServiceWorkerMessage);
+    private sealed record PwaActionResult(string State, string Message);
 
     private const long UpdateManagerMaximumBundleBytes = (1024L * 1024 * 1024) + (2L * 1024 * 1024);
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         disposed = true;
         activationRecoveryCancellation?.Cancel();
         activationRecoveryCancellation?.Dispose();
+        if (pwaReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerPwa.dispose"); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+            pwaReference.Dispose();
+        }
     }
 }

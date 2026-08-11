@@ -4,7 +4,7 @@ type: operator-guide
 status: active
 owner: project
 audience: user-and-operator
-updated: 2026-08-05
+updated: 2026-08-11
 ---
 
 # Install TreadmillRunner on Windows
@@ -25,11 +25,19 @@ The .NET SDK, Git, GitHub CLI, Python, and `pip` are not required for normal use
 1. Open [TreadmillRunner Releases](https://github.com/belgian-coder/treadmill-runner/releases/latest) and download `TreadmillRunner-<version>-Windows-x64.zip`.
 2. In File Explorer, select **Extract all**. Do not run the installer from inside the ZIP preview. The included `INSTALL.txt` contains the same short checklist for offline use.
 3. Double-click `Install-TreadmillRunner.cmd` and accept the Windows administrator prompt.
-4. Wait until the installer reports that the gateway is ready. It opens `http://localhost:5180`; household devices use `http://<NUC-hostname>:5180`.
+4. Wait until the installer reports that the gateway is ready. It opens `http://localhost:5180`; household devices should use the configured trusted private-LAN HTTPS address when available.
 
 The installer checks the runtime and private-network profile, installs the immutable application release and database migrations, pins the public update-signing certificate, creates the least-privilege Windows service and update task, restricts the firewall rule to the private local subnet, and verifies `/health/ready` before opening the dashboard.
 
-After installation, open **Operations → Open on another device** to scan a locally generated QR code from an iPhone on the same private Wi-Fi. For a stable name, set `Gateway__PublicUrl` to the household HTTP(S) address. The gateway never sends the URL to a QR service. iPhone Screen Wake Lock may require a trusted local HTTPS origin; private HTTP remains usable but the browser can dim the display.
+After installation, open **Operations → Open on another device** to scan a locally generated QR code from an iPhone on the same private Wi-Fi. Set `Gateway__PublicUrl` to the trusted household HTTPS address (for example, `https://treadmill.home.example/`). The gateway never sends the URL to a QR service. Private HTTP remains usable for basic access, but install prompts, Screen Wake Lock, native file sharing, and the offline safety page require HTTPS or a loopback development address.
+
+## Install the browser app
+
+Open **Operations → Installed experience** from the HTTPS address. Chrome or Edge shows **Install app** when its install prompt is available; otherwise use the browser menu. On iPhone or iPad, open the address in Safari, tap **Share**, then **Add to Home Screen**. An old icon installed from HTTP is a separate browser app and must be replaced by a new installation from HTTPS.
+
+The installed app still requires the NUC and household Wi-Fi for all live UI, history, workouts, commands, and data. Only one data-free safety document is stored for failed reloads. It warns that gateway/treadmill state is unknown and that Wi-Fi or Bluetooth loss does not stop the belt; use the physical console, safety key, or physical **Stop** control.
+
+Session CSV/FIT exports and full or verified backups offer **Share** when the device supports sharing files. The file is fetched only after that click and retains the gateway filename and type. **Download** remains available in every browser and is the fallback for unsupported file types. Diagnostics remain download-only.
 
 ## First run
 

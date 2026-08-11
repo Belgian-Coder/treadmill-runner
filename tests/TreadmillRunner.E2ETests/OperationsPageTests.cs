@@ -267,7 +267,31 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
         configurable: true,
         get: () => ({ writeText: async value => window.__copiedAppAddress = value })
       });
+      window.__sharedBackup = null;
+      Object.defineProperty(Navigator.prototype, 'canShare', {
+        configurable: true,
+        value: data => Array.isArray(data.files) && data.files.length === 1
+      });
+      Object.defineProperty(Navigator.prototype, 'share', {
+        configurable: true,
+        value: async data => window.__sharedBackup = { name: data.files[0].name, type: data.files[0].type }
+      });
       """);
+    int backupRequests = 0;
+    await Page.RouteAsync("**/api/operations/backup", async route =>
+    {
+      backupRequests++;
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/vnd.treadmillrunner.backup",
+        Body = "backup-fixture",
+        Headers = new Dictionary<string, string>
+        {
+          ["Content-Disposition"] = "attachment; filename=\"household-backup.trb\"",
+        },
+      });
+    });
     await InstallAccessRoutesAsync();
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions
     {
@@ -292,6 +316,12 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     await Page.GetByText("Backup and diagnostics", new() { Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Download full backup" }))
       .ToHaveAttributeAsync("href", "/api/operations/backup");
+    Assert.Equal(0, backupRequests);
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Share full backup", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("household-backup.trb was sent to the device share sheet.", new() { Exact = true }))
+      .ToBeVisibleAsync();
+    Assert.Equal(1, backupRequests);
+    Assert.Equal("household-backup.trb", await Page.EvaluateAsync<string>("window.__sharedBackup.name"));
     await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Download diagnostics" }))
       .ToHaveAttributeAsync("href", "/api/operations/diagnostics");
     await Expect(Page.GetByLabel("Backup file"))

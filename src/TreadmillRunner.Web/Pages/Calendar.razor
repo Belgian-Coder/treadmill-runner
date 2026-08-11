@@ -403,27 +403,52 @@
             else if (programPreview is null)
             {
                 <div id="program-schedule-dialog-stage" class="schedule-dialog-stage" aria-live="polite" tabindex="-1">
-                    <button class="secondary-action change-training-days" type="button" @onclick="StartDefaultDaysChange">Change training days</button>
-                    <button class="secondary-action danger-action" type="button" @onclick="RequestClearUpcomingFromProgramManagerAsync" disabled="@clearUpcomingBusy">Remove all upcoming sessions from this plan</button>
-                    <label class="field">New or repeat date
-                        <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-365).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(365).ToString("yyyy-MM-dd")" />
-                    </label>
-                    <div class="schedule-choice-grid">
-                        @if (managedProgramSession.IsCompleted)
+                    @if (programMoveAction is not null)
+                    {
+                        <div><p class="eyebrow">@ProgramActionTitle(programMoveAction)</p><h3>Choose the new date</h3></div>
+                        <label class="field">Move to date
+                            <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-365).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(365).ToString("yyyy-MM-dd")" />
+                        </label>
+                        @if (programTargetDate == managedProgramSession.CurrentDate)
                         {
-                            <p class="field-hint schedule-choice-grid__hint">This plan step is completed. Add another attempt without changing its completed status.</p>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Repeat")' disabled="@programActionBusy"><strong>Repeat · keep later dates</strong><span>Add an extra attempt without rewinding completed progress.</span></button>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("RepeatAndShift")' disabled="@programActionBusy"><strong>Repeat · shift the rest</strong><span>Insert an extra attempt and move the remaining incomplete plan forward.</span></button>
+                            <p class="field-help">Choose a date other than @managedProgramSession.CurrentDate.ToString("d MMMM"). Gaps in the plan are allowed.</p>
                         }
                         else
                         {
-                            <p class="field-hint schedule-choice-grid__hint">This plan step is still incomplete. Reschedule or skip it; a failed attempt never counts as completed.</p>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Later plan dates remain unchanged. Dates that already contain a plan session are blocked.</span></button>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("MoveFollowing")' disabled="@programActionBusy"><strong>Move this and all following</strong><span>Shift the remaining plan by the same number of days.</span></button>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Skip")' disabled="@programActionBusy"><strong>Skip this session</strong><span>Advance to the next plan step without creating a completed run.</span></button>
-                            <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Restore")' disabled="@programActionBusy"><strong>Restore original date</strong><span>Remove the saved move or skip for this plan step.</span></button>
+                            <p class="field-help">The session will move to exactly @programTargetDate.ToString("d MMMM"); it will not be snapped to a training day.</p>
                         }
-                    </div>
+                        <div class="schedule-dialog-actions schedule-dialog-actions--confirm">
+                            <button class="secondary-action" type="button" @onclick="CancelProgramMove" disabled="@programActionBusy">Back</button>
+                            <button class="primary-action" type="button" @onclick="PreviewPendingProgramMoveAsync" disabled="@(programTargetDate == managedProgramSession.CurrentDate || programActionBusy)">@(programActionBusy ? "Checking…" : "Preview move")</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="secondary-action change-training-days" type="button" @onclick="StartDefaultDaysChange">Change training days</button>
+                        <button class="secondary-action danger-action" type="button" @onclick="RequestClearUpcomingFromProgramManagerAsync" disabled="@clearUpcomingBusy">Remove all upcoming sessions from this plan</button>
+                        @if (managedProgramSession.IsCompleted)
+                        {
+                            <label class="field">New or repeat date
+                                <input type="date" @bind="programTargetDate" min="@managedProgramSession.CurrentDate.AddDays(-365).ToString("yyyy-MM-dd")" max="@managedProgramSession.CurrentDate.AddDays(365).ToString("yyyy-MM-dd")" />
+                            </label>
+                        }
+                        <div class="schedule-choice-grid">
+                            @if (managedProgramSession.IsCompleted)
+                            {
+                                <p class="field-hint schedule-choice-grid__hint">This plan step is completed. Add another attempt without changing its completed status.</p>
+                                <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Repeat")' disabled="@programActionBusy"><strong>Repeat · keep later dates</strong><span>Add an extra attempt without rewinding completed progress.</span></button>
+                                <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("RepeatAndShift")' disabled="@programActionBusy"><strong>Repeat · shift the rest</strong><span>Insert an extra attempt and move the remaining incomplete plan forward.</span></button>
+                            }
+                            else
+                            {
+                                <p class="field-hint schedule-choice-grid__hint">This plan step is still incomplete. Reschedule or skip it; a failed attempt never counts as completed.</p>
+                                <button class="schedule-choice" type="button" @onclick='() => StartProgramMove("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Choose an exact date. Later plan dates remain unchanged and gaps are allowed.</span></button>
+                                <button class="schedule-choice" type="button" @onclick='() => StartProgramMove("MoveFollowing")' disabled="@programActionBusy"><strong>Move this and all following</strong><span>Choose an exact date, then shift the remaining plan by the same number of days.</span></button>
+                                <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Skip")' disabled="@programActionBusy"><strong>Skip this session</strong><span>Advance to the next plan step without creating a completed run.</span></button>
+                                <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Restore")' disabled="@programActionBusy"><strong>Restore original date</strong><span>Remove the saved move or skip for this plan step.</span></button>
+                            }
+                        </div>
+                    }
                 </div>
             }
             else
@@ -547,6 +572,7 @@
     private int calendarDetailsGeneration;
     private CancellationTokenSource? calendarDetailsCancellation;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
+    private string? programMoveAction;
     private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
     private bool changingProgramDays;
     private int programWeekdayMask;
@@ -1016,6 +1042,7 @@
         clearUpcomingPreview = null;
         clearUpcomingProfileId = null;
         programPreview = null;
+        programMoveAction = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
         managerStep = ManagerSteps.Actions;
@@ -1234,6 +1261,7 @@
             option.OriginalDate, position, total, option.IsRepeat, option.ExtraOccurrenceId, option.IsCompleted, weekdayMask);
         programTargetDate = date.AddDays(1);
         programPreview = null;
+        programMoveAction = null;
         openModalPending = true;
     }
 
@@ -1278,6 +1306,7 @@
         modalReference = null;
         managedProgramSession = null;
         programPreview = null;
+        programMoveAction = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
     }
@@ -1298,6 +1327,7 @@
         calendarDetailsError = null;
         calendarDetailsLoading = false;
         programPreview = null;
+        programMoveAction = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
         managerStep = ManagerSteps.Actions;
@@ -1329,6 +1359,26 @@
         finally { programActionBusy = false; }
     }
 
+    private void StartProgramMove(string action)
+    {
+        if (managedProgramSession is null || action is not ("MoveOne" or "MoveFollowing")) return;
+        programMoveAction = action;
+        programTargetDate = managedProgramSession.CurrentDate;
+        focusModalStagePending = true;
+    }
+
+    private void CancelProgramMove()
+    {
+        programMoveAction = null;
+        if (managedProgramSession is not null) programTargetDate = managedProgramSession.CurrentDate.AddDays(1);
+        focusModalStagePending = true;
+    }
+
+    private Task PreviewPendingProgramMoveAsync() =>
+        programMoveAction is null || managedProgramSession is null || programTargetDate == managedProgramSession.CurrentDate
+            ? Task.CompletedTask
+            : PreviewProgramChangeAsync(programMoveAction);
+
     private async Task ApplyProgramChangeAsync()
     {
         if (managedProgramSession is null || activeProfileId is null || programPreview is not { CanApply: true }) return;
@@ -1359,7 +1409,11 @@
         finally { programActionBusy = false; }
     }
 
-    private void ClearProgramPreview() => programPreview = null;
+    private void ClearProgramPreview()
+    {
+        programPreview = null;
+        focusModalStagePending = true;
+    }
 
     private void StartDefaultDaysChange()
     {

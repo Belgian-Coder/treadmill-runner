@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-05
+updated: 2026-08-11
 ---
 
 # Architecture
@@ -18,6 +18,12 @@ Source: [Mermaid](diagrams/project-context-architecture.mmd)
 ## Design rule
 
 The Windows gateway owns Bluetooth, workout time, HR automation, safety state, and persistence. Browser clients are replaceable views. SignalR loss does not stop the gateway loop. BLE loss records a telemetry gap and invalidates old-generation intents; guarded recovery may create fresh current-position commands but never Start or replay an uncertain command.
+
+## Browser delivery boundary
+
+The trusted HTTPS origin exposes an installable manifest, a small early `window.treadmillRunnerPwa` bridge, and a root-scoped service worker. The bridge owns install-status detection, opt-in install prompting, worker registration, and explicit-click share-or-download interop. The service worker owns only network-first top-level navigation fallback to one self-contained `/offline.html` safety document for network failures and 502/503/504 responses.
+
+No application shell or application data is cached. API, SignalR, WebAssembly/framework assets, workouts, history, browser drafts, telemetry, exports, credentials, and commands remain network-only. Worker activation neither calls `skipWaiting()` nor claims active clients, so it cannot mask a new build or replace stale-client recovery. The gateway remains the sole BLE, session, persistence, and command authority.
 
 ## Solution boundaries
 
