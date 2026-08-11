@@ -711,10 +711,13 @@
     private bool IsCurrentProfileSelection(int generation, Guid? profileId) =>
         !disposed && generation == profileSelectionGeneration && selectedProfileId == profileId;
 
-    private bool IsCurrentPreflightSelection(int profileGeneration, Guid profileId, int workoutGeneration, Guid revisionId) =>
+    private bool IsCurrentWorkoutSelection(int profileGeneration, Guid? profileId, int workoutGeneration, Guid revisionId) =>
         IsCurrentProfileSelection(profileGeneration, profileId) &&
         workoutSelectionGeneration == workoutGeneration &&
         selectedRevisionId == revisionId;
+
+    private bool IsCurrentPreflightSelection(int profileGeneration, Guid profileId, int workoutGeneration, Guid revisionId) =>
+        IsCurrentWorkoutSelection(profileGeneration, profileId, workoutGeneration, revisionId);
 
     private async Task ApplyProfileSelectionAsync(Guid? profileId, bool announce)
     {
@@ -818,7 +821,9 @@
 
     private async Task SelectWorkoutAsync(WorkoutChoice choice)
     {
-        workoutSelectionGeneration++;
+        int profileGeneration = profileSelectionGeneration;
+        Guid? profileId = selectedProfileId;
+        int workoutGeneration = ++workoutSelectionGeneration;
         selectedRevisionId = choice.RevisionId;
         selectedWorkoutLabel = choice.Name;
         selectedWorkoutSource = choice.SelectionSource;
@@ -827,6 +832,7 @@
         preflight = null;
         actionStatus = "Checking readiness in the background…";
         await InvokeAsync(StateHasChanged);
+        if (!IsCurrentWorkoutSelection(profileGeneration, profileId, workoutGeneration, choice.RevisionId)) return;
         await RefreshPreflightAsync();
     }
 

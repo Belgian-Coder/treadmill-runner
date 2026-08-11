@@ -1202,6 +1202,61 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Run_page_rapid_profile_switches_keep_final_workout_readiness_coherent()
+  {
+    string firstName = $"Rapid runner A {Guid.NewGuid():N}";
+    string secondName = $"Rapid runner B {Guid.NewGuid():N}";
+    string workoutName = $"Rapid switch workout {Guid.NewGuid():N}";
+    Guid firstId = await CreateProfileAsync(firstName);
+    Guid secondId = await CreateProfileAsync(secondName);
+    Guid workoutRevisionId = await CreateWorkoutAsync(workoutName);
+    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+
+    async Task CreateTodayScheduleAsync(Guid profileId, string scheduleName)
+    {
+      using HttpClient client = new() { BaseAddress = gateway.BaseAddress };
+      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/calendar/series", new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        name = scheduleName,
+        timeZoneId = "Europe/Brussels",
+        startDate = today,
+        endDate = today,
+        intervalWeeks = 1,
+        weekdayMask = WeekdayFlag(today.DayOfWeek),
+        alternatives = new[] { new { workoutRevisionId, displayOrder = 0 } },
+        exceptions = Array.Empty<object>(),
+        expectedVersion = (int?)null,
+      });
+      response.EnsureSuccessStatusCode();
+    }
+
+    await CreateTodayScheduleAsync(firstId, "Rapid switch schedule A");
+    await CreateTodayScheduleAsync(secondId, "Rapid switch schedule B");
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.EvaluateAsync("([id]) => localStorage.setItem('treadmillrunner.active-profile', id)", new[] { firstId.ToString("D") });
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(firstName);
+
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    foreach (string name in new[] { secondName, firstName, secondName, firstName, secondName })
+    {
+      await picker.Locator("summary").ClickAsync();
+      await picker.GetByRole(AriaRole.Radio, new() { Name = name, Exact = true }).ClickAsync();
+      await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(name);
+    }
+
+    await Expect(Page.GetByLabel("Recommended next run", new() { Exact = true })).ToContainTextAsync($"Next for {secondName}");
+    await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(secondName);
+    await Expect(Page.GetByLabel("Selected workout", new() { Exact = true })).ToHaveTextAsync(workoutName);
+    await Expect(Page.Locator(".selection-summary").GetByText("00:20:00", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".selection-summary").GetByText("Planned pace", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Pre-run checks are temporarily unavailable. Try selecting the workout again.", new() { Exact = true })).ToHaveCountAsync(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Run_page_profile_switches_supersede_out_of_order_planning_responses()
   {
     string firstName = $"Race runner A {Guid.NewGuid():N}";
