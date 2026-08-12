@@ -71,7 +71,7 @@ public sealed class AppAccessUrlService(IConfiguration configuration)
   internal IReadOnlyList<AppAccessCandidate> ResolveCandidates()
   {
     var candidates = new List<AppAccessCandidate>();
-    if (TryNormalizeConfiguredUrl(configuration["Gateway:PublicUrl"], out Uri configured))
+    if (TryNormalizeConfiguredUrl(configuration["Gateway:PublicUrl"], configuration, out Uri configured))
     {
       AddCandidate(candidates, configured, "Configured address");
     }
@@ -113,7 +113,7 @@ public sealed class AppAccessUrlService(IConfiguration configuration)
       .ToArray();
   }
 
-  private static bool TryNormalizeConfiguredUrl(string? value, out Uri normalized)
+  private static bool TryNormalizeConfiguredUrl(string? value, IConfiguration configuration, out Uri normalized)
   {
     normalized = null!;
     if (string.IsNullOrWhiteSpace(value) || value.Length > MaximumUrlLength ||
@@ -124,7 +124,7 @@ public sealed class AppAccessUrlService(IConfiguration configuration)
         !string.IsNullOrEmpty(parsed.Fragment) ||
         IsWildcardHost(parsed.Host) ||
         string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-        !IsLocalAddress(parsed.Host))
+        !IsLocalAddress(parsed.Host, configuration))
     {
       return false;
     }
@@ -139,9 +139,15 @@ public sealed class AppAccessUrlService(IConfiguration configuration)
 
   private static bool IsWildcardHost(string host) => host is "0.0.0.0" or "::" or "[::]" or "*" or "+";
 
-  private static bool IsLocalAddress(string host) => IPAddress.TryParse(host, out IPAddress? address)
+  private static bool IsLocalAddress(string host, IConfiguration configuration) => IPAddress.TryParse(host, out IPAddress? address)
     ? IsPrivateIpv4(address)
-    : IsLocalHostname(host);
+    : IsLocalHostname(host) || IsConfiguredPrivateSuffix(host, configuration);
+
+  private static bool IsConfiguredPrivateSuffix(string host, IConfiguration configuration) =>
+    configuration.GetSection("Gateway:AllowedPublicHostSuffixes").Get<string[]>() is { Length: > 0 } suffixes &&
+    suffixes.Any(suffix =>
+      !string.IsNullOrWhiteSpace(suffix) &&
+      host.EndsWith($".{suffix.Trim().TrimStart('.')}", StringComparison.OrdinalIgnoreCase));
 
   private static bool IsLocalHostname(string host) =>
     !string.IsNullOrWhiteSpace(host) &&

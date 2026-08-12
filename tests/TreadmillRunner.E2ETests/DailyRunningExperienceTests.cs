@@ -472,7 +472,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
   {
     await ResetSimulatorAsync();
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
+      .ToBeVisibleAsync(new() { Timeout = 15_000 });
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();

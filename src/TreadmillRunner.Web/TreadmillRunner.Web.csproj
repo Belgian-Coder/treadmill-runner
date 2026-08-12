@@ -9,6 +9,7 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <PublishTrimmed>true</PublishTrimmed>
     <WasmEnableHotReload>false</WasmEnableHotReload>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

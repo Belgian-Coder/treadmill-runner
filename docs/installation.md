@@ -35,6 +35,7 @@ For the fastest compatible private-LAN delivery, configure a structured Kestrel 
 
 ```text
 Gateway__PublicUrl=https://treadmill.home.example:5443/
+Gateway__AllowedPublicHostSuffixes__0=home.example
 Kestrel__Endpoints__Http__Url=http://0.0.0.0:5180
 Kestrel__Endpoints__Http__Protocols=Http1
 Kestrel__Endpoints__Https__Url=https://0.0.0.0:5443

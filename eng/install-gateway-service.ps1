@@ -109,7 +109,7 @@ $serviceRegistryValues = Get-ItemProperty -Path $serviceRegistry -Name Environme
 $existingServiceEnvironment = if ($null -eq $serviceRegistryValues) { @() } else { @($serviceRegistryValues.Environment) }
 if ($null -ne $existingServiceEnvironment) {
     $preservedTransportEnvironment = @($existingServiceEnvironment | Where-Object {
-        $_ -match '^(?:Gateway__PublicUrl|Kestrel__Endpoints__Http__Url|Kestrel__Endpoints__Http__Protocols|Kestrel__Endpoints__Https__Url|Kestrel__Endpoints__Https__Protocols|Kestrel__Endpoints__Https__Certificate__Path|Kestrel__Endpoints__Https__Certificate__Password|Kestrel__Certificates__Default__Path|Kestrel__Certificates__Default__Password)='
+        $_ -match '^(?:Gateway__PublicUrl|Gateway__AllowedPublicHostSuffixes__\d+|Kestrel__Endpoints__Http__Url|Kestrel__Endpoints__Http__Protocols|Kestrel__Endpoints__Https__Url|Kestrel__Endpoints__Https__Protocols|Kestrel__Endpoints__Https__Certificate__Path|Kestrel__Endpoints__Https__Certificate__Password|Kestrel__Certificates__Default__Path|Kestrel__Certificates__Default__Password)='
     })
 }
 $serviceEnvironment = @(

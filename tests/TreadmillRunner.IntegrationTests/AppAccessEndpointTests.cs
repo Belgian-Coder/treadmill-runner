@@ -81,6 +81,26 @@ public sealed class AppAccessEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Explicit_private_dns_suffix_allows_the_trusted_household_https_origin()
+  {
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> configured = Configure(factory, new Dictionary<string, string?>
+    {
+      ["Gateway:PublicUrl"] = "https://treadmill.home.belgiancoder.be/",
+      ["Gateway:AllowedPublicHostSuffixes:0"] = "home.belgiancoder.be",
+      ["Gateway:Urls"] = "http://0.0.0.0:5180",
+    });
+    using HttpClient client = configured.CreateClient();
+
+    AppAccessView? view = await client.GetFromJsonAsync<AppAccessView>("/api/operations/access");
+
+    Assert.NotNull(view);
+    AppAccessCandidate candidate = Assert.Single(view.Candidates,
+      candidate => candidate.Url == "https://treadmill.home.belgiancoder.be/");
+    Assert.True(candidate.IsSecure);
+    Assert.Equal(candidate.Id, view.PreferredCandidateId);
+  }
+
+  [Fact]
   public async Task Structured_kestrel_https_endpoint_is_offered_and_takes_precedence_over_legacy_urls()
   {
     using WebApplicationFactory<TreadmillRunner.Gateway.Program> configured = Configure(factory, new Dictionary<string, string?>
