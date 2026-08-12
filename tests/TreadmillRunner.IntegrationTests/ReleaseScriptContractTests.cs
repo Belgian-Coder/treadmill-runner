@@ -76,6 +76,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("not found", release, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("SkipValidation is allowed only when resuming", release, StringComparison.Ordinal);
     Assert.Contains("TREADMILLRUNNER_UPDATE_SHOWCASE = '0'", release, StringComparison.Ordinal);
+    Assert.Contains("playwright.ps1') -Configuration Release -TimeoutMinutes 7", release, StringComparison.Ordinal);
     Assert.Contains("Release validation changed tracked or untracked files", release, StringComparison.Ordinal);
     Assert.Contains("origin/main changed during release validation", release, StringComparison.Ordinal);
     Assert.Contains("validated source changed while release assets were being prepared", release, StringComparison.OrdinalIgnoreCase);

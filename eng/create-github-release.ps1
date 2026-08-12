@@ -427,7 +427,7 @@ try {
             $env:TREADMILLRUNNER_UPDATE_SHOWCASE = '0'
             & (Join-Path $PSScriptRoot 'validate.ps1') -Configuration Release
             if ($LASTEXITCODE -ne 0) { throw 'Release validation failed.' }
-            & (Join-Path $PSScriptRoot 'playwright.ps1') -Configuration Release
+            & (Join-Path $PSScriptRoot 'playwright.ps1') -Configuration Release -TimeoutMinutes 7
             if ($LASTEXITCODE -ne 0) { throw 'Browser validation failed.' }
         }
         finally {
