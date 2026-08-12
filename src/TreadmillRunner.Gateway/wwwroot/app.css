@@ -41,11 +41,26 @@ html, body {
   background-size: 200% 100%;
   animation: loading-shimmer 1.4s linear infinite;
 }
+.operations-boot-shell__lead { max-width: 42rem; margin: -0.75rem 0 1.5rem; color: #b8cbc8; }
+.operations-boot-shell__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.operations-boot-shell__cards section {
+  min-height: 145px;
+  padding: 1.1rem;
+  border: 1px solid #d9f9f224;
+  border-radius: 1rem;
+  background: #0a2a33;
+}
+.operations-boot-shell__cards span,
+.operations-boot-shell__cards small { display: block; color: #9fb9b6; }
+.operations-boot-shell__cards strong { display: block; margin: .55rem 0; font-size: 1.35rem; }
+.operations-boot-shell__cards small { overflow-wrap: anywhere; }
 .app-interactive-shell { visibility: hidden; }
 .app-interactive-shell.is-ready { visibility: visible; }
 @media (max-width: 650px) {
   .app-boot-shell__cards { grid-template-columns: minmax(0, 1fr); }
   .app-boot-shell__cards span:not(:first-child) { display: none; }
+  .operations-boot-shell__cards { grid-template-columns: minmax(0, 1fr); }
+  .operations-boot-shell__cards section:not(:first-child) { display: none; }
 }
 
 .runtime-banner {

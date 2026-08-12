@@ -27,6 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Remove="wwwroot\lib\bootstrap\**" />
+    <None Remove="wwwroot\lib\bootstrap\**" />
     <Content Include="Updates\update-helper.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Updates\service-guardian.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\garmin\garmin_activity_adapter.py" Link="tools\garmin\garmin_activity_adapter.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

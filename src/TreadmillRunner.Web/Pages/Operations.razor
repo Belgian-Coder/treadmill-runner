@@ -746,7 +746,7 @@
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-                await Runtime.CheckAsync(Http, cancellationToken);
+                await Runtime.CheckAsync(Http, cancellationToken, force: true);
                 if (Runtime.UpdateRequired)
                 {
                     updateStatus = updateStatus with { Message = "The update is installed. Reloading the application…" };

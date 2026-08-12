@@ -1,0 +1,42 @@
+@using TreadmillRunner.Gateway.Devices
+@using TreadmillRunner.Gateway.Operations
+@using TreadmillRunner.Gateway.Updates
+@inject IConfiguration Configuration
+@inject IDatabaseIntegrityCoordinator Database
+@inject IReadOnlyDeviceCoordinator Devices
+@inject UpdateManager Updates
+
+@{
+    AppAccessView access = new AppAccessUrlService(Configuration).GetView();
+    OperationsHealthSummaryView health = OperationsDashboardEndpoints.CreateHealthSummary(
+        Database,
+        Devices,
+        Updates,
+        backup: null);
+    string address = access.Candidates.FirstOrDefault(candidate => candidate.Id == access.PreferredCandidateId)?.Url
+        ?? access.Candidates.FirstOrDefault()?.Url
+        ?? "Local gateway";
+}
+
+<main class="app-boot-shell__main operations-boot-shell" aria-hidden="true">
+    <p class="eyebrow">Local gateway</p>
+    <h1>Operations</h1>
+    <p class="operations-boot-shell__lead">The service is responding. Loading maintenance controls…</p>
+    <div class="operations-boot-shell__cards">
+        <section>
+            <span>System</span>
+            <strong>@health.State</strong>
+            <small>@health.Components.Count component checks available</small>
+        </section>
+        <section>
+            <span>Release</span>
+            <strong>@Updates.Status.CurrentVersion</strong>
+            <small>@Updates.Status.State</small>
+        </section>
+        <section>
+            <span>Private access</span>
+            <strong>@(access.Candidates.Any(static candidate => candidate.IsSecure) ? "Secure" : "Local")</strong>
+            <small>@address</small>
+        </section>
+    </div>
+</main>

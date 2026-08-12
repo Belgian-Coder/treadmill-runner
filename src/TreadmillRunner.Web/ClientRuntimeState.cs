@@ -6,6 +6,10 @@ namespace TreadmillRunner.Web;
 
 public sealed class ClientRuntimeState
 {
+  private static readonly TimeSpan CheckFreshness = TimeSpan.FromSeconds(5);
+  private readonly SemaphoreSlim checkGate = new(1, 1);
+  private DateTimeOffset lastCheckAttemptUtc = DateTimeOffset.MinValue;
+
   public const string HeaderName = "X-TreadmillRunner-Client-Build";
   public bool IsConnected { get; private set; } = true;
   public bool UpdateRequired { get; private set; }
@@ -14,10 +18,26 @@ public sealed class ClientRuntimeState
   public DateTimeOffset? ServerStartedAtUtc { get; private set; }
   public event Action? Changed;
 
-  public async Task CheckAsync(HttpClient client, CancellationToken cancellationToken = default)
+  public async Task CheckAsync(
+    HttpClient client,
+    CancellationToken cancellationToken = default,
+    bool force = false)
   {
+    if (!force && DateTimeOffset.UtcNow - lastCheckAttemptUtc < CheckFreshness) return;
+
     try
     {
+      await checkGate.WaitAsync(cancellationToken);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      return;
+    }
+
+    try
+    {
+      if (!force && DateTimeOffset.UtcNow - lastCheckAttemptUtc < CheckFreshness) return;
+      lastCheckAttemptUtc = DateTimeOffset.UtcNow;
       using HttpResponseMessage response = await client.GetAsync($"api/system/version?client={ExpectedFingerprint}", cancellationToken);
       response.EnsureSuccessStatusCode();
       SystemVersionView? version = await response.Content.ReadFromJsonAsync<SystemVersionView>(cancellationToken);
@@ -33,6 +53,10 @@ public sealed class ClientRuntimeState
     catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
     {
       IsConnected = false;
+    }
+    finally
+    {
+      checkGate.Release();
     }
     Changed?.Invoke();
   }

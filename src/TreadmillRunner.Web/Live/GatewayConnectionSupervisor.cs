@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.JSInterop;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
@@ -46,7 +45,7 @@ public sealed class GatewayConnectionSupervisor(
   private const string HolderStorageKey = "treadmillrunner.controller-holder";
   private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
   private readonly SemaphoreSlim lifecycleGate = new(1, 1);
-  private HubConnection? hubConnection;
+  private ILiveHubClient? hubConnection;
   private CancellationTokenSource? lifetimeCancellation;
   private CancellationTokenSource? heartbeatCancellation;
   private Task? connectionTask;
@@ -89,17 +88,15 @@ public sealed class GatewayConnectionSupervisor(
         await js.InvokeVoidAsync("localStorage.setItem", cancellationToken, HolderStorageKey, holderId);
       }
 
-      hubConnection = new HubConnectionBuilder()
-        .WithUrl(navigation.ToAbsoluteUri("/hubs/live"))
-        .WithAutomaticReconnect(new IndefiniteHubRetryPolicy())
-        .Build();
-      hubConnection.On<LiveSnapshot>("snapshot", ReceiveLiveSnapshotAsync);
-      hubConnection.On<ActiveSessionSnapshot>("sessionSnapshot", ReceiveSessionSnapshotAsync);
-      hubConnection.Reconnecting += _ => MarkDisconnectedAsync(
-        GatewayClientConnectionPhase.Reconnecting,
-        "Live updates were interrupted. Last measurements may be stale; treadmill controls remain disabled.");
-      hubConnection.Reconnected += _ => RecoverAuthoritativeStateAsync();
-      hubConnection.Closed += _ => RestartAfterCloseAsync();
+      hubConnection = CreateLiveHubClient(navigation.ToAbsoluteUri("/hubs/live"));
+      hubConnection.Configure(
+        ReceiveLiveSnapshotAsync,
+        ReceiveSessionSnapshotAsync,
+        () => MarkDisconnectedAsync(
+          GatewayClientConnectionPhase.Reconnecting,
+          "Live updates were interrupted. Last measurements may be stale; treadmill controls remain disabled."),
+        () => RecoverAuthoritativeStateAsync(),
+        RestartAfterCloseAsync);
       lifetimeCancellation = new CancellationTokenSource();
       connectionTask = ConnectUntilAvailableAsync(lifetimeCancellation.Token);
     }
@@ -158,7 +155,7 @@ public sealed class GatewayConnectionSupervisor(
   private async Task ConnectUntilAvailableAsync(CancellationToken cancellationToken)
   {
     int attempt = 0;
-    while (!cancellationToken.IsCancellationRequested && hubConnection is { State: HubConnectionState.Disconnected })
+    while (!cancellationToken.IsCancellationRequested && hubConnection is { State: LiveHubConnectionState.Disconnected })
     {
       SetConnectionPhase(
         attempt == 0 ? GatewayClientConnectionPhase.Starting : GatewayClientConnectionPhase.Reconnecting,
@@ -191,7 +188,7 @@ public sealed class GatewayConnectionSupervisor(
     await lifecycleGate.WaitAsync(cancellationToken);
     try
     {
-      if (disposed || hubConnection?.State != HubConnectionState.Connected)
+      if (disposed || hubConnection?.State != LiveHubConnectionState.Connected)
       {
         SetConnectionPhase(
           GatewayClientConnectionPhase.Reconnecting,
@@ -391,7 +388,7 @@ public sealed class GatewayConnectionSupervisor(
     forcingRestart = true;
     try
     {
-      if (hubConnection.State != HubConnectionState.Disconnected)
+      if (hubConnection.State != LiveHubConnectionState.Disconnected)
         await hubConnection.StopAsync(cancellationToken);
     }
     catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException)
@@ -407,7 +404,7 @@ public sealed class GatewayConnectionSupervisor(
 
   private bool CanAttemptControl() =>
     !disposed &&
-    hubConnection?.State == HubConnectionState.Connected &&
+    hubConnection?.State == LiveHubConnectionState.Connected &&
     Current.ConnectionPhase == GatewayClientConnectionPhase.Connected &&
     runtime.IsConnected &&
     !runtime.UpdateRequired;
@@ -456,6 +453,16 @@ public sealed class GatewayConnectionSupervisor(
     int bounded = Math.Min(attempt, 4);
     double seconds = bounded switch { 0 => 0, 1 => 1, 2 => 2, 3 => 5, _ => 10 };
     return TimeSpan.FromSeconds(seconds) + TimeSpan.FromMilliseconds((attempt % 5) * 137);
+  }
+
+  private static ILiveHubClient CreateLiveHubClient(Uri hubUrl)
+  {
+    const string typeName =
+      "TreadmillRunner.Web.SignalR.SignalRLiveHubClient, TreadmillRunner.Web.SignalR";
+    Type type = Type.GetType(typeName, throwOnError: true)
+      ?? throw new InvalidOperationException("The live SignalR transport is unavailable.");
+    return Activator.CreateInstance(type, hubUrl.AbsoluteUri) as ILiveHubClient
+      ?? throw new InvalidOperationException("The live SignalR transport could not be created.");
   }
 
   public async ValueTask DisposeAsync()

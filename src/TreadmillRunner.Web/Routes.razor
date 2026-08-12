@@ -1,6 +1,30 @@
-﻿<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+@inject Microsoft.AspNetCore.Components.WebAssembly.Services.LazyAssemblyLoader AssemblyLoader
+
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)" OnNavigateAsync="LoadRouteAssembliesAsync">
     <Found Context="routeData">
         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
+
+@code {
+    private static readonly string[] LiveAssemblies =
+    [
+        "Microsoft.AspNetCore.Connections.Abstractions.dll",
+        "Microsoft.AspNetCore.Http.Connections.Client.dll",
+        "Microsoft.AspNetCore.Http.Connections.Common.dll",
+        "Microsoft.AspNetCore.SignalR.Client.dll",
+        "Microsoft.AspNetCore.SignalR.Client.Core.dll",
+        "Microsoft.AspNetCore.SignalR.Common.dll",
+        "Microsoft.AspNetCore.SignalR.Protocols.Json.dll",
+        "Microsoft.Extensions.Features.dll",
+        "TreadmillRunner.Web.SignalR.dll",
+    ];
+
+    private async Task LoadRouteAssembliesAsync(NavigationContext context)
+    {
+        string route = context.Path.Split('?', '#')[0].Trim('/');
+        if (route is "" or "control")
+            await AssemblyLoader.LoadAssembliesAsync(LiveAssemblies);
+    }
+}

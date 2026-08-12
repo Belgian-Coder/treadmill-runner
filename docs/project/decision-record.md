@@ -45,10 +45,11 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 
 ## Engineering decisions
 
-- Five production projects: Core, Protocols, Infrastructure, Gateway, Web.
+- Six production projects: Core, Protocols, Infrastructure, Gateway, Web, and the lazy Web SignalR transport.
 - Vertical slices inside Gateway/Web; no mediator, repository facade, message broker, microservices, IIS, container, MSIX, or AOT for v1.
 - Release WebAssembly is trimmed with the pinned SDK's `wasm-tools` workload, stale WebCIL output is removed before every release publish, and Release Hot Reload assets are disabled. The release entry point fails closed if the optimization workload is missing. Global prerender and Interactive Auto remain rejected: browser-local profile/control-lease state, JavaScript interop, and live gateway supervision are client-only boundaries, while the static boot shell provides the safe immediate paint.
 - Route-critical Operations state is delivered by one read-only in-process projection; command, update, backup, database, and restore mutations remain separate guarded endpoints. The client falls back to the prior reads when paired with an older gateway.
+- Operations receives a server-generated, noninteractive first view from in-memory health/release/access snapshots while the WebAssembly route starts. Global prerender remains rejected. SignalR and its live transport assembly are lazy and route-owned by Run/Control; read-only routes never open the hub. Browser version probes are single-flight except for explicit forced activation recovery.
 - Trusted private HTTPS with HTTP/2 is the production browser transport baseline. Plain loopback HTTP remains for local health and update recovery. HTTP/3 may be added by a managed edge but is not required, and no deployment may label a self-signed or otherwise untrusted certificate as household-ready.
 - Core/Protocols contain no WinRT. Infrastructure owns Windows BLE and SQLite.
 - Treadmill support is adapter-based: portable `ITreadmillProtocol`

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using TreadmillRunner.Web.Live;
+using TreadmillRunner.Web.SignalR;
 
 namespace TreadmillRunner.IntegrationTests;
 

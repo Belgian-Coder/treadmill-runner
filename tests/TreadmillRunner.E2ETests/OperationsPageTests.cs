@@ -23,6 +23,12 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
     Assert.DoesNotContain("/api/local-first/backup-verifications", requestedPaths);
     Assert.DoesNotContain("/api/local-first/operations-summary", requestedPaths);
     Assert.DoesNotContain("/api/updates/status", requestedPaths);
+    Assert.DoesNotContain("/hubs/live/negotiate", requestedPaths);
+    Assert.DoesNotContain("/api/live/session", requestedPaths);
+    Assert.DoesNotContain("/api/live/snapshot", requestedPaths);
+    Assert.True(
+      requestedPaths.Count(path => path == "/api/system/version") <= 1,
+      "Operations startup issued duplicate system-version reads.");
   }
 
   [Fact]

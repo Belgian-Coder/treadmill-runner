@@ -859,6 +859,13 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.10, )",
+          "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.SignalR": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.signalr": {
+        "type": "Project",
+        "dependencies": {
           "Microsoft.AspNetCore.SignalR.Client": "[10.0.10, )",
           "TreadmillRunner.Core": "[1.0.0, )"
         }

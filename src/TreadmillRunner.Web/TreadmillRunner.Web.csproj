@@ -14,11 +14,27 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.Connections.Abstractions.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.Http.Connections.Client.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.Http.Connections.Common.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.SignalR.Client.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.SignalR.Client.Core.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.SignalR.Common.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.SignalR.Protocols.Json.dll" />
+    <BlazorWebAssemblyLazyLoad Include="Microsoft.Extensions.Features.dll" />
+    <BlazorWebAssemblyLazyLoad Include="TreadmillRunner.Web.SignalR.dll" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TreadmillRunner.Core\TreadmillRunner.Core.csproj" />
+    <ProjectReference Include="..\TreadmillRunner.Web.SignalR\TreadmillRunner.Web.SignalR.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="TreadmillRunner.Web.SignalR" />
   </ItemGroup>
 
 </Project>

@@ -115,6 +115,13 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     string entryDocument = await entry.Content.ReadAsStringAsync();
     Assert.Contains("id=\"app-boot-shell\"", entryDocument, StringComparison.Ordinal);
     Assert.Contains("Loading TreadmillRunner", entryDocument, StringComparison.Ordinal);
+
+    using HttpResponseMessage operationsEntry = await client.GetAsync("/operations");
+    string operationsDocument = await operationsEntry.Content.ReadAsStringAsync();
+    Assert.Contains("<h1>Operations</h1>", operationsDocument, StringComparison.Ordinal);
+    Assert.Contains("Loading maintenance controls", operationsDocument, StringComparison.Ordinal);
+    Assert.Contains("Private access", operationsDocument, StringComparison.Ordinal);
+    Assert.DoesNotContain("Confirm activation", operationsDocument, StringComparison.Ordinal);
     string bridgeSource = await bridge.Content.ReadAsStringAsync();
     Assert.Contains("document.getElementById(\"main-content\")", bridgeSource, StringComparison.Ordinal);
     Assert.Contains("shell.remove()", bridgeSource, StringComparison.Ordinal);

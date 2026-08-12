@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR.Client;
 
-namespace TreadmillRunner.Web.Live;
+namespace TreadmillRunner.Web.SignalR;
 
 public sealed class IndefiniteHubRetryPolicy : IRetryPolicy
 {
@@ -17,8 +17,8 @@ public sealed class IndefiniteHubRetryPolicy : IRetryPolicy
   {
     int index = (int)Math.Min(retryContext.PreviousRetryCount, Delays.Length - 1);
     TimeSpan delay = Delays[index];
-    if (delay == TimeSpan.Zero) return delay;
-    int jitterMilliseconds = (int)(retryContext.PreviousRetryCount % 5) * 137;
-    return delay + TimeSpan.FromMilliseconds(jitterMilliseconds);
+    return delay == TimeSpan.Zero
+      ? delay
+      : delay + TimeSpan.FromMilliseconds((retryContext.PreviousRetryCount % 5) * 137);
   }
 }

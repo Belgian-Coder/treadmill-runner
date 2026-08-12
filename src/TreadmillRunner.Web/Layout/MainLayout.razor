@@ -4,7 +4,6 @@
 @inject IJSRuntime JS
 @inject HttpClient Http
 @inject TreadmillRunner.Web.ClientRuntimeState Runtime
-@inject GatewayConnectionSupervisor Gateway
 @inject NavigationManager Navigation
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -83,13 +82,11 @@
     {
         if (!firstRender) return;
         Runtime.Changed += RuntimeChanged;
-        Gateway.ConnectionChanged += GatewayConnectionChanged;
         await JS.InvokeVoidAsync("treadmillRunnerView.initializeAutoHideHeader", "site-header");
         selfReference = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("treadmillRunnerRuntime.initialize", selfReference);
         monitorCancellation = new CancellationTokenSource();
         await Runtime.CheckAsync(Http, monitorCancellation.Token);
-        await Gateway.EnsureStartedAsync(monitorCancellation.Token);
         _ = MonitorVersionAsync(monitorCancellation.Token);
     }
 
@@ -108,14 +105,12 @@
     }
 
     private void RuntimeChanged() => _ = InvokeAsync(StateHasChanged);
-    private void GatewayConnectionChanged() => _ = InvokeAsync(StateHasChanged);
     private void NavigationLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
     private async Task ReloadAsync() => await JS.InvokeVoidAsync("treadmillRunnerRuntime.reloadNow", Runtime.ServerFingerprint ?? Runtime.ExpectedFingerprint);
 
     public async ValueTask DisposeAsync()
     {
         Runtime.Changed -= RuntimeChanged;
-        Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Navigation.LocationChanged -= NavigationLocationChanged;
         monitorCancellation?.Cancel();
         try { await JS.InvokeVoidAsync("treadmillRunnerView.disposeAutoHideHeader"); }
