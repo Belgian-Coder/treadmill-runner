@@ -29,7 +29,7 @@ Release WebAssembly builds are trimmed and optimized with the pinned SDK's `wasm
 
 Operations uses one read-only dashboard projection for its route-critical first render: release status, private access candidates, database integrity, backup policy and recent verification, and combined health. Mutations retain their narrow endpoints and refresh only the affected read models. This avoids serializing six independent startup requests behind the WebAssembly download while preserving compatibility with an older gateway through client fallback.
 
-The household browser origin should use HTTP/2 over a trusted private HTTPS name. Kestrel supports that topology once an administrator supplies a publicly trusted DNS-01 certificate or another certificate chain already trusted by every household client. Loopback HTTP on port 5180 remains the updater and guardian health boundary. HTTP/3 is optional at a separately managed edge and is never required for compatibility; an untrusted self-signed certificate is not an acceptable production shortcut.
+The household browser origin should use a structured Kestrel endpoint over a trusted private HTTPS name with `Http1AndHttp2AndHttp3`. HTTP/2 is the immediate compatibility path for the WebAssembly fan-out. Kestrel advertises HTTP/3 opportunistically when QUIC is available; clients and networks that cannot use it fall back to HTTP/2 or HTTP/1.1. Loopback HTTP on port 5180 remains the updater and guardian health boundary. A managed private edge may terminate the same protocol set. An untrusted self-signed certificate is not an acceptable production shortcut, and no transport layer may cache API, SignalR, HTML, or control traffic.
 
 ## Solution boundaries
 

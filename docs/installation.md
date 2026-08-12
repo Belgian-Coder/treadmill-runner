@@ -31,6 +31,20 @@ The installer checks the runtime and private-network profile, installs the immut
 
 After installation, open **Operations → Open on another device** to scan a locally generated QR code from an iPhone on the same private Wi-Fi. Set `Gateway__PublicUrl` to the trusted household HTTPS address (for example, `https://treadmill.home.example/`). The gateway never sends the URL to a QR service. Private HTTP remains usable for basic access, but install prompts, Screen Wake Lock, native file sharing, and the offline safety page require HTTPS or a loopback development address.
 
+For the fastest compatible private-LAN delivery, configure a structured Kestrel HTTPS endpoint with a certificate already trusted by every household device. Keep loopback HTTP on port 5180 for service health and updates, and add an HTTPS endpoint such as port 5443 with `Protocols=Http1AndHttp2AndHttp3`. HTTP/2 is the immediate compatibility path; Kestrel advertises HTTP/3 with `Alt-Svc` when QUIC is available, while clients that cannot use QUIC continue over HTTP/2 or HTTP/1.1. Open TCP and UDP for the selected HTTPS port only on the Private firewall profile. Configure these service environment values in an elevated maintenance window, then restart and verify `/health/ready` before replacing an installed browser app:
+
+```text
+Gateway__PublicUrl=https://treadmill.home.example:5443/
+Kestrel__Endpoints__Http__Url=http://0.0.0.0:5180
+Kestrel__Endpoints__Http__Protocols=Http1
+Kestrel__Endpoints__Https__Url=https://0.0.0.0:5443
+Kestrel__Endpoints__Https__Protocols=Http1AndHttp2AndHttp3
+Kestrel__Endpoints__Https__Certificate__Path=C:\ProgramData\TreadmillRunner\certificates\treadmill.home.example.pfx
+Kestrel__Endpoints__Https__Certificate__Password=<protected secret>
+```
+
+The installer preserves those allow-listed HTTPS values on reinstall or infrastructure repair. Do not use a self-signed certificate for household clients: certificate errors prevent a trustworthy PWA origin and usually prevent HTTP/3. A reverse proxy remains valid when it terminates the trusted certificate and offers HTTP/2/3, provided the gateway stays private and the proxy never caches API, SignalR, HTML, or control traffic.
+
 ## Install the browser app
 
 Open **Operations → Installed experience** from the HTTPS address. Chrome or Edge shows **Install app** when its install prompt is available; otherwise use the browser menu. On iPhone or iPad, open the address in Safari, tap **Share**, then **Add to Home Screen**. An old icon installed from HTTP is a separate browser app and must be replaced by a new installation from HTTPS.

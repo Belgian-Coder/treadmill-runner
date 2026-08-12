@@ -87,7 +87,10 @@ The installed household gateway currently listens on plain private-LAN HTTP, so 
 4. Configure Kestrel service environment values and restart during an idle window:
 
    ```text
-   ASPNETCORE_URLS=https://0.0.0.0:5443;http://0.0.0.0:5180
+   Kestrel__Endpoints__Http__Url=http://0.0.0.0:5180
+   Kestrel__Endpoints__Http__Protocols=Http1
+   Kestrel__Endpoints__Https__Url=https://0.0.0.0:5443
+   Kestrel__Endpoints__Https__Protocols=Http1AndHttp2AndHttp3
    Kestrel__Certificates__Default__Path=C:\ProgramData\TreadmillRunner\certificates\treadmill.example.net.pfx
    Kestrel__Certificates__Default__Password=<protected secret>
    ```

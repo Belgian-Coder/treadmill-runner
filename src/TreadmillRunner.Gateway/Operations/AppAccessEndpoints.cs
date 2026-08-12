@@ -19,6 +19,32 @@ public sealed record AppAccessView(
   IReadOnlyList<AppAccessCandidate> Candidates,
   string Message);
 
+public static class GatewayListenerConfiguration
+{
+  public static bool HasStructuredKestrelEndpoints(IConfiguration configuration) =>
+    configuration.GetSection("Kestrel:Endpoints").GetChildren().Any(endpoint =>
+      !string.IsNullOrWhiteSpace(endpoint["Url"]));
+
+  public static IReadOnlyList<string> GetListenUrls(IConfiguration configuration)
+  {
+    string[] structured = configuration.GetSection("Kestrel:Endpoints")
+      .GetChildren()
+      .Select(endpoint => endpoint["Url"])
+      .Where(static url => !string.IsNullOrWhiteSpace(url))
+      .Select(static url => url!)
+      .ToArray();
+
+    if (structured.Length > 0)
+    {
+      return structured;
+    }
+
+    string? configured = configuration["Gateway:Urls"] ?? configuration["ASPNETCORE_URLS"];
+    return (configured ?? string.Empty)
+      .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+  }
+}
+
 public sealed class AppAccessUrlService(IConfiguration configuration)
 {
   private const int MaximumUrlLength = 2_048;
@@ -50,8 +76,7 @@ public sealed class AppAccessUrlService(IConfiguration configuration)
       AddCandidate(candidates, configured, "Configured address");
     }
 
-    string? listenUrls = configuration["Gateway:Urls"] ?? configuration["ASPNETCORE_URLS"];
-    foreach (string text in (listenUrls ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    foreach (string text in GatewayListenerConfiguration.GetListenUrls(configuration))
     {
       if (!Uri.TryCreate(text, UriKind.Absolute, out Uri? listener) ||
           listener.Scheme is not ("http" or "https"))

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using TreadmillRunner.Gateway.Operations;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -77,6 +78,28 @@ public sealed class AppAccessEndpointTests(PlanningGatewayFactory factory) :
     Assert.NotNull(view);
     Assert.False(view.Available);
     Assert.Empty(view.Candidates);
+  }
+
+  [Fact]
+  public async Task Structured_kestrel_https_endpoint_is_offered_and_takes_precedence_over_legacy_urls()
+  {
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> configured = Configure(factory, new Dictionary<string, string?>
+    {
+      ["Gateway:PublicUrl"] = "https://treadmillrunner.home:5443/",
+      ["Gateway:Urls"] = "http://127.0.0.1:5180",
+      ["Kestrel:Endpoints:Https:Url"] = "https://0.0.0.0:5443",
+      ["Kestrel:Endpoints:Https:Protocols"] = "Http1AndHttp2AndHttp3",
+    });
+    using HttpClient client = configured.CreateClient();
+
+    AppAccessView? view = await client.GetFromJsonAsync<AppAccessView>("/api/operations/access");
+
+    Assert.NotNull(view);
+    Assert.True(view.Available);
+    AppAccessCandidate candidate = Assert.Single(view.Candidates,
+      candidate => string.Equals(candidate.Url, "https://treadmillrunner.home:5443/", StringComparison.Ordinal));
+    Assert.True(candidate.IsSecure);
+    Assert.Equal("https://0.0.0.0:5443", Assert.Single(GatewayListenerConfiguration.GetListenUrls(configured.Services.GetRequiredService<IConfiguration>())));
   }
 
   private static WebApplicationFactory<TreadmillRunner.Gateway.Program> Configure(

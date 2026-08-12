@@ -21,7 +21,11 @@ using Microsoft.AspNetCore.DataProtection;
 using TreadmillRunner.Core.System;
 using TreadmillRunner.Web;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+  Args = args,
+  ContentRootPath = AppContext.BaseDirectory,
+});
 
 string? commissioningMode = builder.Configuration["Commissioning:Mode"];
 bool commissionFtmsCommand = string.Equals(
@@ -41,7 +45,8 @@ bool commissioning = commissionFtmsCommand || commissionFtmsStartStop || commiss
 builder.Host.UseWindowsService();
 
 var listenUrls = builder.Configuration["Gateway:Urls"];
-if (!string.IsNullOrWhiteSpace(listenUrls))
+if (!GatewayListenerConfiguration.HasStructuredKestrelEndpoints(builder.Configuration) &&
+    !string.IsNullOrWhiteSpace(listenUrls))
 {
   builder.WebHost.UseUrls(listenUrls);
 }

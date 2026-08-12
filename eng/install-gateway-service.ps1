@@ -104,6 +104,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows Service recovery actions could not be 
 if ($LASTEXITCODE -ne 0) { throw 'Windows Service non-crash recovery could not be configured.' }
 
 $serviceRegistry = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+$preservedTransportEnvironment = @()
+$serviceRegistryValues = Get-ItemProperty -Path $serviceRegistry -Name Environment -ErrorAction SilentlyContinue
+$existingServiceEnvironment = if ($null -eq $serviceRegistryValues) { @() } else { @($serviceRegistryValues.Environment) }
+if ($null -ne $existingServiceEnvironment) {
+    $preservedTransportEnvironment = @($existingServiceEnvironment | Where-Object {
+        $_ -match '^(?:Gateway__PublicUrl|Kestrel__Endpoints__Http__Url|Kestrel__Endpoints__Http__Protocols|Kestrel__Endpoints__Https__Url|Kestrel__Endpoints__Https__Protocols|Kestrel__Endpoints__Https__Certificate__Path|Kestrel__Endpoints__Https__Certificate__Password|Kestrel__Certificates__Default__Path|Kestrel__Certificates__Default__Password)='
+    })
+}
 $serviceEnvironment = @(
     'ASPNETCORE_ENVIRONMENT=Production',
     'Gateway__Urls=http://0.0.0.0:5180',
@@ -124,6 +132,7 @@ $serviceEnvironment = @(
     'Updates__ScheduledTaskName=TreadmillRunnerUpdate',
     'Updates__HealthUrl=http://127.0.0.1:5180/health/ready'
 )
+$serviceEnvironment += $preservedTransportEnvironment
 New-ItemProperty -Path $serviceRegistry -Name Environment -PropertyType MultiString -Value $serviceEnvironment -Force | Out-Null
 
 & icacls.exe $resolvedDataRoot /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
