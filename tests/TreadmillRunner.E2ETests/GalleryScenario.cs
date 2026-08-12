@@ -109,6 +109,7 @@ public sealed record GalleryScenario(
 
   public async Task InstallVisualDataRoutesAsync(IPage page)
   {
+    await page.RouteAsync("**/api/operations/dashboard", route => route.FulfillAsync(new() { Status = 404 }));
     await page.RouteAsync("**/api/devices/enrollments", route => FulfillJsonAsync(route, DeviceEnrollments()));
     await page.RouteAsync("**/api/devices/status*", route => FulfillJsonAsync(route, DeviceStatus()));
     await page.RouteAsync("**/api/devices/reliability*", route => FulfillJsonAsync(route, DeviceReliability()));

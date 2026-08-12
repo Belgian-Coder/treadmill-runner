@@ -60,6 +60,28 @@ public sealed class OperationsEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Operations_dashboard_aggregates_route_critical_read_models()
+  {
+    using HttpClient client = factory.CreateClient();
+
+    using HttpResponseMessage response = await client.GetAsync("/api/operations/dashboard");
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    JsonElement dashboard = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    Assert.Contains(
+      dashboard.GetProperty("updateStatus").GetProperty("state").GetString(),
+      Enum.GetNames<TreadmillRunner.Gateway.Updates.UpdateLifecycleState>());
+    Assert.True(dashboard.GetProperty("access").GetProperty("available").GetBoolean());
+    Assert.Contains(
+      dashboard.GetProperty("databaseStatus").GetProperty("state").GetString(),
+      new[] { "Healthy", "HealthyWithBackupWarning" });
+    Assert.Equal(JsonValueKind.Array, dashboard.GetProperty("backupVerifications").ValueKind);
+    Assert.Contains(
+      dashboard.GetProperty("operationsSummary").GetProperty("state").GetString(),
+      new[] { "Healthy", "Degraded", "ActionRequired" });
+  }
+
+  [Fact]
   public async Task Restore_requires_preview_and_exact_confirmation_then_consumes_token()
   {
     using HttpClient client = factory.CreateClient();

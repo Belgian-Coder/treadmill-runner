@@ -7,6 +7,26 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 {
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Operations_page_uses_one_route_critical_dashboard_read()
+  {
+    var requestedPaths = new List<string>();
+    Page.Request += (_, request) => requestedPaths.Add(new Uri(request.Url).AbsolutePath);
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operations", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Operations summary", Exact = true })).ToContainTextAsync("Service · Healthy");
+
+    Assert.Single(requestedPaths, path => path == "/api/operations/dashboard");
+    Assert.DoesNotContain("/api/operations/access", requestedPaths);
+    Assert.DoesNotContain("/api/operations/database/status", requestedPaths);
+    Assert.DoesNotContain("/api/local-first/backup-policy", requestedPaths);
+    Assert.DoesNotContain("/api/local-first/backup-verifications", requestedPaths);
+    Assert.DoesNotContain("/api/local-first/operations-summary", requestedPaths);
+    Assert.DoesNotContain("/api/updates/status", requestedPaths);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Operations_page_progresses_available_stage_and_two_step_activation()
   {
     await InstallAccessRoutesAsync();
@@ -358,6 +378,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 
   private async Task InstallAccessRoutesAsync()
   {
+    await Page.RouteAsync("**/api/operations/dashboard", route => route.FulfillAsync(new() { Status = 404 }));
     await Page.RouteAsync("**/api/operations/access**", async route =>
     {
       string path = new Uri(route.Request.Url).AbsolutePath;

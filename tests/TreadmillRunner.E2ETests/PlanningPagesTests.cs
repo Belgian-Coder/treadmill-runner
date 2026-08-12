@@ -845,6 +845,17 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
       await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
       await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
       await AssertProgramCalendarUsesMaskAsync(client, profileId, runId, expectedMask: 37);
+
+      ILocator manageButton = Page.Locator(".calendar-option-manage").First;
+      await Expect(manageButton).ToBeVisibleAsync();
+      await manageButton.ClickAsync();
+      ILocator manager = Page.GetByRole(AriaRole.Dialog);
+      await manager.GetByRole(AriaRole.Button, new() { Name = "Remove all upcoming sessions from this plan", Exact = true }).ClickAsync();
+      ILocator confirmation = Page.GetByRole(AriaRole.Alertdialog);
+      await Expect(confirmation.GetByRole(AriaRole.Heading, new() { Name = "Remove all upcoming plan sessions?", Exact = true })).ToBeVisibleAsync();
+      await confirmation.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^Remove \\d+ sessions$") }).ClickAsync();
+      await Expect(Page.GetByRole(AriaRole.Status)).ToContainTextAsync("All upcoming training-plan sessions were removed");
+      await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Remove upcoming sessions", Exact = true })).ToHaveCountAsync(0);
     }
     finally
     {

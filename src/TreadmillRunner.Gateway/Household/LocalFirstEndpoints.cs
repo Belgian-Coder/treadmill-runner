@@ -249,25 +249,7 @@ public static class LocalFirstEndpoints
     CancellationToken cancellationToken)
   {
     StoredBackupVerification? backup = (await store.ListBackupVerificationsAsync(1, cancellationToken)).FirstOrDefault();
-    var components = new[]
-    {
-      new LocalHealthComponent("Service", LocalHealthState.Healthy, "The local gateway is responding."),
-      new LocalHealthComponent("Database", database.Current.RecoveryRequired ? LocalHealthState.ActionRequired : database.Current.State.ToString() == "Healthy" ? LocalHealthState.Healthy : LocalHealthState.Degraded, database.Current.Message),
-      new LocalHealthComponent("BLE", devices.Current.Treadmill.State.ToString() == "Connected" ? LocalHealthState.Healthy : LocalHealthState.Degraded, $"Treadmill {devices.Current.Treadmill.State}; heart rate {devices.Current.HeartRate.State}."),
-      new LocalHealthComponent("Storage", backup?.Status == "Verified" ? LocalHealthState.Healthy : backup is null ? LocalHealthState.Degraded : LocalHealthState.ActionRequired, backup?.Detail ?? "No owner-selected backup has been verified yet."),
-      new LocalHealthComponent("Release", updates.Status.State.ToString() is "Failed" or "RollbackFailed" ? LocalHealthState.ActionRequired : LocalHealthState.Healthy, updates.Status.Message),
-    };
-    OperationsHealthSummary summary = OperationsHealthAggregator.Combine(components);
-    return Results.Ok(new
-    {
-      State = summary.State.ToString(),
-      Components = summary.Components.Select(static component => new
-      {
-        component.Id,
-        State = component.State.ToString(),
-        component.Detail,
-      }),
-    });
+    return Results.Ok(OperationsDashboardEndpoints.CreateHealthSummary(database, devices, updates, backup));
   }
 
   private static async Task<IResult> TryAsync(Func<Task<IResult>> action)

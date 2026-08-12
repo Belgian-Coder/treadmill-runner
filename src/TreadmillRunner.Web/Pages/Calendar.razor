@@ -1128,9 +1128,15 @@
         }
     }
 
-    private async Task RequestClearUpcomingAsync()
+    private Task RequestClearUpcomingAsync()
     {
-        if (activeProfileId is not { } profileId || ActiveScheduledProgram?.Run is not { } run) return;
+        return activeProfileId is { } profileId && ActiveScheduledProgram?.Run is { } run
+            ? RequestClearUpcomingAsync(profileId, run.Id)
+            : Task.CompletedTask;
+    }
+
+    private async Task RequestClearUpcomingAsync(Guid profileId, Guid runId)
+    {
         clearUpcomingCancellation?.Cancel();
         clearUpcomingCancellation?.Dispose();
         clearUpcomingCancellation = new CancellationTokenSource();
@@ -1140,9 +1146,9 @@
         try
         {
             WorkoutProgramClearUpcomingView? preview = await Http.GetFromJsonAsync<WorkoutProgramClearUpcomingView>(
-                $"api/planning/programs/runs/{run.Id:D}/clear-upcoming/preview?profileId={profileId:D}&today={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}",
+                $"api/planning/programs/runs/{runId:D}/clear-upcoming/preview?profileId={profileId:D}&today={DateOnly.FromDateTime(DateTime.Today):yyyy-MM-dd}",
                 cancellationToken);
-            if (generation == clearUpcomingGeneration && activeProfileId == profileId && ActiveScheduledProgram?.Run?.Id == run.Id)
+            if (generation == clearUpcomingGeneration && activeProfileId == profileId)
             {
                 clearUpcomingPreview = preview;
                 clearUpcomingProfileId = profileId;
@@ -1169,8 +1175,10 @@
 
     private async Task RequestClearUpcomingFromProgramManagerAsync()
     {
+        if (activeProfileId is not { } profileId || managedProgramSession is not { } managed) return;
+        Guid runId = managed.RunId;
         await DismissProgramManagerAsync();
-        await RequestClearUpcomingAsync();
+        await RequestClearUpcomingAsync(profileId, runId);
     }
 
     private async Task ConfirmClearUpcomingAsync()

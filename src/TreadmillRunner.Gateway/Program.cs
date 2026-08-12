@@ -328,6 +328,7 @@ app.MapPremadePlans();
 app.MapLiveSessions(includeSimulatorRoutes: app.Environment.IsDevelopment());
 app.MapDataRecovery();
 app.MapDatabaseIntegrity();
+app.MapOperationsDashboard();
 app.MapUpdates();
 app.MapGarmin();
 app.MapGarminWatch();

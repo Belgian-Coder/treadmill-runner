@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-11
+updated: 2026-08-12
 ---
 
 # Architecture
@@ -26,6 +26,10 @@ The trusted HTTPS origin exposes an installable manifest, a small early `window.
 No application shell or application data is cached by the service worker. API, SignalR, workouts, history, browser drafts, telemetry, exports, credentials, and commands remain network-only. Fingerprinted WebAssembly/framework assets are network-delivered and may use the normal immutable browser HTTP cache, but they are never available through the offline worker. Worker activation neither calls `skipWaiting()` nor claims active clients, so it cannot mask a new build or replace stale-client recovery. The gateway remains the sole BLE, session, persistence, and command authority.
 
 Release WebAssembly builds are trimmed and optimized with the pinned SDK's `wasm-tools` workload. The release entry point first removes stale generated WebCIL state and fails closed when that workload is unavailable; it must never silently publish the unoptimized development closure. The routed application remains WebAssembly-only with prerender disabled. Global server rendering or Interactive Auto is not a launch optimization for this application because browser-local profile/lease state and live-control supervision must not be instantiated in a server circuit or serialized into initial HTML.
+
+Operations uses one read-only dashboard projection for its route-critical first render: release status, private access candidates, database integrity, backup policy and recent verification, and combined health. Mutations retain their narrow endpoints and refresh only the affected read models. This avoids serializing six independent startup requests behind the WebAssembly download while preserving compatibility with an older gateway through client fallback.
+
+The household browser origin should use HTTP/2 over a trusted private HTTPS name. Kestrel supports that topology once an administrator supplies a publicly trusted DNS-01 certificate or another certificate chain already trusted by every household client. Loopback HTTP on port 5180 remains the updater and guardian health boundary. HTTP/3 is optional at a separately managed edge and is never required for compatibility; an untrusted self-signed certificate is not an acceptable production shortcut.
 
 ## Solution boundaries
 

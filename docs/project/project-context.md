@@ -4,7 +4,7 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-11
+updated: 2026-08-12
 ---
 
 # Project context
@@ -24,7 +24,7 @@ Build a local-first .NET 10 gateway for one Horizon Omega Z on the existing Wind
 
 ## Technology and commands
 
-- .NET SDK 10.0.110 pinned by `global.json`
+- .NET SDK 10.0.110 feature band pinned by `global.json` with latest-patch roll-forward
 - ASP.NET Core/Kestrel Windows Service and Blazor WebAssembly
 - SignalR live snapshots; EF Core/SQLite migrations, WAL, and online backup are implemented in TR-003
 - Windows BLE via `Windows.Devices.Bluetooth` begins read-only in TR-002
@@ -51,6 +51,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 - Completed sessions can be compared only with the same immutable workout revision. Local trend calculations exclude simulator/system-test sessions, and deterministic progression suggestions require an explicit acceptance/rejection receipt without changing a plan.
 - Daily Pause uses the exact-device verified Stop operation and retains the active session for an explicit hold-to-resume. Stop/End offers keep paused, reset workout progress, or end and save only after confirmed stop; reset retains recorded totals and never starts motion.
 - Owner-selected absolute local/UNC backup policies create rotating copies that pass an isolated full SQLite integrity check while the live session is idle. Operations combines service, database, BLE, storage, and release status.
+- Operations initializes from one bounded read-only dashboard projection instead of six route-critical API calls. Its existing individual GET and mutation endpoints remain available for targeted refreshes and older-gateway fallback.
 - Startup restores tracking only for a running hardware session with a bounded checkpoint and the same enrolled treadmill. Fresh movement must appear within 30 seconds and planned controls remain suspended until explicit resume; otherwise the session is interrupted. Volatile single-use intents cover accepted Start/Stop/speed/incline with explicit expiry/lease/session/generation guards and response-plus-fresh-telemetry confirmation. Unknown outcomes suspend automation and are never retried.
 - The command connection accepts only the FTMS indication whose request opcode matches the current serialized write. Late acknowledgements for an earlier operation are ignored within the existing bounded wait and can never confirm or reject the current command; a matching response plus fresh telemetry remains mandatory.
 - Explicit local-history deletion permits terminal plan-linked sessions and settled Garmin upload records. Plan progress is recalculated from remaining history, and any remote Garmin activity remains untouched; pending, in-flight, and unknown upload outcomes still block deletion.

@@ -4,9 +4,9 @@
     "net10.0-windows10.0.22621": {
       "Microsoft.AspNetCore.App.Internal.Assets": {
         "type": "Direct",
-        "requested": "[10.0.10, )",
-        "resolved": "10.0.10",
-        "contentHash": "8k0KoYKvNrSqP8E3oDJMBVKavlTEE6BacdLGtEDcxv9Hz0XxWFkD6JdLJsxXUlGeAfZ6YfvWmxKenl73qeCTSA=="
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "tYYYBZsuF2DSz1I3hcfB8qC4nNekIKufkYZOJ2R28fNK3PkS7fJao/mIX5H84NH94UACZQ4dhvt8GDlkrJFwLg=="
       },
       "Microsoft.AspNetCore.Components.WebAssembly.Server": {
         "type": "Direct",
@@ -136,11 +136,6 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.11"
         }
-      },
-      "Microsoft.DotNet.HotReload.WebAssembly.Browser": {
-        "type": "Transitive",
-        "resolved": "10.0.110",
-        "contentHash": "v2QuCGg7GLcuILPU+S57gi2bnLMcROOBFvLjqFKb3fF420eimHOmmZdALkRkd+qMku83SaGLy2bsL8Z1WFWbVw=="
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "Transitive",
@@ -309,7 +304,6 @@
         "dependencies": {
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.10, )",
           "Microsoft.AspNetCore.SignalR.Client": "[10.0.10, )",
-          "Microsoft.DotNet.HotReload.WebAssembly.Browser": "[10.0.110, )",
           "TreadmillRunner.Core": "[1.0.0, )"
         }
       },

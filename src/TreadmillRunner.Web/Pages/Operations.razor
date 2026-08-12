@@ -329,7 +329,47 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync(), LoadBackupPolicyAsync(), LoadOperationsSummaryAsync());
+        if (!await LoadDashboardAsync())
+        {
+            await Task.WhenAll(LoadUpdateStatusAsync(), LoadAccessAsync(), LoadDatabaseStatusAsync(), LoadBackupPolicyAsync(), LoadOperationsSummaryAsync());
+        }
+    }
+
+    private async Task<bool> LoadDashboardAsync()
+    {
+        try
+        {
+            OperationsDashboardModel? dashboard = await Http.GetFromJsonAsync<OperationsDashboardModel>("api/operations/dashboard");
+            if (dashboard is null) return false;
+
+            updateStatus = dashboard.UpdateStatus;
+            access = dashboard.Access;
+            selectedAccessCandidateId = access.PreferredCandidateId ?? access.Candidates.FirstOrDefault()?.Id;
+            databaseStatus = dashboard.DatabaseStatus;
+            operationsSummary = dashboard.OperationsSummary;
+            backupVerifications = dashboard.BackupVerifications;
+            if (dashboard.BackupPolicy is { } saved)
+            {
+                backupPolicyId = saved.Id;
+                backupPolicyVersion = saved.Version;
+                backupDestination = saved.Policy.DestinationPath;
+                backupIntervalHours = saved.Policy.IntervalHours;
+                backupRetentionCount = saved.Policy.RetentionCount;
+                backupEnabled = saved.Policy.Enabled;
+            }
+            return true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return false;
+        }
+        finally
+        {
+            accessLoading = false;
+            databaseLoading = false;
+            operationsSummaryLoading = false;
+            backupLoading = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -863,6 +903,13 @@
     private sealed record BackupVerificationModel(Guid Id, Guid PolicyId, string BackupPath, string Status, string Detail, long BackupBytes, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc);
     private sealed record HealthComponentModel(string Id, string State, string Detail);
     private sealed record OperationsSummaryModel(string State, IReadOnlyList<HealthComponentModel> Components);
+    private sealed record OperationsDashboardModel(
+        UpdateStatusModel UpdateStatus,
+        AppAccessModel Access,
+        DatabaseIntegrityStatusModel DatabaseStatus,
+        BackupPolicyModel? BackupPolicy,
+        IReadOnlyList<BackupVerificationModel> BackupVerifications,
+        OperationsSummaryModel OperationsSummary);
     public sealed record PwaStatusModel(
         bool SecureContext,
         bool Standalone,
