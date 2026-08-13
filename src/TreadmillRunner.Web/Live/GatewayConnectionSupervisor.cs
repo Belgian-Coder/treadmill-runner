@@ -5,6 +5,7 @@ using Microsoft.JSInterop;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Web.Runtime;
 
 namespace TreadmillRunner.Web.Live;
 

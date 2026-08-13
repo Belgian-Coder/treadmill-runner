@@ -26,15 +26,19 @@
     <BlazorWebAssemblyLazyLoad Include="Microsoft.AspNetCore.SignalR.Protocols.Json.dll" />
     <BlazorWebAssemblyLazyLoad Include="Microsoft.Extensions.Features.dll" />
     <BlazorWebAssemblyLazyLoad Include="TreadmillRunner.Web.SignalR.dll" />
+    <BlazorWebAssemblyLazyLoad Include="TreadmillRunner.Web.Operations.dll" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TreadmillRunner.Core\TreadmillRunner.Core.csproj" />
     <ProjectReference Include="..\TreadmillRunner.Web.SignalR\TreadmillRunner.Web.SignalR.csproj" />
+    <ProjectReference Include="..\TreadmillRunner.Web.Runtime\TreadmillRunner.Web.Runtime.csproj" />
+    <ProjectReference Include="..\TreadmillRunner.Web.Operations\TreadmillRunner.Web.Operations.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <TrimmerRootAssembly Include="TreadmillRunner.Web.SignalR" />
+    <TrimmerRootAssembly Include="TreadmillRunner.Web.Operations" />
   </ItemGroup>
 
 </Project>

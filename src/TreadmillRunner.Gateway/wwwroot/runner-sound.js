@@ -145,6 +145,14 @@ window.treadmillRunnerView = {
     if (this.autoHideHeaderCleanup) this.autoHideHeaderCleanup();
     this.autoHideHeaderCleanup = null;
   },
+  scrollToCurrentHash: function () {
+    if (!window.location.hash) return false;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    const target = document.getElementById(id);
+    if (!target) return false;
+    target.scrollIntoView({ block: "start", behavior: "auto" });
+    return true;
+  },
   openModal: function (backdropId, dotnetReference) {
     this.closeModal();
     const backdrop = document.getElementById(backdropId);

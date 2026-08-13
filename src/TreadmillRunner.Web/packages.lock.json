@@ -67,18 +67,6 @@
           "Microsoft.Extensions.Validation": "10.0.10"
         }
       },
-      "Microsoft.AspNetCore.Components.Web": {
-        "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Components": "10.0.10",
-          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
-          "Microsoft.Extensions.DependencyInjection": "10.0.10",
-          "Microsoft.Extensions.Primitives": "10.0.10",
-          "Microsoft.JSInterop": "10.0.10"
-        }
-      },
       "Microsoft.AspNetCore.Connections.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -316,11 +304,39 @@
       "treadmillrunner.core": {
         "type": "Project"
       },
+      "treadmillrunner.web.operations": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components.Web": "[10.0.10, )",
+          "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.Runtime": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components.Web": "[10.0.10, )",
+          "TreadmillRunner.Core": "[1.0.0, )"
+        }
+      },
       "treadmillrunner.web.signalr": {
         "type": "Project",
         "dependencies": {
           "Microsoft.AspNetCore.SignalR.Client": "[10.0.10, )",
           "TreadmillRunner.Core": "[1.0.0, )"
+        }
+      },
+      "Microsoft.AspNetCore.Components.Web": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components": "10.0.10",
+          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
+          "Microsoft.Extensions.DependencyInjection": "10.0.10",
+          "Microsoft.Extensions.Primitives": "10.0.10",
+          "Microsoft.JSInterop": "10.0.10"
         }
       },
       "Microsoft.AspNetCore.SignalR.Client": {

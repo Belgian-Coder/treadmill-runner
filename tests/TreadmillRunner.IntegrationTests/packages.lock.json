@@ -131,18 +131,6 @@
           "Microsoft.Extensions.Validation": "10.0.10"
         }
       },
-      "Microsoft.AspNetCore.Components.Web": {
-        "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Components": "10.0.10",
-          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
-          "Microsoft.Extensions.DependencyInjection": "10.0.10",
-          "Microsoft.Extensions.Primitives": "10.0.10",
-          "Microsoft.JSInterop": "10.0.10"
-        }
-      },
       "Microsoft.AspNetCore.Connections.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -860,7 +848,24 @@
         "dependencies": {
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.10, )",
           "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.Operations": "[1.0.0, )",
+          "TreadmillRunner.Web.Runtime": "[1.0.0, )",
           "TreadmillRunner.Web.SignalR": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.operations": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components.Web": "[10.0.10, )",
+          "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.Runtime": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components.Web": "[10.0.10, )",
+          "TreadmillRunner.Core": "[1.0.0, )"
         }
       },
       "treadmillrunner.web.signalr": {
@@ -875,6 +880,19 @@
         "requested": "[21.205.0, )",
         "resolved": "21.205.0",
         "contentHash": "jjpY3rO4M9/jduX6k5LSO7ACK/A5Yi0Mwh6m7wnksNkE2WEuc8puzNCT6l/2qScz17daR8eNdN7IFoseFMIqVQ=="
+      },
+      "Microsoft.AspNetCore.Components.Web": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components": "10.0.10",
+          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
+          "Microsoft.Extensions.DependencyInjection": "10.0.10",
+          "Microsoft.Extensions.Primitives": "10.0.10",
+          "Microsoft.JSInterop": "10.0.10"
+        }
       },
       "Microsoft.AspNetCore.Components.WebAssembly": {
         "type": "CentralTransitive",

@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using TreadmillRunner.Core.System;
 
-namespace TreadmillRunner.Web;
+namespace TreadmillRunner.Web.Runtime;
 
 public sealed class ClientRuntimeState
 {

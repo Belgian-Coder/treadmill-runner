@@ -404,12 +404,20 @@
                     <div class="premade-plan-phases template-program-groups">
                         @foreach (PremadePlanPhaseView phase in premadePreview.Phases)
                         {
-                            <details>
-                                <summary><strong>@phase.Name</strong><span>Weeks @phase.FirstWeek–@phase.LastWeek · @phase.SessionCount sessions</span></summary>
+                            string phaseKey = $"{premadePreview.Template.Id}:{phase.Name}";
+                            bool phaseExpanded = expandedPremadePhases.Contains(phaseKey);
+                            <section class="bounded-plan-group">
+                                <button class="bounded-plan-toggle" type="button" aria-expanded="@phaseExpanded" @onclick="() => Toggle(expandedPremadePhases, phaseKey)"><strong>@phase.Name</strong><span>Weeks @phase.FirstWeek–@phase.LastWeek · @phase.SessionCount sessions</span></button>
+                                @if (phaseExpanded)
+                                {
                                 @foreach (var week in premadePreview.Sessions.Where(session => session.Phase == phase.Name).GroupBy(static session => session.WeekNumber).OrderBy(static group => group.Key))
                                 {
-                                    <details>
-                                        <summary>Week @week.Key · @week.Count() session(s)</summary>
+                                    string weekKey = $"{phaseKey}:{week.Key}";
+                                    bool weekExpanded = expandedPremadeWeeks.Contains(weekKey);
+                                    <section class="bounded-plan-week">
+                                        <button class="bounded-plan-toggle bounded-plan-toggle--week" type="button" aria-expanded="@weekExpanded" @onclick="() => Toggle(expandedPremadeWeeks, weekKey)">Week @week.Key · @week.Count() session(s)</button>
+                                        @if (weekExpanded)
+                                        {
                                         <ol class="program-session-summary-list">
                                             @foreach (PremadePlanSessionView session in week.OrderBy(static session => session.SessionNumber))
                                             {
@@ -422,9 +430,11 @@
                                                 </li>
                                             }
                                         </ol>
-                                    </details>
+                                        }
+                                    </section>
                                 }
-                            </details>
+                                }
+                            </section>
                         }
                     </div>
                     <p class="field-help">@premadePreview.UniqueWorkoutCount unique workouts are reused across @premadePreview.Template.SessionCount scheduled positions. @premadePreview.NormalizedTargetCount target(s) are normalized conservatively.</p>
@@ -468,7 +478,12 @@
                         <section><h4>@phase.Key</h4>
                         @foreach (var week in phase.GroupBy(item => item.WeekNumber ?? 1).OrderBy(group => group.Key))
                         {
-                            <details><summary>Week @week.Key · @week.Count() session(s)</summary><ol>
+                            string weekKey = $"{selectedProgram.Id:D}:{phase.Key}:{week.Key}";
+                            bool weekExpanded = expandedProgramWeeks.Contains(weekKey);
+                            <section class="bounded-plan-week"><button class="bounded-plan-toggle bounded-plan-toggle--week" type="button" aria-expanded="@weekExpanded" @onclick="() => Toggle(expandedProgramWeeks, weekKey)">Week @week.Key · @week.Count() session(s)</button>
+                            @if (weekExpanded)
+                            {
+                            <ol>
                             @foreach (WorkoutProgramItemView item in week.OrderBy(item => item.SessionNumber).ThenBy(item => item.Position))
                             {
                                 <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item)"><span>Session @(item.SessionNumber ?? item.Position)</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button>
@@ -477,7 +492,9 @@
                                     <button class="program-session-detail program-session-detail--alternative" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item, alternative)"><span>Alternative</span><strong>@alternative.WorkoutName</strong><small>@DurationLabel(alternative.DurationMinutes)</small></button>
                                 }</li>
                             }
-                            </ol></details>
+                            </ol>
+                            }
+                            </section>
                         }
                         </section>
                     }
@@ -486,11 +503,15 @@
             else
             {
                 <ol class="program-session-summary-list">
-                    @foreach (WorkoutProgramItemView item in selectedProgram.Items.OrderBy(static item => item.Position))
+                    @foreach (WorkoutProgramItemView item in selectedProgram.Items.OrderBy(static item => item.Position).Take(programDetailsDisplayLimit))
                     {
                         <li><button class="program-session-detail" type="button" @onclick="() => OpenProgramWorkoutFromDetailsAsync(selectedProgram, item)"><span>Session @item.Position</span><strong>@item.WorkoutName</strong><small>@DurationLabel(item.DurationMinutes)</small></button></li>
                     }
                 </ol>
+                @if (selectedProgram.Items.Count > programDetailsDisplayLimit)
+                {
+                    <div class="bounded-list-note"><span>Showing @programDetailsDisplayLimit of @selectedProgram.Items.Count sessions.</span><button class="secondary-action compact-action" type="button" @onclick="() => programDetailsDisplayLimit += 24">Show more</button></div>
+                }
             }
         </section>
         <div class="card-actions workout-details-actions"><button class="secondary-action" type="button" @onclick="CloseProgramDetailsAsync">Close</button></div>
@@ -629,7 +650,11 @@
     private bool premadeBusy;
     private int premadePreviewGeneration;
     private CancellationTokenSource? premadePreviewCancellation;
+    private readonly HashSet<string> expandedPremadePhases = new(StringComparer.Ordinal);
+    private readonly HashSet<string> expandedPremadeWeeks = new(StringComparer.Ordinal);
     private WorkoutProgramView? selectedProgramDetails;
+    private readonly HashSet<string> expandedProgramWeeks = new(StringComparer.Ordinal);
+    private int programDetailsDisplayLimit = 24;
     private int programDetailsGeneration;
     private CancellationTokenSource? programDetailsCancellation;
     private bool openProgramDetailsPending;
@@ -915,6 +940,8 @@
         int generation = ++premadePreviewGeneration;
         selectedPremadeId = plan.Id;
         premadePreview = null;
+        expandedPremadePhases.Clear();
+        expandedPremadeWeeks.Clear();
         if (activeProfileId is not { } profileId)
         {
             message = "Select a runner on Run before previewing a premade plan.";
@@ -1039,6 +1066,8 @@
         WorkoutProgramView? program = await LoadProgramDetailsAsync(summary);
         if (program is null) return;
         selectedProgramDetails = program;
+        expandedProgramWeeks.Clear();
+        programDetailsDisplayLimit = 24;
         openProgramDetailsPending = true;
         await InvokeAsync(StateHasChanged);
     }
@@ -1074,6 +1103,12 @@
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         programDetailsModalReference = null;
         selectedProgramDetails = null;
+        expandedProgramWeeks.Clear();
+    }
+
+    private static void Toggle(HashSet<string> values, string key)
+    {
+        if (!values.Add(key)) values.Remove(key);
     }
 
     private async Task OpenWorkoutScheduleAsync(WorkoutSummaryView workout)

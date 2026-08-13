@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text;
-using TreadmillRunner.Web;
+using TreadmillRunner.Web.Runtime;
 
 namespace TreadmillRunner.IntegrationTests;
 

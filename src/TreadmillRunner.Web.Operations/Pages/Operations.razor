@@ -4,7 +4,7 @@
 @using System.Text.Json
 @inject HttpClient Http
 @inject IJSRuntime JS
-@inject TreadmillRunner.Web.ClientRuntimeState Runtime
+@inject TreadmillRunner.Web.Runtime.ClientRuntimeState Runtime
 
 <PageTitle>Operations · TreadmillRunner</PageTitle>
 
@@ -15,6 +15,8 @@
     </header>
 
     @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
+
+    <OperatorAccessPanel />
 
     @if (operationsSummaryLoading)
     {
@@ -375,6 +377,8 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+
+        await JS.InvokeVoidAsync("treadmillRunnerView.scrollToCurrentHash");
 
         pwaReference = DotNetObjectReference.Create(this);
         try

@@ -7,6 +7,30 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 {
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Route_budgets_keep_operations_code_lazy_and_bound_interactive_DOM()
+  {
+    var requestedUrls = new List<string>();
+    Page.Request += (_, request) => requestedUrls.Add(request.Url);
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "History", Exact = true })).ToBeVisibleAsync(new() { Timeout = 20_000 });
+    stopwatch.Stop();
+    Assert.DoesNotContain(requestedUrls, static url => url.Contains("TreadmillRunner.Web.Operations", StringComparison.Ordinal));
+    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(20), $"History readiness took {stopwatch.Elapsed}.");
+    int historyNodes = await Page.Locator("*").CountAsync();
+    Assert.InRange(historyNodes, 1, 1_000);
+
+    requestedUrls.Clear();
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Operations", Exact = true })).ToBeVisibleAsync(new() { Timeout = 20_000 });
+    Assert.Contains(requestedUrls, static url => url.Contains("TreadmillRunner.Web.Operations", StringComparison.Ordinal));
+    int operationsNodes = await Page.Locator("*").CountAsync();
+    Assert.InRange(operationsNodes, 1, 1_200);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Operations_page_uses_one_route_critical_dashboard_read()
   {
     var requestedPaths = new List<string>();

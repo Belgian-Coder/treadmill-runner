@@ -105,6 +105,62 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Three_year_history_remains_bounded_and_returns_the_newest_page()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset firstStart = DateTimeOffset.Parse("2023-08-01T06:00:00Z");
+    Guid newestId = Guid.Empty;
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      var history = new WorkoutSessionEntity[1_095];
+      for (var day = 0; day < history.Length; day++)
+      {
+        Guid id = Guid.NewGuid();
+        if (day == history.Length - 1) newestId = id;
+        DateTimeOffset started = firstStart.AddDays(day);
+        history[day] = new WorkoutSessionEntity
+        {
+          Id = id,
+          UserProfileId = ids.ProfileId,
+          UserProfileName = "Runner",
+          WorkoutRevisionId = ids.RevisionId,
+          SelectionSource = WorkoutSelectionSource.Library.ToString(),
+          SessionOrigin = SessionOrigin.Hardware.ToString(),
+          WorkoutTitle = $"History run {day + 1}",
+          State = SessionState.Completed.ToString(),
+          ArmedAtUtc = started.AddSeconds(-5),
+          StartedAtUtc = started,
+          EndedAtUtc = started.AddMinutes(30),
+          DurationSeconds = 1_800,
+          DistanceKilometers = 5,
+          EstimatedCalories = 350,
+          AverageHeartRateBpm = 135,
+          MaximumHeartRateBpm = 152,
+          AverageSpeedKph = 10,
+          AverageInclinePercent = 1,
+          MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+          ControllerConfigurationJson = "{}",
+        };
+      }
+      context.WorkoutSessions.AddRange(history);
+      await context.SaveChangesAsync();
+    }
+
+    ISessionStore store = new SessionStore(factory);
+    var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    IReadOnlyList<SessionSummary> page = await store.ListSummariesAsync(ids.ProfileId, take: 500);
+    stopwatch.Stop();
+
+    Assert.Equal(500, page.Count);
+    Assert.Equal(newestId, page[0].SessionId);
+    Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"History query took {stopwatch.Elapsed}.");
+    Assert.True(new FileInfo(DatabasePath).Length < 25 * 1024 * 1024, "Three years of summary history exceeded the storage budget.");
+    Assert.NotNull(await store.FindAsync(newestId));
+  }
+
+  [Fact]
   public async Task Startup_interruption_marks_only_unfinished_sessions_and_records_event()
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);

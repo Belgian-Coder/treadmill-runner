@@ -5,6 +5,8 @@
     <Project Path="src/TreadmillRunner.Infrastructure/TreadmillRunner.Infrastructure.csproj" />
     <Project Path="src/TreadmillRunner.Protocols/TreadmillRunner.Protocols.csproj" />
     <Project Path="src/TreadmillRunner.Web/TreadmillRunner.Web.csproj" />
+    <Project Path="src/TreadmillRunner.Web.Operations/TreadmillRunner.Web.Operations.csproj" />
+    <Project Path="src/TreadmillRunner.Web.Runtime/TreadmillRunner.Web.Runtime.csproj" />
     <Project Path="src/TreadmillRunner.Web.SignalR/TreadmillRunner.Web.SignalR.csproj" />
   </Folder>
   <Folder Name="/tests/">

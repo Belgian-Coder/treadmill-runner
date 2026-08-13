@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Architecture
@@ -29,7 +29,7 @@ Release WebAssembly builds are trimmed and optimized with the pinned SDK's `wasm
 
 Operations uses one read-only dashboard projection for its route-critical first render: release status, private access candidates, database integrity, backup policy and recent verification, and combined health. Mutations retain their narrow endpoints and refresh only the affected read models. This avoids serializing six independent startup requests behind the WebAssembly download while preserving compatibility with an older gateway through client fallback.
 
-Read-only routes do not start the live SignalR supervisor. The live transport and its framework dependencies are a lazy WebAssembly feature loaded only for Run and Control; those pages then create the single browser supervisor and recover authoritative session state before enabling controls. Version reads are single-flight within a short freshness window, while update-activation recovery explicitly bypasses that window.
+Read-only routes do not start the live SignalR supervisor. The live transport and its framework dependencies are a lazy WebAssembly feature loaded only for Run and Control; those pages then create the single browser supervisor and recover authoritative session state before enabling controls. Operations is also a route-owned lazy assembly, while its safe server boot shell requests the preferred private QR immediately. Shared client runtime/authentication primitives remain in a small independent assembly. Version reads are single-flight within a short freshness window, while update-activation recovery explicitly bypasses that window.
 
 The household browser origin should use a structured Kestrel endpoint over a trusted private HTTPS name with `Http1AndHttp2AndHttp3`. HTTP/2 is the immediate compatibility path for the WebAssembly fan-out. Kestrel advertises HTTP/3 opportunistically when QUIC is available; clients and networks that cannot use it fall back to HTTP/2 or HTTP/1.1. Loopback HTTP on port 5180 remains the updater and guardian health boundary. A managed private edge may terminate the same protocol set. An untrusted self-signed certificate is not an acceptable production shortcut, and no transport layer may cache API, SignalR, HTML, or control traffic.
 
@@ -43,6 +43,8 @@ The household browser origin should use a structured Kestrel endpoint over a tru
 | `TreadmillRunner.Gateway` | Windows Service host, device coordinator, vertical slices, Minimal APIs, SignalR, health, and UI hosting |
 | `TreadmillRunner.Web` | Blazor WebAssembly touch UI; never authoritative and never Bluetooth-aware |
 | `TreadmillRunner.Web.SignalR` | Lazy browser live-transport adapter; loaded only by Run and Control |
+| `TreadmillRunner.Web.Operations` | Lazy maintenance/recovery route; not downloaded by ordinary planning/history routes |
+| `TreadmillRunner.Web.Runtime` | Small shared client runtime, build-fingerprint, typed operator client, and tab-scoped operator session boundary |
 
 Dependencies point inward: Protocols depends on Core; Infrastructure implements Core/Protocol ports; Gateway composes all server-side projects; Web consumes stable browser contracts. WinRT types are prohibited outside Infrastructure.
 
@@ -61,6 +63,8 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 - SignalR publishes simulated live state at 4 Hz; durable session sampling is 1 Hz.
 - The compiled premade-plan catalog is read-only. Preview reuses capability evaluation; explicit materialization stores profile/template provenance, deduplicates identical definitions within the copy, preserves every phase/week/session position, and never activates the plan.
 - Garmin integration has three non-interchangeable seams: supported Training API publication, unsupported completed-FIT upload, and native Connect IQ watch recording. The private uploader runs out of process, stores only protected session tokens, admits sessions only after an enable watermark, and atomically leases each job. Unknown/duplicate outcomes cannot auto-retry. Watch tokens are profile-owned SHA-256 hashes and authorize only read-only session status.
+- Gateway requests receive bounded correlation identifiers and normalized in-memory route telemetry. Query strings and record identifiers never become metric dimensions, and the route catalog is capped.
+- Optional operator access is disabled by default. When enabled, reads stay anonymous and API mutations require a short-lived opaque bearer held in bounded gateway memory and browser session storage; no authentication cookie exists.
 
 ## Safety states
 
