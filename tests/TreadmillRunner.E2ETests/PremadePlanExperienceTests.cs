@@ -41,6 +41,11 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     ILocator workoutDialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(workoutDialog.GetByRole(AriaRole.Heading, new() { Name = "Planned graph", Exact = true })).ToBeVisibleAsync();
     await Expect(workoutDialog.GetByRole(AriaRole.Heading, new() { Name = "All planned changes", Exact = true })).ToBeVisibleAsync();
+    ILocator plannedRows = workoutDialog.GetByRole(AriaRole.Region, new() { Name = "All planned workout changes", Exact = true }).Locator("tbody tr");
+    await Expect(plannedRows.Nth(0).Locator("th")).ToHaveTextAsync("Segment 1 · 0:00:00");
+    await Expect(plannedRows.Nth(1).Locator("th")).ToHaveTextAsync("Segment 2 · 0:05:00");
+    await Expect(plannedRows.Nth(2).Locator("th")).ToHaveTextAsync("Segment 3 · 0:06:00");
+    await Expect(plannedRows.Nth(3).Locator("th")).ToHaveTextAsync("Segment 4 · 0:07:30");
     await workoutDialog.GetByRole(AriaRole.Button, new() { Name = "Close workout details", Exact = true }).ClickAsync();
     await AssertNoHorizontalOverflowAsync();
     await SaveShowcaseAsync("tr-024-premade-plan-catalog.png");

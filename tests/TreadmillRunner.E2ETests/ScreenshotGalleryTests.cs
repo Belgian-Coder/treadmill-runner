@@ -623,7 +623,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByLabel("Workout name", new() { Exact = true })).ToHaveValueAsync(GalleryScenario.FeaturedWorkoutName);
         Assert.True(await Page.Locator(".workout-builder__list .builder-step-row").CountAsync() >= 5, "Workout editor gallery must contain the complete plan rows.");
         await Expect(Page.Locator(".workout-preview-chart [data-series='planned-speed']")).ToHaveAttributeAsync("d", new Regex("^M.+L"));
-        await Expect(Page.Locator(".builder-start-time").First).ToHaveTextAsync("0:00");
+        await Expect(Page.Locator(".builder-start-time").First).ToHaveTextAsync("0:00:00");
         await Expect(Page.GetByText("Start from an existing workout", new() { Exact = true })).ToBeVisibleAsync();
         break;
       case "workout-import":

@@ -39,12 +39,12 @@ else
         </div>
         <div class="detail-table-scroll" tabindex="0" role="region" aria-label="All planned workout changes">
             <table class="detail-change-table">
-                <thead><tr><th scope="col">Change</th><th scope="col">Target</th><th scope="col">Speed</th><th scope="col">Incline</th><th scope="col">Cue / note</th></tr></thead>
+                <thead><tr><th scope="col">Segment start</th><th scope="col">Target</th><th scope="col">Speed</th><th scope="col">Incline</th><th scope="col">Cue / note</th></tr></thead>
                 <tbody>
                     @foreach (PlannedStep step in Steps)
                     {
                         <tr>
-                            <th scope="row">@(step.Number == 1 ? "Start" : $"After segment {step.Number - 1}")</th>
+                            <th scope="row">Segment @step.Number · <span class="planned-segment-start">@WorkoutSegmentTimeline.FormatStart(step.Start)</span></th>
                             <td>@step.Goal</td>
                             <td>@step.Speed</td>
                             <td>@step.Incline</td>
@@ -75,23 +75,13 @@ else
     private static IReadOnlyList<PlannedStep> Expand(IReadOnlyList<WorkoutBlockInput> blocks)
     {
         var result = new List<PlannedStep>();
-        ExpandInto(blocks, result);
-        return result;
-    }
-
-    private static void ExpandInto(IReadOnlyList<WorkoutBlockInput> blocks, List<PlannedStep> result)
-    {
-        foreach (WorkoutBlockInput block in blocks)
+        foreach (WorkoutSegmentTiming timing in WorkoutSegmentTimeline.Expand(blocks))
         {
-            if (string.Equals(block.Kind, "repeat", StringComparison.OrdinalIgnoreCase))
-            {
-                for (int repetition = 0; repetition < Math.Max(1, block.Repetitions); repetition++) ExpandInto(block.Blocks, result);
-                continue;
-            }
-
+            WorkoutBlockInput block = timing.Block;
             (double? speedStart, double? speedEnd) = SpeedValues(block);
             result.Add(new PlannedStep(
-                result.Count + 1,
+                timing.Number,
+                timing.Start,
                 GoalLabel(block),
                 SpeedLabel(block),
                 InclineLabel(block),
@@ -101,6 +91,8 @@ else
                 block.InclineStartPercent,
                 string.Equals(block.InclineKind, "ramp", StringComparison.OrdinalIgnoreCase) ? block.InclineEndPercent : block.InclineStartPercent));
         }
+
+        return result;
     }
 
     private static (double? Start, double? End) SpeedValues(WorkoutBlockInput block) => block.SpeedKind.ToLowerInvariant() switch
@@ -161,5 +153,5 @@ else
 
     private static string Format(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
-    private sealed record PlannedStep(int Number, string Goal, string Speed, string Incline, string CueAndNote, double? SpeedStart, double? SpeedEnd, double? InclineStart, double? InclineEnd);
+    private sealed record PlannedStep(int Number, TimeSpan? Start, string Goal, string Speed, string Incline, string CueAndNote, double? SpeedStart, double? SpeedEnd, double? InclineStart, double? InclineEnd);
 }
