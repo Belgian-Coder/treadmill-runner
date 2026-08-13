@@ -97,7 +97,7 @@
             <span class="history-result-count" role="status">@FilteredSessions.Count @(showTests ? (FilteredSessions.Count == 1 ? "test" : "tests") : (FilteredSessions.Count == 1 ? "run" : "runs"))</span>
         </section>
         <div class="history-list">
-            @foreach (SessionSummary item in FilteredSessions)
+            @foreach (SessionSummary item in VisibleSessions)
             {
                 <article class="history-card history-card--interactive" role="button" tabindex="0" aria-label="View details for @item.WorkoutTitle" @onclick="() => OpenSessionDetailsAsync(item)" @onkeydown="args => OpenSessionDetailsFromKeyAsync(args, item)">
                     <div><span class="status-chip">@(item.Origin == SessionOrigin.SystemTest ? "System test" : item.Status)</span><h2>@item.WorkoutTitle</h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p><span class="history-card__hint">View graph and all changes</span></div>
@@ -111,7 +111,11 @@
                 </article>
             }
         </div>
-        @if (sessions.Count == historyTake && historyTake < MaximumHistoryTake)
+        @if (FilteredSessions.Count > historyDisplayLimit)
+        {
+            <div class="bounded-list-note"><span>Showing @VisibleSessions.Count of @FilteredSessions.Count matching runs to keep this page responsive.</span><button class="secondary-action compact-action" type="button" @onclick="ShowMoreHistory">Show more</button></div>
+        }
+        else if (sessions.Count == historyTake && historyTake < MaximumHistoryTake)
         {
             <div class="card-actions"><button class="secondary-action" type="button" @onclick="LoadOlderAsync">Load older history</button></div>
         }
@@ -162,6 +166,7 @@
     private bool showTests;
     private const int MaximumHistoryTake = 5000;
     private int historyTake = 500;
+    private int historyDisplayLimit = 100;
     private Guid? profileId;
     private bool loading = true;
     private bool summaryUnavailable;
@@ -178,6 +183,7 @@
     private IReadOnlyList<SessionSummary> filteredSessions = Array.Empty<SessionSummary>();
 
     private IReadOnlyList<SessionSummary> FilteredSessions => filteredSessions;
+    private IReadOnlyList<SessionSummary> VisibleSessions => filteredSessions.Take(historyDisplayLimit).ToArray();
 
     private void RefreshFilteredSessions()
     {
@@ -199,7 +205,10 @@
             filtered = filtered.Where(session => session.StartedAt.ToLocalTime() >= cutoff);
         }
         filteredSessions = filtered.OrderByDescending(static session => session.StartedAt).ToArray();
+        historyDisplayLimit = 100;
     }
+
+    private void ShowMoreHistory() => historyDisplayLimit = Math.Min(filteredSessions.Count, historyDisplayLimit + 100);
 
     protected override async Task OnInitializedAsync()
     {
@@ -215,6 +224,7 @@
         {
             profileId = selectedProfileId;
             historyTake = 500;
+            historyDisplayLimit = 100;
             if (selectedSummary is not null) await CloseSessionDetailsAsync();
             await LoadAsync();
         });
@@ -319,6 +329,7 @@
         if (showTests == value) return;
         showTests = value;
         historyTake = 500;
+        historyDisplayLimit = 100;
         await LoadAsync();
     }
 
@@ -340,7 +351,7 @@
         loadError = null;
         summaryUnavailable = false;
         sessions = Array.Empty<SessionSummary>();
-        RefreshFilteredSessions();
+        filteredSessions = Array.Empty<SessionSummary>();
         weekly = null;
         insights = null;
         if (requestedProfileId is not { } selected)
@@ -355,7 +366,9 @@
                 ?? Array.Empty<SessionSummary>();
             if (generation != historyLoadGeneration || profileId != requestedProfileId) return;
             sessions = loadedSessions;
+            int displayLimit = historyDisplayLimit;
             RefreshFilteredSessions();
+            historyDisplayLimit = displayLimit;
             if (!showTests)
             {
                 try

@@ -54,6 +54,7 @@ html, body {
 .operations-boot-shell__cards small { display: block; color: #9fb9b6; }
 .operations-boot-shell__cards strong { display: block; margin: .55rem 0; font-size: 1.35rem; }
 .operations-boot-shell__cards small { overflow-wrap: anywhere; }
+.operations-boot-shell__qr { display: block; width: 4.5rem; height: 4.5rem; margin: .5rem 0; padding: .2rem; border-radius: .45rem; background: #fff; }
 .app-interactive-shell { visibility: hidden; }
 .app-interactive-shell.is-ready { visibility: visible; }
 @media (max-width: 650px) {
@@ -1402,6 +1403,11 @@ body.immersive-view { overflow: hidden; }
 .template-program-groups section { padding: .2rem .6rem .6rem; border-radius: .75rem; background: #081e278f; }
 .template-program-groups h4 { margin: .4rem 0; }
 .template-program-groups ol { display: grid; gap: .3rem; margin: 0 0 .6rem; padding-left: 1.5rem; }
+.bounded-plan-group, .bounded-plan-week { display: grid; gap: .35rem; }
+.bounded-plan-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: .75rem; padding: .7rem .2rem; border: 0; background: transparent; color: #9fe7cf; cursor: pointer; font: inherit; font-weight: 800; text-align: left; }
+.bounded-plan-toggle::after { content: "+"; flex: 0 0 auto; font-size: 1rem; }
+.bounded-plan-toggle[aria-expanded="true"]::after { content: "−"; }
+.bounded-plan-toggle--week { padding-left: .7rem; color: #d6ebe6; font-size: .78rem; }
 .template-program-groups li { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto; gap: .6rem; color: #a9c4c1; font-size: .74rem; }
 .template-program-groups li strong { color: #edf8f6; }
 

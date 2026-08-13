@@ -4,10 +4,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using TreadmillRunner.Core.Devices;
 using TreadmillRunner.Core.Live;
 using TreadmillRunner.Gateway.Health;
 using TreadmillRunner.Gateway.Devices;
+using TreadmillRunner.Gateway.Diagnostics;
+using TreadmillRunner.Gateway.Hosting;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Core.System;
 using System.Text.Json;
@@ -16,6 +19,32 @@ namespace TreadmillRunner.IntegrationTests;
 
 public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gateway.Program> factory) : IClassFixture<WebApplicationFactory<TreadmillRunner.Gateway.Program>>
 {
+  [Fact]
+  public async Task Operational_telemetry_is_bounded_normalized_and_correlated()
+  {
+    using HttpClient client = factory.CreateClient();
+    const string correlationId = "acceptance-telemetry-001";
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/planning/sessions/{Guid.NewGuid():D}");
+    request.Headers.Add(GatewayPipelineExtensions.CorrelationHeaderName, correlationId);
+
+    using HttpResponseMessage response = await client.SendAsync(request);
+    Assert.True(response.Headers.TryGetValues(GatewayPipelineExtensions.CorrelationHeaderName, out IEnumerable<string>? values));
+    Assert.Equal(correlationId, Assert.Single(values));
+
+    OperationalTelemetrySnapshot? snapshot = await client.GetFromJsonAsync<OperationalTelemetrySnapshot>("/api/operations/telemetry");
+    Assert.NotNull(snapshot);
+    Assert.InRange(snapshot.Routes.Count, 1, 64);
+    Assert.Contains(snapshot.Routes, static route => route.Route == "/api/planning/sessions/{id}");
+    Assert.DoesNotContain(snapshot.Routes, static route => route.Route.Contains('?', StringComparison.Ordinal));
+  }
+
+  [Theory]
+  [InlineData("/api/planning/sessions/efb3bcc5-d94b-4a68-8b79-d0f14d5be76c", "/api/planning/sessions/{id}")]
+  [InlineData("/api/planning/sessions/12345", "/api/planning/sessions/{id}")]
+  [InlineData("/", "/")]
+  public void Operational_routes_remove_unbounded_identifiers(string path, string expected) =>
+    Assert.Equal(expected, OperationalTelemetry.NormalizeRoute(new PathString(path)));
+
   [Fact]
   public async Task Health_endpoints_are_healthy()
   {
@@ -121,6 +150,8 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Contains("<h1>Operations</h1>", operationsDocument, StringComparison.Ordinal);
     Assert.Contains("Loading maintenance controls", operationsDocument, StringComparison.Ordinal);
     Assert.Contains("Private access", operationsDocument, StringComparison.Ordinal);
+    Assert.Contains("/api/operations/access/qr/", operationsDocument, StringComparison.Ordinal);
+    Assert.Contains("fetchpriority=\"high\"", operationsDocument, StringComparison.Ordinal);
     Assert.DoesNotContain("Confirm activation", operationsDocument, StringComparison.Ordinal);
     string bridgeSource = await bridge.Content.ReadAsStringAsync();
     Assert.Contains("document.getElementById(\"main-content\")", bridgeSource, StringComparison.Ordinal);

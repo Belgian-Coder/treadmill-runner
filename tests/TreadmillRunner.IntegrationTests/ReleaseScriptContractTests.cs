@@ -24,6 +24,9 @@ public sealed class ReleaseScriptContractTests
   [InlineData("inspect-service-recovery.ps1")]
   [InlineData("validate-connectiq.ps1")]
   [InlineData("verify-change.ps1")]
+  [InlineData("physical-acceptance-preflight.ps1")]
+  [InlineData("verify-recovery-acceptance.ps1")]
+  [InlineData("new-operator-access-secret.ps1")]
   public async Task Release_script_has_valid_PowerShell_syntax(string scriptName)
   {
     string scriptPath = Path.Combine(ProjectRoot, "eng", scriptName);
@@ -170,6 +173,35 @@ public sealed class ReleaseScriptContractTests
 
     Assert.Contains("Acceptance fixtures cannot be selected into the daily ProgramData stable feed", script, StringComparison.Ordinal);
     Assert.DoesNotContain("[string] $DestinationFeed =", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Physical_acceptance_preflight_is_get_only_and_cannot_issue_a_treadmill_command()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "physical-acceptance-preflight.ps1"));
+
+    Assert.Contains("CommandPolicy = 'GET-only", script, StringComparison.Ordinal);
+    Assert.Contains("Invoke-RestMethod -Method Get", script, StringComparison.Ordinal);
+    Assert.Contains("Invoke-WebRequest -Method Get", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("-Method Post", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("-Method Put", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("-Method Delete", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("/api/live/sessions/", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("/api/devices/scan", script, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public void Recovery_acceptance_wrapper_targets_only_isolated_deterministic_tests()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "verify-recovery-acceptance.ps1"));
+
+    Assert.Contains("UpdateManagerTests", script, StringComparison.Ordinal);
+    Assert.Contains("SqliteRestoreServiceTests", script, StringComparison.Ordinal);
+    Assert.Contains("PersistenceBackupRoundTripTests", script, StringComparison.Ordinal);
+    Assert.Contains("ReleaseScriptContractTests", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("Start-ScheduledTask", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("Restart-Service", script, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("Stop-Service", script, StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]

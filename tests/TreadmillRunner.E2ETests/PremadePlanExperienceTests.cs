@@ -30,8 +30,11 @@ public sealed class PremadePlanExperienceTests(GatewayFixture gateway) : PageTes
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("58");
     await Expect(Page.Locator(".premade-plan-preview")).ToContainTextAsync("174");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Add for Demo Runner", Exact = true })).ToBeEnabledAsync();
-    await Page.Locator(".premade-plan-phases > details").First.Locator("summary").First.ClickAsync();
-    await Page.Locator(".premade-plan-phases > details").First.Locator("details > summary").First.ClickAsync();
+    Assert.InRange(await Page.Locator("*").CountAsync(), 1, 1_000);
+    ILocator firstPhase = Page.Locator(".premade-plan-phases > .bounded-plan-group").First;
+    await firstPhase.Locator(":scope > .bounded-plan-toggle").ClickAsync();
+    await firstPhase.Locator(".bounded-plan-week > .bounded-plan-toggle").First.ClickAsync();
+    Assert.InRange(await Page.Locator("*").CountAsync(), 1, 1_100);
     ILocator previewSession = Page.Locator(".premade-plan-phases .program-session-detail").First;
     await Expect(previewSession).ToBeVisibleAsync();
     await previewSession.ClickAsync();

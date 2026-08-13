@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # TreadmillRunner decision record
@@ -36,7 +36,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - A manual offline ZIP contains exactly the signed manifest and its nested package. Upload can bypass feed discovery only; it cannot bypass the pinned key, strictly newer version, channel/schema, hash/archive, idle, rejected-version, backup, health, or rollback gates, and it never activates automatically.
 - Daily releases are signed by an operator-controlled, non-exportable CurrentUser certificate. The service can read but cannot replace the public certificate pinned beside the administrator-owned updater under Program Files; disposable broken acceptance fixtures are isolated from the stable feed.
 - GitHub Actions is disabled. Commits, pull requests, and semantic release tags never consume hosted build minutes. The local release script owns validation, building, signing, immutable tag creation, verified draft upload, and publication, and it never force-moves a tag.
-- The v1 deployment treats every client on the trusted household LAN as an operator. Update activation's two-step UI is an accident guard, not authentication; public/guest-network exposure is prohibited until operator authentication and CSRF-bound activation are added.
+- The trusted household LAN remains the deployment boundary and public/guest-network exposure is prohibited. Optional operator access is disabled by default for compatibility; when enabled, anonymous reads remain available while all API mutations require a short-lived opaque bearer. The gateway stores a PBKDF2 passphrase hash and bounded in-memory sessions, the browser stores its bearer only in `sessionStorage`, and no cookie-based authority or CSRF surface is introduced.
 - The daily Play/Pause control does not use the unverified FTMS Pause opcode. While running it sends the exact-device verified Stop operation and retains the active session in a resumable paused state. A fresh hold-to-Start intent is still required, and motion is never inferred from command success.
 - Stop/End first sends Stop, then presents explicit keep-paused, reset-progress, or end-and-save decisions. Reset changes only the workout cursor and progress timer; recorded time, distance, telemetry, and events remain append-only. End is the only terminal action and is accepted only after confirmed stop.
 - Explicit deletion may remove any terminal local session, including a plan-linked run or one with a settled Garmin upload record. Plan progress is derived again from remaining history, remote Garmin activities are never deleted, and pending/in-flight/unknown upload outcomes remain protected.
@@ -45,11 +45,13 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 
 ## Engineering decisions
 
-- Six production projects: Core, Protocols, Infrastructure, Gateway, Web, and the lazy Web SignalR transport.
+- Eight production projects: Core, Protocols, Infrastructure, Gateway, Web, the lazy Web SignalR transport, the lazy Operations feature, and the small shared Web runtime.
 - Vertical slices inside Gateway/Web; no mediator, repository facade, message broker, microservices, IIS, container, MSIX, or AOT for v1.
 - Release WebAssembly is trimmed with the pinned SDK's `wasm-tools` workload, stale WebCIL output is removed before every release publish, and Release Hot Reload assets are disabled. The release entry point fails closed if the optimization workload is missing. Global prerender and Interactive Auto remain rejected: browser-local profile/control-lease state, JavaScript interop, and live gateway supervision are client-only boundaries, while the static boot shell provides the safe immediate paint.
 - Route-critical Operations state is delivered by one read-only in-process projection; command, update, backup, database, and restore mutations remain separate guarded endpoints. The client falls back to the prior reads when paired with an older gateway.
-- Operations receives a server-generated, noninteractive first view from in-memory health/release/access snapshots while the WebAssembly route starts. Global prerender remains rejected. SignalR and its live transport assembly are lazy and route-owned by Run/Control; read-only routes never open the hub. Browser version probes are single-flight except for explicit forced activation recovery.
+- Operations receives a server-generated, noninteractive first view from in-memory health/release/access snapshots and eagerly requests the local QR while its route-owned lazy assembly starts. Global prerender remains rejected. SignalR and its live transport assembly are lazy and route-owned by Run/Control; read-only routes never open the hub. Browser version probes are single-flight except for explicit forced activation recovery.
+- Plan phase/week contents and multi-year history cards are render-bounded independently of authoritative stored data. Browser route readiness, DOM size, lazy-assembly loading, and a three-year SQLite fixture are deterministic acceptance budgets.
+- Gateway composition is separated into service-registration and middleware extensions. Request correlation/metrics use normalized route keys and a bounded in-memory snapshot; feature clients begin with the typed operator-access boundary rather than duplicating wire details in UI components.
 - Trusted private HTTPS with HTTP/2 is the production browser transport baseline. Plain loopback HTTP remains for local health and update recovery. HTTP/3 may be added by a managed edge but is not required, and no deployment may label a self-signed or otherwise untrusted certificate as household-ready.
 - Core/Protocols contain no WinRT. Infrastructure owns Windows BLE and SQLite.
 - Treadmill support is adapter-based: portable `ITreadmillProtocol`

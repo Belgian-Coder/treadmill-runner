@@ -4,7 +4,7 @@ type: delivery-status
 status: active
 owner: project
 audience: owner-and-operator
-updated: 2026-08-04
+updated: 2026-08-13
 ---
 
 # Daily-use V1 completion ledger
@@ -17,13 +17,14 @@ This ledger is the single distinction between software that is implemented and v
 |---|---|---|
 | Profiles and HR zones | Two-runner profiles, editable maximum HR, generated Z1–Z5 defaults, manual zone editing, controller steps/cooldowns | Core/integration/browser suites and populated profile screenshots |
 | Workouts | Searchable immutable workout library/editor/import, fixed/ramp/HR targets, repeat blocks, and capability-aware requested/normalized/rejected preflight | Planning, capability-policy, integration, and populated editor/import evidence |
-| Training plans | Ordered exact-revision plans with 5K/10K/Base/Custom categories, one active run per runner, restart, archive, progress, and calendar-first recommendation | US-TR-003B domain, SQLite, HTTP replay, touch UI, and populated gallery evidence |
+| Training plans | Ordered exact-revision plans with 5K/10K/Base/Custom categories, one active run per runner, restart, archive, progress, calendar-first recommendation, and phase/week render-on-expand behavior for the 174-session plan | Domain, SQLite, HTTP replay, touch UI, populated gallery, and bounded browser DOM evidence |
 | Daily reuse and generated sets | Per-runner recent structured runs can be selected in one tap; verified treadmill-workout v4 bundles import atomically as exact-revision plans with one selected variant per slot | TR-017 parser, transaction, endpoint, browser, and populated gallery evidence |
 | Run and Control | One Run flow selects calendar, plan, library, or manual; preparation routes to a minimal full-screen control surface; Stop/Pause remain directly reachable; active runs request a screen wake lock with safe fallback | Browser viewports at 440×956, 1180×820, and desktop; no physical command is implied by simulator proof |
 | Heart rate | Polar-first multi-sensor roster, Garmin HR-broadcast fallback, visible missing/strap/watch state, live BPM, optional battery, freshness, bounded automatic reconnection, sanitized reliability history, and automation suspension rules | Software validated with fake transport/time and browser fixtures; optional real battery availability and one ordinary reconnect remain owner observations |
 | HR-speed automation | Shadow, decrease-only, and two-way modes with profile limits, dwell/cooldowns, hardware increment alignment, stale-data suspension, and no blind retry | Fake-time unit tests plus a coordinator/API simulation that decreases, increases, suspends on stale HR, and stops; final exact-treadmill workout remains external |
-| History and recovery | Session history/detail, CSV/FIT Activity export, bounded diagnostics, versioned `.trb` backup, previewed maintenance-locked transactional restore, startup/daily database checks, reversible SQLite maintenance, verified last-known-good backups, full-schema semantic verification, and rollback | Automated round trips and corrupt-database checks pass; clean-install operator recovery remains external |
-| Runtime diagnostics | Independent live, ready, and read-only BLE health surfaces; treadmill power-off degrades BLE only | TestServer evidence; Session 0 BLE proof remains external |
+| History and recovery | Session history/detail, 100-card render windows, 500-row server paging, CSV/FIT Activity export, bounded diagnostics, versioned `.trb` backup, previewed maintenance-locked transactional restore, startup/daily database checks, reversible SQLite maintenance, verified last-known-good backups, full-schema semantic verification, and rollback | Automated round trips, corrupt-database checks, and a 1,095-session/three-year scale fixture pass; clean-install operator recovery remains external |
+| Runtime diagnostics | Independent live, ready, and read-only BLE health surfaces; treadmill power-off degrades BLE only; bounded correlation IDs and normalized route telemetry are exposed read-only | TestServer evidence; Session 0 BLE proof remains external |
+| Operator access | Disabled-by-default optional passphrase gate; anonymous reads, bearer-protected API mutations, bounded in-memory sessions, tab-scoped browser storage, and throttled failures | Endpoint and browser-client contracts pass; trusted private LAN remains mandatory |
 | Updates | Operations can check, verify/stage, and activate a signed package; helper backs up, migrates, health-checks, and rolls back | UI-driven A→B and broken-C rollback are documented; signed 1.5.8 is installed in the protected stable feed and the running 1.5.6 service reports it as `Available`; UI staging and activation remain operator actions |
 
 ## Owner-present physical acceptance still required
@@ -36,7 +37,7 @@ These are acceptance observations, not missing application code. They must not b
 - Windows Service Session 0 scan/enrollment/subscription recovery before login after a planned reboot;
 - final clean-install restore and the next signed UI update from the protected feed.
 
-The installed Windows service is currently healthy on `1.5.6`; it predates the repo's ordered workout programs and returns 404 for that endpoint. Signed release `1.5.8` is installed in the protected stable feed and was discovered as `Available` on 2026-08-04. It must not be described as deployed until the operator stages and activates it from Operations.
+The installed Windows service was verified read-only as healthy on `1.5.41` on 2026-08-13. The hardening changes in this source pass are not installed or activated; they must not be described as deployed until a separately authorized signed release and activation completes.
 
 No remote Start, Stop, Pause, speed, or incline command may be sent merely to complete this ledger. The physical console, safety key, and physical Stop remain authoritative, and disconnect is never a stop mechanism.
 

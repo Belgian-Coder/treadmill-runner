@@ -1,14 +1,22 @@
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using TreadmillRunner.Web.Planning;
 using TreadmillRunner.Web;
+using TreadmillRunner.Web.Runtime;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.Services.AddScoped<ClientRuntimeState>();
+builder.Services.AddScoped<OperatorSessionState>();
+builder.Services.AddScoped<OperatorAccessClient>();
 builder.Services.AddScoped(_ => TimeProvider.System);
 builder.Services.AddScoped(services => new HttpClient(new ClientBuildFingerprintHandler(services.GetRequiredService<ClientRuntimeState>())
 {
-  InnerHandler = new HttpClientHandler(),
+  InnerHandler = new OperatorAccessHandler(
+    services.GetRequiredService<OperatorSessionState>(),
+    services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>())
+  {
+    InnerHandler = new HttpClientHandler(),
+  },
 })
 {
   BaseAddress = new Uri(builder.HostEnvironment.BaseAddress),

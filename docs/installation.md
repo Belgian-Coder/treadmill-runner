@@ -4,7 +4,7 @@ type: operator-guide
 status: active
 owner: project
 audience: user-and-operator
-updated: 2026-08-11
+updated: 2026-08-13
 ---
 
 # Install TreadmillRunner on Windows
@@ -54,6 +54,10 @@ The installed app still requires the NUC and household Wi-Fi for all live UI, hi
 
 Session CSV/FIT exports and full or verified backups offer **Share** when the device supports sharing files. The file is fetched only after that click and retains the gateway filename and type. **Download** remains available in every browser and is the fallback for unsupported file types. Diagnostics remain download-only.
 
+## Optional operator protection
+
+The default trusted-household setup remains unlocked. To require an operator passphrase for every API change while keeping dashboards readable, generate a hash with `eng\new-operator-access-secret.ps1` and set the protected `OperatorAccess__Enabled`, `OperatorAccess__SecretHash`, and bounded session/rate-limit service environment values described in [Operational hardening](project/operational-hardening.md). Never place the passphrase or hash in source control. After an approved service restart, use **Operations → Operator access** to unlock the current browser tab. The token is not a cookie and is discarded with the tab session.
+
 ## First run
 
 1. Open **Devices** and enroll the Horizon treadmill and preferred heart-rate sensor. Polar H10 takes priority over a watch broadcast.
@@ -94,6 +98,7 @@ Administrators may keep using the protected `%ProgramData%\TreadmillRunner\updat
 - **Update rolls back:** keep using the restored version and download diagnostics from Operations. Do not retry the rejected version; publish or install a higher corrected release.
 - **Bluetooth unavailable:** confirm Windows sees the adapter and the service is running; never treat Bluetooth disconnect as a Stop mechanism.
 - **Garmin upload says adapter setup required:** install or repair the latest signed release. Normal installation contains the runtime and dependencies and does not use system Python or download packages. Open the profile again and select **Check again**. Developer-only external Python overrides are documented in the Garmin runbook.
+- **Operator login unavailable:** verify that the configured hash begins with `pbkdf2-sha256`, that all bounded settings are valid, and that the service started successfully. Disable `OperatorAccess__Enabled` only in an approved maintenance window if protection must be rolled back.
 
 Application data is stored under `%ProgramData%\TreadmillRunner`. Removing the Windows service or application files does not automatically delete profiles/history. Make a full backup from Operations before deliberate data removal.
 

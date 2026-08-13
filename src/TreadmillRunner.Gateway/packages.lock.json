@@ -304,7 +304,22 @@
         "dependencies": {
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.10, )",
           "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.Operations": "[1.0.0, )",
+          "TreadmillRunner.Web.Runtime": "[1.0.0, )",
           "TreadmillRunner.Web.SignalR": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.operations": {
+        "type": "Project",
+        "dependencies": {
+          "TreadmillRunner.Core": "[1.0.0, )",
+          "TreadmillRunner.Web.Runtime": "[1.0.0, )"
+        }
+      },
+      "treadmillrunner.web.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "TreadmillRunner.Core": "[1.0.0, )"
         }
       },
       "treadmillrunner.web.signalr": {

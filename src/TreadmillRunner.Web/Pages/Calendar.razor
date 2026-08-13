@@ -1803,7 +1803,43 @@
     {
         DateOnly today = DateOnly.FromDateTime(DateTime.Today);
         bool showingCurrentMonth = today.Month == visibleMonth.Month && today.Year == visibleMonth.Year;
-        return showingCurrentMonth ? today >= week.Start && today <= week.End : index == 0;
+        IReadOnlyList<CalendarAgendaWeek> weeks = CalendarAgendaWeeks;
+        int preferredIndex = showingCurrentMonth
+            ? FindPreferredCurrentMonthWeek(weeks, today)
+            : FindFirstScheduledWeek(weeks);
+        return index == preferredIndex;
+    }
+
+    private static int FindPreferredCurrentMonthWeek(IReadOnlyList<CalendarAgendaWeek> weeks, DateOnly today)
+    {
+        int currentWeekIndex = -1;
+        for (int index = 0; index < weeks.Count; index++)
+        {
+            CalendarAgendaWeek candidate = weeks[index];
+            if (today >= candidate.Start && today <= candidate.End)
+            {
+                currentWeekIndex = index;
+                if (candidate.WorkoutCount > 0) return index;
+                break;
+            }
+        }
+
+        for (int index = Math.Max(0, currentWeekIndex + 1); index < weeks.Count; index++)
+        {
+            if (weeks[index].WorkoutCount > 0) return index;
+        }
+
+        return currentWeekIndex >= 0 ? currentWeekIndex : FindFirstScheduledWeek(weeks);
+    }
+
+    private static int FindFirstScheduledWeek(IReadOnlyList<CalendarAgendaWeek> weeks)
+    {
+        for (int index = 0; index < weeks.Count; index++)
+        {
+            if (weeks[index].WorkoutCount > 0) return index;
+        }
+
+        return 0;
     }
 
     private static string FormatAgendaWeek(CalendarAgendaWeek week) => week.Start.Month == week.End.Month

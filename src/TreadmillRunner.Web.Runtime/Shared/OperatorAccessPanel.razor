@@ -1,0 +1,114 @@
+@inject TreadmillRunner.Web.Runtime.OperatorSessionState Session
+@inject TreadmillRunner.Web.Runtime.OperatorAccessClient Access
+
+<section class="panel-card" aria-labelledby="operator-access-title" aria-busy="@loading">
+    <div class="panel-heading">
+        <div><p class="eyebrow">Optional protection</p><h2 id="operator-access-title">Operator access</h2></div>
+        <span class="sensor-badge">@StatusLabel</span>
+    </div>
+    @if (loading)
+    {
+        <p class="muted-copy" role="status">Checking operator access…</p>
+    }
+    else if (status?.Enabled != true)
+    {
+        <p>Protection is disabled. Local behavior is unchanged; enable <code>OperatorAccess</code> in deployment configuration to require an unlock for changes.</p>
+    }
+    else if (status.Authenticated)
+    {
+        <p>Changes are unlocked in this browser tab until @FormatTimestamp(status.ExpiresAtUtc).</p>
+        <button class="secondary-action" type="button" @onclick="LockAsync" disabled="@busy">@(busy ? "Locking…" : "Lock controls")</button>
+    }
+    else
+    {
+        <p>Read-only views remain available. Enter the configured operator passphrase to unlock changes in this browser tab.</p>
+        <form @onsubmit="UnlockAsync" @onsubmit:preventDefault>
+            <label class="field">Operator passphrase
+                <input type="password" autocomplete="current-password" @bind="passphrase" disabled="@busy" />
+            </label>
+            <button class="primary-action" type="submit" disabled="@(busy || string.IsNullOrWhiteSpace(passphrase))">@(busy ? "Unlocking…" : "Unlock changes")</button>
+        </form>
+    }
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="action-status" role="status">@message</p>
+    }
+</section>
+
+@code {
+    private OperatorStatusContract? status;
+    private string passphrase = string.Empty;
+    private string? message;
+    private bool loading = true;
+    private bool busy;
+
+    private string StatusLabel => loading ? "Checking" : status?.Enabled != true ? "Disabled" : status.Authenticated ? "Unlocked" : "Locked";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatusAsync();
+        loading = false;
+    }
+
+    private async Task LoadStatusAsync()
+    {
+        try
+        {
+            status = await Access.GetStatusAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            message = "Operator access status is temporarily unavailable.";
+        }
+    }
+
+    private async Task UnlockAsync()
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            OperatorLoginContract login = await Access.LoginAsync(passphrase);
+            if (login.RateLimited)
+            {
+                message = "Too many failed attempts. Wait before trying again.";
+                return;
+            }
+            if (!login.Succeeded || string.IsNullOrWhiteSpace(login.Token))
+            {
+                message = "The passphrase was not accepted.";
+                return;
+            }
+            await Session.SetAsync(login.Token);
+            passphrase = string.Empty;
+            await LoadStatusAsync();
+            message = "Changes are unlocked for this browser tab.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            message = "Operator access is temporarily unavailable.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task LockAsync()
+    {
+        busy = true;
+        try
+        {
+            await Access.LogoutAsync();
+            await Session.ClearAsync();
+            await LoadStatusAsync();
+            message = "Changes are locked.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value) => value?.ToLocalTime().ToString("g") ?? "the session expires";
+}
