@@ -1,24 +1,36 @@
 @using System.Globalization
 
+@{
+    TimeSpan? elapsed = StartTime;
+}
+
 <ol class="workout-structure-list @(Depth > 0 ? "workout-structure-list--nested" : null)">
     @for (int index = 0; index < Blocks.Count; index++)
     {
         WorkoutBlockInput block = Blocks[index];
+        TimeSpan? blockStart = elapsed;
+        elapsed = WorkoutSegmentTimeline.Advance(elapsed, block);
         if (string.Equals(block.Kind, "repeat", StringComparison.OrdinalIgnoreCase))
         {
             <li class="workout-structure-repeat">
                 <div class="workout-structure-repeat__heading">
-                    <span class="workout-segment-number">Repeat</span>
+                    <span class="workout-segment-identity">
+                        <span class="workout-segment-number">Repeat</span>
+                        <small class="workout-segment-start">@WorkoutSegmentTimeline.FormatStart(blockStart)</small>
+                    </span>
                     <strong>@block.Repetitions × this pattern</strong>
                     <small>@ExpandedStepCount(block) expanded segment(s)</small>
                 </div>
-                <WorkoutStructureSummary Blocks="block.Blocks" Depth="@(Depth + 1)" />
+                <WorkoutStructureSummary Blocks="block.Blocks" Depth="@(Depth + 1)" StartTime="@blockStart" />
             </li>
         }
         else
         {
             <li class="workout-structure-step">
-                <span class="workout-segment-number">@(Depth == 0 ? $"Segment {index + 1}" : $"Step {index + 1}")</span>
+                <span class="workout-segment-identity">
+                    <span class="workout-segment-number">@(Depth == 0 ? $"Segment {index + 1}" : $"Step {index + 1}")</span>
+                    <small class="workout-segment-start">@WorkoutSegmentTimeline.FormatStart(blockStart)</small>
+                </span>
                 <div class="workout-structure-step__body">
                     <strong>@GoalLabel(block)</strong>
                     <span>@SpeedLabel(block)</span>
@@ -43,6 +55,9 @@
 
     [Parameter]
     public int Depth { get; set; }
+
+    [Parameter]
+    public TimeSpan? StartTime { get; set; } = TimeSpan.Zero;
 
     private static int ExpandedStepCount(WorkoutBlockInput block)
     {

@@ -498,7 +498,7 @@
     private static string FormatMinutes(double minutes)
     {
         TimeSpan value = TimeSpan.FromMinutes(Math.Max(0, minutes));
-        return value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : value.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+        return WorkoutSegmentTimeline.FormatStart(value);
     }
 
     private int ExpandedStepCount => form.Blocks.Sum(ExpandedSteps);

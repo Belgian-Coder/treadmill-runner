@@ -566,7 +566,9 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .workout-structure-list--nested { margin-top: .5rem; padding-left: .8rem; border-left: 2px solid #74e0bd38; }
 .workout-structure-step, .workout-structure-repeat { min-width: 0; padding: .7rem; border: 1px solid #d9f9f21e; border-radius: .8rem; background: #081e278f; }
 .workout-structure-step { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: .75rem; }
+.workout-segment-identity { display: grid; align-content: start; gap: .12rem; min-width: 0; }
 .workout-segment-number { color: #8ee6c4; font-size: .66rem; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.workout-segment-start, .planned-segment-start { color: #91abaa; font: 650 .64rem "Cascadia Mono", Consolas, monospace; }
 .workout-structure-step__body { display: grid; grid-template-columns: minmax(90px, .65fr) minmax(140px, 1fr) minmax(110px, .8fr); gap: .25rem .75rem; min-width: 0; }
 .workout-structure-step__body strong { color: #f0fbf8; font-size: .78rem; }
 .workout-structure-step__body span { color: #bad0cc; font-size: .73rem; }

@@ -355,7 +355,12 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(details).ToContainTextAsync("Strong");
     await Expect(details.GetByRole(AriaRole.Heading, new() { Name = "Planned graph", Exact = true })).ToBeVisibleAsync();
     await Expect(details.GetByRole(AriaRole.Heading, new() { Name = "All planned changes", Exact = true })).ToBeVisibleAsync();
-    await Expect(details.GetByRole(AriaRole.Region, new() { Name = "All planned workout changes", Exact = true }).Locator("tbody tr")).ToHaveCountAsync(6);
+    await Expect(details.Locator(".workout-segment-start").First).ToHaveTextAsync("0:00:00");
+    ILocator plannedRows = details.GetByRole(AriaRole.Region, new() { Name = "All planned workout changes", Exact = true }).Locator("tbody tr");
+    await Expect(plannedRows).ToHaveCountAsync(6);
+    await Expect(plannedRows.Nth(0).Locator("th")).ToHaveTextAsync("Segment 1 · 0:00:00");
+    await Expect(plannedRows.Nth(1).Locator("th")).ToHaveTextAsync("Segment 2 · 0:02:00");
+    await Expect(plannedRows.Nth(5).Locator("th")).ToHaveTextAsync("Segment 6 · 0:10:00");
     await Expect(details.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
     await Page.Keyboard.PressAsync("Escape");
     await Expect(details).ToBeHiddenAsync();
