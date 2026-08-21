@@ -2,6 +2,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using TreadmillRunner.Core.Devices;
+using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -51,6 +53,49 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
     Assert.True(assignment.AutoConnect);
     Assert.True(assignment.IsPreferred);
     Assert.Equal(calendarSeriesId, (await context.CalendarSeries.SingleAsync()).ScheduleGroupId);
+  }
+
+  [Fact]
+  public async Task Archived_device_assignment_cleanup_removes_only_orphaned_assignment_state()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-21T18:00:00Z");
+    Guid profileId = Guid.NewGuid();
+    Guid archivedEnrollmentId;
+    Guid activeEnrollmentId;
+    await using (TreadmillRunnerDbContext oldContext = await factory.CreateDbContextAsync())
+    {
+      await oldContext.GetService<IMigrator>().MigrateAsync("20260810212750_OptimizeHistoryQueries");
+    }
+    var profiles = new ProfileStore(factory);
+    var enrollments = new DeviceEnrollmentStore(factory);
+    await profiles.CreateAsync(
+      new UserProfile(profileId, "Marc", UnitSystem.Metric, 75, 190, 18, []),
+      now,
+      Operation("profile.create", now));
+    VersionedDeviceEnrollment archived = await enrollments.EnrollWithAssignmentsAsync(
+      HeartRate("POLAR-ARCHIVED", "Polar H10"),
+      [new HeartRateAssignmentPreference(profileId, 0, true, true)],
+      now,
+      Operation("device.enroll", now));
+    VersionedDeviceEnrollment active = await enrollments.EnrollWithAssignmentsAsync(
+      HeartRate("GARMIN-ACTIVE", "Garmin fēnix 8"),
+      [new HeartRateAssignmentPreference(profileId, 1, true, false)],
+      now,
+      Operation("device.enroll", now));
+    archivedEnrollmentId = archived.Enrollment.Id;
+    activeEnrollmentId = active.Enrollment.Id;
+    await using (TreadmillRunnerDbContext staleContext = await factory.CreateDbContextAsync())
+    {
+      await staleContext.Database.ExecuteSqlInterpolatedAsync(
+        $"UPDATE DeviceEnrollments SET IsArchived = 1, ArchivedAtUtc = {now}, Version = Version + 1 WHERE Id = {archivedEnrollmentId}");
+      await staleContext.GetService<IMigrator>().MigrateAsync();
+    }
+
+    await using TreadmillRunnerDbContext currentContext = await factory.CreateDbContextAsync();
+    HeartRateDeviceAssignmentEntity remaining = await currentContext.HeartRateDeviceAssignments.SingleAsync();
+    Assert.Equal(activeEnrollmentId, remaining.DeviceEnrollmentId);
+    Assert.False(remaining.IsPreferred);
   }
 
   public Task DisposeAsync()
@@ -154,6 +199,13 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
       "TreadmillMaintenanceEvents",
       "OperationReceipts");
   }
+
+  private static DeviceEnrollment HeartRate(string deviceId, string name) => new(
+    Guid.NewGuid(), DeviceRole.HeartRate, deviceId, "bluetooth-heart-rate", new string('b', 64),
+    name, "HR", null, null, null, TreadmillCapabilityEvidence.Unknown, null);
+
+  private static PersistenceWriteOperation Operation(string type, DateTimeOffset now) => new(
+    Guid.NewGuid(), type, 200, "{}", now, new string('0', 64));
 
   [Fact]
   public async Task History_list_query_uses_partial_ordered_index_without_temp_sort()

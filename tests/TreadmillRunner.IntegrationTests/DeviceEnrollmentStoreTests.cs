@@ -96,6 +96,58 @@ public sealed class DeviceEnrollmentStoreTests : IAsyncLifetime
     Assert.True(assignments.Single(item => item.DeviceEnrollmentId == watch.Enrollment.Id).IsPreferred);
   }
 
+  [Fact]
+  public async Task Forgetting_heart_rate_sensor_removes_assignments_and_allows_preferred_reenrollment()
+  {
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-21T18:00:00Z");
+    var marc = new UserProfile(Guid.NewGuid(), "Marc", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(marc, now, Op("profile.create", now));
+    VersionedDeviceEnrollment polar = await store.EnrollWithAssignmentsAsync(
+      HeartRate("POLAR-OLD"),
+      [new HeartRateAssignmentPreference(marc.Id, 0, true, true)],
+      now,
+      Op("device.enroll", now));
+    VersionedDeviceEnrollment watch = await store.EnrollWithAssignmentsAsync(
+      HeartRate("GARMIN-WATCH", "Garmin fēnix 8"),
+      [new HeartRateAssignmentPreference(marc.Id, 1, true, false)],
+      now,
+      Op("device.enroll", now));
+
+    Assert.True(await store.ForgetByIdAsync(
+      polar.Enrollment.Id,
+      polar.Version,
+      now.AddMinutes(1),
+      Op("device.forget", now)));
+
+    HeartRateDeviceAssignment remaining = Assert.Single(await store.ListHeartRateAssignmentsAsync());
+    Assert.Equal(watch.Enrollment.Id, remaining.DeviceEnrollmentId);
+    VersionedDeviceEnrollment replacement = await store.EnrollWithAssignmentsAsync(
+      HeartRate("POLAR-NEW"),
+      [new HeartRateAssignmentPreference(marc.Id, 0, true, true)],
+      now.AddMinutes(2),
+      Op("device.enroll", now));
+    IReadOnlyList<HeartRateDeviceAssignment> assignments = await store.ListHeartRateAssignmentsAsync();
+    Assert.Contains(assignments, item => item.DeviceEnrollmentId == replacement.Enrollment.Id && item.IsPreferred);
+    Assert.Contains(assignments, item => item.DeviceEnrollmentId == watch.Enrollment.Id && !item.IsPreferred);
+
+    Assert.True(await store.ForgetByIdAsync(
+      watch.Enrollment.Id,
+      watch.Version,
+      now.AddMinutes(3),
+      Op("device.forget", now)));
+    Assert.DoesNotContain(
+      await store.ListHeartRateAssignmentsAsync(),
+      item => item.DeviceEnrollmentId == watch.Enrollment.Id);
+    Assert.True(await store.ForgetAsync(
+      DeviceRole.HeartRate,
+      replacement.Version,
+      now.AddMinutes(4),
+      Op("device.forget", now)));
+    Assert.Empty(await store.ListHeartRateAssignmentsAsync());
+  }
+
   private static DeviceEnrollment Treadmill(string deviceId) => new(
     Guid.NewGuid(), DeviceRole.Treadmill, deviceId, "horizon-omega-z", new string('a', 64),
     "Horizon Omega Z", "Omega Z", null, TreadmillTelemetryMode.Ftms,
