@@ -115,22 +115,25 @@
                 <span><span class="eyebrow">Workout details</span><strong>@session.WorkoutTitle</strong></span>
                 <span>Plan and live chart</span>
             </summary>
-            <div class="chart-plot-grid" aria-label="Live workout chart">
+            <div class="chart-plot-grid chart-plot-grid--dual" aria-label="Live workout chart">
                 <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@LiveSpeedAxisMaximum, 1fr)">
                     @foreach (int tick in LiveSpeedAxisTicks)
                     {
                         <span>@tick</span>
                     }
                 </div>
-                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Planned, requested, and measured speed">
+                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Planned, requested, and measured speed and incline">
                     @foreach (int tick in LiveSpeedAxisTicks)
                     {
-                        double y = LiveChartY(tick);
+                        double y = LiveChartY(tick, LiveSpeedAxisMaximum);
                         <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
                     }
-                    <path class="chart-plan" data-series="planned-speed" d="@BuildLiveSpeedPath(static point => point.PlannedSpeedKph)" />
-                    <path class="chart-requested" data-series="requested-speed" d="@BuildLiveSpeedPath(static point => point.RequestedSpeedKph)" />
-                    <path class="chart-current" data-series="measured-speed" d="@BuildLiveSpeedPath(static point => point.MeasuredSpeedKph)" />
+                    <path class="chart-plan" data-series="planned-speed" d="@BuildLiveMetricPath(static point => point.PlannedSpeedKph, LiveSpeedAxisMaximum)" />
+                    <path class="chart-requested" data-series="requested-speed" d="@BuildLiveMetricPath(static point => point.RequestedSpeedKph, LiveSpeedAxisMaximum)" />
+                    <path class="chart-current" data-series="measured-speed" d="@BuildLiveMetricPath(static point => point.MeasuredSpeedKph, LiveSpeedAxisMaximum)" />
+                    <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildLiveMetricPath(static point => point.PlannedInclinePercent, LiveInclineAxisMaximum)" />
+                    <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildLiveMetricPath(static point => point.RequestedInclinePercent, LiveInclineAxisMaximum)" />
+                    <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildLiveMetricPath(static point => point.MeasuredInclinePercent, LiveInclineAxisMaximum)" />
                     @foreach (TimeSpan marker in liveOverrideMarkers)
                     {
                         double markerX = ChartX(marker);
@@ -139,9 +142,16 @@
                     <line class="chart-cursor" x1="@LiveProgressX" x2="@LiveProgressX" y1="10" y2="210" data-elapsed-seconds="@LiveChartElapsedSeconds" data-duration-seconds="@LiveChartDurationSeconds" />
                     @if (LatestLiveChartPoint is { } latest)
                     {
-                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@LiveChartY(latest.MeasuredSpeedKph)" r="5" />
+                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@LiveChartY(latest.MeasuredSpeedKph, LiveSpeedAxisMaximum)" r="5" />
                     }
                 </svg>
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@LiveInclineAxisMaximum, 1fr)">
+                    <strong class="chart-axis-unit">%</strong>
+                    @foreach (int tick in LiveInclineAxisTicks)
+                    {
+                        <span>@tick</span>
+                    }
+                </div>
                 <div></div>
                 <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatChartAxisTime(TimeSpan.FromTicks(LiveChartDuration.Ticks / 2))">
                     @foreach (LiveChartTimeTick tick in LiveChartTimeTicks)
@@ -149,9 +159,11 @@
                         <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatChartAxisTime(tick.Elapsed)</span>
                     }
                 </div>
+                <div></div>
             </div>
-            <div>
-                <div class="legend"><span><i class="legend-line legend-line--plan" aria-hidden="true"></i>Planned</span><span><i class="legend-line legend-line--requested" aria-hidden="true"></i>Requested</span><span><i class="legend-line legend-line--measured" aria-hidden="true"></i>Measured</span></div>
+            <div class="control-chart-legend" aria-label="Live chart legend">
+                <span class="control-chart-legend__group" aria-label="Speed legend"><strong>Speed</strong><span><i class="legend-line legend-line--plan" aria-hidden="true"></i>Planned</span><span><i class="legend-line legend-line--requested" aria-hidden="true"></i>Requested</span><span><i class="legend-line legend-line--measured" aria-hidden="true"></i>Measured</span></span>
+                <span class="control-chart-legend__group" aria-label="Incline legend"><strong>Incline</strong><span><i class="legend-line legend-line--plan legend-line--incline-plan" aria-hidden="true"></i>Planned</span><span><i class="legend-line legend-line--requested legend-line--incline-target" aria-hidden="true"></i>Requested</span><span><i class="legend-line legend-line--measured legend-line--incline-measured" aria-hidden="true"></i>Measured</span></span>
             </div>
         </details>
     }
@@ -496,6 +508,7 @@
     private bool soundEnabled;
     private RunCuePreferences cuePreferences = RunCuePreferences.Default;
     private int liveSpeedAxisMaximum = 10;
+    private int liveInclineAxisMaximum = 10;
     private bool isManualCommandPending;
     private bool isStopPending;
     private bool stopRequestedDuringCommand;
@@ -1658,16 +1671,24 @@
             snapshot.Live.Elapsed,
             snapshot.PlannedSpeedKph,
             snapshot.RequestedSpeedKph,
-            snapshot.Live.SpeedKph);
-        double planMaximum = snapshot.WorkoutPlan.Count == 0
+            snapshot.Live.SpeedKph,
+            snapshot.PlannedInclinePercent,
+            snapshot.RequestedInclinePercent,
+            snapshot.Live.InclinePercent);
+        double planSpeedMaximum = snapshot.WorkoutPlan.Count == 0
             ? 0
             : snapshot.WorkoutPlan.Max(static item => item.SpeedKph ?? 0);
-        double observed = Math.Max(point.PlannedSpeedKph ?? 0, Math.Max(point.RequestedSpeedKph, point.MeasuredSpeedKph));
-        liveSpeedAxisMaximum = (int)Math.Ceiling(Math.Max(liveSpeedAxisMaximum, Math.Max(planMaximum, observed)));
+        double planInclineMaximum = snapshot.WorkoutPlan.Count == 0
+            ? 0
+            : snapshot.WorkoutPlan.Max(static item => item.InclinePercent ?? 0);
+        double observedSpeed = Math.Max(point.PlannedSpeedKph ?? 0, Math.Max(point.RequestedSpeedKph, point.MeasuredSpeedKph));
+        double observedIncline = Math.Max(point.PlannedInclinePercent ?? 0, Math.Max(point.RequestedInclinePercent, point.MeasuredInclinePercent));
+        liveSpeedAxisMaximum = (int)Math.Ceiling(Math.Max(liveSpeedAxisMaximum, Math.Max(planSpeedMaximum, observedSpeed)));
+        liveInclineAxisMaximum = (int)Math.Ceiling(Math.Max(liveInclineAxisMaximum, Math.Max(planInclineMaximum, observedIncline)));
         liveChartPoints.AppendOrReplace(point, static (previous, current) => (long)previous.Elapsed.TotalSeconds == (long)current.Elapsed.TotalSeconds);
     }
 
-    private string BuildLiveSpeedPath(Func<LiveChartPoint, double?> selector)
+    private string BuildLiveMetricPath(Func<LiveChartPoint, double?> selector, int axisMaximum)
     {
         if (liveChartPoints.Count == 0) return string.Empty;
         IReadOnlyList<LiveChartPoint> points = RenderLiveChartPoints();
@@ -1676,12 +1697,12 @@
         double previousY = 0;
         foreach (LiveChartPoint point in points)
         {
-            if (selector(point) is not { } speed)
+            if (selector(point) is not { } value)
             {
                 started = false;
                 continue;
             }
-            double y = LiveChartY(speed);
+            double y = LiveChartY(value, axisMaximum);
             double x = ChartX(point.Elapsed);
             if (!started)
             {
@@ -1737,12 +1758,20 @@
                 bucket[0], bucket[^1],
                 bucket.MinBy(static point => point.MeasuredSpeedKph)!, bucket.MaxBy(static point => point.MeasuredSpeedKph)!,
                 bucket.MinBy(static point => point.RequestedSpeedKph)!, bucket.MaxBy(static point => point.RequestedSpeedKph)!,
+                bucket.MinBy(static point => point.MeasuredInclinePercent)!, bucket.MaxBy(static point => point.MeasuredInclinePercent)!,
+                bucket.MinBy(static point => point.RequestedInclinePercent)!, bucket.MaxBy(static point => point.RequestedInclinePercent)!,
             };
             LiveChartPoint[] planned = bucket.Where(static point => point.PlannedSpeedKph is not null).ToArray();
             if (planned.Length > 0)
             {
                 extrema.Add(planned.MinBy(static point => point.PlannedSpeedKph)!);
                 extrema.Add(planned.MaxBy(static point => point.PlannedSpeedKph)!);
+            }
+            LiveChartPoint[] plannedIncline = bucket.Where(static point => point.PlannedInclinePercent is not null).ToArray();
+            if (plannedIncline.Length > 0)
+            {
+                extrema.Add(plannedIncline.MinBy(static point => point.PlannedInclinePercent)!);
+                extrema.Add(plannedIncline.MaxBy(static point => point.PlannedInclinePercent)!);
             }
             int[] transitions = Enumerable.Range(1, bucket.Length - 1)
                 .Where(index => bucket[index - 1].PlannedSpeedKph.HasValue != bucket[index].PlannedSpeedKph.HasValue)
@@ -1767,8 +1796,10 @@
         LatestLiveChartPoint?.Elapsed ?? TimeSpan.Zero);
     private LiveChartPoint? LatestLiveChartPoint => liveChartPoints.Snapshot().LastOrDefault();
     private int LiveSpeedAxisMaximum => liveSpeedAxisMaximum;
+    private int LiveInclineAxisMaximum => liveInclineAxisMaximum;
     private IEnumerable<int> LiveSpeedAxisTicks => Enumerable.Range(1, LiveSpeedAxisMaximum).Reverse();
-    private double LiveChartY(double speed) => 210 - (Math.Clamp(speed / LiveSpeedAxisMaximum, 0, 1) * 200);
+    private IEnumerable<int> LiveInclineAxisTicks => Enumerable.Range(1, LiveInclineAxisMaximum).Reverse();
+    private static double LiveChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
     private double LiveProgressX => ChartX(session?.Live.Elapsed ?? TimeSpan.Zero);
     private string LiveChartElapsedSeconds => (session?.Live.Elapsed.TotalSeconds ?? 0).ToString("0.###", CultureInfo.InvariantCulture);
     private string LiveChartDurationSeconds => LiveChartDuration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
@@ -1828,7 +1859,10 @@
         TimeSpan Elapsed,
         double? PlannedSpeedKph,
         double RequestedSpeedKph,
-        double MeasuredSpeedKph);
+        double MeasuredSpeedKph,
+        double? PlannedInclinePercent,
+        double RequestedInclinePercent,
+        double MeasuredInclinePercent);
 
     private sealed record LiveChartTimeTick(TimeSpan Elapsed, double PositionPercent);
 

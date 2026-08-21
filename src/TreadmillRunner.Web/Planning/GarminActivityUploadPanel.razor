@@ -42,11 +42,18 @@
     {
         <div class="integration-account">
             <strong>@status.AccountLabel</strong>
-            <span>@(status.Enabled ? "Automatic upload enabled" : "Automatic upload disabled") · @status.Confirmed confirmed · @status.FoundInGarmin found manually · @status.Pending pending</span>
+            <span>@(status.Enabled ? "Automatic upload enabled" : "Automatic upload disabled") · @status.Confirmed confirmed · @status.FoundInGarmin matched on watch · @status.Pending pending</span>
             @if (status.Unknown > 0) { <small class="field-error">@status.Unknown unknown outcome(s)—review before dismissing.</small> }
             @if (status.Failed > 0) { <small class="field-error">@status.Failed known failure(s) can be retried.</small> }
             @if (!string.IsNullOrWhiteSpace(status.LastError)) { <small class="field-error" role="status">@status.LastError</small> }
         </div>
+        <fieldset class="integration-choice" disabled="@busy">
+            <legend>When the same run is found on the Garmin watch</legend>
+            <label class="field">Duplicate handling<select @bind="watchActivityHandling"><option value="PreferWatch">Keep the watch activity</option><option value="MergeAndReplace">Merge and replace the watch activity</option></select></label>
+            <small>Recommended. Garmin keeps the Fenix training metrics, running dynamics, and other watch-derived fields.</small>
+            <small>The original is removed only after Garmin confirms a distinct merged upload. If confirmation is uncertain, both activities are kept for manual review.</small>
+            <button class="secondary-action" type="button" @onclick="SaveSettingsAsync" disabled="@(busy || watchActivityHandling == status.WatchActivityHandling)">Save duplicate handling</button>
+        </fieldset>
         <div class="form-actions">
             <button class="primary-action" type="button" @onclick="ToggleEnabledAsync" disabled="@busy">@(status.Enabled ? "Disable automatic upload" : "Enable automatic upload")</button>
             @if (confirmDisconnect)
@@ -135,7 +142,7 @@
     private List<GarminActivityJobView> jobs = [];
     private bool loading = true, watchLoading = true, busy, enableAfterConnect, confirmDisconnect;
     private Guid? confirmFoundJobId;
-    private string email = string.Empty, password = string.Empty, mfaCode = string.Empty, watchLabel = "Garmin watch", message = string.Empty, watchMessage = string.Empty, oneTimeWatchToken = string.Empty;
+    private string email = string.Empty, password = string.Empty, mfaCode = string.Empty, watchLabel = "Garmin watch", watchActivityHandling = "PreferWatch", message = string.Empty, watchMessage = string.Empty, oneTimeWatchToken = string.Empty;
     private string jobsLoadError = string.Empty, watchLoadError = string.Empty;
     private Guid? challengeId;
     private Guid loadedProfileId;
@@ -165,6 +172,7 @@
         try
         {
             status = await Http.GetFromJsonAsync<GarminActivityStatusView>($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/status");
+            watchActivityHandling = status?.WatchActivityHandling ?? "PreferWatch";
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or NotSupportedException) { status = null; }
         finally { loading = false; }
@@ -261,7 +269,8 @@
         finally { mfaCode = string.Empty; busy = false; }
     }
 
-    private async Task ToggleEnabledAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/enabled", new { enabled = !status.Enabled, expectedVersion = version }), "The upload setting could not be changed.")) await LoadAsync(); }
+    private async Task ToggleEnabledAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/settings", new { enabled = !status.Enabled, watchActivityHandling = status.WatchActivityHandling ?? "PreferWatch", expectedVersion = version }), "The upload setting could not be changed.")) await LoadAsync(); }
+    private async Task SaveSettingsAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/settings", new { enabled = status.Enabled, watchActivityHandling, expectedVersion = version }), "The duplicate handling setting could not be changed.")) { await LoadAsync(); message = "Garmin duplicate handling saved for this runner."; } }
     private async Task DisconnectAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/disconnect", new { expectedVersion = version }), "The upload account could not be disconnected.")) { confirmDisconnect = false; await LoadAsync(); } }
     private async Task RetryAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/retry", null), "This job is not retryable or changed; refresh and review it.")) await LoadAsync(); }
     private async Task DismissAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/dismiss", null), "This job could not be dismissed.")) await LoadAsync(); }
@@ -325,9 +334,9 @@
         finally { busy = false; }
     }
 
-    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? AccountLabel, string State, int Pending, int Confirmed, int FoundInGarmin, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
+    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? WatchActivityHandling, string? AccountLabel, string State, int Pending, int Confirmed, int FoundInGarmin, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
     private static string FormatDuration(double? seconds) => seconds is null ? "duration unavailable" : TimeSpan.FromSeconds(seconds.Value).ToString(@"h\:mm\:ss");
-    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc, DateTimeOffset? AcknowledgedAtUtc);
+    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string OperationPhase, string? MatchedRemoteId, string? ReplacementRemoteId, string? MatchEvidence, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc, DateTimeOffset? AcknowledgedAtUtc);
     private sealed record GarminActivityConnectResultView(string State, Guid? ChallengeId, string? AccountLabel, string Message);
     private sealed record GarminActivityErrorView(string Error, string? AdapterState);
     private sealed record GarminWatchBindingView(Guid Id, Guid UserProfileId, string RunnerName, string DeviceLabel, DateTimeOffset CreatedAtUtc, DateTimeOffset? LastSeenAtUtc, int Version);

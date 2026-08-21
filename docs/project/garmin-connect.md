@@ -4,7 +4,7 @@ type: integration-runbook
 status: implemented-setup-required
 owner: project
 audience: runner-operator-and-developer
-updated: 2026-08-06
+updated: 2026-08-22
 ---
 
 # Garmin integrations
@@ -14,14 +14,14 @@ TreadmillRunner deliberately separates three Garmin paths because they have diff
 | Path | Purpose | Support level | Account/developer requirement | Default |
 |---|---|---|---|---|
 | Connect IQ companion | Explicitly record a native treadmill activity on the runner's watch; optionally display the local session | Garmin public Connect IQ APIs; source prepared, SDK/store acceptance pending | Garmin developer account/key for IQ Store publishing; ordinary Garmin account for watch sync | Standalone recording available after installation; gateway pairing optional |
-| Completed-activity upload | Upload TreadmillRunner's locally exported FIT when no watch recorded the run | **Unsupported private Garmin consumer interface** through pinned `garminconnect` adapter | Runner's own Garmin credentials and possibly MFA; no Connect Developer Program approval | Disabled per profile |
+| Completed-activity upload | Reconcile a completed TreadmillRunner run with a watch activity, or upload the local FIT when no single match exists | **Unsupported private Garmin consumer interface** through pinned `garminconnect` adapter | Runner's own Garmin credentials and possibly MFA; no Connect Developer Program approval | Disabled per profile; duplicate mode defaults to `PreferWatch` |
 | Official training sync (TR-011) | Publish workouts/plans/calendar content to Garmin | Supported Garmin Connect Developer Program Training API | Approved program credentials and Garmin-supplied contract | Disabled until approved/configured |
 
-Do not enable completed-activity upload for a run that was also recorded on a Garmin watch unless the runner accepts a likely duplicate. TreadmillRunner cannot reliably deduplicate a locally uploaded FIT against a separately synchronized watch activity.
+When enabled, TreadmillRunner waits five minutes after local completion and looks for a Garmin treadmill activity with a start within ten minutes, close duration and distance, and corroborating heart-rate summary/curve. No match uploads the local FIT. Multiple plausible matches also upload the local FIT and leave manual duplicate cleanup to the runner; ambiguity never authorizes deletion.
 
 ## Recommended household choices
 
-- If a watch is worn: open **TreadmillRunner Companion** on the watch, press Select to record, and leave unsupported activity upload disabled for that profile.
+- If a watch is worn: use `PreferWatch` to retain the native activity and its Garmin/watch-derived fields, or explicitly choose `MergeAndReplace` to overlay TreadmillRunner telemetry into the original watch FIT.
 - If no watch is worn: enable completed-activity upload for that runner before the run. The NUC queues the completed local FIT automatically.
 - If only workouts/plans need to appear on Garmin devices: use the official Training API path after Garmin approval. It does not upload completed activities.
 
@@ -34,7 +34,8 @@ Do not enable completed-activity upload for a run that was also recorded on a Ga
 3. Open **Profiles**, edit the runner, and find **Garmin activity upload — Experimental**.
 4. Enter that runner's Garmin email and password. The password is streamed once to an isolated Python process and is never persisted.
 5. If Garmin requests MFA, enter the current verification code. Challenges expire after five minutes and are bound to the selected profile.
-6. Keep **Enable automatic upload after connecting** off if the watch is normally used; otherwise explicitly enable it.
+6. Choose duplicate handling for this runner's connection. `PreferWatch` is the safe default. `MergeAndReplace` is explicit opt-in and uses Garmin's unsupported download/import/delete consumer endpoints.
+7. Explicitly enable automatic upload when ready.
 
 Each household profile has an independent protected account envelope, enable switch, jobs, failures, and disconnect action. An MFA challenge is cryptographically bound to its selected profile. TreadmillRunner intentionally has no household login: any trusted-LAN operator can administer either profile, so the application must not be exposed to a guest or public network.
 
@@ -48,10 +49,13 @@ Treat the operation ID as single-use. A repeated ID is rejected. Poll the profil
 
 The pinned library can return `{"status":"uploaded"}` after a successful import HTTP response without exposing Garmin's activity ID. TreadmillRunner treats that documented library-success shape as Confirmed with an empty remote ID. Empty, malformed, interrupted, or otherwise unrecognized responses remain Unknown and are never automatically retried.
 
-### Queue behavior and duplicate protection
+### Queue behavior and duplicate handling
 
 - Enabling records a UTC watermark. Only sessions ending after that explicit enable are eligible, so connecting, disconnecting, or reconnecting cannot upload old history unexpectedly.
-- The worker reconciles completed/stopped sessions for enabled connected profiles immediately when woken and at least once per minute.
+- The worker reconciles completed/stopped sessions at least once per minute, but a normal job is not eligible until five minutes after the local session ended. Synthetic acceptance tests bypass the watch search and remain immediate.
+- Exactly one strong watch match follows the connection's selected behavior. `PreferWatch` records the matched remote ID/evidence and skips local upload. `MergeAndReplace` downloads the original FIT, preserves its watch/proprietary messages, overlays local distance/speed/incline/heart-rate summaries and samples, then imports the merged FIT.
+- In merge mode, the original watch activity is deleted only after Garmin confirms the merged import with a distinct activity ID. A missing ID, duplicate rejection, timeout, interrupted response, or other uncertainty retains the original. Once replacement upload is durable, deletion is a separate auditable phase so service restart cannot lose its IDs.
+- No or multiple plausible matches cause the normal local upload. Multiple matches are deliberately left for the runner to resolve manually.
 - A job is unique by local session and has a deterministic SHA-256 idempotency key over exporter version, profile, and session. Leasing uses an atomic status/attempt compare-and-set so two workers cannot upload the same pending job.
 - The gateway exports FIT from authoritative local session history into a temporary file, invokes the adapter, and deletes the temporary file.
 - Confirmed uploads are terminal. Refreshed Garmin tokens replace the prior encrypted token envelope.
@@ -95,8 +99,9 @@ Developers may still override `GarminActivityUpload__PythonExecutable`, `GarminA
 |---|---|---|
 | Disconnected | No protected token envelope exists | Connect locally/over HTTPS if this runner wants unsupported upload |
 | Connected, disabled | Account is ready but no completed sessions are queued | Enable explicitly only for runs not recorded on the watch |
-| Pending | Job is waiting for its bounded attempt | Wait up to one worker interval |
+| Pending | Job is waiting for the five-minute watch check, upload, or confirmed-replacement cleanup phase | Wait for the next worker interval |
 | Confirmed | Garmin returned a successful import result | Verify activity in that runner's Garmin Connect history |
+| FoundInGarmin | One strong watch match was retained under `PreferWatch` | No upload is required; review the stored match evidence if needed |
 | Failed | Known provider/authentication error | Correct network/authentication; reconnect for auth errors or select retry for a known provider failure |
 | Unknown | Request may have reached Garmin, but confirmation was lost | Check Garmin Connect; do not retry blindly; dismiss after review |
 | Adapter setup required | Bundled runtime/script/dependency missing, invalid, or unavailable | Install or repair the current signed release, select **Check again**, and leave upload disabled until `Ready` |

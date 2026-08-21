@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -50,5 +51,38 @@ public sealed class GarminActivityReadinessEndpointTests(GarminGatewayFactory fa
     using JsonDocument json = JsonDocument.Parse(body);
     Assert.Equal(GarminAdapterReadinessStates.DependencyMissing, json.RootElement.GetProperty("adapterState").GetString());
     Assert.Equal("The Garmin adapter dependency is missing. Install or repair the current signed release.", json.RootElement.GetProperty("error").GetString());
+  }
+
+  [Fact]
+  public async Task Per_profile_connection_settings_can_select_merge_and_replace()
+  {
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-22T08:00:00Z");
+    await using (TreadmillRunnerDbContext context = await factory.CreateContextAsync())
+    {
+      context.GarminActivityUploadAccounts.Add(new GarminActivityUploadAccountEntity
+      {
+        Id = Guid.NewGuid(),
+        UserProfileId = factory.SecondProfileId,
+        AccountLabel = "runner2",
+        ProtectedTokenStore = "protected-token",
+        Enabled = true,
+        WatchActivityHandling = GarminWatchActivityHandling.PreferWatch,
+        State = "Connected",
+        ConnectedAtUtc = now,
+        UploadFromUtc = now,
+        UpdatedAtUtc = now,
+        Version = 1,
+      });
+      await context.SaveChangesAsync();
+    }
+    using HttpClient client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+
+    using HttpResponseMessage response = await client.PostAsJsonAsync(
+      $"/api/integrations/garmin/activity-upload/profiles/{factory.SecondProfileId}/settings",
+      new { enabled = true, watchActivityHandling = GarminWatchActivityHandling.MergeAndReplace, expectedVersion = 1 });
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    JsonElement status = await response.Content.ReadFromJsonAsync<JsonElement>();
+    Assert.Equal(GarminWatchActivityHandling.MergeAndReplace, status.GetProperty("watchActivityHandling").GetString());
   }
 }

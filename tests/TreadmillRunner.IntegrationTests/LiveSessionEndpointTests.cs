@@ -233,6 +233,57 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Physical_manual_targets_persist_until_the_next_fixed_segment()
+  {
+    using HttpClient client = factory.CreateClient();
+    using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
+      Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(
+      client,
+      firstStepDurationMinutes: 0.05,
+      includeSecondStep: true);
+    const string holderId = "physical-manual-segment";
+    ControlLease lease = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+    using HttpResponseMessage arm = await client.PostAsJsonAsync("/api/live/sessions/arm", new
+    {
+      profileId,
+      workoutRevisionId = revisionId,
+      holderId,
+      leaseId = lease.Id,
+      operationId = Guid.NewGuid(),
+    });
+    Assert.Equal(HttpStatusCode.Created, arm.StatusCode);
+
+    using HttpResponseMessage start = await client.PostAsJsonAsync(
+      "/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.5, measuredInclinePercent = 1.0 });
+    Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
+    await Task.Delay(TimeSpan.FromMilliseconds(750));
+
+    using HttpResponseMessage physicalOverride = await client.PostAsJsonAsync(
+      "/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 7.2, measuredInclinePercent = 3.0 });
+    Assert.Equal(HttpStatusCode.NoContent, physicalOverride.StatusCode);
+    await Task.Delay(TimeSpan.FromMilliseconds(750));
+
+    ActiveSessionSnapshot currentStep = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(0, Assert.IsType<ActiveWorkoutStep>(currentStep.CurrentStep).Index);
+    Assert.Equal(7.2, currentStep.Live.SpeedKph, precision: 3);
+    Assert.Equal(3.0, currentStep.Live.InclinePercent, precision: 3);
+
+    ActiveSessionSnapshot nextStep = await WaitForStepAsync(client, 1, TimeSpan.FromSeconds(4));
+    await Task.Delay(TimeSpan.FromMilliseconds(750));
+    nextStep = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(1, Assert.IsType<ActiveWorkoutStep>(nextStep.CurrentStep).Index);
+    Assert.Equal(5.5, nextStep.Live.SpeedKph, precision: 3);
+    Assert.Equal(0.5, nextStep.Live.InclinePercent, precision: 3);
+  }
+
+  [Fact]
   public async Task Remote_start_route_exists_but_fails_closed_without_an_active_verified_context()
   {
     using HttpClient client = factory.CreateClient();
@@ -503,7 +554,9 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     HttpClient client,
     bool heartRate = false,
     double maximumSpeedKph = 15.0,
-    double fixedSpeedKph = 6.5)
+    double fixedSpeedKph = 6.5,
+    double firstStepDurationMinutes = 20,
+    bool includeSecondStep = false)
   {
     using HttpResponseMessage profileResponse = await client.PostAsJsonAsync("/api/planning/profiles", new
     {
@@ -521,29 +574,66 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
       await profileResponse.Content.ReadAsStreamAsync());
     Guid profileId = profileDocument.RootElement.GetProperty("id").GetGuid();
 
+    object[] blocks =
+    [
+      new
+      {
+        kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = firstStepDurationMinutes,
+        speedKind = heartRate ? "heartRate" : "fixed", speedStartKph = fixedSpeedKph, speedEndKph = 0.0,
+        heartRateMinimumBpm = heartRate ? 125 : 0, heartRateMaximumBpm = heartRate ? 145 : 0,
+        heartRateZoneNumber = 0, heartRateInitialSpeedKph = heartRate ? 6.0 : 0.0,
+        heartRateMinimumSpeedKph = heartRate ? 4.0 : 0.0, heartRateMaximumSpeedKph = heartRate ? 8.0 : 0.0, inclineKind = "fixed",
+        inclineStartPercent = 1.0, inclineEndPercent = 0.0, cue = "Settle", notes = (string?)null,
+      },
+    ];
+    if (includeSecondStep)
+    {
+      blocks =
+      [
+        .. blocks,
+        new
+        {
+          kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = 10.0,
+          speedKind = "fixed", speedStartKph = 5.5, speedEndKph = 0.0,
+          heartRateMinimumBpm = 0, heartRateMaximumBpm = 0,
+          heartRateZoneNumber = 0, heartRateInitialSpeedKph = 0.0,
+          heartRateMinimumSpeedKph = 0.0, heartRateMaximumSpeedKph = 0.0, inclineKind = "fixed",
+          inclineStartPercent = 0.5, inclineEndPercent = 0.0, cue = "Recover", notes = (string?)null,
+        },
+      ];
+    }
+
     using HttpResponseMessage workoutResponse = await client.PostAsJsonAsync("/api/planning/workouts", new
     {
       operationId = Guid.NewGuid(),
       name = $"Workout {Guid.NewGuid():N}",
       description = "Integration session",
-      blocks = new[]
-      {
-        new
-        {
-          kind = "step", repetitions = 1, blocks = Array.Empty<object>(), goalKind = "time", goalValue = 20.0,
-          speedKind = heartRate ? "heartRate" : "fixed", speedStartKph = fixedSpeedKph, speedEndKph = 0.0,
-          heartRateMinimumBpm = heartRate ? 125 : 0, heartRateMaximumBpm = heartRate ? 145 : 0,
-          heartRateZoneNumber = 0, heartRateInitialSpeedKph = heartRate ? 6.0 : 0.0,
-          heartRateMinimumSpeedKph = heartRate ? 4.0 : 0.0, heartRateMaximumSpeedKph = heartRate ? 8.0 : 0.0, inclineKind = "fixed",
-          inclineStartPercent = 1.0, inclineEndPercent = 0.0, cue = "Settle", notes = (string?)null,
-        },
-      },
+      blocks,
     });
     Assert.Equal(HttpStatusCode.Created, workoutResponse.StatusCode);
     using JsonDocument workoutDocument = await JsonDocument.ParseAsync(
       await workoutResponse.Content.ReadAsStreamAsync());
     Guid revisionId = workoutDocument.RootElement.GetProperty("revisionId").GetGuid();
     return (profileId, revisionId);
+  }
+
+  private static async Task<ActiveSessionSnapshot> WaitForStepAsync(
+    HttpClient client,
+    int stepIndex,
+    TimeSpan timeout)
+  {
+    DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+    do
+    {
+      ActiveSessionSnapshot snapshot = Assert.IsType<ActiveSessionSnapshot>(
+        await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+      if (snapshot.CurrentStep?.Index >= stepIndex)
+        return snapshot;
+      await Task.Delay(TimeSpan.FromMilliseconds(100));
+    }
+    while (DateTimeOffset.UtcNow < deadline);
+
+    throw new TimeoutException($"Workout did not reach step {stepIndex} within {timeout}.");
   }
 
   private static async Task<ControlLease> WaitWithHeartbeatsAsync(

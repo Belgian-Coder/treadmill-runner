@@ -312,12 +312,14 @@ public sealed class TreadmillRunnerDbContext(
       table.HasCheckConstraint("CK_GarminActivityUploadAccounts_Label", "length(\"AccountLabel\") > 0");
       table.HasCheckConstraint("CK_GarminActivityUploadAccounts_Tokens", "length(\"ProtectedTokenStore\") > 0");
       table.HasCheckConstraint("CK_GarminActivityUploadAccounts_State", "\"State\" IN ('Connected', 'NeedsAuthentication', 'ProviderUnavailable')");
+      table.HasCheckConstraint("CK_GarminActivityUploadAccounts_WatchHandling", "\"WatchActivityHandling\" IN ('PreferWatch', 'MergeAndReplace')");
       table.HasCheckConstraint("CK_GarminActivityUploadAccounts_Version", "\"Version\" > 0");
     });
     uploadAccount.HasKey(entity => entity.Id);
     uploadAccount.Property(entity => entity.AccountLabel).HasMaxLength(160);
     uploadAccount.Property(entity => entity.ProtectedTokenStore).HasMaxLength(32768);
     uploadAccount.Property(entity => entity.State).HasMaxLength(30);
+    uploadAccount.Property(entity => entity.WatchActivityHandling).HasMaxLength(30);
     uploadAccount.Property(entity => entity.LastError).HasMaxLength(1000);
     uploadAccount.Property(entity => entity.Version).IsConcurrencyToken();
     uploadAccount.HasIndex(entity => entity.UserProfileId).IsUnique();
@@ -335,6 +337,10 @@ public sealed class TreadmillRunnerDbContext(
     uploadJob.Property(entity => entity.IdempotencyKey).HasMaxLength(64).IsFixedLength();
     uploadJob.Property(entity => entity.Status).HasMaxLength(20);
     uploadJob.Property(entity => entity.RemoteId).HasMaxLength(256);
+    uploadJob.Property(entity => entity.OperationPhase).HasMaxLength(30);
+    uploadJob.Property(entity => entity.MatchedRemoteId).HasMaxLength(256);
+    uploadJob.Property(entity => entity.ReplacementRemoteId).HasMaxLength(256);
+    uploadJob.Property(entity => entity.MatchEvidence).HasMaxLength(1000);
     uploadJob.Property(entity => entity.FailureKind).HasMaxLength(30);
     uploadJob.Property(entity => entity.LastError).HasMaxLength(1000);
     uploadJob.HasIndex(entity => entity.WorkoutSessionId).IsUnique();

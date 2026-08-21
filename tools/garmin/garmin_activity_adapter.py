@@ -9,6 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import io
+import math
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -122,6 +126,110 @@ def upload(request: dict[str, Any]) -> None:
         emit(classify_error(error, upload_started=upload_started))
 
 
+def _login(token_store: str):
+    from garminconnect import Garmin
+
+    if len(token_store) < 128:
+        raise ValueError("A token store is required.")
+    client = Garmin(retry_attempts=0)
+    client.login(token_store)
+    return client
+
+
+def _utc(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def search(request: dict[str, Any]) -> None:
+    from garminconnect import parse_activity_detail_metrics
+
+    client = _login(str(request.get("tokenStore", "")))
+    local_start = _utc(request.get("startedAtUtc"))
+    if local_start is None:
+        raise ValueError("A UTC session start is required.")
+    activities = client.get_activities(0, 20, "treadmill_running")
+    candidates: list[dict[str, Any]] = []
+    for activity in activities if isinstance(activities, list) else []:
+        if not isinstance(activity, dict):
+            continue
+        remote_id = activity.get("activityId")
+        started = _utc(activity.get("startTimeGMT"))
+        activity_type = activity.get("activityType") or {}
+        type_key = activity_type.get("typeKey") if isinstance(activity_type, dict) else None
+        if remote_id is None or started is None or abs((started - local_start).total_seconds()) > 600:
+            continue
+        if str(type_key or "").lower() != "treadmill_running":
+            continue
+        heart_rate_samples: list[dict[str, Any]] = []
+        try:
+            details = client.get_activity_details(str(remote_id), maxchart=1000, maxpoly=0)
+            parsed = parse_activity_detail_metrics(details if isinstance(details, dict) else {})
+        except Exception:
+            parsed = []  # bounded summary HR can still corroborate when chart details are unavailable
+        stride = max(1, math.ceil(len(parsed) / 200))
+        for sample in parsed[::stride]:
+            elapsed = sample.get("sumElapsedDuration", sample.get("sumDuration"))
+            bpm = sample.get("directHeartRate", sample.get("heartRate"))
+            if isinstance(elapsed, (int, float)) and isinstance(bpm, (int, float)) and 0 < bpm <= 255:
+                heart_rate_samples.append({"elapsedSeconds": float(elapsed), "bpm": int(round(bpm))})
+        candidates.append(
+            {
+                "remoteId": str(remote_id),
+                "activityType": "treadmill_running",
+                "startedAtUtc": started.isoformat(),
+                "durationSeconds": float(activity.get("duration") or 0),
+                "distanceKilometers": float(activity.get("distance") or 0) / 1000.0,
+                "averageHeartRate": activity.get("averageHR"),
+                "maximumHeartRate": activity.get("maxHR"),
+                "heartRateSamples": heart_rate_samples,
+            }
+        )
+        if len(candidates) >= 5:
+            break
+    emit({"state": "confirmed", "tokenStore": client.client.dumps(), "candidates": candidates})
+
+
+def download_original(request: dict[str, Any]) -> None:
+    from garminconnect import Garmin
+
+    client = _login(str(request.get("tokenStore", "")))
+    remote_id = str(request.get("remoteId", "")).strip()
+    output_path = Path(str(request.get("outputPath", ""))).resolve()
+    if not remote_id.isdigit() or output_path.suffix.lower() != ".fit":
+        raise ValueError("A Garmin activity ID and FIT output path are required.")
+    payload = client.download_activity(remote_id, Garmin.ActivityDownloadFormat.ORIGINAL)
+    if not isinstance(payload, bytes) or len(payload) > 32 * 1024 * 1024:
+        raise ValueError("The Garmin original activity archive is invalid or too large.")
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        fits = [item for item in archive.infolist() if not item.is_dir() and Path(item.filename).suffix.lower() == ".fit"]
+        if len(fits) != 1 or fits[0].file_size > 16 * 1024 * 1024:
+            raise ValueError("The Garmin original archive must contain one bounded FIT file.")
+        fit_bytes = archive.read(fits[0])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(fit_bytes)
+    emit({"state": "confirmed", "tokenStore": client.client.dumps(), "remoteId": remote_id})
+
+
+def delete(request: dict[str, Any]) -> None:
+    client = _login(str(request.get("tokenStore", "")))
+    remote_id = str(request.get("remoteId", "")).strip()
+    if not remote_id.isdigit():
+        raise ValueError("A Garmin activity ID is required.")
+    started = False
+    try:
+        started = True
+        client.delete_activity(remote_id)
+        emit({"state": "confirmed", "tokenStore": client.client.dumps(), "remoteId": remote_id})
+    except Exception as error:
+        emit(classify_error(error, upload_started=started))
+
+
 def probe() -> None:
     """Import the pinned provider without contacting Garmin or reading secrets."""
     from garminconnect import Garmin
@@ -141,6 +249,12 @@ def main() -> int:
             connect(request)
         elif operation == "upload":
             upload(request)
+        elif operation == "search":
+            search(request)
+        elif operation == "download":
+            download_original(request)
+        elif operation == "delete":
+            delete(request)
         else:
             raise ValueError("Unknown adapter operation.")
         return 0

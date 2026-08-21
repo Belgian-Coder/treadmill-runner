@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from unittest.mock import patch
 
-from garmin_activity_adapter import classify_error, interpret_import_result, probe
+from garmin_activity_adapter import classify_error, interpret_import_result, probe, search
 
 
 class ImportDispositionTests(unittest.TestCase):
@@ -49,6 +49,34 @@ class ImportDispositionTests(unittest.TestCase):
         with patch.dict(sys.modules, {"garminconnect": SimpleNamespace(Garmin=object)}):
             probe()
         emit.assert_called_once_with({"state": "ready"})
+
+    @patch("garmin_activity_adapter.emit")
+    def test_watch_search_returns_bounded_treadmill_summary_and_heart_rate_curve(self, emit) -> None:
+        class TokenClient:
+            def dumps(self):
+                return "x" * 128
+
+        class FakeGarmin:
+            def __init__(self, retry_attempts=0):
+                self.client = TokenClient()
+            def login(self, token_store):
+                self.token_store = token_store
+            def get_activities(self, start, limit, activitytype):
+                return [{"activityId": 123, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130, "maxHR": 155}]
+            def get_activity_details(self, activity_id, maxchart, maxpoly):
+                return {"samples": True}
+
+        def parse_details(details):
+            return [{"sumElapsedDuration": second, "directHeartRate": 120 + second} for second in range(20)]
+
+        module = SimpleNamespace(Garmin=FakeGarmin, parse_activity_detail_metrics=parse_details)
+        with patch.dict(sys.modules, {"garminconnect": module}):
+            search({"tokenStore": "t" * 128, "startedAtUtc": "2026-08-05T08:00:00Z"})
+
+        payload = emit.call_args.args[0]
+        self.assertEqual("confirmed", payload["state"])
+        self.assertEqual("123", payload["candidates"][0]["remoteId"])
+        self.assertEqual(20, len(payload["candidates"][0]["heartRateSamples"]))
 
 
 if __name__ == "__main__":

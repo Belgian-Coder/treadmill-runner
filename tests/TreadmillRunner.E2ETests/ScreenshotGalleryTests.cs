@@ -594,9 +594,9 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         break;
       case "control":
         await Expect(Page.GetByLabel("Heart rate")).ToContainTextAsync("132");
-        await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToContainTextAsync("4.5");
+        await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToContainTextAsync("7.5");
         await Expect(Page.GetByLabel("Live workout metrics", new() { Exact = true }).Locator("article")).ToHaveCountAsync(3);
-        await Expect(Page.Locator(".control-rail--incline")).ToContainTextAsync("0.5");
+        await Expect(Page.Locator(".control-rail--incline")).ToContainTextAsync("1.5");
         await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByLabel("Elapsed time axis", new() { Exact = true })).ToContainTextAsync("0:00");
         ILocator liveSpeedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
@@ -649,9 +649,12 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         ILocator historySpeedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
         Assert.True(await historySpeedAxis.Locator("span").CountAsync() >= 10);
         await Expect(historySpeedAxis.Locator("span").First).ToHaveTextAsync(new Regex("^\\d+$"));
+        ILocator historyInclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
+        Assert.True(await historyInclineAxis.Locator("span").CountAsync() >= 10);
+        await Expect(Page.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
         await Expect(Page.GetByText("Zone 3 · Aerobic", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Manual speed override:", new() { Exact = false })).ToBeVisibleAsync();
-        Assert.True((await Page.Locator(".chart-current").GetAttributeAsync("d"))?.Count(character => character == 'L') >= 8);
+        Assert.True((await Page.Locator("[data-series='measured-speed']").GetAttributeAsync("d"))?.Count(character => character == 'L') >= 8);
         await AssertTimeAxisLabelsDoNotOverlapAsync("history detail desktop");
         break;
       case "devices":
@@ -766,6 +769,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Expect(historyDialog.GetByRole(AriaRole.Heading, new() { Name = "All recorded changes", Exact = true })).ToBeVisibleAsync();
     await Expect(historyDialog.GetByRole(AriaRole.Region, new() { Name = "All recorded session changes", Exact = true }).Locator("tbody tr")).Not.ToHaveCountAsync(0);
     await Expect(historyDialog.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new Regex("^M"));
+    await Expect(historyDialog.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })).ToHaveCountAsync(0);
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details.png"), FullPage = false });

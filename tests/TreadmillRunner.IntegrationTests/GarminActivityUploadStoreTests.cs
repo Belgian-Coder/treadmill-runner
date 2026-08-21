@@ -24,6 +24,7 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
     GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
     Assert.Equal(sessionId, leased.WorkoutSessionId);
     Assert.Equal(1, leased.AttemptCount);
+    await store.MarkUploadStartedAsync(leased.Id, "Upload", now.AddSeconds(1));
     Assert.Null(await store.LeaseNextAsync(now.AddMinutes(3), TimeSpan.FromMinutes(2)));
 
     Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
@@ -57,8 +58,8 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
     Assert.True(await first.ReconcileCompletedSessionsAsync(now.AddMinutes(3)) > 0);
     var second = new GarminActivityUploadStore(factory);
     GarminActivityUploadJob?[] leases = await Task.WhenAll(
-      first.LeaseNextAsync(now.AddMinutes(3), TimeSpan.FromMinutes(2)),
-      second.LeaseNextAsync(now.AddMinutes(3), TimeSpan.FromMinutes(2)));
+      first.LeaseNextAsync(now.AddMinutes(8), TimeSpan.FromMinutes(2)),
+      second.LeaseNextAsync(now.AddMinutes(8), TimeSpan.FromMinutes(2)));
     Assert.Single(leases, lease => lease is not null);
   }
 
@@ -77,8 +78,9 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
 
     Assert.False((await uploads.GetStatusAsync(marc)).Enabled);
     Assert.False((await uploads.GetStatusAsync(partner)).Connected);
-    GarminActivityUploadAccount enabled = await uploads.SetEnabledAsync(marc, true, account.Version, now.AddMinutes(1));
+    GarminActivityUploadAccount enabled = await uploads.SetSettingsAsync(marc, true, GarminWatchActivityHandling.MergeAndReplace, account.Version, now.AddMinutes(1));
     Assert.True(enabled.Enabled);
+    Assert.Equal(GarminWatchActivityHandling.MergeAndReplace, enabled.WatchActivityHandling);
     Assert.Equal("Fenix 8", (await watches.FindByTokenHashAsync(new string('a', 64), now.AddMinutes(2)))!.DeviceLabel);
     Assert.Equal("Vivoactive", (await watches.FindForProfileAsync(partner))!.DeviceLabel);
   }

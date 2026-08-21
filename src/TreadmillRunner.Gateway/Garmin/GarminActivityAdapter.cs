@@ -37,13 +37,26 @@ public sealed record GarminAdapterMessage(
   string? TokenStore,
   string? RemoteId);
 
+public sealed record GarminAdapterSearchMessage(
+  string State,
+  string? Kind,
+  string? Message,
+  string? TokenStore,
+  IReadOnlyList<GarminWatchActivityCandidate>? Candidates);
+
 public sealed class GarminAdapterUnavailableException(string message, Exception? innerException = null) : Exception(message, innerException);
 public sealed class GarminAdapterAmbiguousResultException(string message, Exception? innerException = null) : Exception(message, innerException);
 
 public interface IGarminActivityAdapter
 {
   Task<IGarminAdapterConnectProcess> BeginConnectAsync(string email, string password, CancellationToken cancellationToken);
+  Task<GarminAdapterSearchMessage> SearchWatchActivitiesAsync(string tokenStore, DateTimeOffset startedAtUtc, CancellationToken cancellationToken) =>
+    throw new NotSupportedException("This Garmin adapter does not support watch activity search.");
+  Task<GarminAdapterMessage> DownloadOriginalAsync(string tokenStore, string remoteId, string outputPath, CancellationToken cancellationToken) =>
+    throw new NotSupportedException("This Garmin adapter does not support original activity download.");
   Task<GarminAdapterMessage> UploadAsync(string tokenStore, string activityPath, CancellationToken cancellationToken);
+  Task<GarminAdapterMessage> DeleteAsync(string tokenStore, string remoteId, CancellationToken cancellationToken) =>
+    throw new NotSupportedException("This Garmin adapter does not support activity deletion.");
 }
 
 public interface IGarminAdapterConnectProcess : IAsyncDisposable
@@ -80,6 +93,14 @@ public sealed class GarminAdapterConnectProcess : IGarminAdapterConnectProcess
 
   internal static async Task<GarminAdapterMessage> ReadMessageAsync(Process process, TimeSpan timeout, CancellationToken cancellationToken)
   {
+    GarminAdapterMessage message = await ReadResponseAsync<GarminAdapterMessage>(process, timeout, cancellationToken);
+    if (message.TokenStore?.Length > MaximumTokenStoreCharacters)
+      throw new GarminAdapterAmbiguousResultException("The Garmin adapter returned an oversized credential envelope.");
+    return message;
+  }
+
+  internal static async Task<T> ReadResponseAsync<T>(Process process, TimeSpan timeout, CancellationToken cancellationToken)
+  {
     using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     timeoutSource.CancelAfter(timeout);
     string? line;
@@ -91,10 +112,8 @@ public sealed class GarminAdapterConnectProcess : IGarminAdapterConnectProcess
     if (string.IsNullOrWhiteSpace(line)) throw new GarminAdapterAmbiguousResultException("The Garmin adapter ended without a response.");
     try
     {
-      GarminAdapterMessage message = JsonSerializer.Deserialize<GarminAdapterMessage>(line, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+      T message = JsonSerializer.Deserialize<T>(line, new JsonSerializerOptions(JsonSerializerDefaults.Web))
         ?? throw new GarminAdapterAmbiguousResultException("The Garmin adapter returned an empty response.");
-      if (message.TokenStore?.Length > MaximumTokenStoreCharacters)
-        throw new GarminAdapterAmbiguousResultException("The Garmin adapter returned an oversized credential envelope.");
       return message;
     }
     catch (JsonException exception)
@@ -217,6 +236,42 @@ public sealed class PythonGarminActivityAdapter(
     {
       await StopAsync(process);
     }
+  }
+
+  public async Task<GarminAdapterSearchMessage> SearchWatchActivitiesAsync(string tokenStore, DateTimeOffset startedAtUtc, CancellationToken cancellationToken)
+  {
+    GarminAdapterSearchMessage response = await ExecuteAsync<GarminAdapterSearchMessage>(new { operation = "search", tokenStore, startedAtUtc }, mutationMayStart: false, cancellationToken);
+    if (response.TokenStore?.Length > 32_768 || response.Candidates is { Count: > 5 } || response.Candidates?.Any(candidate => candidate.HeartRateSamples.Count > 200) == true)
+      throw new GarminAdapterAmbiguousResultException("The Garmin watch search returned an oversized response.");
+    return response;
+  }
+
+  public Task<GarminAdapterMessage> DownloadOriginalAsync(string tokenStore, string remoteId, string outputPath, CancellationToken cancellationToken) =>
+    ExecuteAsync<GarminAdapterMessage>(new { operation = "download", tokenStore, remoteId, outputPath }, mutationMayStart: false, cancellationToken);
+
+  public Task<GarminAdapterMessage> DeleteAsync(string tokenStore, string remoteId, CancellationToken cancellationToken) =>
+    ExecuteAsync<GarminAdapterMessage>(new { operation = "delete", tokenStore, remoteId }, mutationMayStart: true, cancellationToken);
+
+  private async Task<T> ExecuteAsync<T>(object request, bool mutationMayStart, CancellationToken cancellationToken)
+  {
+    GarminActivityAdapterOptions current = options.CurrentValue;
+    Process process = Start(current);
+    try
+    {
+      await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(request).AsMemory(), cancellationToken);
+      await process.StandardInput.FlushAsync(cancellationToken);
+      process.StandardInput.Close();
+      T message = await GarminAdapterConnectProcess.ReadResponseAsync<T>(process, Timeout(current), cancellationToken);
+      await process.WaitForExitAsync(cancellationToken).WaitAsync(Timeout(current), cancellationToken);
+      return message;
+    }
+    catch (Exception exception) when (exception is not (GarminAdapterUnavailableException or GarminAdapterAmbiguousResultException or TimeoutException or OperationCanceledException))
+    {
+      throw new GarminAdapterAmbiguousResultException(mutationMayStart
+        ? "The Garmin adapter failed after the account mutation may have started."
+        : "The Garmin adapter returned an invalid read response.", exception);
+    }
+    finally { await StopAsync(process); }
   }
 
   private Process Start(GarminActivityAdapterOptions current)
