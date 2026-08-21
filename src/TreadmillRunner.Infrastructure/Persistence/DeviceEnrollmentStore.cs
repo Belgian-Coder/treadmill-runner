@@ -70,14 +70,20 @@ public sealed class DeviceEnrollmentStore(
   {
     string roleName = role.ToString();
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    DeviceEnrollmentEntity? entity = role == DeviceRole.Treadmill
-      ? await context.DeviceEnrollments.AsNoTracking().SingleOrDefaultAsync(
+    DeviceEnrollmentEntity? entity;
+    if (role == DeviceRole.Treadmill)
+    {
+      entity = await context.DeviceEnrollments.AsNoTracking().SingleOrDefaultAsync(
         candidate => candidate.Role == roleName && !candidate.IsArchived,
-        cancellationToken)
-      : await context.DeviceEnrollments.AsNoTracking()
+        cancellationToken);
+    }
+    else
+    {
+      List<DeviceEnrollmentEntity> active = await context.DeviceEnrollments.AsNoTracking()
         .Where(candidate => candidate.Role == roleName && !candidate.IsArchived)
-        .OrderBy(candidate => candidate.CreatedAtUtc)
-        .FirstOrDefaultAsync(cancellationToken);
+        .ToListAsync(cancellationToken);
+      entity = active.OrderBy(candidate => candidate.CreatedAtUtc).FirstOrDefault();
+    }
     return entity is null ? null : Map(entity);
   }
 
@@ -139,14 +145,20 @@ public sealed class DeviceEnrollmentStore(
     string roleName = role.ToString();
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     await PersistenceReceipts.ThrowIfCompletedAsync(context, operation, cancellationToken);
-    DeviceEnrollmentEntity? entity = role == DeviceRole.Treadmill
-      ? await context.DeviceEnrollments.SingleOrDefaultAsync(
+    DeviceEnrollmentEntity? entity;
+    if (role == DeviceRole.Treadmill)
+    {
+      entity = await context.DeviceEnrollments.SingleOrDefaultAsync(
         candidate => candidate.Role == roleName && !candidate.IsArchived,
-        cancellationToken)
-      : await context.DeviceEnrollments
+        cancellationToken);
+    }
+    else
+    {
+      List<DeviceEnrollmentEntity> active = await context.DeviceEnrollments
         .Where(candidate => candidate.Role == roleName && !candidate.IsArchived)
-        .OrderBy(candidate => candidate.CreatedAtUtc)
-        .FirstOrDefaultAsync(cancellationToken);
+        .ToListAsync(cancellationToken);
+      entity = active.OrderBy(candidate => candidate.CreatedAtUtc).FirstOrDefault();
+    }
     if (entity is null)
     {
       await PersistenceReceipts.SaveAsync(context, contextFactory, operation.ForNotFound(), cancellationToken);
@@ -159,6 +171,13 @@ public sealed class DeviceEnrollmentStore(
         $"Expected enrollment version {expectedVersion}, but stored version is {entity.Version}.");
     }
 
+    if (entity.Role == DeviceRole.HeartRate.ToString())
+    {
+      List<HeartRateDeviceAssignmentEntity> assignments = await context.HeartRateDeviceAssignments
+        .Where(candidate => candidate.DeviceEnrollmentId == entity.Id)
+        .ToListAsync(cancellationToken);
+      context.HeartRateDeviceAssignments.RemoveRange(assignments);
+    }
     entity.IsArchived = true;
     entity.ArchivedAtUtc = nowUtc;
     entity.UpdatedAtUtc = nowUtc;
@@ -189,6 +208,13 @@ public sealed class DeviceEnrollmentStore(
     {
       throw new DbUpdateConcurrencyException(
         $"Expected enrollment version {expectedVersion}, but stored version is {entity.Version}.");
+    }
+    if (entity.Role == DeviceRole.HeartRate.ToString())
+    {
+      List<HeartRateDeviceAssignmentEntity> assignments = await context.HeartRateDeviceAssignments
+        .Where(candidate => candidate.DeviceEnrollmentId == entity.Id)
+        .ToListAsync(cancellationToken);
+      context.HeartRateDeviceAssignments.RemoveRange(assignments);
     }
     entity.IsArchived = true;
     entity.ArchivedAtUtc = nowUtc;
