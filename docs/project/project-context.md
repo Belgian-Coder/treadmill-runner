@@ -44,7 +44,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 
 ## Simulated runner experience (TR-004)
 
-- The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery. BLE treadmill and heart-rate sources publish Ready only with their first valid telemetry snapshot.
+- The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery. Natural hardware completion is two-phase: reaching the final workout step requests one exact-device verified Stop, and the session remains live and absent from completed History until fresh stopped telemetry is confirmed. Rejected or unknown completion Stop outcomes are never retried and require the physical Stop control. BLE treadmill and heart-rate sources publish Ready only with their first valid telemetry snapshot.
 - A single controller lease renews every five seconds and expires after fifteen seconds; observers remain read-only. Browser reload can reclaim manual control without owning the workout timer.
 - History includes a data-derived planned/requested/measured chart, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note. Detail responses bound the interactive graph to 240 representative samples and expose the full persisted-sample count; analytics and CSV/FIT exports remain full-resolution.
 - Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.

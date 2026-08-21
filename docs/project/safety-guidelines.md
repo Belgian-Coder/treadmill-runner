@@ -4,7 +4,7 @@ type: safety-policy
 status: active
 owner: project
 audience: agent-developer-and-runner
-updated: 2026-08-08
+updated: 2026-08-21
 ---
 
 # Treadmill safety guidelines
@@ -36,6 +36,7 @@ updated: 2026-08-08
 - A successful BLE write is not success. Require measured telemetry confirmation.
 - Correlate each control-point indication to the opcode written by that serialized exchange. Ignore a late or unrelated acknowledgement inside the bounded wait; it must not confirm, reject, or trigger a replay of the current command.
 - Do not blindly retry when the physical outcome is unknown.
+- Reaching the final workout step is not physical completion. For hardware sessions, keep the run live and out of completed History until fresh stopped telemetry is observed. Send at most one verified completion Stop; a rejected, stale, disconnected, or unknown outcome requires the physical Stop control and must not be finalized or retried blindly.
 - Stale treadmill or HR telemetry suspends automation and blocks increases.
 - Reconnect returns to `Ready` and requires explicit re-arming.
 

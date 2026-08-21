@@ -23,6 +23,7 @@ public enum TreadmillCommandOrigin
   Manual,
   PlannedTransition,
   HeartRateAutomation,
+  WorkoutCompletion,
   Commissioning,
 }
 

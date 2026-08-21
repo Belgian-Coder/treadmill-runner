@@ -58,7 +58,7 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 - First telemetry evidence is queued to a bounded lifecycle writer rather than
   blocking notification consumption. Passive evidence remains non-controlling;
   only an explicit verification/commissioning flow can promote capabilities.
-- Start/Stop intents carry operation ID, session ID/version/state, lease/holder, four-second expiry, and connection generation. Reconnect invalidates them; Start is consumed before its single motion-affecting write and is never retried.
+- Start/Stop intents carry operation ID, session ID/version/state, lease/holder, four-second expiry, and connection generation. Reconnect invalidates them; Start is consumed before its single motion-affecting write and is never retried. Natural hardware completion uses a distinct gateway-owned Stop origin and does not transition to Completed or History until stopped telemetry is confirmed; rejected or unknown outcomes remain live and are not retried.
 - The deterministic session engine uses `TimeProvider` and emits immutable snapshots/events.
 - SignalR publishes simulated live state at 4 Hz; durable session sampling is 1 Hz.
 - The compiled premade-plan catalog is read-only. Preview reuses capability evaluation; explicit materialization stores profile/template provenance, deduplicates identical definitions within the copy, preserves every phase/week/session position, and never activates the plan.

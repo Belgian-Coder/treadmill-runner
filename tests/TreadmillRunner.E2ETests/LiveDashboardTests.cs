@@ -153,6 +153,117 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Device_cards_follow_effective_priority_and_polar_has_no_priority_controls()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    Guid profileId = scenario.MarcProfileId;
+    Guid firstGarminId = Guid.NewGuid();
+    Guid secondGarminId = Guid.NewGuid();
+    var firstGarminPriority = 2;
+    object Assignment(int priority) => new
+    {
+      id = Guid.NewGuid(),
+      userProfileId = profileId,
+      priority,
+      autoConnect = true,
+      isPreferred = false,
+      version = 1,
+    };
+    object Sensor(Guid id, string name, string family, int priority) => new
+    {
+      id,
+      role = "HeartRate",
+      deviceId = Guid.NewGuid().ToString("N"),
+      protocolId = "bluetooth-heart-rate",
+      identityFingerprint = new string('D', 64),
+      displayName = name,
+      modelNumber = (string?)null,
+      firmwareRevision = (string?)null,
+      telemetryMode = (string?)null,
+      capabilities = (object?)null,
+      evidence = "PassivelyObserved",
+      lastVerifiedAtUtc = DateTimeOffset.UtcNow,
+      version = 1,
+      heartRateDeviceKind = "Watch",
+      heartRateDeviceFamily = family,
+      assignments = new[] { Assignment(priority) },
+    };
+    object polar = new
+    {
+      id = Guid.NewGuid(),
+      role = "HeartRate",
+      deviceId = "polar-test",
+      protocolId = "bluetooth-heart-rate",
+      identityFingerprint = new string('P', 64),
+      displayName = "Polar H10",
+      modelNumber = "H10",
+      firmwareRevision = (string?)null,
+      telemetryMode = (string?)null,
+      capabilities = (object?)null,
+      evidence = "PassivelyObserved",
+      lastVerifiedAtUtc = DateTimeOffset.UtcNow,
+      version = 1,
+      heartRateDeviceKind = "ChestStrap",
+      heartRateDeviceFamily = "Polar",
+      assignments = new[] { Assignment(0) },
+    };
+    await Page.RouteAsync("**/api/devices/enrollments", route => route.FulfillAsync(new RouteFulfillOptions
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = System.Text.Json.JsonSerializer.Serialize(new[]
+      {
+        Sensor(secondGarminId, "Garmin fallback B", "Garmin", 3),
+        Sensor(firstGarminId, "Garmin fallback A", "Garmin", firstGarminPriority),
+        polar,
+      }),
+    }));
+    await Page.RouteAsync("**/api/devices/enrollments/*/assignments", async route =>
+    {
+      Uri uri = new(route.Request.Url);
+      if (uri.AbsolutePath.Contains(firstGarminId.ToString("D"), StringComparison.OrdinalIgnoreCase) &&
+          route.Request.PostData is string body)
+      {
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+        firstGarminPriority = document.RootElement.GetProperty("priority").GetInt32();
+      }
+      await route.FulfillAsync(new RouteFulfillOptions { Status = 204, Body = string.Empty });
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/devices").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Polar H10", Exact = true })).ToBeVisibleAsync();
+    IReadOnlyList<string> headings = await Page.Locator(".device-card > h2").AllTextContentsAsync();
+    Assert.Equal(new[] { "Not enrolled", "Polar H10", "Garmin fallback A", "Garmin fallback B" }, headings.Take(4));
+    ILocator polarCard = Page.Locator(".device-card", new() { HasText = "Polar H10" });
+    await polarCard.Locator("details > summary").ClickAsync();
+    await Expect(polarCard.GetByText("Priority 0 · fixed preferred", new() { Exact = true })).ToBeVisibleAsync();
+    Assert.Equal(0, await polarCard.Locator("button", new() { HasText = "Priority" }).CountAsync());
+    ILocator firstGarminCard = Page.Locator(".device-card", new() { HasText = "Garmin fallback A" });
+    await firstGarminCard.Locator("details > summary").ClickAsync();
+    await firstGarminCard.GetByRole(AriaRole.Button, new() { Name = "Lower fallback priority" }).ClickAsync();
+    await Expect(firstGarminCard.Locator(".sensor-badge", new() { HasText = "Priority 3" })).ToHaveTextAsync("Priority 3");
+    await firstGarminCard.GetByRole(AriaRole.Button, new() { Name = "Lower fallback priority" }).ClickAsync();
+    await Expect(firstGarminCard.Locator(".sensor-badge", new() { HasText = "Priority 4" })).ToHaveTextAsync("Priority 4");
+    headings = await Page.Locator(".device-card > h2").AllTextContentsAsync();
+    Assert.Equal(new[] { "Not enrolled", "Polar H10", "Garmin fallback B", "Garmin fallback A" }, headings.Take(4));
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
+    Directory.CreateDirectory(screenshotDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(screenshotDirectory, "device-priority-order.png"),
+      FullPage = true,
+    });
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Device_management_buttons_complete_their_local_actions()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
