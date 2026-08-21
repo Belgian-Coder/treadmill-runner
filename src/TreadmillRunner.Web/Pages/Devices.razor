@@ -1,6 +1,8 @@
 @page "/devices"
+@implements IDisposable
 
 @inject HttpClient Http
+@inject ActiveProfileState ActiveProfile
 
 <PageTitle>Devices · TreadmillRunner</PageTitle>
 
@@ -67,10 +69,10 @@
             }
         </article>
 
-        @foreach (DeviceEnrollmentView enrollment in enrollments.Where(item => item.Role == "HeartRate"))
+        @foreach (DeviceEnrollmentView enrollment in OrderedHeartRateEnrollments)
         {
             HeartRateSourceSnapshot? source = status?.HeartRateSources?.FirstOrDefault(item => item.EnrollmentId == enrollment.Id);
-            <article class="panel-card device-card">
+            <article class="panel-card device-card" @key="enrollment.Id">
                 <p class="eyebrow">Heart-rate sensor</p>
                 <h2>@enrollment.DisplayName</h2>
                 <div class="sensor-badges" aria-label="Heart-rate sensor type">
@@ -105,15 +107,20 @@
                     </div>
                 </fieldset>
                 <div class="device-actions">
-                    @if (!IsPolar(enrollment))
+                    @if (IsPolar(enrollment))
+                    {
+                        <span class="sensor-badge sensor-badge--preferred">Priority 0 · fixed preferred</span>
+                    }
+                    else
                     {
                         <button class="touch-action" type="button" @onclick="() => ToggleAutoConnectAsync(enrollment)">
                             @(enrollment.Assignments.Any(item => item.AutoConnect) ? "Disable auto-connect" : "Enable auto-connect")
                         </button>
                         <button class="touch-action" type="button" @onclick="() => MakePreferredAsync(enrollment)">Make preferred</button>
+                        <span class="sensor-badge">Priority @EffectivePriority(enrollment)</span>
+                        <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, -1)" aria-label="Raise fallback priority">Priority ↑</button>
+                        <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, 1)" aria-label="Lower fallback priority">Priority ↓</button>
                     }
-                    <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, -1)" aria-label="Raise fallback priority">Priority ↑</button>
-                    <button class="touch-action" type="button" @onclick="() => ChangePriorityAsync(enrollment, 1)" aria-label="Lower fallback priority">Priority ↓</button>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(source?.Fault))
                 {
@@ -355,11 +362,22 @@
     private bool maintenanceBusy;
     private Guid maintenanceEventOperationId;
     private bool initialLoading = true;
+    private Guid? activeProfileId;
+
+    private IEnumerable<DeviceEnrollmentView> OrderedHeartRateEnrollments => enrollments
+        .Where(item => item.Role == "HeartRate")
+        .OrderBy(FamilyTier)
+        .ThenByDescending(IsPreferredForActiveProfile)
+        .ThenBy(EffectivePriority)
+        .ThenBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(item => item.Id);
 
     protected override async Task OnInitializedAsync()
     {
+        ActiveProfile.Changed += ActiveProfileChanged;
         try
         {
+            activeProfileId = await ActiveProfile.GetAsync();
             await Task.WhenAll(RefreshAsync(), LoadReliabilityAsync(7), LoadMaintenanceAsync());
         }
         finally
@@ -488,7 +506,8 @@
         {
             foreach (ProfileSummary profile in profiles) newSensorProfiles.Add(profile.Id);
         }
-        status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+        status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>(
+            activeProfileId is Guid profileId ? $"api/devices/status?profileId={profileId}" : "api/devices/status");
     }
 
     private async Task RetryConnectionAsync(DeviceEnrollmentView enrollment)
@@ -709,6 +728,36 @@
     private static int CurrentPriority(DeviceEnrollmentView enrollment) =>
         enrollment.Assignments.Count == 0 ? HeartRateDeviceClassifier.Priority(enrollment.DisplayName) : enrollment.Assignments.Min(item => item.Priority);
 
+    private int EffectivePriority(DeviceEnrollmentView enrollment) =>
+        activeProfileId is Guid profileId
+            ? enrollment.Assignments.FirstOrDefault(item => item.UserProfileId == profileId)?.Priority ?? 99
+            : CurrentPriority(enrollment);
+
+    private bool IsPreferredForActiveProfile(DeviceEnrollmentView enrollment) => IsPolar(enrollment) ||
+        (activeProfileId is Guid profileId
+            ? enrollment.Assignments.Any(item => item.UserProfileId == profileId && item.IsPreferred)
+            : enrollment.Assignments.Any(item => item.IsPreferred));
+
+    private static int FamilyTier(DeviceEnrollmentView enrollment)
+    {
+        if (IsPolar(enrollment)) return 0;
+        if (string.Equals(enrollment.HeartRateDeviceKind, nameof(HeartRateDeviceKind.ChestStrap), StringComparison.OrdinalIgnoreCase)) return 1;
+        if (string.Equals(enrollment.HeartRateDeviceFamily, nameof(HeartRateDeviceFamily.Garmin), StringComparison.OrdinalIgnoreCase)) return 2;
+        if (string.Equals(enrollment.HeartRateDeviceKind, nameof(HeartRateDeviceKind.Watch), StringComparison.OrdinalIgnoreCase)) return 3;
+        return 4;
+    }
+
+    private void ActiveProfileChanged(Guid? profileId)
+    {
+        activeProfileId = profileId;
+        _ = InvokeAsync(async () =>
+        {
+            status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>(
+                profileId is Guid selected ? $"api/devices/status?profileId={selected}" : "api/devices/status");
+            StateHasChanged();
+        });
+    }
+
     private static bool IsPolar(DeviceEnrollmentView enrollment) =>
         string.Equals(enrollment.HeartRateDeviceFamily, "Polar", StringComparison.OrdinalIgnoreCase);
 
@@ -833,4 +882,6 @@
         public Guid Id { get; set; }
         public string DisplayName { get; set; } = string.Empty;
     }
+
+    public void Dispose() => ActiveProfile.Changed -= ActiveProfileChanged;
 }

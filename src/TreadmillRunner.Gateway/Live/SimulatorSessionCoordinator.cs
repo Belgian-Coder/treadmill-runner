@@ -820,7 +820,9 @@ public sealed class LiveSessionCoordinator(
         throw new InvalidOperationException("A software update is being activated; treadmill commands are unavailable.");
       ActiveRun active = RequireActive();
 
-      bool gatewayOwned = origin is TreadmillCommandOrigin.PlannedTransition or TreadmillCommandOrigin.HeartRateAutomation;
+      bool gatewayOwned = origin is TreadmillCommandOrigin.PlannedTransition or
+        TreadmillCommandOrigin.HeartRateAutomation or
+        TreadmillCommandOrigin.WorkoutCompletion;
       if (gatewayOwned)
       {
         if (leaseId != active.AutomationAuthorityId ||
@@ -957,7 +959,9 @@ public sealed class LiveSessionCoordinator(
         snapshot.Live.SessionState != intent.ExpectedSessionState)
       return false;
 
-    if (intent.Origin is TreadmillCommandOrigin.PlannedTransition or TreadmillCommandOrigin.HeartRateAutomation)
+    if (intent.Origin is TreadmillCommandOrigin.PlannedTransition or
+        TreadmillCommandOrigin.HeartRateAutomation or
+        TreadmillCommandOrigin.WorkoutCompletion)
       return _active is { } active &&
         intent.LeaseId == active.AutomationAuthorityId &&
         string.Equals(intent.HolderId, active.AutomationAuthorityHolder, StringComparison.Ordinal);
@@ -997,15 +1001,27 @@ public sealed class LiveSessionCoordinator(
         active.CommandsSuspended = true;
         active.HeartRateAutomationMode = HeartRateAutomationMode.SuspendedSafety;
         active.HeartRateAutomationReason = result.Reason;
+        if (intent.Origin == TreadmillCommandOrigin.WorkoutCompletion)
+        {
+          AddWarningOnce(active,
+            "Workout completion could not confirm that the treadmill stopped. Use the physical Stop control; this workout will remain open until stopped telemetry is confirmed.");
+        }
       }
       else if (result.Disposition == TreadmillCommandDisposition.Rejected &&
-               intent.Origin is TreadmillCommandOrigin.PlannedTransition or TreadmillCommandOrigin.HeartRateAutomation)
+               intent.Origin is TreadmillCommandOrigin.PlannedTransition or
+                 TreadmillCommandOrigin.HeartRateAutomation or
+                 TreadmillCommandOrigin.WorkoutCompletion)
       {
         active.HeartRateController.ResetDwell();
         active.CommandsSuspended = true;
         active.HeartRateAutomationMode = HeartRateAutomationMode.SuspendedSafety;
         active.HeartRateAutomationReason = result.Reason;
         AddWarningOnce(active, "Automatic treadmill commands are suspended after a rejected command.");
+        if (intent.Origin == TreadmillCommandOrigin.WorkoutCompletion)
+        {
+          AddWarningOnce(active,
+            "The treadmill rejected the workout-completion Stop. Use the physical Stop control; this workout will remain open until stopped telemetry is confirmed.");
+        }
       }
       else if (result.Disposition == TreadmillCommandDisposition.Confirmed)
       {
@@ -1063,6 +1079,27 @@ public sealed class LiveSessionCoordinator(
             active.Definition.SessionId,
             new SessionPausedEvent(SessionPauseReason.WebControl, timeProvider.GetUtcNow()),
             cancellationToken);
+        }
+        else if (result.Kind == TreadmillCommandKind.Stop &&
+            intent.Origin == TreadmillCommandOrigin.WorkoutCompletion &&
+            active.Machine.State == SessionState.Running &&
+            active.Progression.IsComplete &&
+            result.MeasuredValue is <= 0.05)
+        {
+          var now = timeProvider.GetUtcNow();
+          UpdateMotion(active, now);
+          active.IsMoving = false;
+          active.MeasuredSpeedKph = result.MeasuredValue ?? 0;
+          active.ProcessedOperationIds.Add(intent.OperationId);
+          await FinalizeCompletedSessionAsync(active, now, cancellationToken);
+        }
+        else if (result.Kind == TreadmillCommandKind.Stop &&
+            intent.Origin == TreadmillCommandOrigin.WorkoutCompletion)
+        {
+          SuspendAutomation(active,
+            "Workout completion did not receive stopped telemetry. Use the physical Stop control; the workout remains open.");
+          AddWarningOnce(active,
+            "Workout completion did not receive stopped telemetry. Use the physical Stop control; the workout remains open.");
         }
         else if (result.Kind == TreadmillCommandKind.Stop &&
             active.Machine.State is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
@@ -1348,11 +1385,15 @@ public sealed class LiveSessionCoordinator(
 
           if (active.Progression.IsComplete)
           {
-            active.Machine.Complete();
-            using IServiceScope completionScope = scopeFactory.CreateScope();
-            ISessionStore store = completionScope.ServiceProvider.GetRequiredService<ISessionStore>();
-            await store.AppendEventAsync(active.Definition.SessionId, new SessionCompletedEvent(now), cancellationToken);
-            await store.FinalizeAsync(CreateSummary(active, SessionState.Completed, now), cancellationToken);
+            if (CompletionAction(active) == WorkoutCompletionAction.Finalize)
+            {
+              await FinalizeCompletedSessionAsync(active, now, cancellationToken);
+            }
+            else
+            {
+              AddWarningOnce(active,
+                "Workout steps are complete. The session will stay open until the treadmill confirms a physical stop; use the physical Stop control if needed.");
+            }
           }
           else if (active.SampleCadence.TryAdvance(now))
           {
@@ -1410,8 +1451,27 @@ public sealed class LiveSessionCoordinator(
 
   private AutomatedCommandRequest? BuildAutomatedCommand(ActiveRun active, DateTimeOffset now)
   {
-    if (active.Machine.State != SessionState.Running ||
-        active.CommandsSuspended ||
+    if (active.Machine.State != SessionState.Running)
+      return null;
+
+    if (active.Progression.IsComplete && active.HardwareMode)
+    {
+      if (CompletionAction(active) != WorkoutCompletionAction.RequestStop)
+      {
+        return null;
+      }
+
+      active.CompletionStopAttempted = true;
+      return new AutomatedCommandRequest(
+        TreadmillCommandKind.Stop,
+        null,
+        TreadmillCommandOrigin.WorkoutCompletion,
+        active.Machine.Version,
+        active.AutomationAuthorityId,
+        active.AutomationAuthorityHolder);
+    }
+
+    if (active.CommandsSuspended ||
         active.TelemetryAge > FreshTelemetryLimit)
       return null;
 
@@ -1499,6 +1559,23 @@ public sealed class LiveSessionCoordinator(
     return null;
   }
 
+  private WorkoutCompletionAction CompletionAction(ActiveRun active)
+  {
+    DeviceConnectionSnapshot treadmill = deviceCoordinator
+      .CurrentForProfile(active.Definition.UserProfileId)
+      .Treadmill;
+    return WorkoutCompletionStopPolicy.Evaluate(new WorkoutCompletionStopContext(
+      active.Progression.IsComplete,
+      active.HardwareMode,
+      active.TelemetryAge <= FreshTelemetryLimit,
+      active.IsMoving,
+      active.MeasuredSpeedKph,
+      active.CanStopRemotely,
+      treadmill.State == DeviceConnectionState.Ready,
+      treadmill.ConnectionGeneration == active.ConnectionGeneration,
+      active.CompletionStopAttempted));
+  }
+
   private async Task ExecuteAutomatedCommandAsync(
     AutomatedCommandRequest request,
     CancellationToken cancellationToken)
@@ -1546,6 +1623,25 @@ public sealed class LiveSessionCoordinator(
     {
       logger.LogInformation(exception, "An automatic treadmill command was invalidated before execution; no retry was scheduled.");
     }
+  }
+
+  private async Task FinalizeCompletedSessionAsync(
+    ActiveRun active,
+    DateTimeOffset completedAt,
+    CancellationToken cancellationToken)
+  {
+    if (active.Machine.State == SessionState.Completed) return;
+
+    active.Machine.Complete();
+    using IServiceScope completionScope = scopeFactory.CreateScope();
+    ISessionStore store = completionScope.ServiceProvider.GetRequiredService<ISessionStore>();
+    await store.AppendEventAsync(
+      active.Definition.SessionId,
+      new SessionCompletedEvent(completedAt),
+      cancellationToken);
+    await store.FinalizeAsync(
+      CreateSummary(active, SessionState.Completed, completedAt),
+      cancellationToken);
   }
 
   private async Task<bool> ApplySimulatedCommandMeasurementAsync(
@@ -2411,6 +2507,7 @@ public sealed class LiveSessionCoordinator(
     public double MeasuredInclinePercent { get; set; }
     public bool IsMoving { get; set; }
     public bool DeviceConnectionsReleased { get; set; }
+    public bool CompletionStopAttempted { get; set; }
     public ushort? HeartRateBpm { get; set; } = hardwareMode ? null : (ushort)132;
     public TimeSpan? HeartRateAge { get; set; } = hardwareMode ? null : TimeSpan.Zero;
     public DateTimeOffset? HeartRateObservedAt { get; set; } = hardwareMode ? null : createdAt;
@@ -2463,7 +2560,7 @@ public sealed class LiveSessionCoordinator(
 
   private sealed record AutomatedCommandRequest(
     TreadmillCommandKind Kind,
-    double TargetValue,
+    double? TargetValue,
     TreadmillCommandOrigin Origin,
     long ExpectedSessionVersion,
     Guid LeaseId,

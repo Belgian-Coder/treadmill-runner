@@ -36,7 +36,7 @@ $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
 }
 
 elseif ([string]::Equals($Filter, 'Category=Browser', [System.StringComparison]::OrdinalIgnoreCase)) {
-    5
+    8
 }
 else {
     2
