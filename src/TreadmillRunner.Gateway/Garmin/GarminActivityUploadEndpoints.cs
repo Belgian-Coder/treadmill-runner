@@ -9,9 +9,9 @@ using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Garmin;
 
-public sealed record GarminActivityConnectRequest(string Email, string Password, bool Enabled = false);
+public sealed record GarminActivityConnectRequest(string Email, string Password, bool Enabled = false, string WatchActivityHandling = GarminWatchActivityHandling.PreferWatch);
 public sealed record GarminActivityMfaRequest(Guid ChallengeId, string Code);
-public sealed record GarminActivityEnabledRequest(bool Enabled, int ExpectedVersion);
+public sealed record GarminActivitySettingsRequest(bool Enabled, string WatchActivityHandling, int ExpectedVersion);
 public sealed record GarminActivityDisconnectRequest(int ExpectedVersion);
 public sealed record GarminActivityTestRequest(Guid OperationId, int ExpectedVersion);
 public sealed record GarminActivityFoundRequest(Guid OperationId);
@@ -19,6 +19,7 @@ public sealed record GarminActivityUploadStatusResponse(
   Guid ProfileId,
   bool Connected,
   bool Enabled,
+  string? WatchActivityHandling,
   string? AccountLabel,
   string State,
   int Pending,
@@ -42,7 +43,7 @@ public static class GarminActivityUploadEndpoints
     group.MapGet("/profiles/{profileId:guid}/jobs", GetJobsAsync);
     group.MapPost("/profiles/{profileId:guid}/connect", ConnectAsync);
     group.MapPost("/profiles/{profileId:guid}/mfa", CompleteMfaAsync);
-    group.MapPost("/profiles/{profileId:guid}/enabled", SetEnabledAsync);
+    group.MapPost("/profiles/{profileId:guid}/settings", SetSettingsAsync);
     group.MapPost("/profiles/{profileId:guid}/disconnect", DisconnectAsync);
     group.MapPost("/profiles/{profileId:guid}/test-activity", CreateTestActivityAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/retry", RetryAsync);
@@ -78,7 +79,9 @@ public static class GarminActivityUploadEndpoints
       return Results.Json(new { error = adapter.Message, adapterState = adapter.State }, statusCode: StatusCodes.Status503ServiceUnavailable);
     if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 || string.IsNullOrEmpty(request.Password) || request.Password.Length > 512)
       return TypedResults.BadRequest(new { error = "A bounded Garmin email and password are required for this one-time login." });
-    try { return TypedResults.Ok(await service.BeginAsync(profileId, request.Email.Trim(), request.Password, request.Enabled, cancellationToken)); }
+    if (!GarminWatchActivityHandling.IsValid(request.WatchActivityHandling))
+      return TypedResults.BadRequest(new { error = "Choose prefer-watch or merge-and-replace handling." });
+    try { return TypedResults.Ok(await service.BeginAsync(profileId, request.Email.Trim(), request.Password, request.Enabled, request.WatchActivityHandling, cancellationToken)); }
     catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
     catch (Exception) { return TypedResults.Conflict(new { error = "The unsupported Garmin provider could not authenticate. Verify the adapter installation and account details." }); }
   }
@@ -100,12 +103,14 @@ public static class GarminActivityUploadEndpoints
     catch (Exception) { return TypedResults.Conflict(new { error = "Garmin verification failed. Start the connection again." }); }
   }
 
-  private static async Task<IResult> SetEnabledAsync(Guid profileId, GarminActivityEnabledRequest request, ILiveSessionCoordinator sessions, IGarminActivityUploadStore store, IGarminActivityAdapterReadiness readiness, GarminActivityUploadWorker worker, TimeProvider timeProvider, CancellationToken cancellationToken)
+  private static async Task<IResult> SetSettingsAsync(Guid profileId, GarminActivitySettingsRequest request, ILiveSessionCoordinator sessions, IGarminActivityUploadStore store, IGarminActivityAdapterReadiness readiness, GarminActivityUploadWorker worker, TimeProvider timeProvider, CancellationToken cancellationToken)
   {
     if (HasActiveRun(sessions)) return TypedResults.Conflict(new { error = "Change Garmin upload settings only while no run is active." });
     try
     {
-      GarminActivityUploadAccount account = await store.SetEnabledAsync(profileId, request.Enabled, request.ExpectedVersion, timeProvider.GetUtcNow(), cancellationToken);
+      if (!GarminWatchActivityHandling.IsValid(request.WatchActivityHandling))
+        return TypedResults.BadRequest(new { error = "Choose prefer-watch or merge-and-replace handling." });
+      GarminActivityUploadAccount account = await store.SetSettingsAsync(profileId, request.Enabled, request.WatchActivityHandling, request.ExpectedVersion, timeProvider.GetUtcNow(), cancellationToken);
       if (account.Enabled) worker.Wake();
       return TypedResults.Ok(await StatusAsync(profileId, store, readiness, cancellationToken));
     }
@@ -319,6 +324,7 @@ public static class GarminActivityUploadEndpoints
       status.ProfileId,
       status.Connected,
       status.Enabled,
+      status.WatchActivityHandling,
       status.AccountLabel,
       status.State,
       status.Pending,

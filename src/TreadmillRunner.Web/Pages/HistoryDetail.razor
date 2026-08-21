@@ -133,7 +133,7 @@ else
 
         <section class="route-card">
             <h2>Planned versus actual</h2>
-            <div class="chart-plot-grid">
+            <div class="chart-plot-grid chart-plot-grid--dual">
                 <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@SpeedAxisMaximum, 1fr)">
                     <strong class="chart-axis-unit">km/h</strong>
                     @foreach (int tick in SpeedAxisTicks)
@@ -141,20 +141,30 @@ else
                         <span>@tick</span>
                     }
                 </div>
-                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical speed in kilometers per hour over elapsed time">
+                <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical speed and incline over elapsed time">
                     @foreach (int tick in SpeedAxisTicks)
                     {
-                        double y = ChartY(tick);
+                        double y = ChartY(tick, SpeedAxisMaximum);
                         <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
                     }
-                    <path class="chart-plan" d="@BuildSpeedPath(static sample => sample.PlannedSpeedKph)" />
-                    <path class="chart-requested" d="@BuildSpeedPath(static sample => sample.RequestedSpeedKph)" />
-                    <path class="chart-current" d="@BuildSpeedPath(static sample => sample.MeasuredSpeedKph)" />
+                    <path class="chart-plan" data-series="planned-speed" d="@BuildMetricPath(static sample => sample.PlannedSpeedKph, SpeedAxisMaximum)" />
+                    <path class="chart-requested" data-series="requested-speed" d="@BuildMetricPath(static sample => sample.RequestedSpeedKph, SpeedAxisMaximum)" />
+                    <path class="chart-current" data-series="measured-speed" d="@BuildMetricPath(static sample => sample.MeasuredSpeedKph, SpeedAxisMaximum)" />
+                    <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildMetricPath(static sample => sample.PlannedInclinePercent, InclineAxisMaximum)" />
+                    <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildMetricPath(static sample => sample.RequestedInclinePercent, InclineAxisMaximum)" />
+                    <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildMetricPath(static sample => sample.MeasuredInclinePercent, InclineAxisMaximum)" />
                     @if (session.Samples.LastOrDefault() is { } latest)
                     {
-                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph)" r="5" />
+                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph, SpeedAxisMaximum)" r="5" />
                     }
                 </svg>
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@InclineAxisMaximum, 1fr)">
+                    <strong class="chart-axis-unit">%</strong>
+                    @foreach (int tick in InclineAxisTicks)
+                    {
+                        <span>@tick</span>
+                    }
+                </div>
                 <div></div>
                 <div class="chart-time-scale" aria-label="Elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(ChartDuration.Ticks / 2))">
                     @foreach (ChartTimeTick tick in ChartTimeTicks)
@@ -162,9 +172,13 @@ else
                         <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatAxisTime(tick.Elapsed)</span>
                     }
                 </div>
+                <div></div>
             </div>
-            <div class="legend" aria-label="Chart legend"><span><i class="legend-line legend-line--plan"></i>Planned</span><span><i class="legend-line legend-line--requested"></i>Requested</span><span><i class="legend-line legend-line--measured"></i>Measured</span></div>
-            <p>@HistoryGraphSampleSummary The chart is generated from the stored planned, requested, and measured speed values; full-resolution data remains available in the exports.</p>
+            <div class="control-chart-legend" aria-label="Chart legend">
+                <span class="control-chart-legend__group" aria-label="Speed legend"><strong>Speed</strong><span><i class="legend-line legend-line--plan"></i>Planned</span><span><i class="legend-line legend-line--requested"></i>Requested</span><span><i class="legend-line legend-line--measured"></i>Measured</span></span>
+                <span class="control-chart-legend__group" aria-label="Incline legend"><strong>Incline</strong><span><i class="legend-line legend-line--plan legend-line--incline-plan"></i>Planned</span><span><i class="legend-line legend-line--requested legend-line--incline-target"></i>Requested</span><span><i class="legend-line legend-line--measured legend-line--incline-measured"></i>Measured</span></span>
+            </div>
+            <p>@HistoryGraphSampleSummary The chart is generated from the stored planned, requested, and measured speed and incline values; full-resolution data remains available in the exports.</p>
         </section>
 
         <details class="panel-card advanced-settings">
@@ -437,7 +451,7 @@ else
         deletionOperationId = Guid.Empty;
     }
 
-    private string BuildSpeedPath(Func<SessionSample, double?> selector)
+    private string BuildMetricPath(Func<SessionSample, double?> selector, int axisMaximum)
     {
         if (session?.Samples.Count is null or 0) return string.Empty;
 
@@ -446,13 +460,13 @@ else
         bool started = false;
         foreach (SessionSample point in points)
         {
-            if (selector(point) is not { } speed)
+            if (selector(point) is not { } value)
             {
                 started = false;
                 continue;
             }
             double x = ChartX(point.Elapsed);
-            double y = ChartY(speed);
+            double y = ChartY(value, axisMaximum);
             path.Append(started ? " L" : "M");
             path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
             path.Append(' ');
@@ -478,12 +492,20 @@ else
                 bucket[0], bucket[^1],
                 bucket.MinBy(static sample => sample.MeasuredSpeedKph)!, bucket.MaxBy(static sample => sample.MeasuredSpeedKph)!,
                 bucket.MinBy(static sample => sample.RequestedSpeedKph)!, bucket.MaxBy(static sample => sample.RequestedSpeedKph)!,
+                bucket.MinBy(static sample => sample.MeasuredInclinePercent)!, bucket.MaxBy(static sample => sample.MeasuredInclinePercent)!,
+                bucket.MinBy(static sample => sample.RequestedInclinePercent)!, bucket.MaxBy(static sample => sample.RequestedInclinePercent)!,
             };
             SessionSample[] planned = bucket.Where(static sample => sample.PlannedSpeedKph is not null).ToArray();
             if (planned.Length > 0)
             {
                 extrema.Add(planned.MinBy(static sample => sample.PlannedSpeedKph)!);
                 extrema.Add(planned.MaxBy(static sample => sample.PlannedSpeedKph)!);
+            }
+            SessionSample[] plannedIncline = bucket.Where(static sample => sample.PlannedInclinePercent is not null).ToArray();
+            if (plannedIncline.Length > 0)
+            {
+                extrema.Add(plannedIncline.MinBy(static sample => sample.PlannedInclinePercent)!);
+                extrema.Add(plannedIncline.MaxBy(static sample => sample.PlannedInclinePercent)!);
             }
             int[] transitions = Enumerable.Range(1, bucket.Length - 1)
                 .Where(index => bucket[index - 1].PlannedSpeedKph.HasValue != bucket[index].PlannedSpeedKph.HasValue)
@@ -499,10 +521,14 @@ else
     }
 
     private int SpeedAxisMaximum => speedAxisMaximum;
+    private int InclineAxisMaximum => session is null
+        ? 10
+        : (int)Math.Ceiling(Math.Max(10, session.Samples.SelectMany(static sample => new[] { sample.PlannedInclinePercent ?? 0, sample.RequestedInclinePercent, sample.MeasuredInclinePercent }).DefaultIfEmpty(0).Max()));
 
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
+    private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
     private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, ChartDuration.TotalSeconds), 0, 1) * 700);
-    private double ChartY(double speed) => 210 - (Math.Clamp(speed / SpeedAxisMaximum, 0, 1) * 200);
+    private static double ChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
 
     private TimeSpan ChartDuration => session is null
         ? TimeSpan.Zero

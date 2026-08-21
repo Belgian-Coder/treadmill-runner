@@ -606,6 +606,8 @@ public sealed class LiveSessionCoordinator(
       active.Progression.Restart(active.Elapsed, active.DistanceKilometers);
       active.SpeedOverrideKph = null;
       active.InclineOverridePercent = null;
+      active.AppliedSpeedPlanStepIndex = null;
+      active.AppliedInclinePlanStepIndex = null;
       active.HeartRateController.ResetDwell();
       active.DesiredHeartRateAutomationMode = HeartRateAutomationMode.Disabled;
       active.HeartRateAutomationMode = HeartRateAutomationMode.Disabled;
@@ -1067,6 +1069,16 @@ public sealed class LiveSessionCoordinator(
             new ManualInclineOverrideEvent(previous, acceptedIncline, timeProvider.GetUtcNow()),
             cancellationToken);
         }
+        else if (intent.Origin == TreadmillCommandOrigin.PlannedTransition &&
+                 result.Kind == TreadmillCommandKind.SetSpeed)
+        {
+          active.AppliedSpeedPlanStepIndex = active.Progression.CurrentStepIndex;
+        }
+        else if (intent.Origin == TreadmillCommandOrigin.PlannedTransition &&
+                 result.Kind == TreadmillCommandKind.SetIncline)
+        {
+          active.AppliedInclinePlanStepIndex = active.Progression.CurrentStepIndex;
+        }
         else if (result.Kind == TreadmillCommandKind.Pause && active.Machine.State == SessionState.Running)
         {
           active.HeartRateController.ResetDwell();
@@ -1524,7 +1536,10 @@ public sealed class LiveSessionCoordinator(
             active.AutomationAuthorityHolder);
       }
     }
-    else if (active.CanSetSpeedRemotely && active.SpeedRange is { } speedRange)
+    else if (active.CanSetSpeedRemotely &&
+             active.SpeedRange is { } speedRange &&
+             active.SpeedOverrideKph is null &&
+             (step?.Speed is SpeedRamp || active.AppliedSpeedPlanStepIndex != active.Progression.CurrentStepIndex))
     {
       double requested = Math.Clamp(
         active.RequestedSpeedKph,
@@ -1538,9 +1553,14 @@ public sealed class LiveSessionCoordinator(
           active.Machine.Version,
           active.AutomationAuthorityId,
           active.AutomationAuthorityHolder);
+
+      active.AppliedSpeedPlanStepIndex = active.Progression.CurrentStepIndex;
     }
 
-    if (active.CanSetInclineRemotely && active.InclineRange is { } inclineRange)
+    if (active.CanSetInclineRemotely &&
+        active.InclineRange is { } inclineRange &&
+        active.InclineOverridePercent is null &&
+        (step?.Incline is InclineRamp || active.AppliedInclinePlanStepIndex != active.Progression.CurrentStepIndex))
     {
       double requested = Math.Clamp(
         active.RequestedInclinePercent,
@@ -1554,6 +1574,8 @@ public sealed class LiveSessionCoordinator(
           active.Machine.Version,
           active.AutomationAuthorityId,
           active.AutomationAuthorityHolder);
+
+      active.AppliedInclinePlanStepIndex = active.Progression.CurrentStepIndex;
     }
 
     return null;
@@ -2517,6 +2539,8 @@ public sealed class LiveSessionCoordinator(
     public HashSet<Guid> ProcessedOperationIds { get; } = [];
     public double? SpeedOverrideKph { get; set; }
     public double? InclineOverridePercent { get; set; }
+    public int? AppliedSpeedPlanStepIndex { get; set; }
+    public int? AppliedInclinePlanStepIndex { get; set; }
     public double RequestedSpeedKph => SpeedOverrideKph ?? Progression.PlannedSpeedKph ?? MeasuredSpeedKph;
     public double RequestedInclinePercent => InclineOverridePercent ?? Progression.PlannedInclinePercent ?? MeasuredInclinePercent;
     public TreadmillCommandResult? LastCommandResult { get; set; }

@@ -7,12 +7,21 @@ using TreadmillRunner.Core.Sessions;
 
 namespace TreadmillRunner.Infrastructure.Persistence;
 
+public static class GarminWatchActivityHandling
+{
+  public const string PreferWatch = "PreferWatch";
+  public const string MergeAndReplace = "MergeAndReplace";
+
+  public static bool IsValid(string value) => value is PreferWatch or MergeAndReplace;
+}
+
 public sealed record GarminActivityUploadAccount(
   Guid Id,
   Guid UserProfileId,
   string AccountLabel,
   string ProtectedTokenStore,
   bool Enabled,
+  string WatchActivityHandling,
   string State,
   DateTimeOffset ConnectedAtUtc,
   DateTimeOffset? UploadFromUtc,
@@ -28,6 +37,10 @@ public sealed record GarminActivityUploadJob(
   string Status,
   int AttemptCount,
   string? RemoteId,
+  string OperationPhase,
+  string? MatchedRemoteId,
+  string? ReplacementRemoteId,
+  string? MatchEvidence,
   string? FailureKind,
   bool CanRetry,
   string? WorkoutTitle,
@@ -41,6 +54,7 @@ public sealed record GarminActivityUploadStatus(
   Guid ProfileId,
   bool Connected,
   bool Enabled,
+  string? WatchActivityHandling,
   string? AccountLabel,
   string State,
   int Pending,
@@ -57,13 +71,19 @@ public interface IGarminActivityUploadStore
   Task<GarminActivityUploadStatus> GetStatusAsync(Guid profileId, CancellationToken cancellationToken = default);
   Task<IReadOnlyList<GarminActivityUploadJob>> ListJobsAsync(Guid profileId, CancellationToken cancellationToken = default);
   Task<GarminActivityUploadAccount?> FindAccountAsync(Guid profileId, CancellationToken cancellationToken = default);
-  Task<GarminActivityUploadAccount> ConnectAsync(Guid profileId, string accountLabel, string protectedTokenStore, bool enabled, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
-  Task<GarminActivityUploadAccount> SetEnabledAsync(Guid profileId, bool enabled, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<GarminActivityUploadAccount> ConnectAsync(Guid profileId, string accountLabel, string protectedTokenStore, bool enabled, string watchActivityHandling, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<GarminActivityUploadAccount> ConnectAsync(Guid profileId, string accountLabel, string protectedTokenStore, bool enabled, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+    ConnectAsync(profileId, accountLabel, protectedTokenStore, enabled, GarminWatchActivityHandling.PreferWatch, nowUtc, cancellationToken);
+  Task<GarminActivityUploadAccount> SetSettingsAsync(Guid profileId, bool enabled, string watchActivityHandling, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<bool> DisconnectAsync(Guid profileId, int expectedVersion, CancellationToken cancellationToken = default);
   Task<int> ReconcileCompletedSessionsAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<GarminActivityUploadJob> EnqueueSystemTestAsync(Guid profileId, Guid sessionId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<GarminActivityUploadJob?> LeaseNextAsync(DateTimeOffset nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
   Task MarkConfirmedAsync(Guid jobId, string? remoteId, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task MarkUploadStartedAsync(Guid jobId, string operationPhase, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task MarkWatchFoundAsync(Guid jobId, string remoteId, string evidence, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task MarkReplacementUploadedAsync(Guid jobId, string matchedRemoteId, string replacementRemoteId, string evidence, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task MarkReplacementUncertainAsync(Guid jobId, string matchedRemoteId, string evidence, string error, string? protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkFailedAsync(Guid jobId, string error, bool needsAuthentication, DateTimeOffset retryAtUtc, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkRejectedAsync(Guid jobId, string failureKind, string error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkProviderUnavailableAsync(Guid jobId, string error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
@@ -82,6 +102,9 @@ public interface IGarminActivityUploadStore
 public sealed class GarminActivityUploadStore(
   IDbContextFactory<TreadmillRunnerDbContext> contextFactory) : IGarminActivityUploadStore
 {
+  public Task<GarminActivityUploadAccount> ConnectAsync(Guid profileId, string accountLabel, string protectedTokenStore, bool enabled, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+    ConnectAsync(profileId, accountLabel, protectedTokenStore, enabled, GarminWatchActivityHandling.PreferWatch, nowUtc, cancellationToken);
+
   public async Task<IReadOnlyList<GarminActivityUploadJob>> ListJobsAsync(Guid profileId, CancellationToken cancellationToken = default)
   {
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -103,7 +126,7 @@ public sealed class GarminActivityUploadStore(
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     GarminActivityUploadAccountEntity? account = await context.GarminActivityUploadAccounts.AsNoTracking()
       .SingleOrDefaultAsync(item => item.UserProfileId == profileId, cancellationToken);
-    if (account is null || account.State == "Disconnected") return new(profileId, false, false, null, "Disconnected", 0, 0, 0, 0, 0, null, null, account?.Version);
+    if (account is null || account.State == "Disconnected") return new(profileId, false, false, null, null, "Disconnected", 0, 0, 0, 0, 0, null, null, account?.Version);
     var counts = await context.GarminActivityUploadJobs.AsNoTracking()
       .Where(item => item.UserProfileId == profileId)
       .GroupBy(item => item.Status)
@@ -114,6 +137,7 @@ public sealed class GarminActivityUploadStore(
       profileId,
       true,
       account.Enabled,
+      account.WatchActivityHandling,
       account.AccountLabel,
       account.State,
       Count("Pending") + Count("InFlight"),
@@ -139,9 +163,12 @@ public sealed class GarminActivityUploadStore(
     string accountLabel,
     string protectedTokenStore,
     bool enabled,
+    string watchActivityHandling,
     DateTimeOffset nowUtc,
     CancellationToken cancellationToken = default)
   {
+    if (!GarminWatchActivityHandling.IsValid(watchActivityHandling))
+      throw new ArgumentException("A supported watch activity handling mode is required.", nameof(watchActivityHandling));
     accountLabel = accountLabel.Trim();
     if (accountLabel.Length is < 1 or > 160) throw new ArgumentOutOfRangeException(nameof(accountLabel));
     if (string.IsNullOrWhiteSpace(protectedTokenStore) || protectedTokenStore.Length > 32768) throw new ArgumentOutOfRangeException(nameof(protectedTokenStore));
@@ -159,6 +186,7 @@ public sealed class GarminActivityUploadStore(
         AccountLabel = accountLabel,
         ProtectedTokenStore = protectedTokenStore,
         Enabled = enabled,
+        WatchActivityHandling = watchActivityHandling,
         State = "Connected",
         ConnectedAtUtc = nowUtc,
         UploadFromUtc = enabled ? nowUtc : null,
@@ -172,6 +200,7 @@ public sealed class GarminActivityUploadStore(
       entity.AccountLabel = accountLabel;
       entity.ProtectedTokenStore = protectedTokenStore;
       entity.Enabled = enabled;
+      entity.WatchActivityHandling = watchActivityHandling;
       if (enabled && entity.UploadFromUtc is null) entity.UploadFromUtc = nowUtc;
       entity.State = "Connected";
       entity.LastError = null;
@@ -182,8 +211,10 @@ public sealed class GarminActivityUploadStore(
     return Map(entity);
   }
 
-  public async Task<GarminActivityUploadAccount> SetEnabledAsync(Guid profileId, bool enabled, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+  public async Task<GarminActivityUploadAccount> SetSettingsAsync(Guid profileId, bool enabled, string watchActivityHandling, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
   {
+    if (!GarminWatchActivityHandling.IsValid(watchActivityHandling))
+      throw new ArgumentException("A supported watch activity handling mode is required.", nameof(watchActivityHandling));
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     GarminActivityUploadAccountEntity entity = await context.GarminActivityUploadAccounts
       .SingleOrDefaultAsync(item => item.UserProfileId == profileId, cancellationToken)
@@ -191,11 +222,15 @@ public sealed class GarminActivityUploadStore(
     EnsureVersion(entity.Version, expectedVersion);
     if (enabled && !entity.Enabled) entity.UploadFromUtc = nowUtc;
     entity.Enabled = enabled;
+    entity.WatchActivityHandling = watchActivityHandling;
     entity.UpdatedAtUtc = nowUtc;
     entity.Version++;
     await context.SaveChangesAsync(cancellationToken);
     return Map(entity);
   }
+
+  public Task<GarminActivityUploadAccount> SetEnabledAsync(Guid profileId, bool enabled, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+    SetSettingsAsync(profileId, enabled, GarminWatchActivityHandling.PreferWatch, expectedVersion, nowUtc, cancellationToken);
 
   public async Task<bool> DisconnectAsync(Guid profileId, int expectedVersion, CancellationToken cancellationToken = default)
   {
@@ -222,7 +257,7 @@ public sealed class GarminActivityUploadStore(
     GarminActivityUploadAccountEntity[] accounts = await context.GarminActivityUploadAccounts.AsNoTracking()
       .Where(item => item.Enabled && item.State == "Connected" && item.UploadFromUtc != null)
       .ToArrayAsync(cancellationToken);
-    var candidates = new List<(Guid Session, Guid Profile, Guid Account)>();
+    var candidates = new List<(Guid Session, Guid Profile, Guid Account, DateTimeOffset EndedAt)>();
     foreach (GarminActivityUploadAccountEntity account in accounts)
     {
       int remaining = 100 - candidates.Count;
@@ -232,7 +267,7 @@ public sealed class GarminActivityUploadStore(
         .FromSqlInterpolated($"SELECT s.* FROM WorkoutSessions AS s WHERE s.UserProfileId = {account.UserProfileId} AND s.SessionOrigin <> 'SystemTest' AND s.StartedAtUtc IS NOT NULL AND s.EndedAtUtc IS NOT NULL AND s.EndedAtUtc >= {watermark} AND (s.State = 'Completed' OR s.State = 'Stopped') AND NOT EXISTS (SELECT 1 FROM GarminActivityUploadJobs AS j WHERE j.WorkoutSessionId = s.Id) ORDER BY s.EndedAtUtc LIMIT {remaining}")
         .AsNoTracking()
         .ToArrayAsync(cancellationToken);
-      candidates.AddRange(sessions.Select(session => (session.Id, session.UserProfileId, account.Id)));
+      candidates.AddRange(sessions.Select(session => (session.Id, session.UserProfileId, account.Id, session.EndedAtUtc!.Value)));
     }
     foreach (var candidate in candidates)
     {
@@ -245,7 +280,8 @@ public sealed class GarminActivityUploadStore(
         WorkoutSessionId = candidate.Session,
         IdempotencyKey = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial))),
         Status = "Pending",
-        AvailableAtUtc = nowUtc,
+        OperationPhase = "WatchSearch",
+        AvailableAtUtc = candidate.EndedAt.AddMinutes(5),
         CreatedAtUtc = nowUtc,
         UpdatedAtUtc = nowUtc,
       });
@@ -286,6 +322,7 @@ public sealed class GarminActivityUploadStore(
       WorkoutSessionId = sessionId,
       IdempotencyKey = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial))),
       Status = "Pending",
+      OperationPhase = "Upload",
       AvailableAtUtc = nowUtc,
       CreatedAtUtc = nowUtc,
       UpdatedAtUtc = nowUtc,
@@ -306,8 +343,11 @@ public sealed class GarminActivityUploadStore(
       .ToList();
     foreach (GarminActivityUploadJobEntity item in expired)
     {
-      item.Status = "Unknown";
-      item.LastError = "The service restarted or timed out after upload began; the outcome is unknown and will not be retried automatically.";
+      bool readOnlySearch = item.OperationPhase == "WatchSearch";
+      item.Status = readOnlySearch ? "Pending" : "Unknown";
+      item.AttemptCount = readOnlySearch ? Math.Max(0, item.AttemptCount - 1) : item.AttemptCount;
+      item.AvailableAtUtc = readOnlySearch ? nowUtc : item.AvailableAtUtc;
+      item.LastError = readOnlySearch ? null : "The service restarted or timed out after a Garmin mutation may have begun; the outcome is unknown and will not be retried automatically.";
       item.LeaseExpiresAtUtc = null;
       item.UpdatedAtUtc = nowUtc;
     }
@@ -348,6 +388,85 @@ public sealed class GarminActivityUploadStore(
     job.Status = "Confirmed"; job.RemoteId = remoteId; job.FailureKind = null; job.LastError = null; job.LeaseExpiresAtUtc = null; job.UpdatedAtUtc = nowUtc;
     GarminActivityUploadAccountEntity account = await context.GarminActivityUploadAccounts.SingleAsync(item => item.Id == job.GarminActivityUploadAccountId, cancellationToken);
     account.ProtectedTokenStore = protectedTokenStore; account.State = "Connected"; account.LastError = null; account.LastUploadSuccessAtUtc = nowUtc; account.UpdatedAtUtc = nowUtc; account.Version++;
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task MarkUploadStartedAsync(Guid jobId, string operationPhase, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+  {
+    if (operationPhase is not ("Upload" or "ReplacementUpload" or "DeleteOriginal"))
+      throw new ArgumentException("A supported Garmin mutation phase is required.", nameof(operationPhase));
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    GarminActivityUploadJobEntity job = await RequiredJobAsync(context, jobId, cancellationToken);
+    job.OperationPhase = operationPhase;
+    job.UpdatedAtUtc = nowUtc;
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task MarkWatchFoundAsync(Guid jobId, string remoteId, string evidence, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+  {
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    GarminActivityUploadJobEntity job = await RequiredJobAsync(context, jobId, cancellationToken);
+    job.Status = "FoundInGarmin";
+    job.RemoteId = BoundId(remoteId);
+    job.MatchedRemoteId = BoundId(remoteId);
+    job.MatchEvidence = Bound(evidence);
+    job.FailureKind = "watch-match";
+    job.LastError = null;
+    job.LeaseExpiresAtUtc = null;
+    job.AcknowledgedAtUtc = nowUtc;
+    job.UpdatedAtUtc = nowUtc;
+    GarminActivityUploadAccountEntity account = await context.GarminActivityUploadAccounts.SingleAsync(item => item.Id == job.GarminActivityUploadAccountId, cancellationToken);
+    account.ProtectedTokenStore = protectedTokenStore;
+    account.State = "Connected";
+    account.LastError = null;
+    account.UpdatedAtUtc = nowUtc;
+    account.Version++;
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task MarkReplacementUploadedAsync(Guid jobId, string matchedRemoteId, string replacementRemoteId, string evidence, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+  {
+    if (string.Equals(matchedRemoteId, replacementRemoteId, StringComparison.Ordinal))
+      throw new InvalidOperationException("The replacement activity must have a distinct Garmin activity ID.");
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    GarminActivityUploadJobEntity job = await RequiredJobAsync(context, jobId, cancellationToken);
+    job.Status = "Pending";
+    job.OperationPhase = "DeleteOriginal";
+    job.MatchedRemoteId = BoundId(matchedRemoteId);
+    job.ReplacementRemoteId = BoundId(replacementRemoteId);
+    job.MatchEvidence = Bound(evidence);
+    job.AttemptCount = 0;
+    job.AvailableAtUtc = nowUtc;
+    job.LeaseExpiresAtUtc = null;
+    job.UpdatedAtUtc = nowUtc;
+    GarminActivityUploadAccountEntity account = await context.GarminActivityUploadAccounts.SingleAsync(item => item.Id == job.GarminActivityUploadAccountId, cancellationToken);
+    account.ProtectedTokenStore = protectedTokenStore;
+    account.State = "Connected";
+    account.LastError = null;
+    account.UpdatedAtUtc = nowUtc;
+    account.Version++;
+    await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task MarkReplacementUncertainAsync(Guid jobId, string matchedRemoteId, string evidence, string error, string? protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+  {
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    GarminActivityUploadJobEntity job = await RequiredJobAsync(context, jobId, cancellationToken);
+    job.Status = "Unknown";
+    job.OperationPhase = "ReplacementUpload";
+    job.MatchedRemoteId = BoundId(matchedRemoteId);
+    job.MatchEvidence = Bound(evidence);
+    job.FailureKind = "transport";
+    job.LastError = Bound(error);
+    job.LeaseExpiresAtUtc = null;
+    job.UpdatedAtUtc = nowUtc;
+    if (!string.IsNullOrWhiteSpace(protectedTokenStore))
+    {
+      GarminActivityUploadAccountEntity account = await context.GarminActivityUploadAccounts.SingleAsync(item => item.Id == job.GarminActivityUploadAccountId, cancellationToken);
+      account.ProtectedTokenStore = protectedTokenStore;
+      account.UpdatedAtUtc = nowUtc;
+      account.Version++;
+    }
     await context.SaveChangesAsync(cancellationToken);
   }
 
@@ -447,10 +566,12 @@ public sealed class GarminActivityUploadStore(
     context.GarminActivityUploadJobs.SingleAsync(item => item.Id == jobId && item.Status == "InFlight", cancellationToken);
   private static void EnsureVersion(int actual, int expected) { if (actual != expected) throw new DbUpdateConcurrencyException("The Garmin upload setting changed; refresh and try again."); }
   private static string Bound(string value) => string.IsNullOrWhiteSpace(value) ? "Garmin upload failed." : value.Trim()[..Math.Min(value.Trim().Length, 1000)];
-  private static GarminActivityUploadAccount Map(GarminActivityUploadAccountEntity entity) => new(entity.Id, entity.UserProfileId, entity.AccountLabel, entity.ProtectedTokenStore, entity.Enabled, entity.State, entity.ConnectedAtUtc, entity.UploadFromUtc, entity.LastUploadSuccessAtUtc, entity.LastError, entity.Version);
+  private static string BoundId(string value) => string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("A Garmin activity ID is required.", nameof(value)) : value.Trim()[..Math.Min(value.Trim().Length, 256)];
+  private static GarminActivityUploadAccount Map(GarminActivityUploadAccountEntity entity) => new(entity.Id, entity.UserProfileId, entity.AccountLabel, entity.ProtectedTokenStore, entity.Enabled, entity.WatchActivityHandling, entity.State, entity.ConnectedAtUtc, entity.UploadFromUtc, entity.LastUploadSuccessAtUtc, entity.LastError, entity.Version);
   private static GarminActivityUploadJob Map(GarminActivityUploadJobEntity entity, WorkoutSessionEntity? session = null) => new(
     entity.Id, entity.UserProfileId, entity.GarminActivityUploadAccountId, entity.WorkoutSessionId, entity.Status, entity.AttemptCount,
-    entity.RemoteId, entity.FailureKind, entity.Status == "Failed" && entity.FailureKind is "provider" or "provider-unavailable",
+    entity.RemoteId, entity.OperationPhase, entity.MatchedRemoteId, entity.ReplacementRemoteId, entity.MatchEvidence,
+    entity.FailureKind, entity.Status == "Failed" && entity.FailureKind is "provider" or "provider-unavailable",
     session?.WorkoutTitle, session?.StartedAtUtc, session?.DurationSeconds, entity.LastError, entity.UpdatedAtUtc,
     entity.AcknowledgedAtUtc);
 }

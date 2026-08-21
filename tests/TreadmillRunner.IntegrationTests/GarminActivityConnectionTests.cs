@@ -37,11 +37,12 @@ public sealed class GarminActivityConnectionTests : IAsyncLifetime
     await Assert.ThrowsAsync<KeyNotFoundException>(() => service.CompleteMfaAsync(partner, first.ChallengeId!.Value, "123456", default));
     Assert.Null(await store.FindAccountAsync(marc));
 
-    GarminActivityConnectResult second = await service.BeginAsync(marc, "marc@example.test", "never-stored", true, default);
+    GarminActivityConnectResult second = await service.BeginAsync(marc, "marc@example.test", "never-stored", true, GarminWatchActivityHandling.MergeAndReplace, default);
     GarminActivityConnectResult connected = await service.CompleteMfaAsync(marc, second.ChallengeId!.Value, "654321", default);
     Assert.Equal("Connected", connected.State);
     GarminActivityUploadAccount account = Assert.IsType<GarminActivityUploadAccount>(await store.FindAccountAsync(marc));
     Assert.True(account.Enabled);
+    Assert.Equal(GarminWatchActivityHandling.MergeAndReplace, account.WatchActivityHandling);
     Assert.DoesNotContain(MfaAdapter.TokenStore, account.ProtectedTokenStore, StringComparison.Ordinal);
     Assert.Equal(MfaAdapter.TokenStore, service.Unprotect(account.ProtectedTokenStore));
     Assert.All(adapter.Passwords, password => Assert.Equal("never-stored", password));

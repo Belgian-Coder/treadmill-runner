@@ -20,7 +20,10 @@ public sealed class GarminActivityConnectionService(
   public string Unprotect(string protectedTokens) => _protector.Unprotect(protectedTokens);
   public string Protect(string tokens) => _protector.Protect(tokens);
 
-  public async Task<GarminActivityConnectResult> BeginAsync(Guid profileId, string email, string password, bool enabled, CancellationToken cancellationToken)
+  public Task<GarminActivityConnectResult> BeginAsync(Guid profileId, string email, string password, bool enabled, CancellationToken cancellationToken) =>
+    BeginAsync(profileId, email, password, enabled, GarminWatchActivityHandling.PreferWatch, cancellationToken);
+
+  public async Task<GarminActivityConnectResult> BeginAsync(Guid profileId, string email, string password, bool enabled, string watchActivityHandling, CancellationToken cancellationToken)
   {
     await _challengeGate.WaitAsync(cancellationToken);
     try
@@ -43,13 +46,13 @@ public sealed class GarminActivityConnectionService(
         Guid challengeId = Guid.NewGuid();
         var expiryCancellation = new CancellationTokenSource();
         DateTimeOffset expiresAt = timeProvider.GetUtcNow().AddMinutes(5);
-        _challenges[challengeId] = new(profileId, enabled, process, expiresAt, expiryCancellation);
+        _challenges[challengeId] = new(profileId, enabled, watchActivityHandling, process, expiresAt, expiryCancellation);
         _ = ExpireAsync(challengeId, expiresAt, expiryCancellation.Token);
         return new("MfaRequired", challengeId, null, "Enter the current Garmin verification code. The password is held only by the isolated login process and is never persisted.");
       }
       await using (process)
       {
-        return await CompleteAsync(profileId, enabled, first, cancellationToken);
+        return await CompleteAsync(profileId, enabled, watchActivityHandling, first, cancellationToken);
       }
     }
     finally { _challengeGate.Release(); }
@@ -71,17 +74,17 @@ public sealed class GarminActivityConnectionService(
     {
       if (challenge.ProfileId != profileId) throw new KeyNotFoundException("The Garmin verification request does not belong to this runner.");
       GarminAdapterMessage message = await challenge.Process.CompleteMfaAsync(code.Trim(), cancellationToken);
-      return await CompleteAsync(challenge.ProfileId, challenge.Enabled, message, cancellationToken);
+      return await CompleteAsync(challenge.ProfileId, challenge.Enabled, challenge.WatchActivityHandling, message, cancellationToken);
     }
   }
 
-  private async Task<GarminActivityConnectResult> CompleteAsync(Guid profileId, bool enabled, GarminAdapterMessage message, CancellationToken cancellationToken)
+  private async Task<GarminActivityConnectResult> CompleteAsync(Guid profileId, bool enabled, string watchActivityHandling, GarminAdapterMessage message, CancellationToken cancellationToken)
   {
     if (!string.Equals(message.State, "connected", StringComparison.OrdinalIgnoreCase) ||
         string.IsNullOrWhiteSpace(message.TokenStore) || string.IsNullOrWhiteSpace(message.AccountLabel))
       return new("Failed", null, null, message.Message ?? "Garmin authentication failed.");
     GarminActivityUploadAccount account = await store.ConnectAsync(
-      profileId, message.AccountLabel, _protector.Protect(message.TokenStore), enabled, timeProvider.GetUtcNow(), cancellationToken);
+      profileId, message.AccountLabel, _protector.Protect(message.TokenStore), enabled, watchActivityHandling, timeProvider.GetUtcNow(), cancellationToken);
     return new("Connected", null, account.AccountLabel, enabled
       ? "Connected. Completed-activity upload is enabled for this runner."
       : "Connected. Completed-activity upload remains disabled until explicitly enabled.");
@@ -130,6 +133,7 @@ public sealed class GarminActivityConnectionService(
   private sealed record PendingChallenge(
     Guid ProfileId,
     bool Enabled,
+    string WatchActivityHandling,
     IGarminAdapterConnectProcess Process,
     DateTimeOffset ExpiresAtUtc,
     CancellationTokenSource ExpiryCancellation);

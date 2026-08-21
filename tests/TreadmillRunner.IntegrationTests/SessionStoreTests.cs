@@ -102,6 +102,8 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.Equal("Runner", summary.UserProfileName);
     Assert.Equal("Easy Run", summary.WorkoutTitle);
     Assert.Equal(2.2, summary.DistanceKilometers);
+    Assert.Equal(120, summary.AverageHeartRateBpm);
+    Assert.Equal((ushort)120, summary.MaximumHeartRateBpm);
   }
 
   [Fact]

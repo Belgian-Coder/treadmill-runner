@@ -190,16 +190,23 @@ public sealed class SessionStore(
       throw new InvalidOperationException($"Session {summary.SessionId} is already terminal.");
     }
 
+    SessionSampleEntity[] persistedSamples = await context.SessionSamples.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == summary.SessionId)
+      .OrderBy(candidate => candidate.Sequence)
+      .ToArrayAsync(cancellationToken);
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      persistedSamples.Select(MapSample).ToArray());
+
     session.State = summary.Status.ToString();
     session.StartedAtUtc = summary.StartedAt;
     session.EndedAtUtc = summary.EndedAt;
     session.DurationSeconds = summary.Duration.TotalSeconds;
     session.DistanceKilometers = summary.DistanceKilometers;
     session.EstimatedCalories = summary.EstimatedKilocalories;
-    session.AverageHeartRateBpm = summary.AverageHeartRateBpm;
-    session.MaximumHeartRateBpm = summary.MaximumHeartRateBpm;
+    session.AverageHeartRateBpm = statistics.AverageHeartRateBpm ?? summary.AverageHeartRateBpm;
+    session.MaximumHeartRateBpm = statistics.MaximumHeartRateBpm ?? summary.MaximumHeartRateBpm;
     session.AverageSpeedKph = summary.AverageSpeedKph;
-    session.AverageInclinePercent = summary.AverageInclinePercent;
+    session.AverageInclinePercent = statistics.AverageInclinePercent ?? summary.AverageInclinePercent;
     await context.SaveChangesAsync(cancellationToken);
     if (summary.Status == SessionState.Completed &&
         session.WorkoutProgramRunId is { } runId &&

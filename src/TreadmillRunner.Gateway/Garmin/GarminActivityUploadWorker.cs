@@ -81,42 +81,94 @@ public sealed class GarminActivityUploadWorker(
 
     string tempDirectory = Path.Combine(Path.GetTempPath(), "TreadmillRunner", "garmin-upload");
     Directory.CreateDirectory(tempDirectory);
-    string fitPath = Path.Combine(tempDirectory, $"{job.Id:N}.fit");
+    string localFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-local.fit");
+    string watchFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-watch.fit");
+    string mergedFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-merged.fit");
+    bool mutationStarted = job.OperationPhase == "DeleteOriginal";
     try
     {
-      await File.WriteAllBytesAsync(fitPath, SessionFitActivityExporter.Export(session), cancellationToken);
-      GarminAdapterMessage result = await adapter.UploadAsync(tokens, fitPath, cancellationToken);
-      if (string.Equals(result.State, "confirmed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(result.TokenStore))
+      if (job.OperationPhase == "DeleteOriginal")
       {
-        await store.MarkConfirmedAsync(job.Id, result.RemoteId, connections.Protect(result.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+        await DeleteMatchedOriginalAsync(job, tokens, cancellationToken);
+        return;
       }
-      else if (string.Equals(result.State, "unknown", StringComparison.OrdinalIgnoreCase))
+
+      GarminWatchActivityMatch? match = null;
+      if (job.OperationPhase == "WatchSearch" && session.Definition.Origin != SessionOrigin.SystemTest)
       {
-        await store.MarkUnknownAsync(job.Id, result.Message ?? "Garmin received an upload request but its outcome is unknown.", timeProvider.GetUtcNow(), cancellationToken);
-      }
-      else
-      {
-        bool authentication = string.Equals(result.Kind, "authentication", StringComparison.OrdinalIgnoreCase);
-        if (string.Equals(result.Kind, "provider-unavailable", StringComparison.OrdinalIgnoreCase))
+        GarminAdapterSearchMessage search = await adapter.SearchWatchActivitiesAsync(tokens, session.StartedAt!.Value, cancellationToken);
+        if (!string.Equals(search.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(search.TokenStore))
         {
-          await store.MarkProviderUnavailableAsync(job.Id, result.Message ?? "The unsupported Garmin adapter dependency is unavailable.", timeProvider.GetUtcNow(), cancellationToken);
+          await HandleReadFailureAsync(job, search.Kind, search.Message, cancellationToken);
           return;
         }
-        if (string.Equals(result.Kind, "duplicate", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(result.Kind, "rejected", StringComparison.OrdinalIgnoreCase))
+        tokens = search.TokenStore;
+        match = GarminWatchActivityMatcher.Match(ToMatchReference(session), search.Candidates ?? []);
+        if (match.Disposition == GarminWatchActivityMatchDisposition.Single && match.Candidate is { } candidate)
         {
-          await store.MarkRejectedAsync(job.Id, result.Kind!.ToLowerInvariant(), result.Message ?? "Garmin rejected the activity import.", timeProvider.GetUtcNow(), cancellationToken);
+          if (account.WatchActivityHandling == GarminWatchActivityHandling.PreferWatch)
+          {
+            await store.MarkWatchFoundAsync(job.Id, candidate.RemoteId, match.Evidence, connections.Protect(tokens), timeProvider.GetUtcNow(), cancellationToken);
+            return;
+          }
+
+          GarminAdapterMessage download = await adapter.DownloadOriginalAsync(tokens, candidate.RemoteId, watchFitPath, cancellationToken);
+          if (!string.Equals(download.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(download.TokenStore))
+          {
+            await HandleReadFailureAsync(job, download.Kind, download.Message, cancellationToken);
+            return;
+          }
+          tokens = download.TokenStore;
+          byte[] merged = GarminFitActivityMerger.Merge(await File.ReadAllBytesAsync(watchFitPath, cancellationToken), session);
+          await File.WriteAllBytesAsync(mergedFitPath, merged, cancellationToken);
+          await store.MarkUploadStartedAsync(job.Id, "ReplacementUpload", timeProvider.GetUtcNow(), cancellationToken);
+          mutationStarted = true;
+          GarminAdapterMessage replacement = await adapter.UploadAsync(tokens, mergedFitPath, cancellationToken);
+          if (string.Equals(replacement.State, "confirmed", StringComparison.OrdinalIgnoreCase) &&
+              !string.IsNullOrWhiteSpace(replacement.TokenStore) && !string.IsNullOrWhiteSpace(replacement.RemoteId))
+          {
+            if (string.Equals(candidate.RemoteId, replacement.RemoteId, StringComparison.Ordinal))
+            {
+              await store.MarkReplacementUncertainAsync(job.Id, candidate.RemoteId, match.Evidence, "Garmin returned the original activity ID for the merged import; no delete was attempted.", connections.Protect(replacement.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+              return;
+            }
+            await store.MarkReplacementUploadedAsync(job.Id, candidate.RemoteId, replacement.RemoteId, match.Evidence, connections.Protect(replacement.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+            return;
+          }
+          if (string.Equals(replacement.State, "confirmed", StringComparison.OrdinalIgnoreCase))
+          {
+            await store.MarkReplacementUncertainAsync(job.Id, candidate.RemoteId, match.Evidence, "Garmin confirmed the merged import without a distinct activity ID; the original watch activity was retained.", string.IsNullOrWhiteSpace(replacement.TokenStore) ? null : connections.Protect(replacement.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+            return;
+          }
+          await HandleMutationResultAsync(job, replacement, "Garmin did not confirm the merged replacement with a distinct activity ID; the original watch activity was retained.", cancellationToken);
           return;
         }
-        TimeSpan delay = string.Equals(result.Kind, "rate-limit", StringComparison.OrdinalIgnoreCase)
-          ? TimeSpan.FromMinutes(15)
-          : TimeSpan.FromMinutes(Math.Pow(2, Math.Max(0, job.AttemptCount - 1)));
-        await store.MarkFailedAsync(job.Id, result.Message ?? "Garmin rejected the activity import.", authentication, timeProvider.GetUtcNow().Add(delay), timeProvider.GetUtcNow(), cancellationToken);
       }
+
+      await File.WriteAllBytesAsync(localFitPath, SessionFitActivityExporter.Export(session), cancellationToken);
+      await store.MarkUploadStartedAsync(job.Id, "Upload", timeProvider.GetUtcNow(), cancellationToken);
+      mutationStarted = true;
+      GarminAdapterMessage result = await adapter.UploadAsync(tokens, localFitPath, cancellationToken);
+      await HandleMutationResultAsync(job, result,
+        match?.Disposition == GarminWatchActivityMatchDisposition.Multiple
+          ? "Multiple plausible watch activities were found, so the local activity was uploaded for manual cleanup."
+          : "Garmin did not confirm the activity upload.", cancellationToken);
+    }
+    catch (Exception exception) when (!mutationStarted && exception is InvalidDataException or Dynastream.Fit.FitException)
+    {
+      await store.MarkRejectedAsync(job.Id, "merge-source", "The matched watch FIT could not be validated or merged; the original watch activity was retained.", timeProvider.GetUtcNow(), CancellationToken.None);
+      logger.LogWarning(exception, "Garmin watch activity {JobId} could not be merged safely.", job.Id);
     }
     catch (TimeoutException exception)
     {
-      await store.MarkUnknownAsync(job.Id, "The Garmin adapter timed out after upload began; no automatic retry will occur.", timeProvider.GetUtcNow(), CancellationToken.None);
+      if (!mutationStarted)
+      {
+        await store.MarkFailedAsync(job.Id, "The Garmin watch search timed out before any account mutation; it can be retried safely.", false, timeProvider.GetUtcNow().AddMinutes(2), timeProvider.GetUtcNow(), CancellationToken.None);
+      }
+      else
+      {
+        await store.MarkUnknownAsync(job.Id, "The Garmin adapter timed out after an account mutation may have begun; no automatic retry will occur.", timeProvider.GetUtcNow(), CancellationToken.None);
+      }
       logger.LogWarning(exception, "Garmin activity upload {JobId} timed out with an unknown outcome.", job.Id);
     }
     catch (GarminAdapterUnavailableException exception)
@@ -126,12 +178,81 @@ public sealed class GarminActivityUploadWorker(
     }
     catch (GarminAdapterAmbiguousResultException exception)
     {
-      await store.MarkUnknownAsync(job.Id, "The Garmin adapter returned no valid confirmation after upload may have begun; no automatic retry will occur.", timeProvider.GetUtcNow(), CancellationToken.None);
+      if (!mutationStarted)
+        await store.MarkFailedAsync(job.Id, "The Garmin watch search returned an invalid read response and can be retried safely.", false, timeProvider.GetUtcNow().AddMinutes(2), timeProvider.GetUtcNow(), CancellationToken.None);
+      else
+        await store.MarkUnknownAsync(job.Id, "The Garmin adapter returned no valid confirmation after an account mutation may have begun; no automatic retry will occur.", timeProvider.GetUtcNow(), CancellationToken.None);
       logger.LogWarning(exception, "Garmin activity upload {JobId} ended with an ambiguous adapter result.", job.Id);
     }
     finally
     {
-      try { if (File.Exists(fitPath)) File.Delete(fitPath); } catch (IOException exception) { logger.LogWarning(exception, "Temporary Garmin FIT file cleanup failed for {JobId}.", job.Id); }
+      foreach (string path in new[] { localFitPath, watchFitPath, mergedFitPath })
+        try { if (File.Exists(path)) File.Delete(path); } catch (IOException exception) { logger.LogWarning(exception, "Temporary Garmin FIT file cleanup failed for {JobId}.", job.Id); }
     }
+  }
+
+  private async Task DeleteMatchedOriginalAsync(GarminActivityUploadJob job, string tokens, CancellationToken cancellationToken)
+  {
+    if (string.IsNullOrWhiteSpace(job.MatchedRemoteId) || string.IsNullOrWhiteSpace(job.ReplacementRemoteId))
+    {
+      await store.MarkUnknownAsync(job.Id, "Replacement state is incomplete; no Garmin activity was deleted.", timeProvider.GetUtcNow(), cancellationToken);
+      return;
+    }
+    await store.MarkUploadStartedAsync(job.Id, "DeleteOriginal", timeProvider.GetUtcNow(), cancellationToken);
+    GarminAdapterMessage result = await adapter.DeleteAsync(tokens, job.MatchedRemoteId, cancellationToken);
+    if (string.Equals(result.State, "confirmed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(result.TokenStore))
+      await store.MarkConfirmedAsync(job.Id, job.ReplacementRemoteId, connections.Protect(result.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+    else
+      await HandleMutationResultAsync(job, result, "The merged activity exists, but Garmin did not confirm removal of the original; review both activities manually.", cancellationToken);
+  }
+
+  private async Task HandleReadFailureAsync(GarminActivityUploadJob job, string? kind, string? message, CancellationToken cancellationToken)
+  {
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    if (string.Equals(kind, "provider-unavailable", StringComparison.OrdinalIgnoreCase))
+      await store.MarkProviderUnavailableAsync(job.Id, message ?? "The unsupported Garmin adapter dependency is unavailable.", now, cancellationToken);
+    else
+      await store.MarkFailedAsync(job.Id, message ?? "Garmin watch activity lookup failed before any account mutation.", string.Equals(kind, "authentication", StringComparison.OrdinalIgnoreCase), now.Add(string.Equals(kind, "rate-limit", StringComparison.OrdinalIgnoreCase) ? TimeSpan.FromMinutes(15) : TimeSpan.FromMinutes(2)), now, cancellationToken);
+  }
+
+  private async Task HandleMutationResultAsync(GarminActivityUploadJob job, GarminAdapterMessage result, string fallbackMessage, CancellationToken cancellationToken)
+  {
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    if (string.Equals(result.State, "confirmed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(result.TokenStore))
+    {
+      await store.MarkConfirmedAsync(job.Id, result.RemoteId, connections.Protect(result.TokenStore), now, cancellationToken);
+      return;
+    }
+    if (string.Equals(result.State, "unknown", StringComparison.OrdinalIgnoreCase))
+    {
+      await store.MarkUnknownAsync(job.Id, result.Message ?? fallbackMessage, now, cancellationToken);
+      return;
+    }
+    if (string.Equals(result.Kind, "provider-unavailable", StringComparison.OrdinalIgnoreCase))
+    {
+      await store.MarkProviderUnavailableAsync(job.Id, result.Message ?? fallbackMessage, now, cancellationToken);
+      return;
+    }
+    if (string.Equals(result.Kind, "duplicate", StringComparison.OrdinalIgnoreCase) || string.Equals(result.Kind, "rejected", StringComparison.OrdinalIgnoreCase))
+    {
+      await store.MarkRejectedAsync(job.Id, result.Kind!.ToLowerInvariant(), result.Message ?? fallbackMessage, now, cancellationToken);
+      return;
+    }
+    bool authentication = string.Equals(result.Kind, "authentication", StringComparison.OrdinalIgnoreCase);
+    TimeSpan delay = string.Equals(result.Kind, "rate-limit", StringComparison.OrdinalIgnoreCase) ? TimeSpan.FromMinutes(15) : TimeSpan.FromMinutes(Math.Pow(2, Math.Max(0, job.AttemptCount - 1)));
+    await store.MarkFailedAsync(job.Id, result.Message ?? fallbackMessage, authentication, now.Add(delay), now, cancellationToken);
+  }
+
+  private static GarminActivityMatchReference ToMatchReference(StoredWorkoutSession session)
+  {
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(session.Samples);
+    return new(
+      session.StartedAt!.Value,
+      session.Duration.TotalSeconds,
+      session.DistanceKilometers,
+      statistics.AverageHeartRateBpm ?? session.AverageHeartRateBpm,
+      statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm,
+      session.Samples.Where(sample => sample.HeartRateBpm is not null)
+        .Select(sample => new GarminWatchHeartRateSample(sample.Elapsed.TotalSeconds, sample.HeartRateBpm!.Value)).ToArray());
   }
 }

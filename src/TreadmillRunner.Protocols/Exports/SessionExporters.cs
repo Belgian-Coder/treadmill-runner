@@ -54,6 +54,14 @@ public static class SessionFitActivityExporter
     var start = new Dynastream.Fit.DateTime(session.StartedAt.Value.UtcDateTime);
     var end = new Dynastream.Fit.DateTime(session.EndedAt.Value.UtcDateTime);
     uint serial = BitConverter.ToUInt32(session.Definition.SessionId.ToByteArray(), 0);
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(session.Samples);
+    double? averageHeartRate = statistics.AverageHeartRateBpm ?? session.AverageHeartRateBpm;
+    ushort? maximumHeartRate = statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm;
+    float averageSpeed = (float)(session.AverageSpeedKph / 3.6);
+    float? maximumSpeed = statistics.MaximumSpeedKph is { } maximumSpeedKph
+      ? (float)(maximumSpeedKph / 3.6)
+      : null;
+    ushort totalCalories = (ushort)Math.Clamp(Math.Round(session.EstimatedKilocalories), 0, ushort.MaxValue);
 
     var fileId = new FileIdMesg();
     fileId.SetType(Dynastream.Fit.File.Activity);
@@ -68,7 +76,9 @@ public static class SessionFitActivityExporter
     {
       var record = new RecordMesg();
       record.SetTimestamp(new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime));
-      record.SetSpeed((float)(sample.MeasuredSpeedKph / 3.6));
+      float speed = (float)(sample.MeasuredSpeedKph / 3.6);
+      record.SetSpeed(speed);
+      record.SetEnhancedSpeed(speed);
       record.SetDistance((float)(sample.DistanceKilometers * 1000));
       if (sample.HeartRateBpm is { } heartRate) record.SetHeartRate((byte)Math.Min(heartRate, byte.MaxValue));
       record.SetGrade((float)sample.MeasuredInclinePercent);
@@ -87,9 +97,24 @@ public static class SessionFitActivityExporter
     lap.SetTotalDistance(distance);
     lap.SetSport(Sport.Running);
     lap.SetSubSport(SubSport.Treadmill);
-    lap.SetAvgSpeed((float)(session.AverageSpeedKph / 3.6));
-    if (session.AverageHeartRateBpm is { } averageHeartRate) lap.SetAvgHeartRate((byte)Math.Min(averageHeartRate, byte.MaxValue));
-    if (session.MaximumHeartRateBpm is { } maximumHeartRate) lap.SetMaxHeartRate((byte)Math.Min(maximumHeartRate, byte.MaxValue));
+    lap.SetEvent(Event.Lap);
+    lap.SetEventType(EventType.Stop);
+    lap.SetLapTrigger(LapTrigger.SessionEnd);
+    lap.SetAvgSpeed(averageSpeed);
+    lap.SetEnhancedAvgSpeed(averageSpeed);
+    lap.SetTotalCalories(totalCalories);
+    if (maximumSpeed is { } lapMaximumSpeed)
+    {
+      lap.SetMaxSpeed(lapMaximumSpeed);
+      lap.SetEnhancedMaxSpeed(lapMaximumSpeed);
+    }
+    if (statistics.MovingTime is { } lapMovingTime) lap.SetTotalMovingTime((float)lapMovingTime.TotalSeconds);
+    if (statistics.AverageInclinePercent is { } lapAverageGrade) lap.SetAvgGrade((float)lapAverageGrade);
+    if (statistics.MinimumInclinePercent is { } lapMinimumGrade && lapMinimumGrade < 0) lap.SetMaxNegGrade((float)lapMinimumGrade);
+    if (statistics.MaximumInclinePercent is { } lapMaximumGrade && lapMaximumGrade > 0) lap.SetMaxPosGrade((float)lapMaximumGrade);
+    if (averageHeartRate is { } lapAverageHeartRate) lap.SetAvgHeartRate(ToFitHeartRate(lapAverageHeartRate));
+    if (statistics.MinimumHeartRateBpm is { } lapMinimumHeartRate) lap.SetMinHeartRate(ToFitHeartRate(lapMinimumHeartRate));
+    if (maximumHeartRate is { } lapMaximumHeartRate) lap.SetMaxHeartRate(ToFitHeartRate(lapMaximumHeartRate));
     encoder.Write(lap);
 
     var sessionMessage = new SessionMesg();
@@ -101,12 +126,27 @@ public static class SessionFitActivityExporter
     sessionMessage.SetTotalDistance(distance);
     sessionMessage.SetSport(Sport.Running);
     sessionMessage.SetSubSport(SubSport.Treadmill);
+    sessionMessage.SetSportProfileName("TreadmillRunner");
+    sessionMessage.SetEvent(Event.Session);
+    sessionMessage.SetEventType(EventType.Stop);
+    sessionMessage.SetTrigger(SessionTrigger.ActivityEnd);
     sessionMessage.SetFirstLapIndex(0);
     sessionMessage.SetNumLaps(1);
-    sessionMessage.SetAvgSpeed((float)(session.AverageSpeedKph / 3.6));
-    sessionMessage.SetTotalCalories((ushort)Math.Clamp(Math.Round(session.EstimatedKilocalories), 0, ushort.MaxValue));
-    if (session.AverageHeartRateBpm is { } sessionAverageHeartRate) sessionMessage.SetAvgHeartRate((byte)Math.Min(sessionAverageHeartRate, byte.MaxValue));
-    if (session.MaximumHeartRateBpm is { } sessionMaximumHeartRate) sessionMessage.SetMaxHeartRate((byte)Math.Min(sessionMaximumHeartRate, byte.MaxValue));
+    sessionMessage.SetAvgSpeed(averageSpeed);
+    sessionMessage.SetEnhancedAvgSpeed(averageSpeed);
+    sessionMessage.SetTotalCalories(totalCalories);
+    if (maximumSpeed is { } sessionMaximumSpeed)
+    {
+      sessionMessage.SetMaxSpeed(sessionMaximumSpeed);
+      sessionMessage.SetEnhancedMaxSpeed(sessionMaximumSpeed);
+    }
+    if (statistics.MovingTime is { } sessionMovingTime) sessionMessage.SetTotalMovingTime((float)sessionMovingTime.TotalSeconds);
+    if (statistics.AverageInclinePercent is { } sessionAverageGrade) sessionMessage.SetAvgGrade((float)sessionAverageGrade);
+    if (statistics.MinimumInclinePercent is { } sessionMinimumGrade && sessionMinimumGrade < 0) sessionMessage.SetMaxNegGrade((float)sessionMinimumGrade);
+    if (statistics.MaximumInclinePercent is { } sessionMaximumGrade && sessionMaximumGrade > 0) sessionMessage.SetMaxPosGrade((float)sessionMaximumGrade);
+    if (averageHeartRate is { } sessionAverageHeartRate) sessionMessage.SetAvgHeartRate(ToFitHeartRate(sessionAverageHeartRate));
+    if (statistics.MinimumHeartRateBpm is { } sessionMinimumHeartRate) sessionMessage.SetMinHeartRate(ToFitHeartRate(sessionMinimumHeartRate));
+    if (maximumHeartRate is { } sessionMaximumHeartRate) sessionMessage.SetMaxHeartRate(ToFitHeartRate(sessionMaximumHeartRate));
     encoder.Write(sessionMessage);
 
     var activity = new ActivityMesg();
@@ -129,4 +169,7 @@ public static class SessionFitActivityExporter
     message.SetEventType(eventType);
     return message;
   }
+
+  private static byte ToFitHeartRate(double heartRate) =>
+    (byte)Math.Clamp(Math.Round(heartRate, MidpointRounding.AwayFromZero), 0, byte.MaxValue);
 }

@@ -428,6 +428,7 @@ internal sealed class GarminActivityUploadAccountEntity
   public string AccountLabel { get; set; } = string.Empty;
   public string ProtectedTokenStore { get; set; } = string.Empty;
   public bool Enabled { get; set; }
+  public string WatchActivityHandling { get; set; } = "PreferWatch";
   public string State { get; set; } = "Connected";
   public DateTimeOffset ConnectedAtUtc { get; set; }
   public DateTimeOffset? UploadFromUtc { get; set; }
@@ -451,6 +452,10 @@ internal sealed class GarminActivityUploadJobEntity
   public DateTimeOffset AvailableAtUtc { get; set; }
   public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
   public string? RemoteId { get; set; }
+  public string OperationPhase { get; set; } = "WatchSearch";
+  public string? MatchedRemoteId { get; set; }
+  public string? ReplacementRemoteId { get; set; }
+  public string? MatchEvidence { get; set; }
   public string? FailureKind { get; set; }
   public string? LastError { get; set; }
   public DateTimeOffset CreatedAtUtc { get; set; }
