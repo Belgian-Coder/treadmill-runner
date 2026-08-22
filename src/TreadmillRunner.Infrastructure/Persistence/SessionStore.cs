@@ -195,14 +195,15 @@ public sealed class SessionStore(
       .OrderBy(candidate => candidate.Sequence)
       .ToArrayAsync(cancellationToken);
     SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
-      persistedSamples.Select(MapSample).ToArray());
+      persistedSamples.Select(MapSample).ToArray(),
+      SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson));
 
     session.State = summary.Status.ToString();
     session.StartedAtUtc = summary.StartedAt;
     session.EndedAtUtc = summary.EndedAt;
     session.DurationSeconds = summary.Duration.TotalSeconds;
     session.DistanceKilometers = summary.DistanceKilometers;
-    session.EstimatedCalories = summary.EstimatedKilocalories;
+    session.EstimatedCalories = statistics.EstimatedKilocalories ?? summary.EstimatedKilocalories;
     session.AverageHeartRateBpm = statistics.AverageHeartRateBpm ?? summary.AverageHeartRateBpm;
     session.MaximumHeartRateBpm = statistics.MaximumHeartRateBpm ?? summary.MaximumHeartRateBpm;
     session.AverageSpeedKph = summary.AverageSpeedKph;
@@ -396,6 +397,30 @@ public sealed class SessionStore(
       eligible == 0 ? 100 : (double)adherent / eligible * 100,
       SessionMetricAlgorithms.AdherenceV1,
       counts);
+  }
+
+  public async Task<SessionSampleStatistics?> CalculateSampleStatisticsAsync(
+    Guid sessionId,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    bool exists = await context.WorkoutSessions.AsNoTracking()
+      .AnyAsync(candidate => candidate.Id == sessionId, cancellationToken);
+    if (!exists)
+    {
+      return null;
+    }
+
+    WorkoutSessionEntity session = await context.WorkoutSessions.AsNoTracking()
+      .SingleAsync(candidate => candidate.Id == sessionId, cancellationToken);
+    SessionSampleEntity[] samples = await context.SessionSamples.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .OrderBy(candidate => candidate.Sequence)
+      .ToArrayAsync(cancellationToken);
+    return SessionSampleStatisticsCalculator.Calculate(
+      samples.Select(MapSample).ToArray(),
+      SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson));
   }
 
   public async Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(

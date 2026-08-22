@@ -630,7 +630,8 @@ public static class LiveSessionEndpoints
       sessionId,
       ReadProfileHeartRateZones(session.Definition.ControllerConfigurationJson),
       cancellationToken);
-    if (analytics is null)
+    SessionSampleStatistics? statistics = await store.CalculateSampleStatisticsAsync(sessionId, cancellationToken);
+    if (analytics is null || statistics is null)
     {
       return Results.NotFound();
     }
@@ -642,11 +643,14 @@ public static class LiveSessionEndpoints
       session.EndedAt,
       session.Duration,
       session.DistanceKilometers,
-      session.EstimatedKilocalories,
+      EstimatedKilocalories = statistics.EstimatedKilocalories ?? session.EstimatedKilocalories,
       session.AverageHeartRateBpm,
       session.MaximumHeartRateBpm,
       session.AverageSpeedKph,
       session.AverageInclinePercent,
+      statistics.TotalAscentMeters,
+      statistics.TotalDescentMeters,
+      statistics.NetElevationMeters,
       session.Debrief,
       Samples = session.Samples,
       TotalSampleCount = display.TotalSampleCount,

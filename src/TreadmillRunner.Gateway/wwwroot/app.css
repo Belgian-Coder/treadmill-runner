@@ -823,6 +823,7 @@ body.immersive-view { overflow: hidden; }
 .chart-plan--incline { stroke: #a68af4; }
 .chart-requested--incline { stroke: #ef8fc7; }
 .chart-current--incline { stroke: #ff9f66; }
+.chart-current--heart-rate { stroke: #ff657a; stroke-width: 3.5; stroke-dasharray: none; }
 .control-chart-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem .8rem; color: #91abaa; font-size: .65rem; }
 .control-chart-legend strong { color: #d8ebe7; }
 .control-chart-legend span { display: inline-flex; align-items: center; gap: .32rem; }
@@ -832,6 +833,8 @@ body.immersive-view { overflow: hidden; }
 .legend-line--incline-plan { border-color: #a68af4; }
 .legend-line--incline-target { border-color: #ef8fc7; }
 .legend-line--incline-measured { border-color: #ff9f66; }
+.legend-line--heart-rate { border-color: #ff657a; }
+.session-heart-rate-heading { margin-top: 1.25rem; }
 .control-takeover { width: 100%; }
 .control-action-dock { position: sticky; bottom: .5rem; z-index: 10; }
 .control-command-status { grid-column: 1 / -1; min-height: 1.25rem; margin: 0; color: #b8d2ce; font-size: .72rem; line-height: 1.35; text-align: center; }
