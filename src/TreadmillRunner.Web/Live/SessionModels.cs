@@ -22,7 +22,8 @@ public sealed record StoredWorkoutSessionView(
   IReadOnlyList<SessionSample> Samples,
   IReadOnlyList<JsonElement> Events,
   SessionAnalytics Analytics,
-  int TotalSampleCount = 0)
+  int TotalSampleCount = 0,
+  IReadOnlyList<SessionHeartRateZoneSnapshot>? HeartRateZones = null)
 {
   public int PersistedSampleCount => Math.Max(TotalSampleCount, Samples.Count);
   public bool SamplesAreDownsampled => PersistedSampleCount > Samples.Count;

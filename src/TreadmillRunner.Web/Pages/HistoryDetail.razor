@@ -205,6 +205,15 @@ else
                             double y = HeartRateChartY(tick);
                             <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
                         }
+                        @foreach (SessionHeartRateZoneSnapshot zone in HeartRateBoundaryZones)
+                        {
+                            double y = HeartRateChartY(zone.MinimumBpm);
+                            double labelY = Math.Clamp(y - 5, 12, 208);
+                            <g class="chart-zone-boundary-group" data-zone-boundary="@zone.Number" role="img" aria-label="Zone @zone.Number · @zone.Name starts at @zone.MinimumBpm bpm">
+                                <line class="chart-zone-boundary" x1="10" y1="@y" x2="710" y2="@y" />
+                                <text class="chart-zone-label" x="16" y="@labelY" dominant-baseline="middle" aria-hidden="true">Zone @zone.Number · @zone.MinimumBpm</text>
+                            </g>
+                        }
                         <path class="chart-current chart-current--heart-rate" data-series="heart-rate" d="@BuildHeartRatePath()" />
                     </svg>
                     <div></div>
@@ -598,8 +607,22 @@ else
 
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
     private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
-    private int HeartRateAxisMinimum => session is null ? 60 : Math.Max(0, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(60).Min() - 10) / 10) * 10);
-    private int HeartRateAxisMaximum => session is null ? 180 : Math.Max(HeartRateAxisMinimum + 20, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(170).Max() + 19) / 10) * 10);
+    private IReadOnlyList<SessionHeartRateZoneSnapshot> HeartRateBoundaryZones => session?.HeartRateZones?
+        .Where(static zone => zone.MinimumBpm > 0)
+        .OrderBy(static zone => zone.Number)
+        .ToArray() ?? Array.Empty<SessionHeartRateZoneSnapshot>();
+    private int HeartRateDataAxisMinimum => session is null ? 60 : Math.Max(0, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(60).Min() - 10) / 10) * 10);
+    private int HeartRateDataAxisMaximum => session is null ? 180 : Math.Max(HeartRateDataAxisMinimum + 20, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(170).Max() + 19) / 10) * 10);
+    private int HeartRateAxisMinimum => session is null
+        ? 60
+        : Math.Min(
+            HeartRateDataAxisMinimum,
+            HeartRateBoundaryZones.Select(static zone => (zone.MinimumBpm / 10) * 10).DefaultIfEmpty(HeartRateDataAxisMinimum).Min());
+    private int HeartRateAxisMaximum => session is null
+        ? 180
+        : Math.Max(
+            HeartRateDataAxisMaximum,
+            HeartRateBoundaryZones.Select(static zone => ((zone.MinimumBpm + 19) / 10) * 10).DefaultIfEmpty(HeartRateDataAxisMaximum).Max());
     private IEnumerable<int> HeartRateAxisTicks
     {
         get

@@ -626,9 +626,11 @@ public static class LiveSessionEndpoints
     }
 
     StoredWorkoutSession session = display.Session;
+    IReadOnlyList<SessionHeartRateZoneSnapshot> heartRateZoneSnapshots = ReadProfileHeartRateZoneSnapshots(
+      session.Definition.ControllerConfigurationJson);
     SessionAnalytics? analytics = await store.CalculateAnalyticsAsync(
       sessionId,
-      ReadProfileHeartRateZones(session.Definition.ControllerConfigurationJson),
+      heartRateZoneSnapshots.Select(static zone => zone.ToHeartRateZone()).ToArray(),
       cancellationToken);
     SessionSampleStatistics? statistics = await store.CalculateSampleStatisticsAsync(sessionId, cancellationToken);
     if (analytics is null || statistics is null)
@@ -656,6 +658,7 @@ public static class LiveSessionEndpoints
       TotalSampleCount = display.TotalSampleCount,
       Events = session.Events.Select(ToHistoryEvent).ToArray(),
       Analytics = analytics,
+      HeartRateZones = heartRateZoneSnapshots,
     });
   }
 
@@ -749,15 +752,14 @@ public static class LiveSessionEndpoints
     return Results.Ok(SessionAnalyticsCalculator.CalculateWeeklyTotals(summaries, from, throughExclusive));
   }
 
-  private static IReadOnlyList<HeartRateZone> ReadProfileHeartRateZones(string configurationJson)
+  private static IReadOnlyList<SessionHeartRateZoneSnapshot> ReadProfileHeartRateZoneSnapshots(string configurationJson)
   {
     try
     {
       SessionExecutionConfiguration? configuration = JsonSerializer.Deserialize<SessionExecutionConfiguration>(
         configurationJson,
         new JsonSerializerOptions(JsonSerializerDefaults.Web));
-      return configuration?.Profile.HeartRateZones
-        .Select(static zone => zone.ToHeartRateZone())
+      return configuration?.Profile?.HeartRateZones
         .ToArray() ?? [];
     }
     catch (JsonException)
