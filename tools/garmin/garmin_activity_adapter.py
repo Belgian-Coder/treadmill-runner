@@ -153,7 +153,10 @@ def search(request: dict[str, Any]) -> None:
     local_start = _utc(request.get("startedAtUtc"))
     if local_start is None:
         raise ValueError("A UTC session start is required.")
-    activities = client.get_activities(0, 20, "treadmill_running")
+    # Garmin's private activities endpoint does not consistently accept the
+    # treadmill_running type key as a server-side filter. Keep the request
+    # bounded and apply the exact type/start filters below instead.
+    activities = client.get_activities(0, 20)
     candidates: list[dict[str, Any]] = []
     for activity in activities if isinstance(activities, list) else []:
         if not isinstance(activity, dict):

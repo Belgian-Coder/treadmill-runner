@@ -61,7 +61,8 @@ class ImportDispositionTests(unittest.TestCase):
                 self.client = TokenClient()
             def login(self, token_store):
                 self.token_store = token_store
-            def get_activities(self, start, limit, activitytype):
+            def get_activities(self, start, limit):
+                self.activity_query = (start, limit)
                 return [{"activityId": 123, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130, "maxHR": 155}]
             def get_activity_details(self, activity_id, maxchart, maxpoly):
                 return {"samples": True}
