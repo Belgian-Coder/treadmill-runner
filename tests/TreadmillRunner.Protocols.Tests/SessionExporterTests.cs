@@ -97,15 +97,23 @@ public sealed class SessionExporterTests
     byte[] merged = GarminFitActivityMerger.Merge(watch, local);
     using var stream = new MemoryStream(merged);
     var decoder = new Decode();
+    FileIdMesg? decodedFileId = null;
     SessionMesg? decodedSession = null;
     var records = new List<RecordMesg>();
     var broadcaster = new MesgBroadcaster();
+    broadcaster.FileIdMesgEvent += (_, args) => decodedFileId = new FileIdMesg(args.mesg);
     broadcaster.SessionMesgEvent += (_, args) => decodedSession = new SessionMesg(args.mesg);
     broadcaster.RecordMesgEvent += (_, args) => records.Add(new RecordMesg(args.mesg));
     decoder.MesgEvent += broadcaster.OnMesg;
     decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
     Assert.True(decoder.Read(stream));
 
+    Assert.Equal(Manufacturer.Development, decodedFileId?.GetManufacturer());
+    Assert.Equal((ushort)2, decodedFileId?.GetProduct());
+    Assert.Equal("TreadmillRunner merged", decodedFileId?.GetProductNameAsString());
+    Assert.Equal(
+      BitConverter.ToUInt32(local.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u,
+      decodedFileId?.GetSerialNumber());
     Assert.Equal(3.4f, decodedSession?.GetTotalTrainingEffect());
     Assert.Equal(2.1f, decodedSession?.GetTotalAnaerobicTrainingEffect());
     Assert.Equal(44f, decodedSession?.GetTrainingStressScore());
