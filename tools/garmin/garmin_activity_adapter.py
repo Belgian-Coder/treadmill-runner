@@ -146,6 +146,15 @@ def _utc(value: Any) -> datetime | None:
         return None
 
 
+def _heart_rate(value: Any, *, integral: bool) -> float | int | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+        return None
+    bpm = float(value)
+    if bpm <= 0 or bpm > 255:
+        return None
+    return int(round(bpm)) if integral else bpm
+
+
 def search(request: dict[str, Any]) -> None:
     from garminconnect import parse_activity_detail_metrics
 
@@ -188,8 +197,11 @@ def search(request: dict[str, Any]) -> None:
                 "startedAtUtc": started.isoformat(),
                 "durationSeconds": float(activity.get("duration") or 0),
                 "distanceKilometers": float(activity.get("distance") or 0) / 1000.0,
-                "averageHeartRate": activity.get("averageHR"),
-                "maximumHeartRate": activity.get("maxHR"),
+                "averageHeartRate": _heart_rate(activity.get("averageHR"), integral=False),
+                # Garmin commonly serializes summary heart rate as a JSON
+                # decimal (for example 155.0). The gateway contract uses an
+                # unsigned integral BPM value, so normalize it at this boundary.
+                "maximumHeartRate": _heart_rate(activity.get("maxHR"), integral=True),
                 "heartRateSamples": heart_rate_samples,
             }
         )

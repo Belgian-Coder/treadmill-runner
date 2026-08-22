@@ -63,7 +63,7 @@ class ImportDispositionTests(unittest.TestCase):
                 self.token_store = token_store
             def get_activities(self, start, limit):
                 self.activity_query = (start, limit)
-                return [{"activityId": 123, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130, "maxHR": 155}]
+                return [{"activityId": 123, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130.25, "maxHR": 155.0}]
             def get_activity_details(self, activity_id, maxchart, maxpoly):
                 return {"samples": True}
 
@@ -77,6 +77,8 @@ class ImportDispositionTests(unittest.TestCase):
         payload = emit.call_args.args[0]
         self.assertEqual("confirmed", payload["state"])
         self.assertEqual("123", payload["candidates"][0]["remoteId"])
+        self.assertEqual(130.25, payload["candidates"][0]["averageHeartRate"])
+        self.assertEqual(155, payload["candidates"][0]["maximumHeartRate"])
         self.assertEqual(20, len(payload["candidates"][0]["heartRateSamples"]))
 
 
