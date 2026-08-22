@@ -78,6 +78,13 @@ public interface IGarminActivityUploadStore
   Task<bool> DisconnectAsync(Guid profileId, int expectedVersion, CancellationToken cancellationToken = default);
   Task<int> ReconcileCompletedSessionsAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<GarminActivityUploadJob> EnqueueSystemTestAsync(Guid profileId, Guid sessionId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<GarminActivityUploadJob> ReprocessLegacyConfirmedForMergeAsync(
+    Guid jobId,
+    Guid profileId,
+    Guid operationId,
+    string requestFingerprint,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default);
   Task<GarminActivityUploadJob?> LeaseNextAsync(DateTimeOffset nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
   Task MarkConfirmedAsync(Guid jobId, string? remoteId, string protectedTokenStore, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkUploadStartedAsync(Guid jobId, string operationPhase, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
@@ -528,6 +535,60 @@ public sealed class GarminActivityUploadStore(
     entity.Status = "FoundInGarmin";
     entity.AcknowledgedAtUtc = nowUtc;
     entity.LeaseExpiresAtUtc = null;
+    entity.UpdatedAtUtc = nowUtc;
+    WorkoutSessionEntity? session = await context.WorkoutSessions.AsNoTracking()
+      .SingleOrDefaultAsync(item => item.Id == entity.WorkoutSessionId, cancellationToken);
+    GarminActivityUploadJob result = Map(entity, session);
+    PersistenceReceipts.Add(context, receipt with { OutcomeJson = System.Text.Json.JsonSerializer.Serialize(result) });
+    await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
+    return result;
+  }
+
+  public async Task<GarminActivityUploadJob> ReprocessLegacyConfirmedForMergeAsync(
+    Guid jobId,
+    Guid profileId,
+    Guid operationId,
+    string requestFingerprint,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    if (jobId == Guid.Empty || profileId == Guid.Empty || operationId == Guid.Empty)
+      throw new ArgumentException("Job, profile, and operation IDs are required.");
+    if (requestFingerprint.Length != 64)
+      throw new ArgumentException("A valid request fingerprint is required.", nameof(requestFingerprint));
+
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(
+      System.Data.IsolationLevel.Serializable,
+      cancellationToken);
+    var receipt = new PersistenceWriteOperation(
+      operationId,
+      "garmin.activity.reprocess-merge",
+      202,
+      "{}",
+      nowUtc,
+      requestFingerprint);
+    await PersistenceReceipts.ThrowIfCompletedAsync(context, receipt, cancellationToken);
+
+    GarminActivityUploadJobEntity entity = await context.GarminActivityUploadJobs
+      .Include(item => item.Account)
+      .SingleOrDefaultAsync(item => item.Id == jobId && item.UserProfileId == profileId, cancellationToken)
+      ?? throw new KeyNotFoundException("The Garmin activity upload job was not found.");
+    if (!entity.Account.Enabled || entity.Account.State != "Connected" ||
+        entity.Account.WatchActivityHandling != GarminWatchActivityHandling.MergeAndReplace)
+      throw new InvalidOperationException("Garmin upload must be connected, enabled, and set to merge-and-replace.");
+    if (entity.Status != "Confirmed" || entity.RemoteId is not null || entity.OperationPhase != "WatchSearch" ||
+        entity.MatchedRemoteId is not null || entity.ReplacementRemoteId is not null)
+      throw new InvalidOperationException("Only a legacy confirmed job that has not recorded a watch-search result can be reprocessed.");
+
+    entity.Status = "Pending";
+    entity.AttemptCount = 0;
+    entity.AvailableAtUtc = nowUtc;
+    entity.LeaseExpiresAtUtc = null;
+    entity.FailureKind = null;
+    entity.LastError = null;
+    entity.AcknowledgedAtUtc = null;
     entity.UpdatedAtUtc = nowUtc;
     WorkoutSessionEntity? session = await context.WorkoutSessions.AsNoTracking()
       .SingleOrDefaultAsync(item => item.Id == entity.WorkoutSessionId, cancellationToken);

@@ -76,6 +76,10 @@
                             @if (!string.IsNullOrWhiteSpace(job.LastError)) { <p>@job.LastError</p> }
                             <div class="form-actions">
                                 <a class="secondary-action" href="@($"history/{job.WorkoutSessionId}")">Open history</a>
+                                @if (status.WatchActivityHandling == "MergeAndReplace" && job.Status == "Confirmed" && job.RemoteId is null && job.OperationPhase == "WatchSearch" && job.MatchedRemoteId is null && job.ReplacementRemoteId is null)
+                                {
+                                    <button class="secondary-action" type="button" @onclick="() => ReprocessMergeAsync(job.Id)">Re-run merge check</button>
+                                }
                                 @if (job.CanRetry) { <button class="secondary-action" type="button" @onclick="() => RetryAsync(job.Id)">Retry known failure</button> }
                                 @if (job.Status == "Unknown" && confirmFoundJobId == job.Id)
                                 {
@@ -273,6 +277,7 @@
     private async Task SaveSettingsAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/settings", new { enabled = status.Enabled, watchActivityHandling, expectedVersion = version }), "The duplicate handling setting could not be changed.")) { await LoadAsync(); message = "Garmin duplicate handling saved for this runner."; } }
     private async Task DisconnectAsync() { if (status?.Version is not { } version) return; if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/disconnect", new { expectedVersion = version }), "The upload account could not be disconnected.")) { confirmDisconnect = false; await LoadAsync(); } }
     private async Task RetryAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/retry", null), "This job is not retryable or changed; refresh and review it.")) await LoadAsync(); }
+    private async Task ReprocessMergeAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/reprocess-merge", new { operationId = Guid.NewGuid() }), "Only a legacy confirmed job can be reprocessed after merge-and-replace is selected.")) { await LoadAsync(); message = "The historical run was queued for a fresh watch merge check."; } }
     private async Task DismissAsync(Guid jobId) { if (await SendAsync(() => Http.PostAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/dismiss", null), "This job could not be dismissed.")) await LoadAsync(); }
     private async Task AcknowledgeFoundAsync(Guid jobId)
     {

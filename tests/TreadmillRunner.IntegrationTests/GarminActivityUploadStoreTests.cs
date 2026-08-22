@@ -129,6 +129,49 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
     Assert.False(await store.RetryFailedAsync(found.Id, profileId, now.AddHours(1)));
   }
 
+  [Fact]
+  public async Task Legacy_confirmed_job_can_be_idempotently_requeued_only_for_merge_and_replace()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, Guid sessionId) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      "protected-token-json",
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await store.MarkConfirmedAsync(leased.Id, remoteId: null, protectedTokenStore: "protected-token-json", nowUtc: now.AddSeconds(1));
+
+    Guid operationId = Guid.NewGuid();
+    string fingerprint = new('b', 64);
+    GarminActivityUploadJob requeued = await store.ReprocessLegacyConfirmedForMergeAsync(
+      leased.Id,
+      profileId,
+      operationId,
+      fingerprint,
+      now.AddMinutes(1));
+
+    Assert.Equal(sessionId, requeued.WorkoutSessionId);
+    Assert.Equal("Pending", requeued.Status);
+    Assert.Equal("WatchSearch", requeued.OperationPhase);
+    Assert.Equal(0, requeued.AttemptCount);
+    GarminActivityUploadJob reLeased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddMinutes(1), TimeSpan.FromMinutes(2)));
+    Assert.Equal(leased.Id, reLeased.Id);
+    await Assert.ThrowsAsync<OperationReplayException>(() => store.ReprocessLegacyConfirmedForMergeAsync(
+      leased.Id,
+      profileId,
+      operationId,
+      fingerprint,
+      now.AddMinutes(2)));
+  }
+
   private async Task<IDbContextFactory<TreadmillRunnerDbContext>> CreateDatabaseAsync()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
