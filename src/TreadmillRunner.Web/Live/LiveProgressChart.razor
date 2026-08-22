@@ -16,28 +16,30 @@
                 <span>@tick</span>
             }
         </div>
-        <svg class="live-chart control-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="@ChartAriaLabel">
-            @foreach (int tick in SpeedAxisTicks)
-            {
-                double y = ChartY(tick, SpeedAxisMaximum);
-                <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
-            }
-            <line class="chart-axis" x1="10" y1="210" x2="710" y2="210" />
-            <path class="chart-plan" data-series="planned-speed" d="@PlannedSpeedPath" />
-            <path class="chart-requested" data-series="requested-speed" d="@TargetSpeedPath" />
-            <path class="chart-current" data-series="measured-speed" d="@MeasuredSpeedPath" />
-            <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@PlannedInclinePath" />
-            <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@TargetInclinePath" />
-            <path class="chart-current chart-current--incline" data-series="measured-incline" d="@MeasuredInclinePath" />
-            @if (CursorX is { } cursorX)
-            {
-                <line class="chart-cursor" x1="@cursorX" x2="@cursorX" y1="10" y2="210" data-elapsed-seconds="@ElapsedSeconds" data-duration-seconds="@DurationSeconds" />
-            }
-            @if (MarkerX is { } markerX && MarkerY is { } markerY)
-            {
-                <circle class="chart-marker" cx="@markerX" cy="@markerY" r="5" />
-            }
-        </svg>
+        <ChartInspector Series="@InspectionSeries" Points="@InspectionPoints" AriaLabel="@InspectorAriaLabel">
+            <svg class="live-chart control-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="@ChartAriaLabel">
+                @foreach (int tick in SpeedAxisTicks)
+                {
+                    double y = ChartY(tick, SpeedAxisMaximum);
+                    <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                }
+                <line class="chart-axis" x1="10" y1="210" x2="710" y2="210" />
+                <path class="chart-plan" data-series="planned-speed" d="@PlannedSpeedPath" />
+                <path class="chart-requested" data-series="requested-speed" d="@TargetSpeedPath" />
+                <path class="chart-current" data-series="measured-speed" d="@MeasuredSpeedPath" />
+                <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@PlannedInclinePath" />
+                <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@TargetInclinePath" />
+                <path class="chart-current chart-current--incline" data-series="measured-incline" d="@MeasuredInclinePath" />
+                @if (CursorX is { } cursorX)
+                {
+                    <line class="chart-cursor" x1="@cursorX" x2="@cursorX" y1="10" y2="210" data-elapsed-seconds="@ElapsedSeconds" data-duration-seconds="@DurationSeconds" />
+                }
+                @if (MarkerX is { } markerX && MarkerY is { } markerY)
+                {
+                    <circle class="chart-marker" cx="@markerX" cy="@markerY" r="5" />
+                }
+            </svg>
+        </ChartInspector>
         <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@InclineAxisMaximum, 1fr)">
             <strong class="chart-axis-unit">%</strong>
             @foreach (int tick in InclineAxisTicks)
@@ -87,6 +89,9 @@
     [Parameter] public double? MarkerY { get; set; }
     [Parameter] public string? Note { get; set; }
     [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public IReadOnlyList<ChartInspectionSeries> InspectionSeries { get; set; } = [];
+    [Parameter] public IReadOnlyList<ChartInspectionPoint> InspectionPoints { get; set; } = [];
+    [Parameter] public string InspectorAriaLabel { get; set; } = "Interactive workout chart. Hover, touch and drag, or use Left and Right arrow keys to inspect every plotted value.";
 
     private TimeSpan SafeDuration => Duration > TimeSpan.Zero ? Duration : TimeSpan.FromMinutes(1);
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, Math.Max(1, SpeedAxisMaximum)).Reverse();

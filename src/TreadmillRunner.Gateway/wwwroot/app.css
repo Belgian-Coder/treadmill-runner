@@ -393,6 +393,25 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .chart-plot-grid { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: .2rem .4rem; align-items: stretch; min-width: 0; margin-top: 1.25rem; }
 .chart-plot-grid--dual { grid-template-columns: 30px minmax(0, 1fr) 30px; }
 .chart-plot-grid .live-chart { height: clamp(170px, 25vw, 230px); margin: 0; }
+.chart-inspector { position: relative; min-width: 0; }
+.chart-inspector__surface { position: relative; min-width: 0; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.chart-inspector--enabled .chart-inspector__surface { cursor: crosshair; }
+.chart-inspector--enabled .chart-inspector__surface:focus-visible { border-radius: .45rem; outline: 3px solid #f6c453; outline-offset: 3px; }
+.chart-inspector__crosshair { position: absolute; top: 0; bottom: 0; z-index: 2; width: 0; border-left: 2px dashed #eafffa; filter: drop-shadow(0 0 3px #001219); pointer-events: none; transform: translateX(-1px); }
+.chart-inspector__tooltip { position: absolute; top: .45rem; z-index: 3; display: grid; width: clamp(220px, 46%, 340px); gap: .5rem; padding: .65rem .7rem; border: 1px solid #74e0bd; border-radius: .75rem; background: #061b24f2; box-shadow: 0 .8rem 2rem #000a; color: #eefbf8; pointer-events: none; }
+.chart-inspector__tooltip[hidden], .chart-inspector__crosshair[hidden] { display: none; }
+.chart-inspector__tooltip > header { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; padding-bottom: .35rem; border-bottom: 1px solid #d9f9f229; }
+.chart-inspector__tooltip > header strong { font: 800 .9rem "Cascadia Mono", Consolas, monospace; }
+.chart-inspector__tooltip > header span { color: #91abaa; font-size: .58rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.chart-inspector__group { display: grid; gap: .3rem; }
+.chart-inspector__group > div { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.chart-inspector__group > div strong { font-size: .7rem; }
+.chart-inspector__group > div span { color: #91abaa; font-size: .6rem; }
+.chart-inspector__group dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem; margin: 0; }
+.chart-inspector__group dl > div { display: grid; min-width: 0; gap: .12rem; padding: .3rem; border-radius: .38rem; background: #0d2b35; }
+.chart-inspector__group dt { display: flex; min-width: 0; align-items: center; gap: .25rem; overflow: hidden; color: #aac3c0; font-size: .57rem; text-overflow: ellipsis; white-space: nowrap; }
+.chart-inspector__group dd { margin: 0; overflow: hidden; font: 800 .68rem "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chart-inspector__group .legend-line { width: .9rem; flex: 0 0 .9rem; }
 .chart-y-scale { display: grid; min-height: 0; color: #91abaa; font: 650 .58rem "Cascadia Mono", Consolas, monospace; }
 .chart-y-scale > div { display: grid; grid-template-rows: auto auto 1fr auto; min-height: 0; text-align: right; }
 .chart-y-scale strong { color: #d9ece8; font-size: .64rem; }
@@ -787,7 +806,8 @@ body.immersive-view { overflow: hidden; }
 .control-console-grid { display: grid; grid-template-columns: 132px minmax(0, 1fr) 132px; gap: .8rem; align-items: start; }
 .control-rail, .control-center { border: 1px solid #d8f7ed16; border-radius: 1.15rem; background: linear-gradient(145deg, #133640e8, #0d2833e8); }
 .control-rail { display: grid; align-content: start; gap: .55rem; padding: .7rem; }
-.control-rail > .eyebrow { text-align: left; }
+.control-rail__heading { display: grid; gap: .2rem; min-width: 0; }
+.control-rail__heading > .eyebrow { text-align: left; }
 .control-rail h2 { display: grid; justify-items: center; gap: .05rem; margin: 0; font: 750 1.35rem "Cascadia Mono", Consolas, monospace; letter-spacing: -.06em; text-align: center; }
 .control-rail h2 small { color: #91abaa; font-size: .52rem; letter-spacing: 0; }
 .rail-stepper { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
@@ -795,6 +815,11 @@ body.immersive-view { overflow: hidden; }
 .rail-presets { display: grid; gap: .4rem; }
 .rail-presets .quick-target { width: 100%; min-height: 48px; }
 .control-center { display: grid; gap: .75rem; min-width: 0; padding: .85rem; }
+.control-mode-metrics { display: none; }
+.control-mode-metrics article { display: grid; min-width: 0; min-height: 48px; align-content: center; justify-items: center; gap: .1rem; padding: .35rem; border: 1px solid #d9f9f218; border-radius: .65rem; background: #081e278f; text-align: center; }
+.control-mode-metrics span { color: #91abaa; font-size: .56rem; text-transform: uppercase; }
+.control-mode-metrics strong { overflow: hidden; max-width: 100%; font: 750 .95rem "Cascadia Mono", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.control-mode-metrics small { color: #a8c8c5; font-size: .52em; }
 .control-primary-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
 .control-primary-metrics article { display: grid; justify-items: center; gap: .2rem; min-width: 0; padding: .65rem; border-radius: .75rem; background: #081e278f; text-align: center; }
 .control-primary-metrics span { color: #91abaa; font-size: .64rem; text-transform: uppercase; }
@@ -860,7 +885,7 @@ body.immersive-view { overflow: hidden; }
 .control-console-grid--chart { grid-template-columns: 76px minmax(0, 1fr) 76px; }
 .control-console-grid--chart .control-rail .rail-presets { display: none; }
 .control-console-grid--chart .control-live-chart .control-chart { height: clamp(300px, 38vh, 430px); }
-.control-console-grid--chart .control-rail > .eyebrow { font-size: .58rem; letter-spacing: .07em; }
+.control-console-grid--chart .control-rail__heading > .eyebrow { font-size: .58rem; letter-spacing: .07em; }
 .control-console-grid--controls { grid-template-columns: 180px minmax(0, 1fr) 180px; }
 .control-console-grid--controls .control-rail { gap: .75rem; }
 .control-console-grid--controls .rail-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -872,7 +897,7 @@ body.immersive-view { overflow: hidden; }
 .control-console-grid--controls .control-chart-legend { display: none; }
 .control-console-grid--controls .control-live-chart .control-chart { height: 74px; }
 .control-console-grid--controls .chart-plot-grid { grid-template-columns: 1fr; }
-.control-console-grid--controls .chart-plot-grid > :not(svg):not(.chart-time-scale) { display: none; }
+.control-console-grid--controls .chart-plot-grid > :not(svg):not(.chart-inspector):not(.chart-time-scale) { display: none; }
 
 /* Summary-first content rows. Primary detail remains visible; rare actions stay in explicit overflow. */
 .workout-grid { grid-template-columns: 1fr; }
@@ -959,6 +984,7 @@ body.immersive-view { overflow: hidden; }
   .control-live-chart--focused { position: fixed; top: max(7.4rem, env(safe-area-inset-top)); right: .55rem; bottom: calc(7.4rem + env(safe-area-inset-bottom)); left: .55rem; z-index: 9; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .35rem; padding: .65rem; background: #081e27; box-shadow: 0 1rem 3rem #000c; }
   .control-live-chart--focused .chart-plot-grid { height: auto; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; row-gap: .5rem; margin-top: 1.5rem; }
   .control-live-chart--focused .control-chart { height: 100%; min-height: 0; }
+  .control-live-chart--focused .chart-inspector, .control-live-chart--focused .chart-inspector__surface { height: 100%; min-height: 0; }
   .control-console-grid--balanced .control-chart-legend { display: none; }
   .control-live-chart--focused .control-chart-legend { gap: .55rem; padding-top: .15rem; }
   .control-live-chart--focused .control-chart-actions > span { display: block; max-width: min(46vw, 14rem); }
@@ -978,6 +1004,58 @@ body.immersive-view { overflow: hidden; }
   .control-command-status { grid-column: 1 / -1; margin: 0; font-size: .66rem; text-align: left; }
   .control-details { scroll-margin-bottom: calc(7.25rem + env(safe-area-inset-bottom)); }
   .control-disabled-reason { display: none; }
+  .control-console-grid.control-console-grid--controls {
+    grid-template-areas: "center" "speed" "incline";
+    grid-template-columns: minmax(0, 1fr);
+    gap: .4rem;
+  }
+  .control-console-grid--controls .control-center {
+    grid-area: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .control-console-grid--controls .control-mode-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .3rem;
+  }
+  .control-console-grid--controls .control-primary-metrics,
+  .control-console-grid--controls .control-live-chart,
+  .control-console-grid--controls .control-automation,
+  .control-console-grid--controls .control-takeover,
+  .control-console-grid--controls .control-disabled-reason { display: none; }
+  .control-console-grid--controls .control-rail--speed { grid-area: speed; }
+  .control-console-grid--controls .control-rail--incline { grid-area: incline; }
+  .control-console-grid--controls .control-rail {
+    display: grid;
+    grid-template-areas: "heading stepper" "presets presets";
+    grid-template-columns: minmax(0, 1fr) auto;
+    max-height: none;
+    gap: .35rem .5rem;
+    padding: .45rem;
+    overflow: visible;
+  }
+  .control-console-grid--controls .control-rail__heading {
+    grid-area: heading;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .45rem;
+  }
+  .control-console-grid--controls .control-rail__heading > .eyebrow { font-size: .58rem; }
+  .control-console-grid--controls .control-rail h2 { display: flex; align-items: baseline; gap: .25rem; font-size: 1.1rem; white-space: nowrap; }
+  .control-console-grid--controls .rail-stepper {
+    grid-area: stepper;
+    grid-template-columns: repeat(2, 48px);
+  }
+  .control-console-grid--controls .rail-presets {
+    grid-area: presets;
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+    gap: .3rem;
+  }
+  .control-console-grid--controls .rail-stepper .touch-action,
+  .control-console-grid--controls .rail-presets .quick-target { min-width: 44px; min-height: 44px; }
   .integration-form-grid { grid-template-columns: 1fr; }
   .workout-card { grid-template-columns: minmax(0, 1fr) auto; }
   .workout-card__stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1043,6 +1121,100 @@ body.immersive-view { overflow: hidden; }
   .chart-y-scale, .chart-time-scale, .control-chart-legend { font-size: .62rem; }
   .control-chart-legend { gap: .5rem; }
   .control-details { display: none; }
+  .chart-focus-action { display: inline-flex; }
+  .control-console-grid--controls {
+    grid-template-areas: none;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 118px;
+    grid-template-rows: 48px minmax(0, 1fr);
+    gap: .35rem;
+  }
+  .control-console-grid--controls .control-center { display: contents; }
+  .control-console-grid--controls .control-mode-metrics {
+    display: grid;
+    grid-column: 1 / 3;
+    grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .3rem;
+  }
+  .control-console-grid--controls .control-primary-metrics,
+  .control-console-grid--controls .control-live-chart,
+  .control-console-grid--controls .control-automation,
+  .control-console-grid--controls .control-takeover,
+  .control-console-grid--controls .control-disabled-reason { display: none; }
+  .control-console-grid--controls .control-rail--speed { grid-column: 1; grid-row: 2; }
+  .control-console-grid--controls .control-rail--incline { grid-column: 2; grid-row: 2; }
+  .control-console-grid--controls .control-rail {
+    display: grid;
+    grid-template-areas: "heading stepper" "presets presets";
+    grid-template-columns: minmax(0, 1fr) auto;
+    max-height: none;
+    gap: .3rem;
+    padding: .4rem;
+    overflow: visible;
+  }
+  .control-console-grid--controls .control-rail__heading {
+    grid-area: heading;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .35rem;
+  }
+  .control-console-grid--controls .control-rail h2 { display: flex; align-items: baseline; gap: .2rem; font-size: 1rem; white-space: nowrap; }
+  .control-console-grid--controls .rail-stepper { grid-area: stepper; grid-template-columns: repeat(2, 44px); }
+  .control-console-grid--controls .rail-presets { grid-area: presets; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: .25rem; }
+  .control-console-grid--controls .rail-stepper .touch-action,
+  .control-console-grid--controls .rail-presets .quick-target { min-width: 44px; min-height: 44px; }
+  .control-console-grid--controls .control-action-dock {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .control-console-grid--chart { grid-template-columns: minmax(0, 1fr); }
+  .control-console-grid--chart .control-rail { display: none; }
+  .control-console-grid--chart .control-center {
+    grid-template-columns: minmax(0, 1fr) 118px;
+    grid-template-rows: calc(100dvh - 88px - env(safe-area-inset-bottom));
+    min-height: 0;
+    gap: .35rem;
+    padding: .4rem;
+  }
+  .control-console-grid--chart .control-primary-metrics,
+  .control-console-grid--chart .control-automation,
+  .control-console-grid--chart .control-takeover,
+  .control-console-grid--chart .control-disabled-reason { display: none; }
+  .control-console-grid--chart .control-live-chart--focused {
+    position: static;
+    z-index: auto;
+    display: grid;
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 0;
+    gap: .25rem;
+    padding: .45rem;
+    background: #081e27;
+    box-shadow: none;
+  }
+  .control-console-grid--chart .control-live-chart--focused .chart-plot-grid {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: .25rem;
+    margin-top: 1.25rem;
+  }
+  .control-console-grid--chart .control-live-chart--focused .control-chart { height: 100%; min-height: 0; }
+  .control-console-grid--chart .control-live-chart--focused .chart-inspector,
+  .control-console-grid--chart .control-live-chart--focused .chart-inspector__surface { height: 100%; min-height: 0; }
+  .control-console-grid--chart .control-live-chart--focused .control-chart-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .control-console-grid--chart .control-live-chart--focused .chart-focus-action { width: auto; min-width: 4.7rem; gap: .3rem; }
+  .control-console-grid--chart .control-live-chart--focused .chart-focus-action__label { display: inline; font-size: .68rem; }
+  .control-console-grid--chart .control-action-dock {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .control-console-grid--chart .control-action-dock .touch-action { width: 100%; min-width: 0; }
 }
 
 /* Compact, auto-hiding daily-use shell. The primary phone baseline is 440x956 CSS px. */
@@ -1541,13 +1713,13 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   background: #000;
   color: #fff;
 }
-.control-page--highcontrast :is(.control-rail, .control-center, .control-live-chart, .control-action-dock, .control-details, .control-focus-switcher, .global-hr-status, .wake-lock-indicator, .recovery-status, .session-notices, .command-result) {
+.control-page--highcontrast :is(.control-rail, .control-center, .control-live-chart, .control-mode-metrics article, .control-action-dock, .control-details, .control-focus-switcher, .global-hr-status, .wake-lock-indicator, .recovery-status, .session-notices, .command-result) {
   border-color: #fff;
   background: #000;
   box-shadow: none;
   color: #fff;
 }
-.control-page--highcontrast :is(.eyebrow, .connection-state, .control-primary-metrics span, .control-primary-metrics small, .control-command-status, .control-disabled-reason, .control-safety-copy, .control-chart-actions > span, .control-chart-legend, .control-chart-legend strong, .chart-y-scale, .chart-axis-unit, .chart-time-scale, .automation-panel p, .control-rail h2 small) {
+.control-page--highcontrast :is(.eyebrow, .connection-state, .control-primary-metrics span, .control-primary-metrics small, .control-mode-metrics span, .control-mode-metrics small, .control-command-status, .control-disabled-reason, .control-safety-copy, .control-chart-actions > span, .control-chart-legend, .control-chart-legend strong, .chart-y-scale, .chart-axis-unit, .chart-time-scale, .automation-panel p, .control-rail h2 small) {
   color: #fff;
 }
 .control-page--highcontrast .control-primary-metrics article {
@@ -1576,6 +1748,9 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .control-page--highcontrast .chart-plan--incline { stroke: #bda4ff; }
 .control-page--highcontrast .chart-requested--incline { stroke: #ff70ce; }
 .control-page--highcontrast .chart-current--incline { stroke: #ff8a3d; }
+.control-page--highcontrast .chart-inspector__crosshair { border-color: #fff; filter: none; }
+.control-page--highcontrast .chart-inspector__tooltip { border: 2px solid #fff; background: #000; color: #fff; }
+.control-page--highcontrast .chart-inspector__group dl > div { border: 1px solid #fff; background: #000; }
 
 @media (max-width: 900px) {
   .trend-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
