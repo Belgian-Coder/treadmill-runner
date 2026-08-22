@@ -18,7 +18,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
 
   [Theory]
   [InlineData(AdapterMode.Confirmed, "Confirmed", true, false, "Connected")]
-  [InlineData(AdapterMode.Duplicate, "Failed", false, false, "Connected")]
+  [InlineData(AdapterMode.Duplicate, "Failed", false, true, "Connected")]
   [InlineData(AdapterMode.Ambiguous, "Unknown", false, false, "Connected")]
   [InlineData(AdapterMode.Timeout, "Unknown", false, false, "Connected")]
   [InlineData(AdapterMode.Unavailable, "Failed", false, true, "ProviderUnavailable")]
