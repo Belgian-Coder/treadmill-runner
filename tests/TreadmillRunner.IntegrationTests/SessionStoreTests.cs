@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Profiles;
@@ -160,6 +161,76 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"History query took {stopwatch.Elapsed}.");
     Assert.True(new FileInfo(DatabasePath).Length < 25 * 1024 * 1024, "Three years of summary history exceeded the storage budget.");
     Assert.NotNull(await store.FindAsync(newestId));
+  }
+
+  [Fact]
+  public async Task Legacy_history_summary_recalculates_calories_from_saved_weight_speed_and_incline()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    Guid sessionId = Guid.NewGuid();
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-22T07:00:00Z");
+    string configuration = JsonSerializer.Serialize(new SessionExecutionConfiguration(
+      "simulator",
+      "disabled",
+      new SessionProfileSnapshot(70, null, null, [])));
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      var session = new WorkoutSessionEntity
+      {
+        Id = sessionId,
+        UserProfileId = ids.ProfileId,
+        UserProfileName = "Runner",
+        WorkoutRevisionId = ids.RevisionId,
+        SelectionSource = WorkoutSelectionSource.Library.ToString(),
+        SessionOrigin = SessionOrigin.Hardware.ToString(),
+        WorkoutTitle = "Legacy calorie run",
+        State = SessionState.Completed.ToString(),
+        ArmedAtUtc = started.AddSeconds(-5),
+        StartedAtUtc = started,
+        EndedAtUtc = started.AddMinutes(10),
+        DurationSeconds = 600,
+        DistanceKilometers = 1,
+        EstimatedCalories = 999,
+        AverageSpeedKph = 6,
+        AverageInclinePercent = 0,
+        MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+        ControllerConfigurationJson = configuration,
+      };
+      session.Samples.Add(new SessionSampleEntity
+      {
+        WorkoutSessionId = sessionId,
+        Sequence = 0,
+        CapturedAtUtc = started,
+        ElapsedMilliseconds = 0,
+        RequestedSpeedKph = 0,
+        MeasuredSpeedKph = 0,
+        RequestedInclinePercent = 0,
+        MeasuredInclinePercent = 0,
+        DistanceKilometers = 0,
+        MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+      });
+      session.Samples.Add(new SessionSampleEntity
+      {
+        WorkoutSessionId = sessionId,
+        Sequence = 1,
+        CapturedAtUtc = started.AddMinutes(10),
+        ElapsedMilliseconds = 600_000,
+        RequestedSpeedKph = 6,
+        MeasuredSpeedKph = 6,
+        RequestedInclinePercent = 0,
+        MeasuredInclinePercent = 0,
+        DistanceKilometers = 1,
+        MetricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+      });
+      context.WorkoutSessions.Add(session);
+      await context.SaveChangesAsync();
+    }
+
+    ISessionStore store = new SessionStore(factory);
+    SessionSummary summary = Assert.Single(await store.ListSummariesAsync(ids.ProfileId));
+    Assert.InRange(summary.EstimatedKilocalories, 47.2, 47.3);
   }
 
   [Fact]

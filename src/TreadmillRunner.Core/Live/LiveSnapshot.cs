@@ -31,4 +31,5 @@ public sealed record LiveSnapshot(
     TreadmillCapabilities? TreadmillCapabilities = null,
     long TreadmillConnectionGeneration = 0,
     byte? HeartRateBatteryPercent = null,
-    DateTimeOffset? HeartRateBatteryObservedAt = null);
+    DateTimeOffset? HeartRateBatteryObservedAt = null,
+    double EstimatedKilocalories = 0);

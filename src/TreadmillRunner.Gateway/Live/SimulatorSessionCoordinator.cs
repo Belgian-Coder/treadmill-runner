@@ -2200,7 +2200,8 @@ public sealed class LiveSessionCoordinator(
         InclineRange: active.InclineRange),
       active.HardwareMode ? devices.Treadmill.ConnectionGeneration : 1,
       active.HardwareMode ? devices.SelectedHeartRateBatteryPercent : null,
-      active.HardwareMode ? devices.SelectedHeartRateBatteryObservedAt : null);
+      active.HardwareMode ? devices.SelectedHeartRateBatteryObservedAt : null,
+      active.EstimatedKilocalories);
     Volatile.Write(ref _current, live);
     active.Snapshot = new ActiveSessionSnapshot(
       active.Definition.SessionId,

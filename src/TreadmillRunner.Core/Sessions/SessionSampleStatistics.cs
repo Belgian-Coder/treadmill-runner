@@ -7,8 +7,14 @@ public sealed record SessionSampleStatistics(
   TimeSpan? MovingTime,
   double? MaximumSpeedKph,
   double? AverageInclinePercent,
+  double? AveragePositiveInclinePercent,
+  double? AverageNegativeInclinePercent,
   double? MinimumInclinePercent,
   double? MaximumInclinePercent,
+  double? AveragePositiveVerticalSpeedMetersPerSecond,
+  double? AverageNegativeVerticalSpeedMetersPerSecond,
+  double? MaximumPositiveVerticalSpeedMetersPerSecond,
+  double? MaximumNegativeVerticalSpeedMetersPerSecond,
   double TotalAscentMeters,
   double TotalDescentMeters,
   double NetElevationMeters,
@@ -36,6 +42,49 @@ public static class SessionSampleStatisticsCalculator
       static sample => sample.MeasuredInclinePercent,
       inclines.Length == 0 ? null : inclines.Average());
 
+    double positiveGradeDistance = 0;
+    double positiveDistance = 0;
+    double negativeGradeDistance = 0;
+    double negativeDistance = 0;
+    double positiveVerticalDistance = 0;
+    double positiveVerticalSeconds = 0;
+    double negativeVerticalDistance = 0;
+    double negativeVerticalSeconds = 0;
+    double? maximumPositiveVerticalSpeed = null;
+    double? maximumNegativeVerticalSpeed = null;
+    for (var index = 1; index < samples.Count; index++)
+    {
+      SessionSample previous = samples[index - 1];
+      SessionSample current = samples[index];
+      double distanceMeters = Math.Max(0, (current.DistanceKilometers - previous.DistanceKilometers) * 1000);
+      double durationSeconds = (current.Elapsed - previous.Elapsed).TotalSeconds;
+      if (distanceMeters <= 0 || durationSeconds <= 0)
+      {
+        continue;
+      }
+
+      double grade = current.MeasuredInclinePercent;
+      double gradeFraction = grade / 100d;
+      double verticalMeters = distanceMeters * gradeFraction / Math.Sqrt(1 + (gradeFraction * gradeFraction));
+      double verticalSpeed = verticalMeters / durationSeconds;
+      if (grade > 0)
+      {
+        positiveGradeDistance += grade * distanceMeters;
+        positiveDistance += distanceMeters;
+        positiveVerticalDistance += verticalMeters;
+        positiveVerticalSeconds += durationSeconds;
+        maximumPositiveVerticalSpeed = Math.Max(maximumPositiveVerticalSpeed ?? verticalSpeed, verticalSpeed);
+      }
+      else if (grade < 0)
+      {
+        negativeGradeDistance += grade * distanceMeters;
+        negativeDistance += distanceMeters;
+        negativeVerticalDistance += verticalMeters;
+        negativeVerticalSeconds += durationSeconds;
+        maximumNegativeVerticalSpeed = Math.Min(maximumNegativeVerticalSpeed ?? verticalSpeed, verticalSpeed);
+      }
+    }
+
     TimeSpan? movingTime = null;
     if (samples.Count > 1)
     {
@@ -59,8 +108,14 @@ public static class SessionSampleStatisticsCalculator
       movingTime,
       samples.Count == 0 ? null : samples.Max(static sample => sample.MeasuredSpeedKph),
       averageIncline,
+      positiveDistance > 0 ? positiveGradeDistance / positiveDistance : null,
+      negativeDistance > 0 ? negativeGradeDistance / negativeDistance : null,
       inclines.Length == 0 ? null : inclines.Min(),
       inclines.Length == 0 ? null : inclines.Max(),
+      positiveVerticalSeconds > 0 ? positiveVerticalDistance / positiveVerticalSeconds : null,
+      negativeVerticalSeconds > 0 ? negativeVerticalDistance / negativeVerticalSeconds : null,
+      maximumPositiveVerticalSpeed,
+      maximumNegativeVerticalSpeed,
       elevation.TotalAscentMeters,
       elevation.TotalDescentMeters,
       elevation.NetElevationMeters,
