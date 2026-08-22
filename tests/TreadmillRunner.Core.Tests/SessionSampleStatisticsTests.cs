@@ -62,6 +62,10 @@ public sealed class SessionSampleStatisticsTests
     Assert.InRange(statistics.TotalAscentMeters, 9.95, 9.951);
     Assert.InRange(statistics.TotalDescentMeters, 2.496, 2.497);
     Assert.InRange(statistics.NetElevationMeters, 7.453, 7.454);
+    Assert.InRange(statistics.AveragePositiveInclinePercent ?? double.NaN, 9.99, 10.01);
+    Assert.InRange(statistics.AverageNegativeInclinePercent ?? double.NaN, -5.01, -4.99);
+    Assert.True(statistics.AveragePositiveVerticalSpeedMetersPerSecond > 0);
+    Assert.True(statistics.AverageNegativeVerticalSpeedMetersPerSecond < 0);
   }
 
   private static SessionSample Sample(

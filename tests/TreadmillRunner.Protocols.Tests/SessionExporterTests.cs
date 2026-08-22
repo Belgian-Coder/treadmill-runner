@@ -34,10 +34,12 @@ public sealed class SessionExporterTests
     Dynastream.Fit.File? fileType = null;
     SessionMesg? decodedSession = null;
     LapMesg? decodedLap = null;
+    DeviceInfoMesg? decodedDevice = null;
     var broadcaster = new MesgBroadcaster();
     broadcaster.FileIdMesgEvent += (_, args) => fileType = ((FileIdMesg)args.mesg).GetType();
     broadcaster.SessionMesgEvent += (_, args) => decodedSession = (SessionMesg)args.mesg;
     broadcaster.LapMesgEvent += (_, args) => decodedLap = (LapMesg)args.mesg;
+    broadcaster.DeviceInfoMesgEvent += (_, args) => decodedDevice = new DeviceInfoMesg(args.mesg);
     decoder.MesgEvent += broadcaster.OnMesg;
     decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
     Assert.True(decoder.Read(stream));
@@ -46,12 +48,14 @@ public sealed class SessionExporterTests
     Assert.Equal((byte)150, decodedSession?.GetMaxHeartRate());
     Assert.Equal((byte)120, decodedSession?.GetMinHeartRate());
     Assert.Equal(2, decodedSession?.GetTotalMovingTime());
+    Assert.Equal(2, decodedSession?.GetActiveTime());
     Assert.InRange(decodedSession?.GetMaxSpeed() ?? 0, 2.221f, 2.223f);
     Assert.Equal(1, decodedSession?.GetAvgGrade());
     Assert.Equal((ushort)0, decodedSession?.GetTotalAscent());
     Assert.Equal((ushort)0, decodedSession?.GetTotalDescent());
     Assert.Equal((ushort)0, decodedLap?.GetTotalCalories());
     Assert.Equal((byte)150, decodedLap?.GetMaxHeartRate());
+    Assert.Equal("TreadmillRunner", decodedDevice?.GetProductNameAsString());
   }
 
   [Fact]
@@ -69,8 +73,18 @@ public sealed class SessionExporterTests
     decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
 
     Assert.True(decoder.Read(stream));
-    Assert.Equal((ushort)10, decodedSession?.GetTotalAscent());
-    Assert.Equal((ushort)5, decodedSession?.GetTotalDescent());
+    Assert.Equal((ushort)9, decodedSession?.GetTotalAscent());
+    Assert.InRange(decodedSession?.GetTotalFractionalAscent() ?? float.NaN, 0.95f, 0.951f);
+    Assert.Equal((ushort)4, decodedSession?.GetTotalDescent());
+    Assert.InRange(decodedSession?.GetTotalFractionalDescent() ?? float.NaN, 0.989f, 0.991f);
+    Assert.InRange(decodedSession?.GetAvgPosGrade() ?? float.NaN, 9.99f, 10.01f);
+    Assert.InRange(decodedSession?.GetAvgNegGrade() ?? float.NaN, -5.01f, -4.99f);
+    Assert.Equal(1, decodedSession?.GetTimeInHrZone(1));
+    Assert.Equal(1, decodedSession?.GetTimeInHrZone(4));
+    Assert.True(records[1].GetVerticalSpeed() > 0);
+    Assert.True(records[2].GetVerticalSpeed() < 0);
+    Assert.Equal((byte)5, records[1].GetZone());
+    Assert.Equal((byte)2, records[2].GetZone());
     Assert.InRange(records[^1].GetEnhancedAltitude() ?? float.NaN, 4.9f, 5.1f);
   }
 
@@ -93,15 +107,45 @@ public sealed class SessionExporterTests
     Assert.True(decoder.Read(stream));
 
     Assert.Equal(3.4f, decodedSession?.GetTotalTrainingEffect());
+    Assert.Equal(2.1f, decodedSession?.GetTotalAnaerobicTrainingEffect());
+    Assert.Equal(44f, decodedSession?.GetTrainingStressScore());
     Assert.Equal((byte)135, decodedSession?.GetAvgHeartRate());
     Assert.Equal((byte)150, decodedSession?.GetMaxHeartRate());
-    Assert.Equal((ushort)10, decodedSession?.GetTotalAscent());
-    Assert.Equal((ushort)5, decodedSession?.GetTotalDescent());
+    Assert.Equal((ushort)9, decodedSession?.GetTotalAscent());
+    Assert.InRange(decodedSession?.GetTotalFractionalAscent() ?? float.NaN, 0.95f, 0.951f);
+    Assert.Equal((ushort)4, decodedSession?.GetTotalDescent());
+    Assert.InRange(decodedSession?.GetTotalFractionalDescent() ?? float.NaN, 0.989f, 0.991f);
     Assert.All(records, record => Assert.Equal((byte)88, record.GetCadence()));
+    Assert.All(records, record => Assert.Null(record.GetField("compressed_speed_distance")));
+    Assert.All(records, record =>
+    {
+      DeveloperField developerField = Assert.Single(record.DeveloperFields);
+      Assert.Equal("watch_metric", developerField.GetName());
+      Assert.Equal(42f, Convert.ToSingle(developerField.GetValue()));
+    });
     Assert.Equal(new byte?[] { 135, 150, 120 }, records.Select(record => record.GetHeartRate()).ToArray());
+    Assert.InRange(records[0].GetEnhancedAltitude() ?? float.NaN, 99.99f, 100.01f);
+    Assert.InRange(records[1].GetEnhancedAltitude() ?? float.NaN, 109.9f, 110.1f);
   }
 
-  private static byte[] WatchFit(DateTimeOffset started)
+  [Fact]
+  public void Garmin_merge_preserves_multiple_watch_laps_instead_of_copying_full_session_totals_into_each()
+  {
+    StoredWorkoutSession local = ElevationSession();
+    byte[] merged = GarminFitActivityMerger.Merge(WatchFit(local.StartedAt!.Value, includeTwoLaps: true), local);
+    using var stream = new MemoryStream(merged);
+    var decoder = new Decode();
+    var laps = new List<LapMesg>();
+    var broadcaster = new MesgBroadcaster();
+    broadcaster.LapMesgEvent += (_, args) => laps.Add(new LapMesg(args.mesg));
+    decoder.MesgEvent += broadcaster.OnMesg;
+    decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+
+    Assert.True(decoder.Read(stream));
+    Assert.Equal(new float?[] { 25, 75 }, laps.Select(static lap => lap.GetTotalDistance()).ToArray());
+  }
+
+  private static byte[] WatchFit(DateTimeOffset started, bool includeTwoLaps = false)
   {
     using var stream = new MemoryStream();
     var encoder = new Encode(ProtocolVersion.V20);
@@ -111,13 +155,38 @@ public sealed class SessionExporterTests
     file.SetManufacturer(Manufacturer.Garmin);
     file.SetTimeCreated(new Dynastream.Fit.DateTime(started.UtcDateTime));
     encoder.Write(file);
+    var developerData = new DeveloperDataIdMesg();
+    developerData.SetDeveloperDataIndex(0);
+    developerData.SetManufacturerId(Manufacturer.Garmin);
+    for (var index = 0; index < 16; index++) developerData.SetApplicationId(index, (byte)(index + 1));
+    encoder.Write(developerData);
+    var fieldDescription = new FieldDescriptionMesg();
+    fieldDescription.SetDeveloperDataIndex(0);
+    fieldDescription.SetFieldDefinitionNumber(0);
+    fieldDescription.SetFitBaseTypeId(FitBaseType.Float32);
+    fieldDescription.SetFieldName(0, "watch_metric");
+    fieldDescription.SetUnits(0, "score");
+    encoder.Write(fieldDescription);
     for (var second = 0; second <= 2; second++)
     {
       var record = new RecordMesg();
       record.SetTimestamp(new Dynastream.Fit.DateTime(started.AddSeconds(second).UtcDateTime));
       record.SetCadence(88);
       record.SetHeartRate(90);
+      record.SetAltitude(100);
+      record.SetEnhancedAltitude(100);
+      record.SetCompressedSpeedDistance(0, 1);
+      record.SetCompressedSpeedDistance(1, 2);
+      record.SetCompressedSpeedDistance(2, 3);
+      var developerField = new DeveloperField(fieldDescription, developerData);
+      developerField.SetValue(42f);
+      record.SetDeveloperField(developerField);
       encoder.Write(record);
+    }
+    if (includeTwoLaps)
+    {
+      encoder.Write(WatchLap(started, started.AddSeconds(1), 25));
+      encoder.Write(WatchLap(started.AddSeconds(1), started.AddSeconds(2), 75));
     }
     var session = new SessionMesg();
     session.SetTimestamp(new Dynastream.Fit.DateTime(started.AddSeconds(2).UtcDateTime));
@@ -125,10 +194,25 @@ public sealed class SessionExporterTests
     session.SetSport(Sport.Running);
     session.SetSubSport(SubSport.Treadmill);
     session.SetTotalTrainingEffect(3.4f);
+    session.SetTotalAnaerobicTrainingEffect(2.1f);
+    session.SetTrainingStressScore(44f);
     session.SetAvgHeartRate(90);
     encoder.Write(session);
     encoder.Close();
     return stream.ToArray();
+  }
+
+  private static LapMesg WatchLap(DateTimeOffset started, DateTimeOffset ended, float distance)
+  {
+    var lap = new LapMesg();
+    lap.SetTimestamp(new Dynastream.Fit.DateTime(ended.UtcDateTime));
+    lap.SetStartTime(new Dynastream.Fit.DateTime(started.UtcDateTime));
+    lap.SetTotalElapsedTime((float)(ended - started).TotalSeconds);
+    lap.SetTotalTimerTime((float)(ended - started).TotalSeconds);
+    lap.SetTotalDistance(distance);
+    lap.SetSport(Sport.Running);
+    lap.SetSubSport(SubSport.Treadmill);
+    return lap;
   }
 
   private static StoredWorkoutSession Session()
@@ -145,7 +229,14 @@ public sealed class SessionExporterTests
       JsonSerializer.Serialize(new SessionExecutionConfiguration(
         "simulator",
         "disabled",
-        new SessionProfileSnapshot(70, null, null, []))),
+        new SessionProfileSnapshot(70, null, null,
+        [
+          new SessionHeartRateZoneSnapshot(1, "Zone 1", 100, 119),
+          new SessionHeartRateZoneSnapshot(2, "Zone 2", 120, 129),
+          new SessionHeartRateZoneSnapshot(3, "Zone 3", 130, 139),
+          new SessionHeartRateZoneSnapshot(4, "Zone 4", 140, 149),
+          new SessionHeartRateZoneSnapshot(5, "Zone 5", 150, 200),
+        ]))),
       "v1");
     SessionSample[] samples =
     [

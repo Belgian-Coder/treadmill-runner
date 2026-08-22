@@ -462,7 +462,35 @@ public sealed class SessionStore(
       .FromSqlRaw(sql, userProfileId, take)
       .AsNoTracking()
       .ToArrayAsync(cancellationToken);
-    return sessions.Select(MapSummary).ToArray();
+    Guid[] legacySessionIds = sessions
+      .Where(static session => session.MetricAlgorithmVersion != SessionMetricAlgorithms.EstimatedCaloriesV2 &&
+        SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson).HasValue)
+      .Select(static session => session.Id)
+      .ToArray();
+    Dictionary<Guid, double> recalculatedCalories = [];
+    if (legacySessionIds.Length > 0)
+    {
+      SessionSampleEntity[] legacySamples = await context.SessionSamples.AsNoTracking()
+        .Where(sample => legacySessionIds.Contains(sample.WorkoutSessionId))
+        .OrderBy(sample => sample.WorkoutSessionId)
+        .ThenBy(sample => sample.Sequence)
+        .ToArrayAsync(cancellationToken);
+      foreach (WorkoutSessionEntity session in sessions.Where(candidate => legacySessionIds.Contains(candidate.Id)))
+      {
+        SessionSample[] samples = legacySamples
+          .Where(sample => sample.WorkoutSessionId == session.Id)
+          .Select(MapSample)
+          .ToArray();
+        if (samples.Length > 0 && SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson) is { } weight)
+        {
+          recalculatedCalories[session.Id] = SessionCalorieCalculator.Calculate(samples, weight);
+        }
+      }
+    }
+
+    return sessions.Select(session => MapSummary(
+      session,
+      recalculatedCalories.GetValueOrDefault(session.Id, session.EstimatedCalories))).ToArray();
   }
 
   public async Task<int> InterruptUnfinishedAsync(
@@ -736,7 +764,7 @@ public sealed class SessionStore(
       entity.Events.OrderBy(sessionEvent => sessionEvent.OccurredAtUtc).Select(MapEvent).ToArray());
   }
 
-  private static SessionSummary MapSummary(WorkoutSessionEntity entity) => new(
+  private static SessionSummary MapSummary(WorkoutSessionEntity entity, double? estimatedCalories = null) => new(
     entity.Id,
     entity.UserProfileId,
     entity.UserProfileName,
@@ -747,7 +775,7 @@ public sealed class SessionStore(
     entity.EndedAtUtc!.Value,
     TimeSpan.FromSeconds(entity.DurationSeconds),
     entity.DistanceKilometers,
-    entity.EstimatedCalories,
+    estimatedCalories ?? entity.EstimatedCalories,
     entity.AverageHeartRateBpm,
     entity.MaximumHeartRateBpm,
     entity.AverageSpeedKph,

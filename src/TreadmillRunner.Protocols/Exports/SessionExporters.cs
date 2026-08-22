@@ -63,9 +63,12 @@ public static class SessionFitActivityExporter
       session.Samples,
       SessionCalorieCalculator.ReadWeightKilograms(session.Definition.ControllerConfigurationJson));
     SessionElevationStatistics elevation = SessionElevationCalculator.Calculate(session.Samples);
+    SessionFitMetrics fitMetrics = SessionFitMetricsCalculator.Calculate(session, elevation);
     double? averageHeartRate = statistics.AverageHeartRateBpm ?? session.AverageHeartRateBpm;
     ushort? maximumHeartRate = statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm;
-    float averageSpeed = (float)(session.AverageSpeedKph / 3.6);
+    float averageSpeed = session.Duration > TimeSpan.Zero
+      ? (float)(session.DistanceKilometers * 1000 / session.Duration.TotalSeconds)
+      : 0;
     float? maximumSpeed = statistics.MaximumSpeedKph is { } maximumSpeedKph
       ? (float)(maximumSpeedKph / 3.6)
       : null;
@@ -80,7 +83,16 @@ public static class SessionFitActivityExporter
     fileId.SetProduct(1);
     fileId.SetSerialNumber(serial);
     fileId.SetTimeCreated(start);
+    fileId.SetProductName("TreadmillRunner");
     encoder.Write(fileId);
+
+    var deviceInfo = new DeviceInfoMesg();
+    deviceInfo.SetTimestamp(start);
+    deviceInfo.SetDeviceIndex(0);
+    deviceInfo.SetManufacturer(Manufacturer.Development);
+    deviceInfo.SetProduct(1);
+    deviceInfo.SetProductName("TreadmillRunner");
+    encoder.Write(deviceInfo);
 
     encoder.Write(TimerEvent(start, EventType.Start));
     for (var sampleIndex = 0; sampleIndex < session.Samples.Count; sampleIndex++)
@@ -97,6 +109,9 @@ public static class SessionFitActivityExporter
       float altitude = (float)elevation.Points[sampleIndex].ElevationMeters;
       record.SetAltitude(altitude);
       record.SetEnhancedAltitude(altitude);
+      if (fitMetrics.VerticalSpeedBySequence.TryGetValue(sample.Sequence, out float verticalSpeed))
+        record.SetVerticalSpeed(verticalSpeed);
+      if (fitMetrics.HeartRateZoneBySequence.TryGetValue(sample.Sequence, out byte zone)) record.SetZone(zone);
       encoder.Write(record);
     }
     encoder.Write(TimerEvent(end, EventType.StopAll));
@@ -115,6 +130,7 @@ public static class SessionFitActivityExporter
     lap.SetEvent(Event.Lap);
     lap.SetEventType(EventType.Stop);
     lap.SetLapTrigger(LapTrigger.SessionEnd);
+    lap.SetIntensity(Intensity.Active);
     lap.SetAvgSpeed(averageSpeed);
     lap.SetEnhancedAvgSpeed(averageSpeed);
     lap.SetTotalCalories(totalCalories);
@@ -123,12 +139,25 @@ public static class SessionFitActivityExporter
       lap.SetMaxSpeed(lapMaximumSpeed);
       lap.SetEnhancedMaxSpeed(lapMaximumSpeed);
     }
-    if (statistics.MovingTime is { } lapMovingTime) lap.SetTotalMovingTime((float)lapMovingTime.TotalSeconds);
+    if (statistics.MovingTime is { } lapMovingTime)
+    {
+      lap.SetTotalMovingTime((float)lapMovingTime.TotalSeconds);
+      lap.SetActiveTime((float)lapMovingTime.TotalSeconds);
+    }
     if (statistics.AverageInclinePercent is { } lapAverageGrade) lap.SetAvgGrade((float)lapAverageGrade);
+    if (statistics.AveragePositiveInclinePercent is { } lapAveragePositiveGrade) lap.SetAvgPosGrade((float)lapAveragePositiveGrade);
+    if (statistics.AverageNegativeInclinePercent is { } lapAverageNegativeGrade) lap.SetAvgNegGrade((float)lapAverageNegativeGrade);
     if (statistics.MinimumInclinePercent is { } lapMinimumGrade && lapMinimumGrade < 0) lap.SetMaxNegGrade((float)lapMinimumGrade);
     if (statistics.MaximumInclinePercent is { } lapMaximumGrade && lapMaximumGrade > 0) lap.SetMaxPosGrade((float)lapMaximumGrade);
-    lap.SetTotalAscent(ToFitElevation(statistics.TotalAscentMeters));
-    lap.SetTotalDescent(ToFitElevation(statistics.TotalDescentMeters));
+    SetElevationTotals(lap.SetTotalAscent, lap.SetTotalFractionalAscent, statistics.TotalAscentMeters);
+    SetElevationTotals(lap.SetTotalDescent, lap.SetTotalFractionalDescent, statistics.TotalDescentMeters);
+    SetVerticalSpeedStatistics(
+      lap.SetAvgPosVerticalSpeed,
+      lap.SetAvgNegVerticalSpeed,
+      lap.SetMaxPosVerticalSpeed,
+      lap.SetMaxNegVerticalSpeed,
+      statistics);
+    SetTimeInHeartRateZones(lap.SetTimeInHrZone, fitMetrics.TimeInHeartRateZoneSeconds);
     if (averageHeartRate is { } lapAverageHeartRate) lap.SetAvgHeartRate(ToFitHeartRate(lapAverageHeartRate));
     if (statistics.MinimumHeartRateBpm is { } lapMinimumHeartRate) lap.SetMinHeartRate(ToFitHeartRate(lapMinimumHeartRate));
     if (maximumHeartRate is { } lapMaximumHeartRate) lap.SetMaxHeartRate(ToFitHeartRate(lapMaximumHeartRate));
@@ -157,12 +186,25 @@ public static class SessionFitActivityExporter
       sessionMessage.SetMaxSpeed(sessionMaximumSpeed);
       sessionMessage.SetEnhancedMaxSpeed(sessionMaximumSpeed);
     }
-    if (statistics.MovingTime is { } sessionMovingTime) sessionMessage.SetTotalMovingTime((float)sessionMovingTime.TotalSeconds);
+    if (statistics.MovingTime is { } sessionMovingTime)
+    {
+      sessionMessage.SetTotalMovingTime((float)sessionMovingTime.TotalSeconds);
+      sessionMessage.SetActiveTime((float)sessionMovingTime.TotalSeconds);
+    }
     if (statistics.AverageInclinePercent is { } sessionAverageGrade) sessionMessage.SetAvgGrade((float)sessionAverageGrade);
+    if (statistics.AveragePositiveInclinePercent is { } sessionAveragePositiveGrade) sessionMessage.SetAvgPosGrade((float)sessionAveragePositiveGrade);
+    if (statistics.AverageNegativeInclinePercent is { } sessionAverageNegativeGrade) sessionMessage.SetAvgNegGrade((float)sessionAverageNegativeGrade);
     if (statistics.MinimumInclinePercent is { } sessionMinimumGrade && sessionMinimumGrade < 0) sessionMessage.SetMaxNegGrade((float)sessionMinimumGrade);
     if (statistics.MaximumInclinePercent is { } sessionMaximumGrade && sessionMaximumGrade > 0) sessionMessage.SetMaxPosGrade((float)sessionMaximumGrade);
-    sessionMessage.SetTotalAscent(ToFitElevation(statistics.TotalAscentMeters));
-    sessionMessage.SetTotalDescent(ToFitElevation(statistics.TotalDescentMeters));
+    SetElevationTotals(sessionMessage.SetTotalAscent, sessionMessage.SetTotalFractionalAscent, statistics.TotalAscentMeters);
+    SetElevationTotals(sessionMessage.SetTotalDescent, sessionMessage.SetTotalFractionalDescent, statistics.TotalDescentMeters);
+    SetVerticalSpeedStatistics(
+      sessionMessage.SetAvgPosVerticalSpeed,
+      sessionMessage.SetAvgNegVerticalSpeed,
+      sessionMessage.SetMaxPosVerticalSpeed,
+      sessionMessage.SetMaxNegVerticalSpeed,
+      statistics);
+    SetTimeInHeartRateZones(sessionMessage.SetTimeInHrZone, fitMetrics.TimeInHeartRateZoneSeconds);
     if (averageHeartRate is { } sessionAverageHeartRate) sessionMessage.SetAvgHeartRate(ToFitHeartRate(sessionAverageHeartRate));
     if (statistics.MinimumHeartRateBpm is { } sessionMinimumHeartRate) sessionMessage.SetMinHeartRate(ToFitHeartRate(sessionMinimumHeartRate));
     if (maximumHeartRate is { } sessionMaximumHeartRate) sessionMessage.SetMaxHeartRate(ToFitHeartRate(sessionMaximumHeartRate));
@@ -192,6 +234,32 @@ public static class SessionFitActivityExporter
   private static byte ToFitHeartRate(double heartRate) =>
     (byte)Math.Clamp(Math.Round(heartRate, MidpointRounding.AwayFromZero), 0, byte.MaxValue);
 
-  private static ushort ToFitElevation(double meters) =>
-    (ushort)Math.Clamp(Math.Round(meters, MidpointRounding.AwayFromZero), 0, ushort.MaxValue);
+  private static void SetElevationTotals(Action<ushort?> setWhole, Action<float?> setFraction, double meters)
+  {
+    double bounded = Math.Clamp(meters, 0, ushort.MaxValue);
+    double whole = Math.Floor(bounded);
+    setWhole((ushort)whole);
+    setFraction((float)(bounded - whole));
+  }
+
+  private static void SetVerticalSpeedStatistics(
+    Action<float?> setAveragePositive,
+    Action<float?> setAverageNegative,
+    Action<float?> setMaximumPositive,
+    Action<float?> setMaximumNegative,
+    SessionSampleStatistics statistics)
+  {
+    if (statistics.AveragePositiveVerticalSpeedMetersPerSecond is { } averagePositive) setAveragePositive((float)averagePositive);
+    if (statistics.AverageNegativeVerticalSpeedMetersPerSecond is { } averageNegative) setAverageNegative((float)averageNegative);
+    if (statistics.MaximumPositiveVerticalSpeedMetersPerSecond is { } maximumPositive) setMaximumPositive((float)maximumPositive);
+    if (statistics.MaximumNegativeVerticalSpeedMetersPerSecond is { } maximumNegative) setMaximumNegative((float)maximumNegative);
+  }
+
+  private static void SetTimeInHeartRateZones(
+    Action<int, float?> setZoneTime,
+    IReadOnlyList<float>? zoneSeconds)
+  {
+    if (zoneSeconds is null) return;
+    for (var index = 0; index < zoneSeconds.Count; index++) setZoneTime(index, zoneSeconds[index]);
+  }
 }

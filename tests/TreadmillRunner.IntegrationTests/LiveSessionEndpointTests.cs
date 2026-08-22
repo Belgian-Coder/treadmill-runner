@@ -142,6 +142,7 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     ManualControlResponse overriddenResponse = Assert.IsType<ManualControlResponse>(
       await overrideResponse.Content.ReadFromJsonAsync<ManualControlResponse>());
     ActiveSessionSnapshot overridden = overriddenResponse.Snapshot;
+    Assert.True(overridden.Live.EstimatedKilocalories > 0);
     Assert.Equal(6.6, overridden.RequestedSpeedKph, precision: 3);
     Assert.Equal(6.6, overridden.Live.SpeedKph, precision: 3);
 

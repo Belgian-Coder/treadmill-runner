@@ -105,7 +105,7 @@
 
         <section class="secondary-metrics" aria-label="Run totals">
             <div><span>Distance</span><strong>@session.Live.DistanceKilometers.ToString("0.00") km</strong></div>
-            <div><span>Energy</span><strong>@Math.Round(session.Live.Elapsed.TotalMinutes * 9) kcal</strong></div>
+            <div><span>Energy</span><strong>@Math.Round(session.Live.EstimatedKilocalories) kcal</strong></div>
             <div><span>Current step</span><strong>@CurrentStepLabel</strong></div>
             <div><span>Next</span><strong>@NextStepLabel</strong></div>
         </section>
