@@ -130,6 +130,35 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Duplicate_can_be_retried_from_watch_search_after_the_user_removes_the_existing_import()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, _) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      "protected-token-json",
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await store.MarkUploadStartedAsync(leased.Id, "Upload", now.AddSeconds(1));
+    await store.MarkRejectedAsync(leased.Id, "duplicate", "Garmin reports that this activity already exists.", now.AddSeconds(2));
+
+    GarminActivityUploadJob duplicate = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.True(duplicate.CanRetry);
+    Assert.True(await store.RetryFailedAsync(leased.Id, profileId, now.AddMinutes(1)));
+    GarminActivityUploadJob retried = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddMinutes(1), TimeSpan.FromMinutes(2)));
+    Assert.Equal("WatchSearch", retried.OperationPhase);
+    Assert.Equal(1, retried.AttemptCount);
+  }
+
+  [Fact]
   public async Task Legacy_confirmed_job_can_be_idempotently_requeued_only_for_merge_and_replace()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();

@@ -615,9 +615,13 @@ public sealed class GarminActivityUploadStore(
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     GarminActivityUploadJobEntity? entity = await context.GarminActivityUploadJobs.Include(item => item.Account).SingleOrDefaultAsync(
       item => item.Id == jobId && item.UserProfileId == profileId && item.Status == from &&
-        (item.FailureKind == "provider" || item.FailureKind == "provider-unavailable"), cancellationToken);
+        (item.FailureKind == "provider" || item.FailureKind == "provider-unavailable" || item.FailureKind == "duplicate"), cancellationToken);
     if (entity is null) return false;
     entity.Status = to; entity.AttemptCount = 0; entity.AvailableAtUtc = nowUtc; entity.FailureKind = null; entity.LastError = null; entity.UpdatedAtUtc = nowUtc;
+    if (entity.Account.Enabled && entity.Account.State == "Connected" &&
+        entity.Account.WatchActivityHandling == GarminWatchActivityHandling.MergeAndReplace &&
+        entity.MatchedRemoteId is null && entity.ReplacementRemoteId is null)
+      entity.OperationPhase = "WatchSearch";
     if (entity.Account.State == "ProviderUnavailable") entity.Account.State = "Connected";
     await context.SaveChangesAsync(cancellationToken);
     return true;
@@ -632,7 +636,7 @@ public sealed class GarminActivityUploadStore(
   private static GarminActivityUploadJob Map(GarminActivityUploadJobEntity entity, WorkoutSessionEntity? session = null) => new(
     entity.Id, entity.UserProfileId, entity.GarminActivityUploadAccountId, entity.WorkoutSessionId, entity.Status, entity.AttemptCount,
     entity.RemoteId, entity.OperationPhase, entity.MatchedRemoteId, entity.ReplacementRemoteId, entity.MatchEvidence,
-    entity.FailureKind, entity.Status == "Failed" && entity.FailureKind is "provider" or "provider-unavailable",
+    entity.FailureKind, entity.Status == "Failed" && entity.FailureKind is "provider" or "provider-unavailable" or "duplicate",
     session?.WorkoutTitle, session?.StartedAtUtc, session?.DurationSeconds, entity.LastError, entity.UpdatedAtUtc,
     entity.AcknowledgedAtUtc);
 }
