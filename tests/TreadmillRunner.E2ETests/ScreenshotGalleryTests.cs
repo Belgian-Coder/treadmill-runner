@@ -654,6 +654,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
         await Expect(Page.GetByRole(AriaRole.Img, new() { Name = "Historical heart rate over elapsed time", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.Locator("[data-series='heart-rate']")).ToHaveAttributeAsync("d", new Regex("^M"));
+        await Expect(Page.Locator("[data-zone-boundary='1']")).ToHaveCountAsync(1);
+        await Expect(Page.Locator("[data-zone-boundary='3']")).ToHaveAttributeAsync("aria-label", new Regex("starts at 145 bpm"));
         await Expect(Page.GetByText("Elevation gain", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Zone 3 · Aerobic", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Manual speed override:", new() { Exact = false })).ToBeVisibleAsync();
@@ -775,6 +777,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Expect(historyDialog.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
     await Expect(historyDialog.GetByRole(AriaRole.Img, new() { Name = "Recorded heart rate over elapsed time", Exact = true })).ToBeVisibleAsync();
     await Expect(historyDialog.Locator("[data-series='heart-rate']")).ToHaveAttributeAsync("d", new Regex("^M"));
+    await Expect(historyDialog.Locator("[data-zone-boundary='1']")).ToHaveCountAsync(1);
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })).ToHaveCountAsync(0);
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details.png"), FullPage = false });

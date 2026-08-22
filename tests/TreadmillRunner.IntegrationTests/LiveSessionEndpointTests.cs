@@ -215,6 +215,10 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
       detail.RootElement.GetProperty("totalSampleCount").GetInt32());
     JsonElement analytics = detail.RootElement.GetProperty("analytics");
     Assert.Equal("Aerobic", analytics.GetProperty("heartRateZones")[0].GetProperty("name").GetString());
+    JsonElement zoneSnapshots = detail.RootElement.GetProperty("heartRateZones");
+    Assert.Equal(1, zoneSnapshots.GetArrayLength());
+    Assert.Equal(125, zoneSnapshots[0].GetProperty("minimumBpm").GetInt32());
+    Assert.Equal(145, zoneSnapshots[0].GetProperty("maximumBpm").GetInt32());
     Assert.Equal(1, analytics.GetProperty("eventCounts").GetProperty("manualSpeedOverrides").GetInt32());
     Assert.Equal(1, analytics.GetProperty("eventCounts").GetProperty("manualInclineOverrides").GetInt32());
     Assert.True(analytics.GetProperty("adherencePercentage").GetDouble() >= 0);

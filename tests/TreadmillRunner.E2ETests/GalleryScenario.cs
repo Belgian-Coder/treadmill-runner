@@ -740,6 +740,14 @@ public sealed record GalleryScenario(
       maximumHeartRateBpm = 171,
       averageSpeedKph = 8.8,
       averageInclinePercent = 1.0,
+      heartRateZones = new object[]
+      {
+        new { number = 1, name = "Warm up", minimumBpm = 103, maximumBpm = 123 },
+        new { number = 2, name = "Easy", minimumBpm = 124, maximumBpm = 144 },
+        new { number = 3, name = "Aerobic", minimumBpm = 145, maximumBpm = 164 },
+        new { number = 4, name = "Threshold", minimumBpm = 165, maximumBpm = 185 },
+        new { number = 5, name = "Maximum", minimumBpm = 186, maximumBpm = 206 },
+      },
       samples,
       events = new object[]
       {
