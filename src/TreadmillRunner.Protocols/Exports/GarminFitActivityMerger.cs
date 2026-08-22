@@ -41,19 +41,16 @@ public static class GarminFitActivityMerger
 
     int lapCount = messages.Count(message => message.Num == MesgNum.Lap);
     int sessionCount = messages.Count(message => message.Num == MesgNum.Session);
-    uint replacementSerial = BitConverter.ToUInt32(localSession.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u;
     for (var index = 0; index < messages.Count; index++)
     {
       Mesg message = messages[index];
       if (message.Num == MesgNum.FileId)
       {
         var fileId = new FileIdMesg(message);
-        fileId.SetType(Dynastream.Fit.File.Activity);
-        fileId.SetManufacturer(Manufacturer.Development);
-        fileId.SetProduct(2);
+        uint watchSerial = fileId.GetSerialNumber() ?? 0u;
+        uint replacementSerial = watchSerial ^ BitConverter.ToUInt32(localSession.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u;
+        if (replacementSerial == watchSerial) replacementSerial ^= 1u;
         fileId.SetSerialNumber(replacementSerial);
-        fileId.SetTimeCreated(new Dynastream.Fit.DateTime(localSession.StartedAt.Value.UtcDateTime));
-        fileId.SetProductName("TreadmillRunner merged");
         messages[index] = fileId;
       }
       else if (message.Num == MesgNum.Record)

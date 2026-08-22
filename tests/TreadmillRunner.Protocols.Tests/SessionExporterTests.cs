@@ -108,11 +108,11 @@ public sealed class SessionExporterTests
     decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
     Assert.True(decoder.Read(stream));
 
-    Assert.Equal(Manufacturer.Development, decodedFileId?.GetManufacturer());
-    Assert.Equal((ushort)2, decodedFileId?.GetProduct());
-    Assert.Equal("TreadmillRunner merged", decodedFileId?.GetProductNameAsString());
+    Assert.Equal(Manufacturer.Garmin, decodedFileId?.GetManufacturer());
+    Assert.Equal((ushort)4242, decodedFileId?.GetProduct());
+    Assert.Equal("fenix 8", decodedFileId?.GetProductNameAsString());
     Assert.Equal(
-      BitConverter.ToUInt32(local.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u,
+      123456u ^ BitConverter.ToUInt32(local.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u,
       decodedFileId?.GetSerialNumber());
     Assert.Equal(3.4f, decodedSession?.GetTotalTrainingEffect());
     Assert.Equal(2.1f, decodedSession?.GetTotalAnaerobicTrainingEffect());
@@ -161,6 +161,9 @@ public sealed class SessionExporterTests
     var file = new FileIdMesg();
     file.SetType(Dynastream.Fit.File.Activity);
     file.SetManufacturer(Manufacturer.Garmin);
+    file.SetProduct(4242);
+    file.SetSerialNumber(123456);
+    file.SetProductName("fenix 8");
     file.SetTimeCreated(new Dynastream.Fit.DateTime(started.UtcDateTime));
     encoder.Write(file);
     var developerData = new DeveloperDataIdMesg();
