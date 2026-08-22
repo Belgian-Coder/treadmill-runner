@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Dynastream.Fit;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Protocols.Exports;
@@ -47,14 +48,36 @@ public sealed class SessionExporterTests
     Assert.Equal(2, decodedSession?.GetTotalMovingTime());
     Assert.InRange(decodedSession?.GetMaxSpeed() ?? 0, 2.221f, 2.223f);
     Assert.Equal(1, decodedSession?.GetAvgGrade());
-    Assert.Equal((ushort)1, decodedLap?.GetTotalCalories());
+    Assert.Equal((ushort)0, decodedSession?.GetTotalAscent());
+    Assert.Equal((ushort)0, decodedSession?.GetTotalDescent());
+    Assert.Equal((ushort)0, decodedLap?.GetTotalCalories());
     Assert.Equal((byte)150, decodedLap?.GetMaxHeartRate());
+  }
+
+  [Fact]
+  public void Fit_activity_export_writes_calculated_altitude_ascent_and_descent()
+  {
+    byte[] fit = SessionFitActivityExporter.Export(ElevationSession());
+    using var stream = new MemoryStream(fit);
+    var decoder = new Decode();
+    SessionMesg? decodedSession = null;
+    var records = new List<RecordMesg>();
+    var broadcaster = new MesgBroadcaster();
+    broadcaster.SessionMesgEvent += (_, args) => decodedSession = new SessionMesg(args.mesg);
+    broadcaster.RecordMesgEvent += (_, args) => records.Add(new RecordMesg(args.mesg));
+    decoder.MesgEvent += broadcaster.OnMesg;
+    decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+
+    Assert.True(decoder.Read(stream));
+    Assert.Equal((ushort)10, decodedSession?.GetTotalAscent());
+    Assert.Equal((ushort)5, decodedSession?.GetTotalDescent());
+    Assert.InRange(records[^1].GetEnhancedAltitude() ?? float.NaN, 4.9f, 5.1f);
   }
 
   [Fact]
   public void Garmin_merge_preserves_watch_fields_and_overlays_local_heart_rate_and_treadmill_values()
   {
-    StoredWorkoutSession local = Session();
+    StoredWorkoutSession local = ElevationSession();
     byte[] watch = WatchFit(local.StartedAt!.Value);
 
     byte[] merged = GarminFitActivityMerger.Merge(watch, local);
@@ -72,6 +95,8 @@ public sealed class SessionExporterTests
     Assert.Equal(3.4f, decodedSession?.GetTotalTrainingEffect());
     Assert.Equal((byte)135, decodedSession?.GetAvgHeartRate());
     Assert.Equal((byte)150, decodedSession?.GetMaxHeartRate());
+    Assert.Equal((ushort)10, decodedSession?.GetTotalAscent());
+    Assert.Equal((ushort)5, decodedSession?.GetTotalDescent());
     Assert.All(records, record => Assert.Equal((byte)88, record.GetCadence()));
     Assert.Equal(new byte?[] { 135, 150, 120 }, records.Select(record => record.GetHeartRate()).ToArray());
   }
@@ -117,7 +142,10 @@ public sealed class SessionExporterTests
       Guid.Parse("12345678-1234-1234-1234-123456789abc"),
       "Export test",
       started.AddSeconds(-5),
-      "{}",
+      JsonSerializer.Serialize(new SessionExecutionConfiguration(
+        "simulator",
+        "disabled",
+        new SessionProfileSnapshot(70, null, null, []))),
       "v1");
     SessionSample[] samples =
     [
@@ -140,6 +168,25 @@ public sealed class SessionExporterTests
       null,
       samples,
       []);
+  }
+
+  private static StoredWorkoutSession ElevationSession()
+  {
+    StoredWorkoutSession source = Session();
+    DateTimeOffset started = source.StartedAt!.Value;
+    Guid id = source.Definition.SessionId;
+    SessionSample[] samples =
+    [
+      Sample(id, 0, started, 0, 0, 0, 135, 0, 0),
+      Sample(id, 1, started.AddSeconds(1), 1, 8, 10, 150, 0.1, 0.5),
+      Sample(id, 2, started.AddSeconds(2), 2, 4, -5, 120, 0.2, 1),
+    ];
+    return source with
+    {
+      DistanceKilometers = samples[^1].DistanceKilometers,
+      AverageInclinePercent = 2.5,
+      Samples = samples,
+    };
   }
 
   private static SessionSample Sample(

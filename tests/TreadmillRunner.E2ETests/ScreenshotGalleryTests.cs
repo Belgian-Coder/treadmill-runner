@@ -652,6 +652,9 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         ILocator historyInclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
         Assert.True(await historyInclineAxis.Locator("span").CountAsync() >= 10);
         await Expect(Page.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
+        await Expect(Page.GetByRole(AriaRole.Img, new() { Name = "Historical heart rate over elapsed time", Exact = true })).ToBeVisibleAsync();
+        await Expect(Page.Locator("[data-series='heart-rate']")).ToHaveAttributeAsync("d", new Regex("^M"));
+        await Expect(Page.GetByText("Elevation gain", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Zone 3 · Aerobic", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Manual speed override:", new() { Exact = false })).ToBeVisibleAsync();
         Assert.True((await Page.Locator("[data-series='measured-speed']").GetAttributeAsync("d"))?.Count(character => character == 'L') >= 8);
@@ -770,6 +773,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
     await Expect(historyDialog.GetByRole(AriaRole.Region, new() { Name = "All recorded session changes", Exact = true }).Locator("tbody tr")).Not.ToHaveCountAsync(0);
     await Expect(historyDialog.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new Regex("^M"));
     await Expect(historyDialog.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
+    await Expect(historyDialog.GetByRole(AriaRole.Img, new() { Name = "Recorded heart rate over elapsed time", Exact = true })).ToBeVisibleAsync();
+    await Expect(historyDialog.Locator("[data-series='heart-rate']")).ToHaveAttributeAsync("d", new Regex("^M"));
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true })).ToHaveCountAsync(0);
     await Expect(historyDialog.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true })).ToHaveCountAsync(0);
     await Page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(directory, "tr-031-history-session-details.png"), FullPage = false });

@@ -321,7 +321,7 @@ public sealed class LiveSessionCoordinator(
             devices.SelectedHeartRateDeviceKind?.ToString(),
             devices.SelectedHeartRateDeviceFamily?.ToString(),
             treadmillSnapshot)),
-        SessionMetricAlgorithms.EstimatedCaloriesV1,
+        SessionMetricAlgorithms.EstimatedCaloriesV2,
         selection,
         hardwareMode ? SessionOrigin.Hardware : SessionOrigin.Simulator);
       var machine = new SessionStateMachine(timeProvider);
@@ -332,6 +332,7 @@ public sealed class LiveSessionCoordinator(
         machine,
         new WorkoutProgression(workout),
         profile.Profile.MaximumSpeedKph ?? 20,
+        profile.Profile.WeightKilograms,
         now,
         hardwareMode,
         requiresHeartRate,
@@ -1806,6 +1807,7 @@ public sealed class LiveSessionCoordinator(
       SessionStateMachine.Restore(timeProvider, SessionState.Running, checkpoint.SessionVersion),
       progression,
       configuration.Profile.MaximumSpeedKph ?? 20,
+      configuration.Profile.WeightKilograms,
       timeProvider.GetUtcNow(),
       hardwareMode: stored.Definition.Origin == SessionOrigin.Hardware,
       requiresHeartRate,
@@ -1840,6 +1842,9 @@ public sealed class LiveSessionCoordinator(
       NextSequence = stored.Samples.Count == 0
         ? 0
         : checked(stored.Samples.Max(static sample => sample.Sequence) + 1),
+      EstimatedKilocalories = SessionCalorieCalculator.Calculate(
+        stored.Samples,
+        configuration.Profile.WeightKilograms),
     };
     active.DesiredHeartRateAutomationMode = checkpoint.DesiredHeartRateAutomationMode;
     active.HeartRateAutomationMode = active.RequiresHeartRate
@@ -2140,6 +2145,11 @@ public sealed class LiveSessionCoordinator(
     if (active.IsMoving)
     {
       active.DistanceKilometers += active.MeasuredSpeedKph * delta.TotalHours;
+      active.EstimatedKilocalories += SessionCalorieCalculator.CalculateInterval(
+        active.WeightKilograms,
+        active.MeasuredSpeedKph,
+        active.MeasuredInclinePercent,
+        delta);
     }
 
     active.LastTickAt = now;
@@ -2330,7 +2340,7 @@ public sealed class LiveSessionCoordinator(
     active.MeasuredInclinePercent,
     active.HeartRateBpm,
     active.DistanceKilometers,
-    active.Elapsed.TotalMinutes * 9,
+    active.EstimatedKilocalories,
     active.TelemetryAge,
     active.Definition.MetricAlgorithmVersion);
 
@@ -2352,7 +2362,7 @@ public sealed class LiveSessionCoordinator(
       endedAt,
       duration,
       active.DistanceKilometers,
-      active.Elapsed.TotalMinutes * 9,
+      active.EstimatedKilocalories,
       active.HeartRateBpm,
       active.HeartRateBpm,
       duration > TimeSpan.Zero ? active.DistanceKilometers / duration.TotalHours : 0,
@@ -2461,6 +2471,7 @@ public sealed class LiveSessionCoordinator(
     SessionStateMachine machine,
     WorkoutProgression progression,
     double maximumSpeedKph,
+    double weightKilograms,
     DateTimeOffset createdAt,
     bool hardwareMode,
     bool requiresHeartRate,
@@ -2485,6 +2496,7 @@ public sealed class LiveSessionCoordinator(
     public WorkoutProgression Progression { get; } = progression;
     public IReadOnlyList<WorkoutPlanPoint> WorkoutPlan { get; } = BuildWorkoutPlan(workout);
     public double MaximumSpeedKph { get; } = maximumSpeedKph;
+    public double WeightKilograms { get; } = weightKilograms;
     public bool HardwareMode { get; } = hardwareMode;
     public bool RequiresHeartRate { get; } = requiresHeartRate;
     public HeartRateSource HeartRateSource { get; set; } = heartRateSource;
@@ -2525,6 +2537,7 @@ public sealed class LiveSessionCoordinator(
     public FixedIntervalCadence SampleCadence { get; } = new(PersistenceInterval, createdAt);
     public TimeSpan Elapsed { get; set; }
     public double DistanceKilometers { get; set; }
+    public double EstimatedKilocalories { get; set; }
     public double MeasuredSpeedKph { get; set; }
     public double MeasuredInclinePercent { get; set; }
     public bool IsMoving { get; set; }

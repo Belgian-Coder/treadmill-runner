@@ -199,6 +199,10 @@ public interface ISessionStore
     IReadOnlyList<HeartRateZone> heartRateZones,
     CancellationToken cancellationToken = default);
 
+  Task<SessionSampleStatistics?> CalculateSampleStatisticsAsync(
+    Guid sessionId,
+    CancellationToken cancellationToken = default);
+
   Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
     Guid userProfileId,
     int take = 50,

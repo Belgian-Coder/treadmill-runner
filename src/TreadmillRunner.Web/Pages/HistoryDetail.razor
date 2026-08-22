@@ -35,6 +35,8 @@ else
             <article><span>Distance</span><strong>@session.DistanceKilometers.ToString("0.00") km</strong></article>
             <article><span>Estimated kcal</span><strong>@session.EstimatedKilocalories.ToString("0")</strong></article>
             <article><span>Average HR</span><strong>@AverageHeartRateLabel</strong></article>
+            <article><span>Elevation gain</span><strong>@session.TotalAscentMeters.ToString("0.0") m</strong></article>
+            <article><span>Elevation loss</span><strong>@session.TotalDescentMeters.ToString("0.0") m</strong></article>
         </section>
         @if (comparison is { } sameRevision)
         {
@@ -181,6 +183,47 @@ else
             <p>@HistoryGraphSampleSummary The chart is generated from the stored planned, requested, and measured speed and incline values; full-resolution data remains available in the exports.</p>
         </section>
 
+        <section class="route-card">
+            <h2>Heart rate</h2>
+            @if (!HasHeartRateSamples)
+            {
+                <p>No heart-rate readings were recorded for this session.</p>
+            }
+            else
+            {
+                <div class="chart-plot-grid chart-plot-grid--dual">
+                    <div class="chart-y-scale chart-y-scale--ticks" aria-label="Heart rate axis in beats per minute" style="grid-template-rows: repeat(@HeartRateAxisTicks.Count(), 1fr)">
+                        <strong class="chart-axis-unit">bpm</strong>
+                        @foreach (int tick in HeartRateAxisTicks)
+                        {
+                            <span>@tick</span>
+                        }
+                    </div>
+                    <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical heart rate over elapsed time">
+                        @foreach (int tick in HeartRateAxisTicks)
+                        {
+                            double y = HeartRateChartY(tick);
+                            <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                        }
+                        <path class="chart-current chart-current--heart-rate" data-series="heart-rate" d="@BuildHeartRatePath()" />
+                    </svg>
+                    <div></div>
+                    <div></div>
+                    <div class="chart-time-scale" aria-label="Heart rate elapsed time axis" data-midpoint="@FormatAxisTime(TimeSpan.FromTicks(ChartDuration.Ticks / 2))">
+                        @foreach (ChartTimeTick tick in ChartTimeTicks)
+                        {
+                            <span style="left: @tick.PositionPercent.ToString("0.##", CultureInfo.InvariantCulture)%">@FormatAxisTime(tick.Elapsed)</span>
+                        }
+                    </div>
+                    <div></div>
+                </div>
+                <div class="control-chart-legend" aria-label="Heart rate chart legend">
+                    <span class="control-chart-legend__group"><strong>Heart rate</strong><span><i class="legend-line legend-line--heart-rate"></i>Measured</span></span>
+                </div>
+                <p>The graph uses the stored heart-rate readings from this workout. Gaps indicate periods without a valid sensor reading.</p>
+            }
+        </section>
+
         <details class="panel-card advanced-settings">
             <summary>Time in heart-rate zones</summary>
             @if (session.Analytics.HeartRateZones.Count == 0)
@@ -241,6 +284,7 @@ else
     private bool shareBusy;
     private string? shareMessage;
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
+    private bool HasHeartRateSamples => session?.Samples.Any(static sample => sample.HeartRateBpm is not null) == true;
     private string HistoryGraphSampleSummary => session is null
         ? "No telemetry samples were persisted."
         : session.SamplesAreDownsampled
@@ -477,6 +521,27 @@ else
         return path.ToString();
     }
 
+    private string BuildHeartRatePath()
+    {
+        if (session?.Samples.Count is null or 0) return string.Empty;
+        var path = new StringBuilder();
+        bool started = false;
+        foreach (SessionSample point in RenderSamples(session.Samples))
+        {
+            if (point.HeartRateBpm is not { } heartRate)
+            {
+                started = false;
+                continue;
+            }
+            path.Append(started ? " L" : "M");
+            path.Append(ChartX(point.Elapsed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append(' ');
+            path.Append(HeartRateChartY(heartRate).ToString("0.##", CultureInfo.InvariantCulture));
+            started = true;
+        }
+        return path.ToString();
+    }
+
     private static IReadOnlyList<SessionSample> RenderSamples(IReadOnlyList<SessionSample> samples)
     {
         const int maximumRenderedPoints = 720;
@@ -495,6 +560,12 @@ else
                 bucket.MinBy(static sample => sample.MeasuredInclinePercent)!, bucket.MaxBy(static sample => sample.MeasuredInclinePercent)!,
                 bucket.MinBy(static sample => sample.RequestedInclinePercent)!, bucket.MaxBy(static sample => sample.RequestedInclinePercent)!,
             };
+            SessionSample[] heartRate = bucket.Where(static sample => sample.HeartRateBpm is not null).ToArray();
+            if (heartRate.Length > 0)
+            {
+                extrema.Add(heartRate.MinBy(static sample => sample.HeartRateBpm)!);
+                extrema.Add(heartRate.MaxBy(static sample => sample.HeartRateBpm)!);
+            }
             SessionSample[] planned = bucket.Where(static sample => sample.PlannedSpeedKph is not null).ToArray();
             if (planned.Length > 0)
             {
@@ -527,8 +598,20 @@ else
 
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
     private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
+    private int HeartRateAxisMinimum => session is null ? 60 : Math.Max(0, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(60).Min() - 10) / 10) * 10);
+    private int HeartRateAxisMaximum => session is null ? 180 : Math.Max(HeartRateAxisMinimum + 20, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(170).Max() + 19) / 10) * 10);
+    private IEnumerable<int> HeartRateAxisTicks
+    {
+        get
+        {
+            int range = HeartRateAxisMaximum - HeartRateAxisMinimum;
+            int interval = range <= 60 ? 10 : 20;
+            return Enumerable.Range(0, (range / interval) + 1).Select(index => HeartRateAxisMinimum + (index * interval)).Reverse();
+        }
+    }
     private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, ChartDuration.TotalSeconds), 0, 1) * 700);
     private static double ChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
+    private double HeartRateChartY(double value) => 210 - (Math.Clamp((value - HeartRateAxisMinimum) / Math.Max(1, HeartRateAxisMaximum - HeartRateAxisMinimum), 0, 1) * 200);
 
     private TimeSpan ChartDuration => session is null
         ? TimeSpan.Zero

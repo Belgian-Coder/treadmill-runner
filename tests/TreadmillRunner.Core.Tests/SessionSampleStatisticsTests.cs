@@ -45,6 +45,25 @@ public sealed class SessionSampleStatisticsTests
     Assert.Equal(2, statistics.AverageInclinePercent);
   }
 
+  [Fact]
+  public void Elevation_uses_measured_incline_and_belt_distance_for_ascent_and_descent()
+  {
+    Guid sessionId = Guid.NewGuid();
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-22T08:00:00Z");
+    SessionSample[] samples =
+    [
+      Sample(sessionId, 0, started, 0, speed: 6, incline: 0, heartRate: 120, distanceKilometers: 0),
+      Sample(sessionId, 1, started.AddMinutes(1), 60, speed: 6, incline: 10, heartRate: 130, distanceKilometers: 0.1),
+      Sample(sessionId, 2, started.AddSeconds(90), 90, speed: 6, incline: -5, heartRate: 125, distanceKilometers: 0.15),
+    ];
+
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(samples);
+
+    Assert.InRange(statistics.TotalAscentMeters, 9.95, 9.951);
+    Assert.InRange(statistics.TotalDescentMeters, 2.496, 2.497);
+    Assert.InRange(statistics.NetElevationMeters, 7.453, 7.454);
+  }
+
   private static SessionSample Sample(
     Guid sessionId,
     long sequence,
@@ -52,7 +71,8 @@ public sealed class SessionSampleStatisticsTests
     double elapsedSeconds,
     double speed,
     double incline,
-    ushort? heartRate) => new(
+    ushort? heartRate,
+    double distanceKilometers = 0) => new(
       sessionId,
       sequence,
       capturedAt,
@@ -64,7 +84,7 @@ public sealed class SessionSampleStatisticsTests
       requestedInclinePercent: incline,
       measuredInclinePercent: incline,
       heartRate,
-      distanceKilometers: 0,
+      distanceKilometers,
       estimatedKilocalories: 0,
       telemetryAge: TimeSpan.Zero,
       SessionMetricAlgorithms.EstimatedCaloriesV1);

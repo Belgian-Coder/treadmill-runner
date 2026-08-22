@@ -8,11 +8,15 @@ public sealed record SessionSampleStatistics(
   double? MaximumSpeedKph,
   double? AverageInclinePercent,
   double? MinimumInclinePercent,
-  double? MaximumInclinePercent);
+  double? MaximumInclinePercent,
+  double TotalAscentMeters,
+  double TotalDescentMeters,
+  double NetElevationMeters,
+  double? EstimatedKilocalories);
 
 public static class SessionSampleStatisticsCalculator
 {
-  public static SessionSampleStatistics Calculate(IReadOnlyList<SessionSample> samples)
+  public static SessionSampleStatistics Calculate(IReadOnlyList<SessionSample> samples, double? weightKilograms = null)
   {
     ArgumentNullException.ThrowIfNull(samples);
     ValidateOrder(samples);
@@ -47,6 +51,7 @@ public static class SessionSampleStatisticsCalculator
       movingTime = TimeSpan.FromTicks(movingTicks);
     }
 
+    SessionElevationStatistics elevation = SessionElevationCalculator.Calculate(samples);
     return new SessionSampleStatistics(
       averageHeartRate,
       heartRates.Length == 0 ? null : heartRates.Min(),
@@ -55,7 +60,13 @@ public static class SessionSampleStatisticsCalculator
       samples.Count == 0 ? null : samples.Max(static sample => sample.MeasuredSpeedKph),
       averageIncline,
       inclines.Length == 0 ? null : inclines.Min(),
-      inclines.Length == 0 ? null : inclines.Max());
+      inclines.Length == 0 ? null : inclines.Max(),
+      elevation.TotalAscentMeters,
+      elevation.TotalDescentMeters,
+      elevation.NetElevationMeters,
+      weightKilograms is { } weight
+        ? SessionCalorieCalculator.Calculate(samples, weight)
+        : samples.LastOrDefault()?.EstimatedKilocalories);
   }
 
   private static double? WeightedAverage(

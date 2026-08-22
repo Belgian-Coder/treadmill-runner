@@ -21,8 +21,11 @@ public static class GarminFitActivityMerger
       throw new InvalidDataException("The watch FIT contains no timestamped record messages.");
 
     SessionSample[] samples = localSession.Samples.OrderBy(sample => sample.Elapsed).ToArray();
-    var replacementRecords = new Queue<RecordMesg>(records.Select(record => OverlayRecord(record, firstTimestamp, samples)));
-    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(samples);
+    SessionElevationStatistics elevation = SessionElevationCalculator.Calculate(samples);
+    var replacementRecords = new Queue<RecordMesg>(records.Select(record => OverlayRecord(record, firstTimestamp, samples, elevation.Points)));
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      samples,
+      SessionCalorieCalculator.ReadWeightKilograms(localSession.Definition.ControllerConfigurationJson));
     double? averageHeartRate = statistics.AverageHeartRateBpm ?? localSession.AverageHeartRateBpm;
     ushort? maximumHeartRate = statistics.MaximumHeartRateBpm ?? localSession.MaximumHeartRateBpm;
 
@@ -65,7 +68,11 @@ public static class GarminFitActivityMerger
     return messages;
   }
 
-  private static RecordMesg OverlayRecord(RecordMesg record, Dynastream.Fit.DateTime firstTimestamp, IReadOnlyList<SessionSample> samples)
+  private static RecordMesg OverlayRecord(
+    RecordMesg record,
+    Dynastream.Fit.DateTime firstTimestamp,
+    IReadOnlyList<SessionSample> samples,
+    IReadOnlyList<SessionElevationPoint> elevationPoints)
   {
     Dynastream.Fit.DateTime? timestamp = record.GetTimestamp();
     if (timestamp is null) return record;
@@ -77,6 +84,9 @@ public static class GarminFitActivityMerger
     record.SetEnhancedSpeed(speed);
     record.SetDistance((float)(sample.DistanceKilometers * 1000));
     record.SetGrade((float)sample.MeasuredInclinePercent);
+    SessionElevationPoint elevation = elevationPoints.Single(point => point.Sequence == sample.Sequence);
+    record.SetAltitude((float)elevation.ElevationMeters);
+    record.SetEnhancedAltitude((float)elevation.ElevationMeters);
     if (sample.HeartRateBpm is { } heartRate) record.SetHeartRate((byte)Math.Min(heartRate, byte.MaxValue));
     return record;
   }
@@ -88,6 +98,7 @@ public static class GarminFitActivityMerger
       averageSpeed => { message.SetAvgSpeed(averageSpeed); message.SetEnhancedAvgSpeed(averageSpeed); },
       maximumSpeed => { message.SetMaxSpeed(maximumSpeed); message.SetEnhancedMaxSpeed(maximumSpeed); },
       averageGrade => message.SetAvgGrade(averageGrade), minimumHeartRate => message.SetMinHeartRate(minimumHeartRate),
+      ascent => message.SetTotalAscent(ascent), descent => message.SetTotalDescent(descent),
       averageHr => message.SetAvgHeartRate(averageHr), maximumHr => message.SetMaxHeartRate(maximumHr),
       session, statistics, averageHeartRate, maximumHeartRate);
     return message;
@@ -100,6 +111,7 @@ public static class GarminFitActivityMerger
       averageSpeed => { message.SetAvgSpeed(averageSpeed); message.SetEnhancedAvgSpeed(averageSpeed); },
       maximumSpeed => { message.SetMaxSpeed(maximumSpeed); message.SetEnhancedMaxSpeed(maximumSpeed); },
       averageGrade => message.SetAvgGrade(averageGrade), minimumHeartRate => message.SetMinHeartRate(minimumHeartRate),
+      ascent => message.SetTotalAscent(ascent), descent => message.SetTotalDescent(descent),
       averageHr => message.SetAvgHeartRate(averageHr), maximumHr => message.SetMaxHeartRate(maximumHr),
       session, statistics, averageHeartRate, maximumHeartRate);
     return message;
@@ -107,18 +119,23 @@ public static class GarminFitActivityMerger
 
   private static void ApplySummary(
     Action<float> setDistance, Action<ushort> setCalories, Action<float> setAverageSpeed, Action<float> setMaximumSpeed,
-    Action<float> setAverageGrade, Action<byte> setMinimumHeartRate, Action<byte> setAverageHeartRate, Action<byte> setMaximumHeartRate,
+    Action<float> setAverageGrade, Action<byte> setMinimumHeartRate,
+    Action<ushort> setTotalAscent, Action<ushort> setTotalDescent,
+    Action<byte> setAverageHeartRate, Action<byte> setMaximumHeartRate,
     StoredWorkoutSession session, SessionSampleStatistics statistics, double? averageHeartRate, ushort? maximumHeartRate)
   {
     setDistance((float)(session.DistanceKilometers * 1000));
-    setCalories((ushort)Math.Clamp(Math.Round(session.EstimatedKilocalories), 0, ushort.MaxValue));
+    setCalories((ushort)Math.Clamp(Math.Round(statistics.EstimatedKilocalories ?? session.EstimatedKilocalories), 0, ushort.MaxValue));
     setAverageSpeed((float)(session.AverageSpeedKph / 3.6));
     if (statistics.MaximumSpeedKph is { } maximumSpeed) setMaximumSpeed((float)(maximumSpeed / 3.6));
     if (statistics.AverageInclinePercent is { } averageGrade) setAverageGrade((float)averageGrade);
+    setTotalAscent(ToFitElevation(statistics.TotalAscentMeters));
+    setTotalDescent(ToFitElevation(statistics.TotalDescentMeters));
     if (statistics.MinimumHeartRateBpm is { } minimumHr) setMinimumHeartRate(ToFitHeartRate(minimumHr));
     if (averageHeartRate is { } averageHr) setAverageHeartRate(ToFitHeartRate(averageHr));
     if (maximumHeartRate is { } maximumHr) setMaximumHeartRate(ToFitHeartRate(maximumHr));
   }
 
   private static byte ToFitHeartRate(double value) => (byte)Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), 0, byte.MaxValue);
+  private static ushort ToFitElevation(double value) => (ushort)Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), 0, ushort.MaxValue);
 }

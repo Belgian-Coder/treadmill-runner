@@ -11,9 +11,14 @@ public static class SessionCsvExporter
   {
     ArgumentNullException.ThrowIfNull(session);
     var output = new StringBuilder(16 * 1024);
+    double? weight = SessionCalorieCalculator.ReadWeightKilograms(session.Definition.ControllerConfigurationJson);
+    IReadOnlyList<double>? calculatedCalories = weight is { } weightKilograms
+      ? SessionCalorieCalculator.CalculateCumulative(session.Samples, weightKilograms)
+      : null;
     output.AppendLine("captured_at_utc,elapsed_seconds,planned_speed_kph,requested_speed_kph,measured_speed_kph,planned_incline_percent,requested_incline_percent,measured_incline_percent,heart_rate_bpm,distance_km,estimated_kcal,telemetry_age_ms");
-    foreach (SessionSample sample in session.Samples)
+    for (var index = 0; index < session.Samples.Count; index++)
     {
+      SessionSample sample = session.Samples[index];
       Append(output, sample.CapturedAt.ToString("O", CultureInfo.InvariantCulture));
       Append(output, sample.Elapsed.TotalSeconds);
       Append(output, sample.PlannedSpeedKph);
@@ -24,7 +29,7 @@ public static class SessionCsvExporter
       Append(output, sample.MeasuredInclinePercent);
       Append(output, sample.HeartRateBpm);
       Append(output, sample.DistanceKilometers);
-      Append(output, sample.EstimatedKilocalories);
+      Append(output, calculatedCalories?[index] ?? sample.EstimatedKilocalories);
       output.Append(sample.TelemetryAge.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture));
       output.AppendLine();
     }
@@ -54,14 +59,20 @@ public static class SessionFitActivityExporter
     var start = new Dynastream.Fit.DateTime(session.StartedAt.Value.UtcDateTime);
     var end = new Dynastream.Fit.DateTime(session.EndedAt.Value.UtcDateTime);
     uint serial = BitConverter.ToUInt32(session.Definition.SessionId.ToByteArray(), 0);
-    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(session.Samples);
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      session.Samples,
+      SessionCalorieCalculator.ReadWeightKilograms(session.Definition.ControllerConfigurationJson));
+    SessionElevationStatistics elevation = SessionElevationCalculator.Calculate(session.Samples);
     double? averageHeartRate = statistics.AverageHeartRateBpm ?? session.AverageHeartRateBpm;
     ushort? maximumHeartRate = statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm;
     float averageSpeed = (float)(session.AverageSpeedKph / 3.6);
     float? maximumSpeed = statistics.MaximumSpeedKph is { } maximumSpeedKph
       ? (float)(maximumSpeedKph / 3.6)
       : null;
-    ushort totalCalories = (ushort)Math.Clamp(Math.Round(session.EstimatedKilocalories), 0, ushort.MaxValue);
+    ushort totalCalories = (ushort)Math.Clamp(
+      Math.Round(statistics.EstimatedKilocalories ?? session.EstimatedKilocalories),
+      0,
+      ushort.MaxValue);
 
     var fileId = new FileIdMesg();
     fileId.SetType(Dynastream.Fit.File.Activity);
@@ -72,8 +83,9 @@ public static class SessionFitActivityExporter
     encoder.Write(fileId);
 
     encoder.Write(TimerEvent(start, EventType.Start));
-    foreach (SessionSample sample in session.Samples)
+    for (var sampleIndex = 0; sampleIndex < session.Samples.Count; sampleIndex++)
     {
+      SessionSample sample = session.Samples[sampleIndex];
       var record = new RecordMesg();
       record.SetTimestamp(new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime));
       float speed = (float)(sample.MeasuredSpeedKph / 3.6);
@@ -82,6 +94,9 @@ public static class SessionFitActivityExporter
       record.SetDistance((float)(sample.DistanceKilometers * 1000));
       if (sample.HeartRateBpm is { } heartRate) record.SetHeartRate((byte)Math.Min(heartRate, byte.MaxValue));
       record.SetGrade((float)sample.MeasuredInclinePercent);
+      float altitude = (float)elevation.Points[sampleIndex].ElevationMeters;
+      record.SetAltitude(altitude);
+      record.SetEnhancedAltitude(altitude);
       encoder.Write(record);
     }
     encoder.Write(TimerEvent(end, EventType.StopAll));
@@ -112,6 +127,8 @@ public static class SessionFitActivityExporter
     if (statistics.AverageInclinePercent is { } lapAverageGrade) lap.SetAvgGrade((float)lapAverageGrade);
     if (statistics.MinimumInclinePercent is { } lapMinimumGrade && lapMinimumGrade < 0) lap.SetMaxNegGrade((float)lapMinimumGrade);
     if (statistics.MaximumInclinePercent is { } lapMaximumGrade && lapMaximumGrade > 0) lap.SetMaxPosGrade((float)lapMaximumGrade);
+    lap.SetTotalAscent(ToFitElevation(statistics.TotalAscentMeters));
+    lap.SetTotalDescent(ToFitElevation(statistics.TotalDescentMeters));
     if (averageHeartRate is { } lapAverageHeartRate) lap.SetAvgHeartRate(ToFitHeartRate(lapAverageHeartRate));
     if (statistics.MinimumHeartRateBpm is { } lapMinimumHeartRate) lap.SetMinHeartRate(ToFitHeartRate(lapMinimumHeartRate));
     if (maximumHeartRate is { } lapMaximumHeartRate) lap.SetMaxHeartRate(ToFitHeartRate(lapMaximumHeartRate));
@@ -144,6 +161,8 @@ public static class SessionFitActivityExporter
     if (statistics.AverageInclinePercent is { } sessionAverageGrade) sessionMessage.SetAvgGrade((float)sessionAverageGrade);
     if (statistics.MinimumInclinePercent is { } sessionMinimumGrade && sessionMinimumGrade < 0) sessionMessage.SetMaxNegGrade((float)sessionMinimumGrade);
     if (statistics.MaximumInclinePercent is { } sessionMaximumGrade && sessionMaximumGrade > 0) sessionMessage.SetMaxPosGrade((float)sessionMaximumGrade);
+    sessionMessage.SetTotalAscent(ToFitElevation(statistics.TotalAscentMeters));
+    sessionMessage.SetTotalDescent(ToFitElevation(statistics.TotalDescentMeters));
     if (averageHeartRate is { } sessionAverageHeartRate) sessionMessage.SetAvgHeartRate(ToFitHeartRate(sessionAverageHeartRate));
     if (statistics.MinimumHeartRateBpm is { } sessionMinimumHeartRate) sessionMessage.SetMinHeartRate(ToFitHeartRate(sessionMinimumHeartRate));
     if (maximumHeartRate is { } sessionMaximumHeartRate) sessionMessage.SetMaxHeartRate(ToFitHeartRate(sessionMaximumHeartRate));
@@ -172,4 +191,7 @@ public static class SessionFitActivityExporter
 
   private static byte ToFitHeartRate(double heartRate) =>
     (byte)Math.Clamp(Math.Round(heartRate, MidpointRounding.AwayFromZero), 0, byte.MaxValue);
+
+  private static ushort ToFitElevation(double meters) =>
+    (ushort)Math.Clamp(Math.Round(meters, MidpointRounding.AwayFromZero), 0, ushort.MaxValue);
 }

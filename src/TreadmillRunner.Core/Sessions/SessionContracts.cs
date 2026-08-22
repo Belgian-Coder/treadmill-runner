@@ -3,6 +3,7 @@ namespace TreadmillRunner.Core.Sessions;
 public static class SessionMetricAlgorithms
 {
   public const string EstimatedCaloriesV1 = "estimated-calories/v1";
+  public const string EstimatedCaloriesV2 = "estimated-calories/acsm-speed-grade-v2";
   public const string AdherenceV1 = "adherence/v1";
 
   public const double SpeedAdherenceToleranceKph = 0.3;
