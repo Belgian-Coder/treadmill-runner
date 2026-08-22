@@ -219,7 +219,6 @@
 
     private void ActiveProfileChanged(Guid? selectedProfileId)
     {
-        if (profileId == selectedProfileId) return;
         _ = InvokeAsync(async () =>
         {
             profileId = selectedProfileId;
@@ -227,6 +226,7 @@
             historyDisplayLimit = 100;
             if (selectedSummary is not null) await CloseSessionDetailsAsync();
             await LoadAsync();
+            StateHasChanged();
         });
     }
 
