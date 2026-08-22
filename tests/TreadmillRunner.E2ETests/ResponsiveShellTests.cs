@@ -21,6 +21,10 @@ public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, ICl
     Assert.NotNull(box);
     Assert.InRange(box.Height, 44, 64);
 
+    // Keep the synthetic pointer away from the header while testing scroll-only
+    // behavior; pointerenter intentionally reveals the header for mouse users.
+    await Page.Mouse.MoveAsync(220, 500);
+
     await Page.EvaluateAsync("() => window.scrollTo(0, 700)");
     await Expect(header).ToHaveAttributeAsync("data-scroll-state", "hidden");
     await Page.EvaluateAsync("() => window.scrollBy(0, -100)");
