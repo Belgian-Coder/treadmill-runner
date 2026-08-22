@@ -468,6 +468,40 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task History_recovers_when_the_header_runner_is_reselected_from_a_stale_empty_state()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    int marcHistoryRequests = 0;
+    await Page.RouteAsync("**/api/history?*", async route =>
+    {
+      if (new Uri(route.Request.Url).Query.Contains(scenario.MarcProfileId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        Interlocked.Increment(ref marcHistoryRequests);
+      await route.ContinueAsync();
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator runnerPicker = Page.Locator("details.active-runner-picker");
+    ILocator runnerSummary = runnerPicker.Locator("summary");
+    await Expect(runnerSummary).ToContainTextAsync("Marc");
+
+    await Page.EvaluateAsync("() => window.localStorage.removeItem('treadmillrunner.active-profile')");
+    await Page.Locator(".primary-nav--desktop").GetByRole(AriaRole.Link, new() { Name = "History", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Choose a runner before viewing personal history, trends, and goals.", new() { Exact = true })).ToBeVisibleAsync();
+
+    await runnerSummary.ClickAsync();
+    await runnerPicker.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true }).ClickAsync();
+    await Page.WaitForFunctionAsync(
+      "id => window.localStorage.getItem('treadmillrunner.active-profile') === id",
+      scenario.MarcProfileId.ToString("D"));
+
+    await Expect(Page.GetByText("Choose a runner before viewing personal history, trends, and goals.", new() { Exact = true })).Not.ToBeVisibleAsync();
+    await Expect(runnerPicker).Not.ToHaveAttributeAsync("open", "");
+    Assert.True(marcHistoryRequests > 0, "History did not request the explicitly reselected runner.");
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Profile_save_network_failure_reenables_save_for_retry()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();

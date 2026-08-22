@@ -114,6 +114,12 @@ window.treadmillRunnerView = {
     let previousY = window.scrollY;
     let scheduled = false;
     const show = () => header.dataset.scrollState = "shown";
+    const closeDisclosure = (disclosure, restoreFocus = false) => {
+      if (!disclosure.open) return;
+      disclosure.open = false;
+      if (restoreFocus) disclosure.querySelector(":scope > summary")?.focus();
+    };
+    const openDisclosures = () => Array.from(header.querySelectorAll("details[open]"));
     const update = () => {
       scheduled = false;
       const currentY = window.scrollY;
@@ -130,15 +136,51 @@ window.treadmillRunnerView = {
       window.requestAnimationFrame(update);
     };
     const onInteraction = () => show();
+    const onDocumentPointerDown = event => {
+      if (!(event.target instanceof Node)) return;
+      openDisclosures()
+        .filter(disclosure => !disclosure.contains(event.target))
+        .forEach(disclosure => closeDisclosure(disclosure));
+    };
+    const onDocumentKeyDown = event => {
+      if (event.key !== "Escape") return;
+      const disclosures = openDisclosures();
+      const disclosure = disclosures[disclosures.length - 1];
+      if (!disclosure) return;
+      event.preventDefault();
+      closeDisclosure(disclosure, true);
+    };
+    const onHeaderClick = event => {
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest("a[href]");
+      if (!link) return;
+      const disclosure = link.closest("details[open]");
+      if (disclosure && header.contains(disclosure)) closeDisclosure(disclosure);
+    };
+    const onToggle = event => {
+      const disclosure = event.target;
+      if (disclosure instanceof HTMLDetailsElement && disclosure.open) {
+        openDisclosures()
+          .filter(other => other !== disclosure)
+          .forEach(other => closeDisclosure(other));
+      }
+      show();
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("pointerdown", onDocumentPointerDown);
+    document.addEventListener("keydown", onDocumentKeyDown);
     header.addEventListener("focusin", onInteraction);
     header.addEventListener("pointerenter", onInteraction);
-    header.addEventListener("toggle", onInteraction, true);
+    header.addEventListener("click", onHeaderClick);
+    header.addEventListener("toggle", onToggle, true);
     this.autoHideHeaderCleanup = () => {
       window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("pointerdown", onDocumentPointerDown);
+      document.removeEventListener("keydown", onDocumentKeyDown);
       header.removeEventListener("focusin", onInteraction);
       header.removeEventListener("pointerenter", onInteraction);
-      header.removeEventListener("toggle", onInteraction, true);
+      header.removeEventListener("click", onHeaderClick);
+      header.removeEventListener("toggle", onToggle, true);
     };
   },
   disposeAutoHideHeader: function () {

@@ -58,7 +58,9 @@
 
     private async Task SelectAsync(Guid profileId)
     {
-        if (profileId != activeProfileId) await ActiveProfile.SetAsync(profileId);
+        // An explicit choice is also a recovery signal for any runner-scoped
+        // page whose in-memory state no longer matches the persisted choice.
+        await ActiveProfile.SetAsync(profileId);
         activeProfileId = profileId;
         pickerRenderKey++;
         await InvokeAsync(StateHasChanged);

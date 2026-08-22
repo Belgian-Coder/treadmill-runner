@@ -1,10 +1,47 @@
 using Microsoft.Playwright;
 using Microsoft.Playwright.Xunit;
+using System.Text.RegularExpressions;
 
 namespace TreadmillRunner.E2ETests;
 
 public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, IClassFixture<GatewayFixture>
 {
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Mobile_header_disclosures_close_outside_on_escape_and_after_navigation()
+  {
+    await Page.SetViewportSizeAsync(390, 844);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    ILocator more = Page.Locator(".primary-nav--mobile .nav-more");
+    ILocator moreSummary = more.Locator("summary");
+    await moreSummary.ClickAsync();
+    await Expect(more).ToHaveAttributeAsync("open", "");
+    await Page.GetByRole(AriaRole.Heading, new() { Name = "History", Exact = true }).ClickAsync();
+    await Expect(more).Not.ToHaveAttributeAsync("open", "");
+
+    ILocator runnerPicker = Page.Locator("details.active-runner-picker");
+    ILocator runnerSummary = runnerPicker.Locator("summary");
+    await runnerSummary.ClickAsync();
+    await Expect(runnerPicker).ToHaveAttributeAsync("open", "");
+    await runnerSummary.PressAsync("Escape");
+    await Expect(runnerPicker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(runnerSummary).ToBeFocusedAsync();
+
+    await runnerSummary.ClickAsync();
+    await Expect(runnerPicker).ToHaveAttributeAsync("open", "");
+    await moreSummary.ClickAsync();
+    await Expect(more).ToHaveAttributeAsync("open", "");
+    await Expect(runnerPicker).Not.ToHaveAttributeAsync("open", "");
+
+    await more.GetByRole(AriaRole.Link, new() { Name = "Calendar", Exact = true }).ClickAsync();
+    await Expect(Page).ToHaveURLAsync(new Regex("/calendar$"));
+    await Expect(more).Not.ToHaveAttributeAsync("open", "");
+  }
+
   [Fact]
   [Trait("Category", "Browser")]
   public async Task Iphone17_shell_auto_hides_and_remains_keyboard_recoverable()
