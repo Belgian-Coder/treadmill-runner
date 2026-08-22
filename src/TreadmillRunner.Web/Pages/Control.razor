@@ -108,8 +108,10 @@
 
         <section class="control-console-grid control-console-grid--@FocusClass @(!liveStateConnected ? "control-console-grid--stale" : null)" aria-label="Live treadmill controls" aria-busy="@(isManualCommandPending || isStopPending)">
             <aside class="control-rail control-rail--speed" aria-labelledby="speed-control-title">
-                <span class="eyebrow">Target speed</span>
-                <h2 id="speed-control-title">@session.RequestedSpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></h2>
+                <div class="control-rail__heading">
+                    <span class="eyebrow">Target speed</span>
+                    <h2 id="speed-control-title">@session.RequestedSpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></h2>
+                </div>
                 <div class="rail-stepper" role="group" aria-label="Fine speed controls">
                     <button class="touch-action" type="button" aria-label="Speed -@SpeedIncrement.ToString("0.0", CultureInfo.InvariantCulture) km/h" @onclick="() => SetSpeedTargetAsync(session.RequestedSpeedKph - SpeedIncrement)" disabled="@(!CanAdjustSpeed)">−</button>
                     <button class="touch-action" type="button" aria-label="Speed +@SpeedIncrement.ToString("0.0", CultureInfo.InvariantCulture) km/h" @onclick="() => SetSpeedTargetAsync(session.RequestedSpeedKph + SpeedIncrement)" disabled="@(!CanAdjustSpeed)">+</button>
@@ -123,6 +125,11 @@
             </aside>
 
             <section class="control-center" aria-label="Live control center">
+                <section class="control-mode-metrics" aria-label="Control mode summary">
+                    <article><span>Measured speed</span><strong>@session.Live.SpeedKph.ToString("0.0", CultureInfo.InvariantCulture)<small> km/h</small></strong></article>
+                    <article><span>Heart rate</span><strong>@(session.Live.HeartRateBpm?.ToString(CultureInfo.InvariantCulture) ?? "—")<small>@(session.Live.HeartRateBpm is null ? null : " bpm")</small></strong></article>
+                    <article><span>Workout</span><strong>@FormatElapsed(session.WorkoutElapsed)</strong></article>
+                </section>
                 <section class="control-primary-metrics" aria-label="Live workout metrics">
                     @foreach (LiveMetric metric in primaryMetrics)
                     {
@@ -178,7 +185,9 @@
                                    ElapsedSeconds="@CurrentChartElapsedSeconds"
                                    DurationSeconds="@ChartDurationSeconds"
                                    MarkerX="@(LatestMeasuredPoint is { } latest ? ChartX(latest.Elapsed) : null)"
-                                   MarkerY="@(LatestMeasuredPoint is { } marker ? ChartY(marker.MeasuredSpeedKph, ChartBand.Speed) : null)">
+                                   MarkerY="@(LatestMeasuredPoint is { } marker ? ChartY(marker.MeasuredSpeedKph, ChartBand.Speed) : null)"
+                                   InspectionSeries="@ChartInspectionSeries"
+                                   InspectionPoints="@ChartInspectionPoints">
                     <HeaderActions>
                             <button class="secondary-action chart-focus-action" type="button" @onclick="ToggleChartFocus" aria-label="@(focusMode == ControlFocusMode.Chart ? "Collapse live graph" : "Expand live graph")" title="@(focusMode == ControlFocusMode.Chart ? "Back to dashboard" : "Expand graph")"><AppIcon Name="@(focusMode == ControlFocusMode.Chart ? "shrink" : "chart-expand")" /><span class="chart-focus-action__label">Back</span></button>
                     </HeaderActions>
@@ -218,8 +227,10 @@
             </section>
 
             <aside class="control-rail control-rail--incline" aria-labelledby="incline-control-title">
-                <span class="eyebrow">Target incline</span>
-                <h2 id="incline-control-title">@session.RequestedInclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></h2>
+                <div class="control-rail__heading">
+                    <span class="eyebrow">Target incline</span>
+                    <h2 id="incline-control-title">@session.RequestedInclinePercent.ToString("0.0", CultureInfo.InvariantCulture)<small>%</small></h2>
+                </div>
                 <div class="rail-stepper" role="group" aria-label="Fine incline controls">
                     <button class="touch-action" type="button" aria-label="Incline -@InclineIncrement.ToString("0.0", CultureInfo.InvariantCulture)%" @onclick="() => SetInclineTargetAsync(session.RequestedInclinePercent - InclineIncrement)" disabled="@(!CanAdjustIncline)">−</button>
                     <button class="touch-action" type="button" aria-label="Incline +@InclineIncrement.ToString("0.0", CultureInfo.InvariantCulture)%" @onclick="() => SetInclineTargetAsync(session.RequestedInclinePercent + InclineIncrement)" disabled="@(!CanAdjustIncline)">+</button>
@@ -270,6 +281,15 @@
 @code {
     private static readonly double[] PopularSpeeds = [5.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0];
     private static readonly double[] PopularInclines = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
+    private static readonly IReadOnlyList<ChartInspectionSeries> ChartInspectionSeries =
+    [
+        new("Speed", "Plan", "km/h", 1, "legend-line--plan"),
+        new("Speed", "Target", "km/h", 1, "legend-line--requested"),
+        new("Speed", "Measured", "km/h", 1, "legend-line--measured"),
+        new("Incline", "Plan", "%", 1, "legend-line--incline-plan"),
+        new("Incline", "Target", "%", 1, "legend-line--incline-target"),
+        new("Incline", "Measured", "%", 1, "legend-line--incline-measured"),
+    ];
     private BoundedLiveSeries<ControlChartPoint> chartPoints = new(43_200);
     private CancellationTokenSource? startHoldCancellation;
     private DotNetObjectReference<Control>? wakeLockReference;
@@ -1168,6 +1188,40 @@
     private string CurrentChartElapsedSeconds => (session?.Live.Elapsed.TotalSeconds ?? 0).ToString("0.###", CultureInfo.InvariantCulture);
     private string ChartDurationSeconds => ChartDuration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
     private ControlChartPoint? LatestMeasuredPoint => chartPoints.Snapshot().LastOrDefault();
+    private IReadOnlyList<ChartInspectionPoint> ChartInspectionPoints
+    {
+        get
+        {
+            var points = new SortedDictionary<long, (TimeSpan Elapsed, double?[] Values)>();
+            foreach (ControlChartPoint point in RenderChartPoints())
+            {
+                points[point.Elapsed.Ticks] = (point.Elapsed,
+                [
+                    point.PlannedSpeedKph,
+                    point.RequestedSpeedKph,
+                    point.MeasuredSpeedKph,
+                    point.PlannedInclinePercent,
+                    point.RequestedInclinePercent,
+                    point.MeasuredInclinePercent,
+                ]);
+            }
+
+            foreach (WorkoutPlanPoint point in session?.WorkoutPlan ?? [])
+            {
+                if (!points.TryGetValue(point.Elapsed.Ticks, out var inspection))
+                {
+                    inspection = (point.Elapsed, new double?[6]);
+                    points[point.Elapsed.Ticks] = inspection;
+                }
+                inspection.Values[0] = point.SpeedKph;
+                inspection.Values[3] = point.InclinePercent;
+            }
+
+            return points.Values
+                .Select(item => new ChartInspectionPoint(item.Elapsed, ChartX(item.Elapsed), item.Values))
+                .ToArray();
+        }
+    }
 
     private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalHours >= 1
         ? elapsed.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)

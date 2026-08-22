@@ -1,0 +1,94 @@
+@using System.Globalization
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div @ref="root"
+     class="chart-inspector @(Enabled ? "chart-inspector--enabled" : null)"
+     data-chart-inspector
+     data-chart-label="@AriaLabel">
+    <div class="chart-inspector__surface"
+         tabindex="@(Enabled ? "0" : null)"
+         role="@(Enabled ? "group" : null)"
+         aria-label="@(Enabled ? AriaLabel : null)">
+        @ChildContent
+        @if (Enabled)
+        {
+            <span class="chart-inspector__crosshair" data-chart-crosshair hidden aria-hidden="true"></span>
+            <aside class="chart-inspector__tooltip" data-chart-tooltip role="status" aria-live="off" hidden>
+                <header><strong data-chart-time>0:00</strong><span>Selected point</span></header>
+                @foreach (IGrouping<string, IndexedSeries> group in IndexedSeriesByGroup)
+                {
+                    <section class="chart-inspector__group" aria-label="@group.Key values">
+                        <div><strong>@group.Key</strong><span>@GroupUnit(group)</span></div>
+                        <dl>
+                            @foreach (IndexedSeries item in group)
+                            {
+                                <div>
+                                    <dt><i class="legend-line @item.Series.LegendClass" aria-hidden="true"></i>@item.Series.Label</dt>
+                                    <dd data-chart-value="@item.Index"
+                                        data-chart-label="@($"{group.Key} {item.Series.Label}")"
+                                        data-chart-unit="@item.Series.Unit"
+                                        data-chart-decimals="@item.Series.DecimalPlaces">—</dd>
+                                </div>
+                            }
+                        </dl>
+                    </section>
+                }
+            </aside>
+        }
+    </div>
+    @if (Enabled)
+    {
+        <span class="visually-hidden" data-chart-announcement role="status" aria-live="polite"></span>
+        <div class="chart-inspector__data" hidden aria-hidden="true">
+            @foreach (ChartInspectionPoint point in Points)
+            {
+                <i data-chart-point
+                   data-x="@point.X.ToString("0.###", CultureInfo.InvariantCulture)"
+                   data-elapsed="@point.Elapsed.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)"
+                   data-values="@FormatValues(point.Values)"></i>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public IReadOnlyList<ChartInspectionSeries> Series { get; set; } = [];
+    [Parameter] public IReadOnlyList<ChartInspectionPoint> Points { get; set; } = [];
+    [Parameter] public string AriaLabel { get; set; } = "Interactive chart. Hover, touch and drag, or use Left and Right arrow keys to inspect plotted values.";
+
+    private ElementReference root;
+    private IJSObjectReference? module;
+    private bool Enabled => Series.Count > 0 && Points.Count > 0;
+    private IEnumerable<IGrouping<string, IndexedSeries>> IndexedSeriesByGroup =>
+        Series.Select((series, index) => new IndexedSeries(index, series)).GroupBy(static item => item.Series.Group);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./chart-inspector.js");
+        await module.InvokeVoidAsync("initialize", root);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try
+        {
+            await module.InvokeVoidAsync("dispose", root);
+            await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser can disconnect while navigation tears down the component.
+        }
+    }
+
+    private static string FormatValues(IReadOnlyList<double?> values) => string.Join('|', values.Select(static value =>
+        value?.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty));
+
+    private static string GroupUnit(IEnumerable<IndexedSeries> group) =>
+        group.Select(static item => item.Series.Unit).Distinct(StringComparer.Ordinal).SingleOrDefault() ?? string.Empty;
+
+    private sealed record IndexedSeries(int Index, ChartInspectionSeries Series);
+}

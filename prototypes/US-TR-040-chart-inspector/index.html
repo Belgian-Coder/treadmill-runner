@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TR-040 chart inspector mock</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #061821; color: #eefbf8; }
+    .chart-card { width: min(980px, 100%); padding: 18px; border: 1px solid #315361; border-radius: 20px; background: #08232d; box-shadow: 0 24px 70px #0008; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .eyebrow { color: #91abaa; font: 700 12px/1 ui-monospace, monospace; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 5px 0 0; font-size: 26px; }
+    .hint { max-width: 390px; color: #b9ceca; font-size: 14px; text-align: right; }
+    .plot { position: relative; height: min(58vh, 480px); min-height: 300px; margin-top: 18px; touch-action: none; outline: none; }
+    .plot:focus-visible { border-radius: 12px; box-shadow: 0 0 0 3px #7ce7c7; }
+    svg { width: 100%; height: 100%; overflow: visible; }
+    .grid { stroke: #31505a; stroke-width: 1; }
+    .speed-plan { fill: none; stroke: #74e0bd; stroke-width: 5; }
+    .speed-target { fill: none; stroke: #8bcdf5; stroke-width: 4; stroke-dasharray: 5 6; }
+    .speed-measured { fill: none; stroke: #ffd16a; stroke-width: 4; stroke-dasharray: 12 7; }
+    .incline-plan { fill: none; stroke: #a68af4; stroke-width: 5; }
+    .incline-target { fill: none; stroke: #ef8fc7; stroke-width: 4; stroke-dasharray: 5 6; }
+    .incline-measured { fill: none; stroke: #ff9f66; stroke-width: 4; stroke-dasharray: 12 7; }
+    .current { stroke: #ffd16a; stroke-width: 2; }
+    .inspect { stroke: #f5ffff; stroke-width: 2; stroke-dasharray: 4 4; filter: drop-shadow(0 0 4px #03161d); }
+    .dot { fill: #fff; stroke: #061821; stroke-width: 2; }
+    .tooltip { position: absolute; top: 14px; left: 54%; z-index: 2; width: min(280px, 44%); padding: 13px 14px; border: 1px solid #76cbb8; border-radius: 14px; background: #061a23f2; box-shadow: 0 12px 30px #0009; pointer-events: none; }
+    .tooltip[data-side="left"] { left: auto; right: 54%; }
+    .tooltip strong { display: block; margin-bottom: 9px; font-size: 17px; }
+    .group { display: grid; grid-template-columns: 1fr repeat(3, auto); gap: 5px 12px; align-items: center; padding-top: 8px; border-top: 1px solid #31505a; }
+    .group + .group { margin-top: 8px; }
+    .group b { color: #d9ece8; }
+    .label { color: #91abaa; font-size: 12px; }
+    .value { min-width: 54px; font: 700 13px/1.4 ui-monospace, monospace; text-align: right; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 12px; color: #b9ceca; font-size: 13px; }
+    .legend span::before { content: ""; display: inline-block; width: 22px; margin-right: 6px; border-top: 3px solid var(--c); vertical-align: 3px; }
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      .chart-card { padding: 12px; border-radius: 15px; }
+      header { align-items: flex-start; }
+      h1 { font-size: 20px; }
+      .hint { display: none; }
+      .plot { height: 62vh; min-height: 360px; }
+      .tooltip { top: 8px; left: 47%; width: 51%; padding: 10px; }
+      .tooltip[data-side="left"] { right: 47%; }
+      .group { gap: 4px 7px; }
+      .value { min-width: 40px; font-size: 11px; }
+      .label { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="chart-card">
+    <header>
+      <div><span class="eyebrow">This run</span><h1>Progress</h1></div>
+      <div class="hint">Hover, tap, or drag. With keyboard focus, use Left/Right and Escape.</div>
+    </header>
+    <div class="plot" tabindex="0" role="application" aria-label="Interactive workout chart. Use left and right arrows to inspect values.">
+      <svg viewBox="0 0 720 300" preserveAspectRatio="none" aria-hidden="true">
+        <g class="grid">
+          <line x1="10" y1="45" x2="710" y2="45"/><line x1="10" y1="95" x2="710" y2="95"/>
+          <line x1="10" y1="145" x2="710" y2="145"/><line x1="10" y1="195" x2="710" y2="195"/>
+          <line x1="10" y1="245" x2="710" y2="245"/><line x1="10" y1="290" x2="710" y2="290"/>
+        </g>
+        <path class="speed-plan" d="M10 205 L118 205 L118 98 L172 98 L172 205 L226 205 L226 98 L280 98 L280 205 L334 205 L334 98 L388 98 L388 205 L442 205 L442 98 L496 98 L496 205 L710 205"/>
+        <path class="speed-target" d="M10 207 L118 207 L118 101 L172 101 L172 207 L226 207 L226 101 L280 101 L280 207 L334 207 L334 101 L388 101 L388 207 L442 207 L442 101 L496 101 L496 207 L710 207"/>
+        <path class="speed-measured" d="M10 209 L118 209 L126 107 L168 104 L176 211 L227 208 L236 107 L275 103 L284 209 L335 209 L343 105 L383 101 L392 210 L443 207 L451 106 L490 105 L500 208 L710 208"/>
+        <path class="incline-plan" d="M10 270 L710 270"/><path class="incline-target" d="M10 270 L710 270"/><path class="incline-measured" d="M10 270 L280 270 L290 258 L301 270 L710 270"/>
+        <line class="current" x1="640" x2="640" y1="20" y2="290"/>
+        <line class="inspect" x1="392" x2="392" y1="20" y2="290"/>
+        <circle class="dot" cx="392" cy="210" r="5"/><circle class="dot" cx="392" cy="270" r="5"/>
+      </svg>
+      <aside class="tooltip" role="status" aria-live="polite">
+        <strong>18:14</strong>
+        <div class="group"><b>Speed</b><span class="label">Plan</span><span class="label">Target</span><span class="label">Measured</span><span></span><span class="value">5.0</span><span class="value">5.0</span><span class="value">4.9 km/h</span></div>
+        <div class="group"><b>Incline</b><span class="label">Plan</span><span class="label">Target</span><span class="label">Measured</span><span></span><span class="value">1.0</span><span class="value">1.0</span><span class="value">1.1 %</span></div>
+      </aside>
+    </div>
+    <div class="legend"><span style="--c:#74e0bd">Speed plan</span><span style="--c:#8bcdf5">Speed target</span><span style="--c:#ffd16a">Speed measured</span><span style="--c:#a68af4">Incline plan</span><span style="--c:#ef8fc7">Incline target</span><span style="--c:#ff9f66">Incline measured</span></div>
+  </main>
+  <script>
+    const plot = document.querySelector('.plot');
+    const line = document.querySelector('.inspect');
+    const dots = [...document.querySelectorAll('.dot')];
+    const tip = document.querySelector('.tooltip');
+    const positions = [118, 172, 226, 280, 334, 392, 442, 496, 550, 604];
+    let index = 5;
+    function select(clientX) {
+      const rect = plot.getBoundingClientRect();
+      const x = Math.max(10, Math.min(710, (clientX - rect.left) / rect.width * 720));
+      index = positions.reduce((best, value, i) => Math.abs(value - x) < Math.abs(positions[best] - x) ? i : best, 0);
+      render();
+    }
+    function render() {
+      const x = positions[index];
+      line.setAttribute('x1', x); line.setAttribute('x2', x);
+      dots.forEach(dot => dot.setAttribute('cx', x));
+      tip.dataset.side = x > 430 ? 'left' : 'right';
+      tip.querySelector('strong').textContent = `${12 + index}:1${index}`;
+    }
+    plot.addEventListener('pointerdown', event => { plot.setPointerCapture(event.pointerId); select(event.clientX); });
+    plot.addEventListener('pointermove', event => { if (event.pointerType === 'mouse' || plot.hasPointerCapture(event.pointerId)) select(event.clientX); });
+    plot.addEventListener('keydown', event => {
+      if (event.key === 'ArrowLeft') { index = Math.max(0, index - 1); render(); event.preventDefault(); }
+      if (event.key === 'ArrowRight') { index = Math.min(positions.length - 1, index + 1); render(); event.preventDefault(); }
+      if (event.key === 'Escape') plot.blur();
+    });
+  </script>
+</body>
+</html>

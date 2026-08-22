@@ -13,8 +13,12 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 {
   public static TheoryData<string, int, int> Viewports => new()
   {
+    { "phone-narrow", 320, 800 },
+    { "phone-portrait", 390, 844 },
     { "iphone17-pro-max", 440, 956 },
+    { "phone-landscape", 844, 390 },
     { "iphone17-pro-max-landscape", 956, 440 },
+    { "ipad-portrait", 820, 1180 },
     { "tablet", 1180, 820 },
     { "desktop", 1920, 1080 },
   };
@@ -503,12 +507,22 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(controlsFocus).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
       new System.Text.RegularExpressions.Regex("control-page--controls"));
+    bool isPhoneViewport = width <= 650 || (height <= 500 && width <= 1000);
+    if (isPhoneViewport)
+    {
+      await SaveTr039EvidenceAsync(gateway.ProjectRoot, $"controls-{viewport}");
+      await AssertNoScrollMobileControlsAsync(viewport, width, height);
+    }
     await chartFocus.ClickAsync();
     await Expect(chartFocus).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
       new System.Text.RegularExpressions.Regex("control-page--chart"));
-    if (width == 440)
+    if (isPhoneViewport)
+    {
+      await AssertFocusedMobileChartAsync(viewport, width, height);
+      await SaveTr039EvidenceAsync(gateway.ProjectRoot, $"chart-{viewport}");
       await Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true }).ClickAsync();
+    }
     else
       await balancedFocus.ClickAsync();
     await Expect(balancedFocus).ToHaveAttributeAsync("aria-pressed", "true");
@@ -976,6 +990,181 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     Assert.Equal(1, Volatile.Read(ref speedRequests));
     Assert.Equal(1, Volatile.Read(ref stopRequests));
+  }
+
+  private async Task AssertNoScrollMobileControlsAsync(string viewport, int width, int height)
+  {
+    ILocator summary = Page.GetByLabel("Control mode summary", new() { Exact = true });
+    await Expect(summary).ToBeVisibleAsync();
+    await Expect(summary).ToContainTextAsync("Measured speed");
+    await Expect(summary).ToContainTextAsync("Heart rate");
+    await Expect(summary).ToContainTextAsync("Workout");
+
+    ILocator mobileControls = Page.Locator(
+      ".control-console-grid--controls .control-rail button, .control-console-grid--controls .control-action-dock button");
+    await Expect(mobileControls).ToHaveCountAsync(22);
+    for (int index = 0; index < await mobileControls.CountAsync(); index++)
+    {
+      ILocator control = mobileControls.Nth(index);
+      await Expect(control).ToBeVisibleAsync();
+      LocatorBoundingBoxResult? box = await control.BoundingBoxAsync();
+      Assert.NotNull(box);
+      string targetName = await control.GetAttributeAsync("aria-label") ?? $"target {index + 1}";
+      Assert.True(box.Width >= 44 && box.Height >= 44,
+        $"Mobile Controls {targetName} was smaller than 44px at {viewport}: " +
+        $"x={box.X:F1}, y={box.Y:F1}, width={box.Width:F1}, height={box.Height:F1}.");
+      Assert.True(box.X >= -1 && box.X + box.Width <= width + 1 && box.Y >= -1 && box.Y + box.Height <= height + 1,
+        $"Mobile Controls {targetName} was outside the {viewport} viewport: " +
+        $"x={box.X:F1}, y={box.Y:F1}, width={box.Width:F1}, height={box.Height:F1}, viewport={width}x{height}.");
+    }
+
+    foreach (ILocator rail in await Page.Locator(".control-console-grid--controls .control-rail").AllAsync())
+    {
+      bool needsInternalScroll = await rail.EvaluateAsync<bool>("""
+        element => {
+          const style = getComputedStyle(element);
+          return element.scrollHeight > element.clientHeight + 1 || style.overflowY === 'auto' || style.overflowY === 'scroll';
+        }
+        """);
+      Assert.False(needsInternalScroll, $"Controls mode retained an internally scrolling rail at {viewport}.");
+    }
+
+    Assert.Equal(0, await Page.EvaluateAsync<double>("window.scrollY"));
+    Assert.False(await Page.EvaluateAsync<bool>(
+      "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"));
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Live_chart_inspector_supports_hover_touch_keyboard_and_missing_values()
+  {
+    await Page.SetViewportSizeAsync(390, 844);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync("tr040-live-chart-inspector");
+
+    try
+    {
+      await PrepareActiveControlAsync(plan);
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Chart", Exact = true }).ClickAsync();
+
+      ILocator inspector = Page.Locator(".control-live-chart--focused .chart-inspector--enabled");
+      ILocator surface = inspector.Locator(".chart-inspector__surface");
+      ILocator tooltip = inspector.Locator("[data-chart-tooltip]");
+      ILocator crosshair = inspector.Locator("[data-chart-crosshair]");
+      await Expect(surface).ToBeVisibleAsync();
+      LocatorBoundingBoxResult? surfaceBox = await surface.BoundingBoxAsync();
+      Assert.NotNull(surfaceBox);
+
+      await Page.Mouse.MoveAsync(surfaceBox.X + 12, surfaceBox.Y + (surfaceBox.Height / 2));
+      await Expect(tooltip).ToBeVisibleAsync();
+      await Expect(crosshair).ToBeVisibleAsync();
+      await Expect(tooltip.Locator("[data-chart-value]")).ToHaveCountAsync(6);
+      await Expect(tooltip).ToContainTextAsync("Speed");
+      await Expect(tooltip).ToContainTextAsync("Incline");
+      await Expect(tooltip).ToContainTextAsync("km/h");
+      await Expect(tooltip).ToContainTextAsync("%");
+      await Expect(inspector.Locator(".chart-cursor")).ToHaveCountAsync(1);
+
+      LocatorBoundingBoxResult? tooltipBox = await tooltip.BoundingBoxAsync();
+      Assert.NotNull(tooltipBox);
+      Assert.True(tooltipBox.X >= surfaceBox.X - 1 && tooltipBox.X + tooltipBox.Width <= surfaceBox.X + surfaceBox.Width + 1,
+        $"Live chart tooltip escaped the plot horizontally: tooltip={tooltipBox}, surface={surfaceBox}.");
+
+      await surface.FocusAsync();
+      await surface.PressAsync("Home");
+      await Expect(tooltip.Locator("[data-chart-time]")).ToHaveTextAsync("0:00");
+      string firstAnnouncement = await inspector.Locator("[data-chart-announcement]").TextContentAsync() ?? string.Empty;
+      Assert.Contains("Speed", firstAnnouncement, StringComparison.Ordinal);
+      await surface.PressAsync("ArrowRight");
+      await Expect(tooltip).ToBeVisibleAsync();
+      await surface.PressAsync("Escape");
+      await Expect(tooltip).ToBeHiddenAsync();
+
+      await surface.DispatchEventAsync("pointerdown", new
+      {
+        pointerType = "touch",
+        pointerId = 41,
+        clientX = surfaceBox.X + (surfaceBox.Width * .88),
+        clientY = surfaceBox.Y + (surfaceBox.Height * .55),
+        bubbles = true,
+      });
+      await Expect(tooltip).ToBeVisibleAsync();
+      await Page.Locator(".control-page__header h1").ClickAsync();
+      await Expect(tooltip).ToBeHiddenAsync();
+
+      await surface.FocusAsync();
+      await surface.PressAsync("End");
+      await Expect(tooltip).ToContainTextAsync("—");
+      await surface.PressAsync("Escape");
+
+      foreach (string name in new[] { "Pause", "Stop" })
+      {
+        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true })).ToBeVisibleAsync();
+      }
+      Assert.False(await Page.EvaluateAsync<bool>(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"));
+    }
+    finally
+    {
+      await ResetSimulatorAsync();
+    }
+  }
+
+  private async Task AssertFocusedMobileChartAsync(string viewport, int width, int height)
+  {
+    ILocator collapse = Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true });
+    await Expect(collapse).ToBeVisibleAsync();
+    LocatorBoundingBoxResult? collapseBox = await collapse.BoundingBoxAsync();
+    Assert.NotNull(collapseBox);
+    Assert.True(collapseBox.Width >= 44 && collapseBox.Height >= 44,
+      $"Focused Chart Back target was smaller than 44px at {viewport}: {collapseBox}.");
+
+    ILocator focusedGraph = Page.Locator(".control-live-chart--focused");
+    await Expect(focusedGraph).ToBeVisibleAsync();
+    LocatorBoundingBoxResult? graphBox = await focusedGraph.BoundingBoxAsync();
+    Assert.NotNull(graphBox);
+    if (height <= 500)
+    {
+      LocatorBoundingBoxResult? consoleBox = await Page.Locator(".control-console-grid--chart").BoundingBoxAsync();
+      LocatorBoundingBoxResult? dockBox = await Page.Locator(".control-console-grid--chart .control-action-dock").BoundingBoxAsync();
+      Assert.NotNull(consoleBox);
+      Assert.NotNull(dockBox);
+      double availableGraphWidth = consoleBox.Width - dockBox.Width - 16;
+      Assert.True(graphBox.Width >= availableGraphWidth * .98 && graphBox.Height >= height - 100,
+        $"Focused landscape graph did not fill the space beside Pause/Stop at {viewport}: " +
+        $"graph={graphBox.Width:F1}x{graphBox.Height:F1}, available={availableGraphWidth:F1}x{height - 100}.");
+    }
+    else
+    {
+      Assert.True(graphBox.Width >= width - 24 && graphBox.Height >= height * .62,
+        $"Focused portrait graph did not fill the available screen at {viewport}: {graphBox}.");
+    }
+
+    await Expect(focusedGraph.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(focusedGraph.GetByLabel("Incline axis in percent", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(focusedGraph.GetByLabel("Elapsed time axis", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(focusedGraph.GetByLabel("Chart legend", new() { Exact = true })).ToBeVisibleAsync();
+
+    foreach (string name in new[] { "Pause", "Stop" })
+    {
+      ILocator motionControl = Page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true });
+      LocatorBoundingBoxResult? box = await motionControl.BoundingBoxAsync();
+      Assert.NotNull(box);
+      Assert.True(box.Width >= 44 && box.Height >= 44 && box.X >= -1 && box.X + box.Width <= width + 1 && box.Y >= -1 && box.Y + box.Height <= height + 1,
+        $"{name} was not safely visible with the focused graph at {viewport}: " +
+        $"x={box.X:F1}, y={box.Y:F1}, width={box.Width:F1}, height={box.Height:F1}, viewport={width}x{height}.");
+    }
+  }
+
+  private async Task SaveTr039EvidenceAsync(string projectRoot, string name)
+  {
+    string evidenceDirectory = Path.Combine(projectRoot, "output", "playwright", "tr-039");
+    Directory.CreateDirectory(evidenceDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(evidenceDirectory, $"{name}.png"),
+      FullPage = false
+    });
   }
 
   private async Task PrepareActiveControlAsync(SeededPlan plan)

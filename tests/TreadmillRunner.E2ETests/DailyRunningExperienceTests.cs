@@ -359,7 +359,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     ILocator stop = Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true });
     await AssertInsideViewportAsync(stop, "iphone17-pro-max live start");
     await Expect(Page.GetByText("Target speed", new() { Exact = true })).ToBeVisibleAsync();
-    await Expect(Page.GetByText("Measured speed", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToBeVisibleAsync();
     ILocator speedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
     await Expect(speedAxis).ToContainTextAsync("km/h");
     await Expect(speedAxis.Locator("span")).ToHaveCountAsync(10);

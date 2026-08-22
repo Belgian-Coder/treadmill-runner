@@ -742,6 +742,57 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Historical_chart_inspector_exposes_all_series_and_heart_rate_at_phone_width()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.SetViewportSizeAsync(390, 844);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/history/{scenario.HistorySessionId:D}").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator speedInspector = Page.GetByRole(AriaRole.Heading, new() { Name = "Planned versus actual", Exact = true })
+      .Locator("xpath=ancestor::section[contains(concat(' ', normalize-space(@class), ' '), ' route-card ')][1]")
+      .Locator(".chart-inspector--enabled");
+    ILocator speedSurface = speedInspector.Locator(".chart-inspector__surface");
+    ILocator speedTooltip = speedInspector.Locator("[data-chart-tooltip]");
+    await Expect(speedSurface).ToBeVisibleAsync();
+    await speedSurface.ScrollIntoViewIfNeededAsync();
+    LocatorBoundingBoxResult? speedBox = await speedSurface.BoundingBoxAsync();
+    Assert.NotNull(speedBox);
+    await Page.Mouse.MoveAsync(speedBox.X + speedBox.Width - 6, speedBox.Y + (speedBox.Height / 2));
+    await Expect(speedTooltip).ToBeVisibleAsync();
+    await Expect(speedTooltip.Locator("[data-chart-value]")).ToHaveCountAsync(6);
+    await Expect(speedTooltip).ToContainTextAsync("Plan");
+    await Expect(speedTooltip).ToContainTextAsync("Target");
+    await Expect(speedTooltip).ToContainTextAsync("Measured");
+    LocatorBoundingBoxResult? speedTooltipBox = await speedTooltip.BoundingBoxAsync();
+    Assert.NotNull(speedTooltipBox);
+    Assert.True(speedTooltipBox.X >= speedBox.X - 1 && speedTooltipBox.X + speedTooltipBox.Width <= speedBox.X + speedBox.Width + 1,
+      $"Historical speed tooltip escaped the phone plot: tooltip={speedTooltipBox}, surface={speedBox}.");
+
+    ILocator heartRateInspector = Page.GetByRole(AriaRole.Heading, new() { Name = "Heart rate", Exact = true })
+      .Locator("xpath=ancestor::section[contains(concat(' ', normalize-space(@class), ' '), ' route-card ')][1]")
+      .Locator(".chart-inspector--enabled");
+    ILocator heartRateSurface = heartRateInspector.Locator(".chart-inspector__surface");
+    ILocator heartRateTooltip = heartRateInspector.Locator("[data-chart-tooltip]");
+    await heartRateSurface.ScrollIntoViewIfNeededAsync();
+    await heartRateSurface.FocusAsync();
+    await heartRateSurface.PressAsync("End");
+    await Expect(heartRateTooltip).ToBeVisibleAsync();
+    await Expect(heartRateTooltip.Locator("[data-chart-value]")).ToHaveCountAsync(1);
+    await Expect(heartRateTooltip).ToContainTextAsync("bpm");
+    await Expect(heartRateInspector.Locator("[data-chart-announcement]")).ToContainTextAsync("Heart rate Measured");
+    await heartRateSurface.PressAsync("Escape");
+    await Expect(heartRateTooltip).ToBeHiddenAsync();
+
+    Assert.False(await Page.EvaluateAsync<bool>(
+      "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"));
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Calendar_and_history_items_open_complete_read_only_detail_sheets()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
