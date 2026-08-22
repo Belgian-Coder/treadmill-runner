@@ -15,6 +15,7 @@ public sealed record GarminActivitySettingsRequest(bool Enabled, string WatchAct
 public sealed record GarminActivityDisconnectRequest(int ExpectedVersion);
 public sealed record GarminActivityTestRequest(Guid OperationId, int ExpectedVersion);
 public sealed record GarminActivityFoundRequest(Guid OperationId);
+public sealed record GarminActivityReprocessRequest(Guid OperationId);
 public sealed record GarminActivityUploadStatusResponse(
   Guid ProfileId,
   bool Connected,
@@ -49,6 +50,7 @@ public static class GarminActivityUploadEndpoints
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/retry", RetryAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/dismiss", DismissAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/acknowledge-found", AcknowledgeFoundAsync);
+    group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/reprocess-merge", ReprocessMergeAsync);
     return endpoints;
   }
 
@@ -300,6 +302,47 @@ public static class GarminActivityUploadEndpoints
       return job is null
         ? TypedResults.Conflict(new { error = "The completed Garmin acknowledgment could not be read." })
         : TypedResults.Ok(job);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
+  }
+
+  private static async Task<IResult> ReprocessMergeAsync(
+    Guid profileId,
+    Guid jobId,
+    GarminActivityReprocessRequest request,
+    IGarminActivityUploadStore store,
+    GarminActivityUploadWorker worker,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (request.OperationId == Guid.Empty)
+      return TypedResults.BadRequest(new { error = "OperationId is required." });
+    string fingerprint = PlanningOperationFingerprint.Compute(new { profileId, jobId });
+    try
+    {
+      GarminActivityUploadJob job = await store.ReprocessLegacyConfirmedForMergeAsync(
+        jobId,
+        profileId,
+        request.OperationId,
+        fingerprint,
+        timeProvider.GetUtcNow(),
+        cancellationToken);
+      worker.Wake();
+      return Results.Accepted(value: job);
+    }
+    catch (OperationReplayException replay)
+    {
+      if (replay.Receipt.OperationType != "garmin.activity.reprocess-merge" || replay.Receipt.RequestFingerprint != fingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      GarminActivityUploadJob? job = JsonSerializer.Deserialize<GarminActivityUploadJob>(replay.Receipt.OutcomeJson);
+      return job is null
+        ? TypedResults.Conflict(new { error = "The completed Garmin reprocess operation could not be read." })
+        : Results.Accepted(value: job);
     }
     catch (OperationScopeConflictException)
     {
