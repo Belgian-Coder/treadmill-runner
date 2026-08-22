@@ -81,7 +81,13 @@
                                     <button class="secondary-action" type="button" @onclick="() => ReprocessMergeAsync(job.Id)">Re-run merge check</button>
                                 }
                                 @if (job.CanRetry) { <button class="secondary-action" type="button" @onclick="() => RetryAsync(job.Id)">Retry known failure</button> }
-                                @if (job.Status == "Unknown" && confirmFoundJobId == job.Id)
+                                @if (job.Status == "Unknown" && confirmAbsentJobId == job.Id)
+                                {
+                                    <span class="field-error" role="status">Confirm only after waiting at least five minutes and checking Garmin Connect for a matching activity.</span>
+                                    <button class="touch-action primary-action" type="button" disabled="@busy" @onclick="() => ConfirmAbsentAndRetryAsync(job.Id)">Confirm absent and retry</button>
+                                    <button class="touch-action secondary-action" type="button" disabled="@busy" @onclick="() => confirmAbsentJobId = null">Cancel</button>
+                                }
+                                else if (job.Status == "Unknown" && confirmFoundJobId == job.Id)
                                 {
                                     <span class="field-error" role="status">Confirm only after you visually found this activity in Garmin Connect.</span>
                                     <button class="touch-action primary-action" type="button" disabled="@busy" @onclick="() => AcknowledgeFoundAsync(job.Id)">Confirm found</button>
@@ -89,7 +95,11 @@
                                 }
                                 else if (job.Status == "Unknown")
                                 {
-                                    <button class="primary-action" type="button" @onclick="() => confirmFoundJobId = job.Id">Found in Garmin</button>
+                                    <button class="primary-action" type="button" @onclick="() => { confirmFoundJobId = job.Id; confirmAbsentJobId = null; }">Found in Garmin</button>
+                                    @if (CanConfirmAbsent(job))
+                                    {
+                                        <button class="secondary-action" type="button" @onclick="() => { confirmAbsentJobId = job.Id; confirmFoundJobId = null; }">Not found—retry</button>
+                                    }
                                 }
                                 @if (job.Status is "Failed" or "Unknown") { <button class="secondary-action" type="button" @onclick="() => DismissAsync(job.Id)">Dismiss</button> }
                             </div>
@@ -145,7 +155,7 @@
     private GarminWatchBindingView? watchBinding;
     private List<GarminActivityJobView> jobs = [];
     private bool loading = true, watchLoading = true, busy, enableAfterConnect, confirmDisconnect;
-    private Guid? confirmFoundJobId;
+    private Guid? confirmFoundJobId, confirmAbsentJobId;
     private string email = string.Empty, password = string.Empty, mfaCode = string.Empty, watchLabel = "Garmin watch", watchActivityHandling = "PreferWatch", message = string.Empty, watchMessage = string.Empty, oneTimeWatchToken = string.Empty;
     private string jobsLoadError = string.Empty, watchLoadError = string.Empty;
     private Guid? challengeId;
@@ -290,6 +300,22 @@
             confirmFoundJobId = null;
             await LoadAsync();
             message = "Marked as found in Garmin. This is your acknowledgment, not provider confirmation, and it will not be retried.";
+        }
+    }
+    private static bool CanConfirmAbsent(GarminActivityJobView job) =>
+        job.Status == "Unknown" && job.RemoteId is null && job.ReplacementRemoteId is null &&
+        job.OperationPhase is "Upload" or "ReplacementUpload";
+    private async Task ConfirmAbsentAndRetryAsync(Guid jobId)
+    {
+        if (confirmAbsentJobId != jobId) return;
+        Guid operationId = Guid.NewGuid();
+        if (await SendAsync(
+            () => Http.PostAsJsonAsync($"api/integrations/garmin/activity-upload/profiles/{ProfileId}/jobs/{jobId}/confirm-absent-retry", new { operationId, confirmation = "NOT FOUND" }),
+            "Only an uncertain upload that was verified absent in Garmin can be retried."))
+        {
+            confirmAbsentJobId = null;
+            await LoadAsync();
+            message = "The absent activity was acknowledged and the job was queued for a fresh Garmin check.";
         }
     }
     private async Task PairWatchAsync()

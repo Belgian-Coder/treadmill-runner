@@ -104,6 +104,13 @@ public interface IGarminActivityUploadStore
     string requestFingerprint,
     DateTimeOffset nowUtc,
     CancellationToken cancellationToken = default);
+  Task<GarminActivityUploadJob> RetryUnknownVerifiedAbsentAsync(
+    Guid jobId,
+    Guid profileId,
+    Guid operationId,
+    string requestFingerprint,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default);
 }
 
 public sealed class GarminActivityUploadStore(
@@ -539,6 +546,62 @@ public sealed class GarminActivityUploadStore(
     WorkoutSessionEntity? session = await context.WorkoutSessions.AsNoTracking()
       .SingleOrDefaultAsync(item => item.Id == entity.WorkoutSessionId, cancellationToken);
     GarminActivityUploadJob result = Map(entity, session);
+    PersistenceReceipts.Add(context, receipt with { OutcomeJson = System.Text.Json.JsonSerializer.Serialize(result) });
+    await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
+    return result;
+  }
+
+  public async Task<GarminActivityUploadJob> RetryUnknownVerifiedAbsentAsync(
+    Guid jobId,
+    Guid profileId,
+    Guid operationId,
+    string requestFingerprint,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    if (jobId == Guid.Empty || profileId == Guid.Empty || operationId == Guid.Empty)
+      throw new ArgumentException("Job, profile, and operation IDs are required.");
+    if (requestFingerprint.Length != 64)
+      throw new ArgumentException("A valid request fingerprint is required.", nameof(requestFingerprint));
+    await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(
+      System.Data.IsolationLevel.Serializable,
+      cancellationToken);
+    var receipt = new PersistenceWriteOperation(
+      operationId,
+      "garmin.activity.absent-retry",
+      202,
+      "{}",
+      nowUtc,
+      requestFingerprint);
+    await PersistenceReceipts.ThrowIfCompletedAsync(context, receipt, cancellationToken);
+    GarminActivityUploadJobEntity entity = await context.GarminActivityUploadJobs
+      .Include(item => item.Account)
+      .SingleOrDefaultAsync(item => item.Id == jobId && item.UserProfileId == profileId, cancellationToken)
+      ?? throw new KeyNotFoundException("The Garmin activity upload job was not found.");
+    if (entity.Status != "Unknown" || entity.RemoteId is not null || entity.ReplacementRemoteId is not null ||
+        entity.OperationPhase is not ("Upload" or "ReplacementUpload"))
+      throw new InvalidOperationException("Only an uncertain upload with no activity found in Garmin can be retried this way.");
+    if (!entity.Account.Enabled || entity.Account.State != "Connected")
+      throw new InvalidOperationException("Garmin activity upload must be connected and enabled before retrying.");
+
+    entity.Status = "Pending";
+    entity.AttemptCount = 0;
+    entity.OperationPhase = entity.Account.WatchActivityHandling == GarminWatchActivityHandling.MergeAndReplace
+      ? "WatchSearch"
+      : "Upload";
+    entity.RemoteId = null;
+    entity.MatchedRemoteId = null;
+    entity.ReplacementRemoteId = null;
+    entity.MatchEvidence = null;
+    entity.FailureKind = null;
+    entity.LastError = null;
+    entity.AvailableAtUtc = nowUtc;
+    entity.LeaseExpiresAtUtc = null;
+    entity.AcknowledgedAtUtc = null;
+    entity.UpdatedAtUtc = nowUtc;
+    GarminActivityUploadJob result = Map(entity);
     PersistenceReceipts.Add(context, receipt with { OutcomeJson = System.Text.Json.JsonSerializer.Serialize(result) });
     await context.SaveChangesAsync(cancellationToken);
     await transaction.CommitAsync(cancellationToken);

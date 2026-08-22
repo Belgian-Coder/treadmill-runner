@@ -130,6 +130,41 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Unknown_upload_verified_absent_can_be_idempotently_requeued_from_watch_search()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, _) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      "protected-token-json",
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await store.MarkUploadStartedAsync(leased.Id, "ReplacementUpload", now.AddSeconds(1));
+    await store.MarkUnknownAsync(leased.Id, "The response was interrupted.", now.AddSeconds(2));
+
+    Guid operationId = Guid.NewGuid();
+    string fingerprint = new('d', 64);
+    GarminActivityUploadJob requeued = await store.RetryUnknownVerifiedAbsentAsync(
+      leased.Id, profileId, operationId, fingerprint, now.AddMinutes(6));
+
+    Assert.Equal("Pending", requeued.Status);
+    Assert.Equal("WatchSearch", requeued.OperationPhase);
+    Assert.Equal(0, requeued.AttemptCount);
+    GarminActivityUploadJob reLeased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddMinutes(6), TimeSpan.FromMinutes(2)));
+    Assert.Equal(leased.Id, reLeased.Id);
+    await Assert.ThrowsAsync<OperationReplayException>(() => store.RetryUnknownVerifiedAbsentAsync(
+      leased.Id, profileId, operationId, fingerprint, now.AddMinutes(7)));
+  }
+
+  [Fact]
   public async Task Duplicate_can_be_retried_from_watch_search_after_the_user_removes_the_existing_import()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();

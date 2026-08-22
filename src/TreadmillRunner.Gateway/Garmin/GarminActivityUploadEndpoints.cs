@@ -15,6 +15,7 @@ public sealed record GarminActivitySettingsRequest(bool Enabled, string WatchAct
 public sealed record GarminActivityDisconnectRequest(int ExpectedVersion);
 public sealed record GarminActivityTestRequest(Guid OperationId, int ExpectedVersion);
 public sealed record GarminActivityFoundRequest(Guid OperationId);
+public sealed record GarminActivityAbsentRetryRequest(Guid OperationId, string Confirmation);
 public sealed record GarminActivityReprocessRequest(Guid OperationId);
 public sealed record GarminActivityUploadStatusResponse(
   Guid ProfileId,
@@ -50,6 +51,7 @@ public static class GarminActivityUploadEndpoints
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/retry", RetryAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/dismiss", DismissAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/acknowledge-found", AcknowledgeFoundAsync);
+    group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/confirm-absent-retry", ConfirmAbsentAndRetryAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/reprocess-merge", ReprocessMergeAsync);
     return endpoints;
   }
@@ -342,6 +344,49 @@ public static class GarminActivityUploadEndpoints
       GarminActivityUploadJob? job = JsonSerializer.Deserialize<GarminActivityUploadJob>(replay.Receipt.OutcomeJson);
       return job is null
         ? TypedResults.Conflict(new { error = "The completed Garmin reprocess operation could not be read." })
+        : Results.Accepted(value: job);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
+  }
+
+  private static async Task<IResult> ConfirmAbsentAndRetryAsync(
+    Guid profileId,
+    Guid jobId,
+    GarminActivityAbsentRetryRequest request,
+    IGarminActivityUploadStore store,
+    GarminActivityUploadWorker worker,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (request.OperationId == Guid.Empty)
+      return TypedResults.BadRequest(new { error = "OperationId is required." });
+    if (!string.Equals(request.Confirmation, "NOT FOUND", StringComparison.Ordinal))
+      return TypedResults.BadRequest(new { error = "Confirmation must exactly equal NOT FOUND." });
+    string fingerprint = PlanningOperationFingerprint.Compute(new { profileId, jobId });
+    try
+    {
+      GarminActivityUploadJob job = await store.RetryUnknownVerifiedAbsentAsync(
+        jobId,
+        profileId,
+        request.OperationId,
+        fingerprint,
+        timeProvider.GetUtcNow(),
+        cancellationToken);
+      worker.Wake();
+      return Results.Accepted(value: job);
+    }
+    catch (OperationReplayException replay)
+    {
+      if (replay.Receipt.OperationType != "garmin.activity.absent-retry" || replay.Receipt.RequestFingerprint != fingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      GarminActivityUploadJob? job = JsonSerializer.Deserialize<GarminActivityUploadJob>(replay.Receipt.OutcomeJson);
+      return job is null
+        ? TypedResults.Conflict(new { error = "The completed Garmin retry acknowledgment could not be read." })
         : Results.Accepted(value: job);
     }
     catch (OperationScopeConflictException)
