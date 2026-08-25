@@ -719,8 +719,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
-    await Expect(Page).ToHaveURLAsync(gateway.BaseAddress.AbsoluteUri);
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/history/[0-9a-f-]+$"));
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = plan.WorkoutName, Exact = true }))
       .ToBeVisibleAsync();
     Assert.True(await Page.EvaluateAsync<int>("window.__wakeLockReleases") >= 1,
       "Control must release the wake lock when the run ends or navigation leaves the dashboard.");
