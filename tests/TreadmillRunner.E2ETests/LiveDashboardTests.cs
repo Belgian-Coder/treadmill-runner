@@ -85,7 +85,7 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
         .ToBeVisibleAsync(new() { Timeout = 30_000 });
     await Expect(Page.Locator(".connection-state"))
-        .ToHaveTextAsync("Gateway ready", new() { Timeout = 15_000 });
+        .ToHaveTextAsync("Gateway ready on demand", new() { Timeout = 15_000 });
     await Expect(Page.Locator(".site-header .global-hr-status")).ToHaveCountAsync(0);
     await Expect(Page.GetByLabel("Safety notice"))
         .ToContainTextAsync("Remote Start appears only for an exact model and firmware");

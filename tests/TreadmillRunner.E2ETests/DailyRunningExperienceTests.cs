@@ -67,7 +67,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
     await Expect(Page.GetByLabel("Selected runner")).ToHaveTextAsync(plan.ProfileName);
     await Expect(Page.GetByLabel("Selected workout")).ToHaveTextAsync(plan.WorkoutName);
-    await Expect(Page.Locator(".connection-state")).ToHaveTextAsync("Gateway ready");
+    await Expect(Page.Locator(".connection-state")).ToHaveTextAsync("Gateway ready on demand");
     ILocator readiness = Page.Locator(".readiness-card");
     await Expect(readiness).ToHaveAttributeAsync("open", "");
     await Expect(readiness.GetByText("Ready", new() { Exact = true }).First).ToBeVisibleAsync();
@@ -164,7 +164,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
-  public async Task Initial_live_channel_failure_keeps_controls_disabled_and_recovers_without_reload()
+  public async Task Initial_on_demand_live_channel_failure_does_not_prepare_and_recovers_without_reload()
   {
     SeededPlan plan = await SeedPlanAsync("initial-signalr-recovery", heartRateTarget: false);
     await Page.SetViewportSizeAsync(440, 956);
@@ -175,13 +175,18 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.SelectActiveRunnerAsync(plan.ProfileName);
     await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" })).ToBeEnabledAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
     await Expect(Page.Locator(".connection-state")).ToContainTextAsync("retrying", new() { Timeout = 15_000 });
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" })).ToBeDisabledAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
 
     await Page.UnrouteAsync("**/hubs/live**");
 
     await Expect(Page.Locator(".connection-state")).ToContainTextAsync("Gateway ready", new() { Timeout = 20_000 });
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" })).ToBeEnabledAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true }))
+      .ToBeVisibleAsync();
   }
 
   [Fact]
