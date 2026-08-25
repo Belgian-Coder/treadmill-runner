@@ -1313,7 +1313,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     ILocator panel = Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true });
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToHaveCountAsync(0);
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToHaveCountAsync(0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Personal local goal", new() { Exact = true })).ToHaveCountAsync(0);
     await Expect(panel.GetByLabel("Garmin email", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(panel.GetByLabel("Garmin password", new() { Exact = true })).ToBeVisibleAsync();

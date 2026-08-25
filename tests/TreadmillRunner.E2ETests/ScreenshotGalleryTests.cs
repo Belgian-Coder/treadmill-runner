@@ -481,7 +481,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Page.Locator(".profile-row").Filter(new() { HasText = "Marc" })
           .GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Garmin Connect", Exact = true })).ToHaveCountAsync(0);
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToHaveCountAsync(0);
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByText("Personal local goal", new() { Exact = true })).ToHaveCountAsync(0);
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Garmin activity upload", Exact = true })).ToContainTextAsync("Experimental");
         await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Connect IQ watch app", Exact = true })).ToBeVisibleAsync();
