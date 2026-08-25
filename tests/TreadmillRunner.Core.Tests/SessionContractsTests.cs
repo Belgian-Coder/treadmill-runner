@@ -107,8 +107,9 @@ public sealed class SessionContractsTests
         145,
         TimeSpan.FromMinutes(2),
         0.25,
-        TimeSpan.FromMinutes(7.5),
-        TimeSpan.Zero);
+         TimeSpan.FromMinutes(7.5),
+         TimeSpan.Zero,
+         HeartRateObservedAt: DateTimeOffset.Parse("2026-08-02T09:59:59Z"));
     var snapshot = new ActiveSessionSnapshot(
         Guid.NewGuid(),
         Guid.NewGuid(),
@@ -132,6 +133,7 @@ public sealed class SessionContractsTests
         []);
 
     Assert.Same(live, snapshot.Live);
+    Assert.Equal(DateTimeOffset.Parse("2026-08-02T09:59:59Z"), snapshot.Live.HeartRateObservedAt);
     Assert.Equal("Tempo", snapshot.NextStep?.Cue);
     Assert.Equal(SessionControlAccess.Controller, snapshot.ControlAccess);
   }

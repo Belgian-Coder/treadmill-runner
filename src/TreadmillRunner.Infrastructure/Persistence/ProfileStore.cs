@@ -71,7 +71,7 @@ public sealed class ProfileStore(IDbContextFactory<TreadmillRunnerDbContext> con
 
     entity.DisplayName = profile.DisplayName;
     entity.NormalizedDisplayName = NormalizeName(profile.DisplayName);
-    entity.UnitSystem = profile.UnitSystem.ToString();
+    entity.UnitSystem = nameof(UnitSystem.Metric);
     entity.WeightKilograms = profile.WeightKilograms;
     entity.MaximumHeartRateBpm = profile.MaximumHeartRateBpm;
     entity.MaximumSpeedKph = profile.MaximumSpeedKph;
@@ -119,7 +119,7 @@ public sealed class ProfileStore(IDbContextFactory<TreadmillRunnerDbContext> con
     Id = profile.Id,
     DisplayName = profile.DisplayName,
     NormalizedDisplayName = NormalizeName(profile.DisplayName),
-    UnitSystem = profile.UnitSystem.ToString(),
+    UnitSystem = nameof(UnitSystem.Metric),
     WeightKilograms = profile.WeightKilograms,
     MaximumHeartRateBpm = profile.MaximumHeartRateBpm,
     MaximumSpeedKph = profile.MaximumSpeedKph,
@@ -147,7 +147,7 @@ public sealed class ProfileStore(IDbContextFactory<TreadmillRunnerDbContext> con
     new UserProfile(
       entity.Id,
       entity.DisplayName,
-      Enum.Parse<UnitSystem>(entity.UnitSystem),
+      UnitSystem.Metric,
       entity.WeightKilograms,
       entity.MaximumHeartRateBpm,
       entity.MaximumSpeedKph,

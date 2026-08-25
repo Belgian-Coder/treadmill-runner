@@ -98,6 +98,17 @@ public sealed record GalleryScenario(
       throw new InvalidOperationException($"Gallery simulator motion failed with {(int)response.StatusCode}.");
   }
 
+  public async Task SetSimulatedHeartRateAsync(Uri baseAddress, ushort beatsPerMinute)
+  {
+    using HttpClient client = new() { BaseAddress = baseAddress };
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/live/simulator/heart-rate", new
+    {
+      beatsPerMinute,
+    });
+    if (response.StatusCode != HttpStatusCode.OK)
+      throw new InvalidOperationException($"Gallery simulator heart-rate update failed with {(int)response.StatusCode}.");
+  }
+
   public Task ConfigureBrowserAsync(IPage page)
   {
     string initialization = $$"""

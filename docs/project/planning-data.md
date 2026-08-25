@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: developer-and-operator
-updated: 2026-08-08
+updated: 2026-08-23
 ---
 
 # Planning data and import flow
@@ -25,7 +25,7 @@ TR-010 gives every `CalendarSeries` a durable `ScheduleGroupId`. A normal recurr
 
 TR-011 adds three profile-owned Garmin integration tables. `GarminAccountLinks` stores the stable external subject and Data-Protection ciphertext for tokens; both profile and external subject are unique. `GarminOAuthStates` stores a hashed one-time state plus protected PKCE verifier and expiry. `GarminSyncItems` is an idempotent versioned outbox for `Workout` and `Calendar` publication. TR-032 makes publishing explicitly session-by-session: opening one planned calendar option validates that exact profile/date/revision and queues only its runnable workout plus one dated occurrence. Connecting Garmin, creating workouts, and background processing never bulk-enqueue the remaining plan. Disconnecting a profile link cascades through its state and queue without changing local workouts, calendar history, or another profile.
 
-TR-013 keeps unsupported activity delivery structurally separate. `GarminActivityUploadAccounts` stores one profile-owned protected private-session token envelope, explicit enable flag, enable watermark, provider state, and optimistic version. `GarminActivityUploadJobs` binds one completed session to one deterministic idempotency key and tracks atomic lease, attempt, response disposition, safe failure kind, and remote ID. Unknown, duplicate, and rejected outcomes are terminal. Disconnect deletes that private account aggregate, while a later enable watermark prevents historical sessions from being queued again. `GarminWatchBindings` stores one profile-owned device label and SHA-256 token hash; the raw watch token is returned once over HTTPS/loopback and never persisted.
+TR-013 keeps unsupported activity delivery structurally separate. `GarminActivityUploadAccounts` stores one profile-owned protected private-session token envelope, explicit enable flag, enable watermark, provider state, and optimistic version. `GarminActivityUploadJobs` binds one completed session to one deterministic idempotency key and tracks atomic lease, attempt, response disposition, safe failure kind, and remote ID. Unknown, duplicate, rejected, and review-required outcomes are terminal until an explicit review/dismiss action. Reconciliation evidence retains bounded match/replacement IDs, failure phase, retry and acknowledgement times, and copyable identifiers. Disconnect deletes that private account aggregate, while a later enable watermark prevents historical sessions from being queued again. `GarminWatchBindings` stores one profile-owned device label and SHA-256 token hash; the raw watch token is returned once over HTTPS/loopback and never persisted.
 
 The calendar UI exposes the scope before it writes: **Move only this session**, **Move this and later**, **Delete only this session**, or **Delete complete workout group**. Deleting one session creates a skip exception. Deleting a complete group transactionally removes every continuation segment and its saved day selections; it never deletes immutable workout revisions or completed session history.
 
@@ -76,7 +76,17 @@ Session deletion is a previewed, version-bound operation. It is permitted only f
 
 TR-031 adds five local-only persistence surfaces. `RunnerExperiencePreferences` is one versioned row per profile and stores display mode, two or three selected metrics, cue types, and cue volume. `LocalGoals` stores profile-owned weekly, monthly, or plan targets. `ProgressionRecommendations` binds one deterministic recommendation and its acceptance/rejection receipt to the exact profile and workout session; it does not mutate a program or workout revision. `LocalBackupPolicies` is a singleton owner policy for an absolute local/UNC folder, interval, retention, and enabled state. `BackupVerifications` records isolated full-integrity success or failure without replacing the live database.
 
-The additive migration does not rewrite profiles, workouts, schedules, sessions, or device enrollments. Optimistic versions protect user edits; profile and session foreign keys preserve ownership and explanation provenance.
+The reviewed US-TR-041 migration normalizes every stored profile to `Metric` before enforcing the profile unit check, reconciles pre-existing active-session conflicts by retaining the selected recovery candidate and marking other rows interrupted, and adds the active-session uniqueness, recovery-candidate, lease-ordering, and operation-receipt retention indexes. Optimistic versions protect user edits; profile and session foreign keys preserve ownership and explanation provenance. Application startup does not apply this migration automatically.
+
+## Session debrief, experience preferences, and goals
+
+Terminal sessions may receive one optional profile-owned debrief through `PUT /api/history/{sessionId}/debrief`: RPE is 1–10, the note is at most 1,000 characters, and Skip leaves both fields empty. The terminal detail can edit the debrief later without rewriting telemetry or the immutable workout revision; recommendation state is refreshed after a change.
+
+`RunnerExperiencePreferences` stores display style, two or three primary metrics, cue toggles, volume, and preview state per profile. `LocalGoals` stores weekly or monthly distance, duration, and run-count targets. History derives progress and remaining values from the existing profile-owned trends; goal edits are versioned and do not change session history.
+
+## Export contracts
+
+Completed sessions expose bounded immutable-source downloads at `/api/history/{sessionId}/export.tcx` (TCX Activity) and `/api/history/{sessionId}/export.json` (versioned full-resolution native JSON). Immutable workout revisions expose `/api/planning/workouts/revisions/{revisionId}/export.fit` (FIT Workout). Existing CSV and FIT Activity exports remain available. Exporters use Metric values, preserve source revision/session identity, and never mutate stored history.
 
 ## Preview and confirm
 

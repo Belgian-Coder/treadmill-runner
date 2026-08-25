@@ -502,6 +502,204 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task History_displays_all_six_metric_goal_progress_and_remaining_values()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    DateTimeOffset updatedAt = DateTimeOffset.Parse("2026-08-23T12:00:00Z", CultureInfo.InvariantCulture);
+    object Trend(int sessions, int minutes, double distance) => new
+    {
+      profileId = scenario.MarcProfileId,
+      completedSessions = sessions,
+      duration = TimeSpan.FromMinutes(minutes),
+      distanceKilometers = distance,
+      incompleteTelemetrySessions = 0,
+      longestDistanceKilometers = distance,
+      longestDuration = TimeSpan.FromMinutes(minutes),
+      highestAverageHeartRateBpm = 145,
+    };
+    object Goal(string kind, string period, double target) => new
+    {
+      id = Guid.NewGuid(),
+      profileId = scenario.MarcProfileId,
+      kind,
+      period,
+      targetValue = target,
+      enabled = true,
+      version = 1,
+      updatedAtUtc = updatedAt,
+    };
+    await Page.RouteAsync("**/api/local-first/profiles/*/insights", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = JsonSerializer.Serialize(new
+      {
+        trends = Trend(2, 70, 10),
+        weeklyTrends = Trend(1, 30, 5),
+        monthlyTrends = Trend(2, 70, 10),
+        goals = new[]
+        {
+          Goal("Distance", "Weekly", 15),
+          Goal("Minutes", "Weekly", 120),
+          Goal("Sessions", "Weekly", 3),
+          Goal("Distance", "Monthly", 60),
+          Goal("Minutes", "Monthly", 480),
+          Goal("Sessions", "Monthly", 12),
+        },
+      }),
+    }));
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    await Expect(Page.Locator(".goal-progress-card")).ToHaveCountAsync(6);
+    ILocator weeklyDistance = Page.Locator(".goal-progress-card").Filter(new() { HasText = "Weekly distance" });
+    await Expect(weeklyDistance).ToContainTextAsync("5.0 km of 15.0 km");
+    await Expect(weeklyDistance).ToContainTextAsync("10.0 km remaining.");
+    await Expect(Page.Locator(".goal-progress-card").Filter(new() { HasText = "Weekly duration" })).ToContainTextAsync("90 min remaining.");
+    await Expect(Page.Locator(".goal-progress-card").Filter(new() { HasText = "Weekly run count" })).ToContainTextAsync("2 runs remaining.");
+    await Expect(Page.Locator(".goal-progress-card").Filter(new() { HasText = "Monthly distance" })).ToContainTextAsync("50.0 km remaining.");
+    await Expect(Page.Locator(".goal-progress-card").Filter(new() { HasText = "Monthly duration" })).ToContainTextAsync("410 min remaining.");
+    await Expect(Page.Locator(".goal-progress-card").Filter(new() { HasText = "Monthly run count" })).ToContainTextAsync("10 runs remaining.");
+    await Expect(weeklyDistance.Locator("progress")).ToHaveAttributeAsync("value", "5");
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Profile_run_preferences_preview_and_persist_per_runner()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+
+    ILocator marcRow = Page.Locator(".profile-row").Filter(new() { HasText = "Marc" }).First;
+    await marcRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Display and cues", Exact = true })).ToBeVisibleAsync();
+
+    ILocator preferences = Page.Locator(".panel-card").Filter(new() { HasText = "Display and cues" });
+    ILocator displayStyle = preferences.Locator("select").First;
+    await Expect(displayStyle).ToBeVisibleAsync();
+    await displayStyle.SelectOptionAsync("HighContrast");
+    ILocator metrics = Page.GetByRole(AriaRole.Group, new() { Name = "Primary live metrics", Exact = true });
+    foreach (string label in new[] { "Speed", "Incline", "Heart rate", "Elapsed time", "Distance", "Calories" })
+    {
+      ILocator checkbox = metrics.GetByLabel(label, new() { Exact = true });
+      if (await checkbox.IsCheckedAsync()) await checkbox.UncheckAsync();
+    }
+    await metrics.GetByLabel("Speed", new() { Exact = true }).CheckAsync();
+    await metrics.GetByLabel("Distance", new() { Exact = true }).CheckAsync();
+    await Page.GetByLabel("Halfway", new() { Exact = true }).UncheckAsync();
+    await Page.GetByLabel("Completion", new() { Exact = true }).CheckAsync();
+    await Page.GetByLabel("Cue volume", new() { Exact = true }).FillAsync("35");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Preview sound", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Sound preview played at the selected volume.", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Save run preferences", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Run display and cue preferences saved.", new() { Exact = true })).ToBeVisibleAsync();
+
+    await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    marcRow = Page.Locator(".profile-row").Filter(new() { HasText = "Marc" }).First;
+    await marcRow.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+    preferences = Page.Locator(".panel-card").Filter(new() { HasText = "Display and cues" });
+    displayStyle = preferences.Locator("select").First;
+    await Expect(displayStyle).ToHaveValueAsync("HighContrast");
+    metrics = Page.GetByRole(AriaRole.Group, new() { Name = "Primary live metrics", Exact = true });
+    await Expect(metrics.GetByLabel("Speed", new() { Exact = true })).ToBeCheckedAsync();
+    await Expect(metrics.GetByLabel("Distance", new() { Exact = true })).ToBeCheckedAsync();
+    await Expect(metrics.GetByLabel("Heart rate", new() { Exact = true })).Not.ToBeCheckedAsync();
+    await Expect(Page.GetByLabel("Halfway", new() { Exact = true })).Not.ToBeCheckedAsync();
+    await Expect(Page.GetByLabel("Completion", new() { Exact = true })).ToBeCheckedAsync();
+    await Expect(Page.GetByLabel("Cue volume", new() { Exact = true })).ToHaveValueAsync("35");
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task History_debrief_can_be_saved_then_edited_and_refreshes_the_local_suggestion()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    int saveCount = 0;
+    await Page.RouteAsync($"**/api/history/{scenario.HistorySessionId:D}/debrief", async route =>
+    {
+      using JsonDocument request = JsonDocument.Parse(route.Request.PostData ?? "{}");
+      JsonElement root = request.RootElement;
+      int? perceivedExertion = root.TryGetProperty("perceivedExertion", out JsonElement rpe) && rpe.ValueKind == JsonValueKind.Number
+        ? rpe.GetInt32()
+        : null;
+      string? note = root.TryGetProperty("note", out JsonElement noteElement) && noteElement.ValueKind == JsonValueKind.String
+        ? noteElement.GetString()
+        : null;
+      Interlocked.Increment(ref saveCount);
+      await route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          sessionId = scenario.HistorySessionId,
+          perceivedExertion,
+          note,
+          updatedAt = DateTimeOffset.Parse("2026-08-23T13:00:00Z", CultureInfo.InvariantCulture),
+        }),
+      });
+    });
+    await Page.RouteAsync("**/api/local-first/profiles/*/recommendations", route =>
+    {
+      if (!string.Equals(route.Request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+      {
+        return route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "[]" });
+      }
+      return route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          id = Guid.NewGuid(),
+          profileId = scenario.MarcProfileId,
+          sessionId = scenario.HistorySessionId,
+          recommendation = new
+          {
+            action = "Keep the next run easy",
+            reason = "The latest debrief was considered.",
+            algorithmVersion = "local-recommendation/v1",
+          },
+          status = "Pending",
+          version = 1,
+          createdAtUtc = DateTimeOffset.Parse("2026-08-23T13:00:00Z", CultureInfo.InvariantCulture),
+          decidedAtUtc = (DateTimeOffset?)null,
+        }),
+      });
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/history/{scenario.HistorySessionId:D}").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+    await Page.GetByLabel("Perceived exertion", new() { Exact = true }).FillAsync("6");
+    await Page.GetByLabel("Debrief note", new() { Exact = true }).FillAsync("Comfortable finish.");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Save debrief", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Debrief saved. The local suggestion was refreshed.", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("6 / 10", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Comfortable finish.", new() { Exact = true })).ToBeVisibleAsync();
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Edit", Exact = true }).ClickAsync();
+    await Page.GetByLabel("Perceived exertion", new() { Exact = true }).FillAsync("8");
+    await Page.GetByLabel("Debrief note", new() { Exact = true }).FillAsync("Harder after review.");
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Save debrief", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("8 / 10", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.GetByText("Harder after review.", new() { Exact = true })).ToBeVisibleAsync();
+    Assert.Equal(2, saveCount);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Profile_save_network_failure_reenables_save_for_retry()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();

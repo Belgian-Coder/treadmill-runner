@@ -1,0 +1,217 @@
+@using TreadmillRunner.Core.Household
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<section class="panel-card" aria-labelledby="run-preferences-title">
+    <div class="panel-heading">
+        <div><p class="eyebrow">During a run</p><h2 id="run-preferences-title">Display and cues</h2></div>
+        <span>Saved per runner</span>
+    </div>
+    @if (loading)
+    {
+        <p class="muted" role="status">Loading run preferences…</p>
+    }
+    else
+    {
+        <div class="form-grid">
+            <label class="field">Display style
+                <select @bind="form.DisplayStyle">
+                    <option value="Balanced">Balanced</option>
+                    <option value="LargeText">Large text</option>
+                    <option value="HighContrast">High contrast</option>
+                </select>
+            </label>
+            <fieldset class="field field--wide">
+                <legend>Primary metrics</legend>
+                <p class="field-hint">Choose two or three values for the live run display.</p>
+                <div class="segmented-control" role="group" aria-label="Primary live metrics">
+                    @foreach (string metric in AvailableMetrics)
+                    {
+                        bool selected = form.PrimaryMetrics.Contains(metric, StringComparer.Ordinal);
+                        <label>
+                            <input type="checkbox" checked="@selected" disabled="@(!selected && form.PrimaryMetrics.Count >= 3)" @onchange="args => ToggleMetric(metric, args)" />
+                            @MetricLabel(metric)
+                        </label>
+                    }
+                </div>
+            </fieldset>
+        </div>
+        <fieldset class="step-card">
+            <legend>Sound cues</legend>
+            <div class="form-grid">
+                <label class="field"><span><input type="checkbox" @bind="form.StepChanges" /> Step changes</span></label>
+                <label class="field"><span><input type="checkbox" @bind="form.HeartRateDeparture" /> Heart-rate departure</span></label>
+                <label class="field"><span><input type="checkbox" @bind="form.Halfway" /> Halfway</span></label>
+                <label class="field"><span><input type="checkbox" @bind="form.ConnectionProblems" /> Connection problems</span></label>
+                <label class="field"><span><input type="checkbox" @bind="form.Completion" /> Completion</span></label>
+                <label class="field">Volume · @form.VolumePercent%
+                    <input aria-label="Cue volume" type="range" min="0" max="100" step="5" @bind="form.VolumePercent" />
+                </label>
+            </div>
+            <button class="secondary-action compact-action" type="button" @onclick="PreviewSoundAsync">Preview sound</button>
+        </fieldset>
+        <div class="form-actions">
+            <button class="primary-action" type="button" disabled="@(saving || !MetricsValid)" @onclick="SaveAsync">@(saving ? "Saving…" : "Save run preferences")</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p role="status">@message</p>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid ProfileId { get; set; }
+
+    private static readonly string[] AvailableMetrics =
+    [
+        "Speed", "Incline", "HeartRate", "ElapsedTime", "Distance", "Calories",
+    ];
+    private readonly PreferencesForm form = new();
+    private Guid loadedProfileId;
+    private int version;
+    private bool loading = true;
+    private bool saving;
+    private string? message;
+    private bool MetricsValid => form.PrimaryMetrics.Count is 2 or 3;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ProfileId == Guid.Empty || loadedProfileId == ProfileId) return;
+        loadedProfileId = ProfileId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        message = null;
+        try
+        {
+            PreferencesView? loaded = await Http.GetFromJsonAsync<PreferencesView>(
+                $"api/local-first/profiles/{ProfileId}/preferences");
+            if (loaded is null)
+            {
+                message = "Run preferences are temporarily unavailable.";
+                return;
+            }
+
+            version = loaded.Version;
+            form.DisplayStyle = loaded.Preferences.DisplayStyle.ToString();
+            form.PrimaryMetrics.Clear();
+            form.PrimaryMetrics.AddRange(loaded.Preferences.PrimaryMetrics.Select(static metric => metric.ToString()));
+            form.StepChanges = loaded.Preferences.Cues.StepChanges;
+            form.HeartRateDeparture = loaded.Preferences.Cues.HeartRateDeparture;
+            form.Halfway = loaded.Preferences.Cues.Halfway;
+            form.ConnectionProblems = loaded.Preferences.Cues.ConnectionProblems;
+            form.Completion = loaded.Preferences.Cues.Completion;
+            form.VolumePercent = loaded.Preferences.Cues.VolumePercent;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            message = "Run preferences could not be loaded from the local gateway.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void ToggleMetric(string metric, ChangeEventArgs args)
+    {
+        bool selected = args.Value is true || string.Equals(args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        if (selected)
+        {
+            if (form.PrimaryMetrics.Count < 3 && !form.PrimaryMetrics.Contains(metric, StringComparer.Ordinal))
+                form.PrimaryMetrics.Add(metric);
+        }
+        else
+        {
+            form.PrimaryMetrics.Remove(metric);
+        }
+        message = MetricsValid ? null : "Choose at least two primary metrics.";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (saving || !MetricsValid) return;
+        saving = true;
+        message = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.PutAsJsonAsync(
+                $"api/local-first/profiles/{ProfileId}/preferences",
+                new
+                {
+                    form.DisplayStyle,
+                    PrimaryMetrics = form.PrimaryMetrics.ToArray(),
+                    Cues = new
+                    {
+                        form.StepChanges,
+                        form.HeartRateDeparture,
+                        form.Halfway,
+                        form.ConnectionProblems,
+                        form.Completion,
+                        form.VolumePercent,
+                    },
+                    ExpectedVersion = version,
+                });
+            PreferencesView? saved = response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<PreferencesView>()
+                : null;
+            if (saved is null)
+            {
+                message = "Run preferences could not be saved. Reload and try again.";
+                return;
+            }
+            version = saved.Version;
+            message = "Run display and cue preferences saved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            message = "The local gateway could not save run preferences.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private async Task PreviewSoundAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", form.VolumePercent);
+            message = "Sound preview played at the selected volume.";
+        }
+        catch (JSException)
+        {
+            message = "This browser could not play the sound preview.";
+        }
+    }
+
+    private static string MetricLabel(string metric) => metric switch
+    {
+        "HeartRate" => "Heart rate",
+        "ElapsedTime" => "Elapsed time",
+        _ => metric,
+    };
+
+    private sealed record PreferencesView(
+        Guid ProfileId,
+        RunnerExperiencePreferences Preferences,
+        int Version,
+        DateTimeOffset UpdatedAtUtc);
+
+    private sealed class PreferencesForm
+    {
+        public string DisplayStyle { get; set; } = "Balanced";
+        public List<string> PrimaryMetrics { get; } = ["Speed", "HeartRate", "ElapsedTime"];
+        public bool StepChanges { get; set; } = true;
+        public bool HeartRateDeparture { get; set; } = true;
+        public bool Halfway { get; set; } = true;
+        public bool ConnectionProblems { get; set; } = true;
+        public bool Completion { get; set; } = true;
+        public int VolumePercent { get; set; } = 60;
+    }
+}

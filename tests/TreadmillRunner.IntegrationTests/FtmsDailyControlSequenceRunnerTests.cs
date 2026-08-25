@@ -149,7 +149,7 @@ public sealed class FtmsDailyControlSequenceRunnerTests
         observed,
         null),
       new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Disconnected, 0, null, null, null, null, null),
-      new TreadmillTelemetry(observed, speed, incline),
+      new TreadmillTelemetry(observed, speed, incline, observed, observed),
       null,
       null,
       null);

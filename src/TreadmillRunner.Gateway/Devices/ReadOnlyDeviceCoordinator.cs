@@ -65,20 +65,21 @@ public sealed class ReadOnlyDeviceCoordinator(
   private readonly Dictionary<Guid, DateTimeOffset> _manualConnectionDemandExpirations = [];
   private readonly HashSet<Guid> _explicitlyDisconnectedEnrollmentIds = [];
   private readonly BleReconnectPolicy _reconnectPolicy = new();
-  private readonly Channel<ReliabilityWriteEnvelope> _reliabilityWrites = Channel.CreateBounded<ReliabilityWriteEnvelope>(
-    new BoundedChannelOptions(32)
+  private readonly Channel<ReliabilityWriteEnvelope> _reliabilityWrites = Channel.CreateUnbounded<ReliabilityWriteEnvelope>(
+    new UnboundedChannelOptions
     {
       SingleReader = true,
       SingleWriter = false,
-      FullMode = BoundedChannelFullMode.Wait,
     });
-  private readonly Channel<EvidenceWrite> _evidenceWrites = Channel.CreateBounded<EvidenceWrite>(
-    new BoundedChannelOptions(MaximumHeartRateWorkers + 1)
+  private readonly Channel<EvidenceKey> _evidenceSignals = Channel.CreateUnbounded<EvidenceKey>(
+    new UnboundedChannelOptions
     {
       SingleReader = true,
       SingleWriter = false,
-      FullMode = BoundedChannelFullMode.Wait,
     });
+  private readonly object _evidenceSync = new();
+  private readonly Dictionary<EvidenceKey, EvidenceWrite> _pendingEvidenceWrites = [];
+  private readonly HashSet<EvidenceKey> _queuedEvidenceKeys = [];
   private IReadOnlyList<HeartRateDeviceAssignment> _assignments = [];
   private long _nextGeneration;
   private bool _hasTreadmillEnrollment;
@@ -87,13 +88,12 @@ public sealed class ReadOnlyDeviceCoordinator(
   private DateTimeOffset? _lastReliabilityPressureLogAtUtc;
   private long _reliabilityDroppedCount;
   private long _reliabilityLaggedCount;
-  private long _evidenceDroppedCount;
   private DeviceTelemetrySnapshot _snapshot = EmptySnapshot(timeProvider.GetUtcNow());
 
   internal ReliabilityWriterMetrics ReliabilityMetrics => new(
     Interlocked.Read(ref _reliabilityDroppedCount),
     Interlocked.Read(ref _reliabilityLaggedCount),
-    Interlocked.Read(ref _evidenceDroppedCount));
+    0);
 
   public DeviceTelemetrySnapshot Current
   {
@@ -288,7 +288,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       await Task.WhenAll(workers.Select(static worker => worker.Task));
       foreach (DeviceWorker worker in workers) worker.Cancellation.Dispose();
       _reliabilityWrites.Writer.TryComplete();
-      _evidenceWrites.Writer.TryComplete();
+      _evidenceSignals.Writer.TryComplete();
       try
       {
         await reliabilityWriter;
@@ -388,6 +388,15 @@ public sealed class ReadOnlyDeviceCoordinator(
       {
         _assignments = assignments;
         _hasTreadmillEnrollment = enrollments.Any(static item => item.Enrollment.Role == DeviceRole.Treadmill);
+        HashSet<Guid> activeEnrollmentIds = enrollments
+          .Select(static item => item.Enrollment.Id)
+          .ToHashSet();
+        foreach (Guid staleHeartRateId in _heartRateSources.Keys
+          .Where(id => !activeEnrollmentIds.Contains(id))
+          .ToArray())
+        {
+          _heartRateSources.Remove(staleHeartRateId);
+        }
         foreach (VersionedDeviceEnrollment enrollment in enrollments)
           RefreshEnrollmentMetadata(enrollment.Enrollment);
         foreach ((Guid enrollmentId, DeviceWorker worker) in _workers.ToArray())
@@ -499,7 +508,11 @@ public sealed class ReadOnlyDeviceCoordinator(
           consecutiveFailureCount = 0;
         }
         consecutiveFailureCount++;
-        TimeSpan reconnectDelay = _reconnectPolicy.GetDelay(enrollment.Id, consecutiveFailureCount);
+        bool activeDemand = HasActiveRunDemand(failedAt);
+        TimeSpan reconnectDelay = _reconnectPolicy.GetDelay(
+          enrollment.Id,
+          consecutiveFailureCount,
+          active: activeDemand);
         string sanitizedFault = SanitizeFault(exception);
         logger.LogWarning(
           exception,
@@ -584,6 +597,15 @@ public sealed class ReadOnlyDeviceCoordinator(
     !string.Equals(current.IdentityFingerprint, desired.IdentityFingerprint, StringComparison.Ordinal) ||
     current.TelemetryMode != desired.TelemetryMode;
 
+  private bool HasActiveRunDemand(DateTimeOffset now)
+  {
+    lock (_sync)
+    {
+      return _runConnectionDemand is { } demand &&
+        (demand.ExpiresAtUtc is null || demand.ExpiresAtUtc > now);
+    }
+  }
+
   private void RefreshEnrollmentMetadata(DeviceEnrollment enrollment)
   {
     if (enrollment.Role == DeviceRole.Treadmill)
@@ -651,13 +673,18 @@ public sealed class ReadOnlyDeviceCoordinator(
           throw new InvalidDataException("FTMS treadmill telemetry was invalid.");
         }
 
-        UpdateTreadmillTelemetry(data, notification.ObservedAt, generation);
+        TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(data, notification.ObservedAt, generation);
+        if (update == TreadmillTelemetryUpdateResult.Ignored)
+        {
+          continue;
+        }
         if (!readyPublished)
         {
           UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
           readyPublished = true;
         }
-        primaryTelemetryObserved(notification.ObservedAt);
+        if (update == TreadmillTelemetryUpdateResult.Primary)
+          primaryTelemetryObserved(notification.ObservedAt);
         if (!evidencePersisted && TryEnqueueEvidencePersistence(
           enrollment,
           enrollmentVersion,
@@ -692,10 +719,14 @@ public sealed class ReadOnlyDeviceCoordinator(
       {
         if (OmegaStatusDecoder.TryDecode(frame, out OmegaStatus? status) && status is not null)
         {
-          UpdateTreadmillTelemetry(
+          TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(
             new FtmsTreadmillData(0, status.SpeedKph, status.InclinePercent, null),
             notification.ObservedAt,
             generation);
+          if (update == TreadmillTelemetryUpdateResult.Ignored)
+          {
+            continue;
+          }
           if (!vendorReadyPublished)
           {
             UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
@@ -742,22 +773,33 @@ public sealed class ReadOnlyDeviceCoordinator(
         cancellationToken))
       {
         HeartRateMeasurement measurement = HeartRateMeasurementParser.Parse(notification.Value.Span);
+        HeartRateSignalQuality quality = ClassifyHeartRateSignal(measurement);
+        ushort? usableBeatsPerMinute = quality == HeartRateSignalQuality.Valid
+          ? measurement.BeatsPerMinute
+          : null;
         lock (_sync)
         {
           if (!_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime) ||
               runtime.Connection.ConnectionGeneration != generation) continue;
           _heartRateSources[enrollment.Id] = runtime with
           {
-            BeatsPerMinute = measurement.BeatsPerMinute,
+            BeatsPerMinute = usableBeatsPerMinute,
             ObservedAt = notification.ObservedAt,
-            Connection = runtime.Connection with { LastObservedAt = notification.ObservedAt, Fault = null },
+            Quality = quality,
+            ContactState = MapContactState(measurement.ContactStatus),
+            Connection = runtime.Connection with
+            {
+              LastObservedAt = notification.ObservedAt,
+              Fault = HeartRateFault(quality),
+            },
           };
         }
-        if (!readyPublished)
+        if (quality == HeartRateSignalQuality.Valid && !readyPublished)
         {
           UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
           readyPublished = true;
         }
+        if (quality != HeartRateSignalQuality.Valid) continue;
         primaryTelemetryObserved(notification.ObservedAt);
         if (!evidencePersisted && TryEnqueueEvidencePersistence(
           enrollment,
@@ -872,6 +914,28 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
   }
 
+  private static HeartRateSignalQuality ClassifyHeartRateSignal(HeartRateMeasurement measurement) =>
+    measurement.ContactStatus == HeartRateContactStatus.NotDetected
+      ? HeartRateSignalQuality.ContactLost
+      : measurement.BeatsPerMinute is >= 30 and <= 250
+        ? HeartRateSignalQuality.Valid
+        : HeartRateSignalQuality.Invalid;
+
+  private static string? HeartRateFault(HeartRateSignalQuality quality) => quality switch
+  {
+    HeartRateSignalQuality.ContactLost => "Heart-rate contact is not detected.",
+    HeartRateSignalQuality.Invalid => "The heart-rate sensor sent an unusable pulse value.",
+    _ => null,
+  };
+
+  private static HeartRateContactState MapContactState(HeartRateContactStatus status) => status switch
+  {
+    HeartRateContactStatus.NotSupported => HeartRateContactState.NotSupported,
+    HeartRateContactStatus.Detected => HeartRateContactState.Detected,
+    HeartRateContactStatus.NotDetected => HeartRateContactState.NotDetected,
+    _ => HeartRateContactState.Unknown,
+  };
+
   private async IAsyncEnumerable<BleNotification> SubscribeWithWatchdogAsync(
     IBleConnection connection,
     Guid serviceUuid,
@@ -973,24 +1037,52 @@ public sealed class ReadOnlyDeviceCoordinator(
     // the current enrollment record.
     if (!IsCurrentGeneration(enrollment, generation)) return true;
 
-    if (_evidenceWrites.Writer.TryWrite(new EvidenceWrite(
+    EvidenceWrite write = new(
       enrollment,
       enrollmentVersion,
       model,
       firmware,
       capabilities,
       generation,
-      observedAt))
-    ) return true;
+      observedAt);
+    EvidenceKey key = new(enrollment.Id, generation);
+    bool signal;
+    lock (_evidenceSync)
+    {
+      // Device metadata is disposable churn: keep only the newest observation
+      // for a connection generation, while never dropping the critical key.
+      _pendingEvidenceWrites[key] = write;
+      signal = _queuedEvidenceKeys.Add(key);
+    }
 
-    Interlocked.Increment(ref _evidenceDroppedCount);
+    if (!signal) return true;
+    if (_evidenceSignals.Writer.TryWrite(key)) return true;
+
+    lock (_evidenceSync)
+    {
+      _queuedEvidenceKeys.Remove(key);
+      _pendingEvidenceWrites.Remove(key);
+    }
     return false;
   }
 
   private async Task RunEvidenceWriterAsync(CancellationToken cancellationToken)
   {
-    await foreach (EvidenceWrite write in _evidenceWrites.Reader.ReadAllAsync(cancellationToken))
+    await foreach (EvidenceKey key in _evidenceSignals.Reader.ReadAllAsync(cancellationToken))
     {
+      EvidenceWrite write;
+      lock (_evidenceSync)
+      {
+        if (!_pendingEvidenceWrites.TryGetValue(key, out EvidenceWrite? pending) || pending is null)
+        {
+          _queuedEvidenceKeys.Remove(key);
+          continue;
+        }
+        _pendingEvidenceWrites.Remove(key);
+        write = pending;
+        _queuedEvidenceKeys.Remove(key);
+      }
+
       if (!IsCurrentGeneration(write.Enrollment, write.ConnectionGeneration)) continue;
       var persisted = false;
       for (var attempt = 1; attempt <= 3; attempt++)
@@ -1030,7 +1122,28 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
 
       if (!persisted && IsCurrentGeneration(write.Enrollment, write.ConnectionGeneration))
-        Interlocked.Increment(ref _evidenceDroppedCount);
+      {
+        // Persistence failures must not turn into silent evidence loss. Keep
+        // one latest write per generation and retry after a bounded pause;
+        // disposable duplicate observations remain coalesced.
+        await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, cancellationToken);
+        EvidenceKey retryKey = new(write.Enrollment.Id, write.ConnectionGeneration);
+        lock (_evidenceSync)
+        {
+          // A newer observation may already be pending for this generation;
+          // never overwrite it with the failed, older write.
+          _pendingEvidenceWrites.TryAdd(retryKey, write);
+          if (!_queuedEvidenceKeys.Add(retryKey)) continue;
+        }
+        if (!_evidenceSignals.Writer.TryWrite(retryKey))
+        {
+          lock (_evidenceSync)
+          {
+            _queuedEvidenceKeys.Remove(retryKey);
+            _pendingEvidenceWrites.Remove(retryKey);
+          }
+        }
+      }
     }
   }
 
@@ -1164,23 +1277,102 @@ public sealed class ReadOnlyDeviceCoordinator(
     return range;
   }
 
-  private void UpdateTreadmillTelemetry(
+  private TreadmillTelemetryUpdateResult UpdateTreadmillTelemetry(
     FtmsTreadmillData data,
     DateTimeOffset observedAt,
     long generation)
   {
     lock (_sync)
     {
-      if (_snapshot.Treadmill.ConnectionGeneration != generation) return;
-      double speed = data.InstantaneousSpeedKph ?? _snapshot.TreadmillTelemetry?.SpeedKph ?? 0;
-      double incline = data.InclinationPercent ?? _snapshot.TreadmillTelemetry?.InclinePercent ?? 0;
+      if (_snapshot.Treadmill.ConnectionGeneration != generation) return TreadmillTelemetryUpdateResult.Ignored;
+      if (!IsPlausibleTelemetry(data, _snapshot.ReportedCapabilities))
+      {
+        _snapshot = _snapshot with
+        {
+          CapturedAt = timeProvider.GetUtcNow(),
+          TreadmillTelemetry = null,
+          Treadmill = _snapshot.Treadmill with
+          {
+            State = DeviceConnectionState.Faulted,
+            Fault = "The treadmill sent implausible telemetry.",
+          },
+        };
+        return TreadmillTelemetryUpdateResult.Ignored;
+      }
+
+      bool hasAnyField = data.InstantaneousSpeedKph is not null ||
+        data.InclinationPercent is not null || data.RampAngleDegrees is not null ||
+        data.AverageSpeedKph is not null || data.TotalDistanceMeters is not null ||
+        data.PositiveElevationGainMeters is not null || data.NegativeElevationGainMeters is not null ||
+        data.InstantaneousPaceSecondsPer500Meters is not null || data.AveragePaceSecondsPer500Meters is not null ||
+        data.TotalEnergyKilocalories is not null || data.EnergyPerHourKilocalories is not null ||
+        data.EnergyPerMinuteKilocalories is not null || data.HeartRateBpm is not null ||
+        data.MetabolicEquivalent is not null || data.ElapsedTime is not null || data.RemainingTime is not null ||
+        data.ForceNewtons is not null || data.PowerWatts is not null;
+      if (!hasAnyField) return TreadmillTelemetryUpdateResult.Ignored;
+
+      bool hasPrimaryField = data.InstantaneousSpeedKph is not null || data.InclinationPercent is not null;
+
+      TreadmillTelemetry? previous = _snapshot.TreadmillTelemetry;
+      double speed = data.InstantaneousSpeedKph ?? previous?.SpeedKph ?? 0;
+      double incline = data.InclinationPercent ?? previous?.InclinePercent ?? 0;
       _snapshot = _snapshot with
       {
         CapturedAt = timeProvider.GetUtcNow(),
-        TreadmillTelemetry = new TreadmillTelemetry(observedAt, speed, incline),
-        Treadmill = _snapshot.Treadmill with { LastObservedAt = observedAt, Fault = null },
+        TreadmillTelemetry = new TreadmillTelemetry(
+          observedAt,
+          speed,
+          incline,
+          data.InstantaneousSpeedKph is not null ? observedAt : previous?.SpeedObservedAt,
+          data.InclinationPercent is not null ? observedAt : previous?.InclineObservedAt,
+          data.AverageSpeedKph,
+          data.TotalDistanceMeters,
+          data.PositiveElevationGainMeters,
+          data.NegativeElevationGainMeters,
+          data.InstantaneousPaceSecondsPer500Meters,
+          data.AveragePaceSecondsPer500Meters,
+          data.TotalEnergyKilocalories,
+          data.EnergyPerHourKilocalories,
+          data.EnergyPerMinuteKilocalories,
+          data.HeartRateBpm,
+          data.MetabolicEquivalent,
+          data.ElapsedTime,
+          data.RemainingTime,
+          data.ForceNewtons,
+          data.PowerWatts),
+        Treadmill = _snapshot.Treadmill with
+        {
+          State = DeviceConnectionState.Ready,
+          LastObservedAt = observedAt,
+          Fault = null,
+        },
       };
+      return hasPrimaryField ? TreadmillTelemetryUpdateResult.Primary : TreadmillTelemetryUpdateResult.Auxiliary;
     }
+  }
+
+  private enum TreadmillTelemetryUpdateResult
+  {
+    Ignored,
+    Auxiliary,
+    Primary,
+  }
+
+  private static bool IsPlausibleTelemetry(
+    FtmsTreadmillData data,
+    TreadmillCapabilities? capabilities)
+  {
+    if (data.InstantaneousSpeedKph is { } speed &&
+        (!double.IsFinite(speed) || speed < 0 || speed > (double)(capabilities?.SpeedRange?.Maximum ?? 100m)))
+      return false;
+    if (data.InclinationPercent is { } incline)
+    {
+      if (!double.IsFinite(incline)) return false;
+      if (capabilities?.InclineRange is { } range)
+        return incline >= (double)range.Minimum && incline <= (double)range.Maximum;
+      if (Math.Abs(incline) > 90) return false;
+    }
+    return true;
   }
 
   private void UpdateCapabilities(TreadmillCapabilities capabilities)
@@ -1287,7 +1479,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
     if (logPressure)
       logger.LogWarning(
-        "The bounded BLE reliability recorder dropped events while persistence was unavailable. Dropped={DroppedCount}.",
+        "The BLE reliability recorder could not accept an event because shutdown had started. Dropped={DroppedCount}.",
         Interlocked.Read(ref _reliabilityDroppedCount));
     return false;
   }
@@ -1390,6 +1582,12 @@ public sealed class ReadOnlyDeviceCoordinator(
               false);
           }
         }
+
+        // Reliability incidents are critical evidence. Keep the envelope in
+        // the unbounded writer queue until persistence succeeds; later device
+        // churn must not erase a failure episode.
+        await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, cancellationToken);
+        _reliabilityWrites.Writer.TryWrite(envelope);
       }
 
       if (persisted)
@@ -1458,9 +1656,24 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
       else
       {
-        _heartRateSources[enrollment.Id] = _heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime)
-          ? runtime with { Enrollment = enrollment, Connection = connection }
-          : new HeartRateRuntime(enrollment, connection, null, null);
+        if (_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime))
+        {
+          bool generationChanged = runtime.Connection.ConnectionGeneration != generation;
+          _heartRateSources[enrollment.Id] = runtime with
+          {
+            Enrollment = enrollment,
+            Connection = generationChanged ? connection with { LastObservedAt = null } : connection,
+            BeatsPerMinute = generationChanged ? null : runtime.BeatsPerMinute,
+            ObservedAt = generationChanged ? null : runtime.ObservedAt,
+            BatteryPercent = generationChanged ? null : runtime.BatteryPercent,
+            BatteryObservedAt = generationChanged ? null : runtime.BatteryObservedAt,
+            Quality = generationChanged ? HeartRateSignalQuality.Unavailable : runtime.Quality,
+          };
+        }
+        else
+        {
+          _heartRateSources[enrollment.Id] = new HeartRateRuntime(enrollment, connection, null, null);
+        }
       }
     }
   }
@@ -1501,6 +1714,10 @@ public sealed class ReadOnlyDeviceCoordinator(
           },
           BeatsPerMinute = null,
           ObservedAt = null,
+          BatteryPercent = null,
+          BatteryObservedAt = null,
+          Quality = HeartRateSignalQuality.Unavailable,
+          ContactState = HeartRateContactState.Unknown,
         };
       }
     }
@@ -1510,18 +1727,29 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     DateTimeOffset now = timeProvider.GetUtcNow();
     HeartRateSourceSnapshot[] sources = _heartRateSources.Values
-      .Select(runtime => new HeartRateSourceSnapshot(
-        runtime.Enrollment.Id,
-        runtime.Enrollment.DisplayName,
-        runtime.Enrollment.HeartRateDeviceKind ?? HeartRateDeviceKind.Sensor,
-        runtime.Enrollment.HeartRateDeviceFamily ?? HeartRateDeviceFamily.Other,
-        runtime.Connection.State,
-        runtime.Connection.ConnectionGeneration,
-        runtime.BeatsPerMinute,
-        runtime.ObservedAt,
-        runtime.Connection.Fault,
-        runtime.BatteryPercent,
-        runtime.BatteryObservedAt))
+      .Select(runtime =>
+      {
+        bool fresh = runtime.Connection.State == DeviceConnectionState.Ready &&
+          runtime.Quality == HeartRateSignalQuality.Valid &&
+          runtime.BeatsPerMinute is >= 30 and <= 250 &&
+          runtime.ObservedAt is { } observedAt &&
+          now - observedAt >= TimeSpan.Zero &&
+          now - observedAt <= HeartRateFreshnessLimit;
+        return new HeartRateSourceSnapshot(
+          runtime.Enrollment.Id,
+          runtime.Enrollment.DisplayName,
+          runtime.Enrollment.HeartRateDeviceKind ?? HeartRateDeviceKind.Sensor,
+          runtime.Enrollment.HeartRateDeviceFamily ?? HeartRateDeviceFamily.Other,
+          runtime.Connection.State,
+          runtime.Connection.ConnectionGeneration,
+          fresh ? runtime.BeatsPerMinute : null,
+          runtime.ObservedAt,
+          runtime.Connection.Fault,
+          runtime.BatteryPercent,
+          runtime.BatteryObservedAt,
+          runtime.Quality,
+          runtime.ContactState);
+      })
       .OrderBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase)
       .ToArray();
     HeartRateSourceSnapshot? selected = HeartRateSourceSelector.Select(
@@ -1554,7 +1782,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     {
       CapturedAt = now,
       HeartRate = connection,
-      HeartRateBpm = displayed?.BeatsPerMinute,
+      HeartRateBpm = selected?.BeatsPerMinute,
       HeartRateObservedAt = displayed?.ObservedAt,
       HeartRateSources = sources,
       SelectedHeartRateEnrollmentId = selectedId,
@@ -1568,6 +1796,8 @@ public sealed class ReadOnlyDeviceCoordinator(
           : "No automatic heart-rate sensor is assigned to this runner.",
       SelectedHeartRateBatteryPercent = displayed?.BatteryPercent,
       SelectedHeartRateBatteryObservedAt = displayed?.BatteryObservedAt,
+      SelectedHeartRateQuality = displayed?.Quality ?? HeartRateSignalQuality.Unavailable,
+      SelectedHeartRateContactState = displayed?.ContactState ?? HeartRateContactState.Unknown,
     };
   }
 
@@ -1670,7 +1900,9 @@ public sealed class ReadOnlyDeviceCoordinator(
     ushort? BeatsPerMinute,
     DateTimeOffset? ObservedAt,
     byte? BatteryPercent = null,
-    DateTimeOffset? BatteryObservedAt = null);
+    DateTimeOffset? BatteryObservedAt = null,
+    HeartRateSignalQuality Quality = HeartRateSignalQuality.Unavailable,
+    HeartRateContactState ContactState = HeartRateContactState.Unknown);
 
   private sealed class ConnectionAttemptRuntime
   {
@@ -1717,6 +1949,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     TreadmillCapabilities? Capabilities,
     long ConnectionGeneration,
     DateTimeOffset ObservedAt);
+
+  private readonly record struct EvidenceKey(Guid EnrollmentId, long ConnectionGeneration);
 
   private sealed record BeginReliabilityWrite(
     Guid EnrollmentId,

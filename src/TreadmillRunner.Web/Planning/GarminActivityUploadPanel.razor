@@ -44,6 +44,7 @@
             <strong>@status.AccountLabel</strong>
             <span>@(status.Enabled ? "Automatic upload enabled" : "Automatic upload disabled") · @status.Confirmed confirmed · @status.FoundInGarmin matched on watch · @status.Pending pending</span>
             @if (status.Unknown > 0) { <small class="field-error">@status.Unknown unknown outcome(s)—review before dismissing.</small> }
+            @if (status.ReviewRequired > 0) { <small class="field-error">@status.ReviewRequired possible watch match(es) require review before any upload.</small> }
             @if (status.Failed > 0) { <small class="field-error">@status.Failed known failure(s) can be retried.</small> }
             @if (!string.IsNullOrWhiteSpace(status.LastError)) { <small class="field-error" role="status">@status.LastError</small> }
         </div>
@@ -74,6 +75,10 @@
                     {
                         <article><div><strong>@(job.WorkoutTitle ?? "Completed treadmill run") · @job.Status</strong><small>@(job.StartedAtUtc?.ToLocalTime().ToString("g") ?? job.UpdatedAtUtc.ToLocalTime().ToString("g")) · @FormatDuration(job.DurationSeconds) · attempt @job.AttemptCount</small></div>
                             @if (!string.IsNullOrWhiteSpace(job.LastError)) { <p>@job.LastError</p> }
+                            @if (job.Status == "ReviewRequired" && !string.IsNullOrWhiteSpace(job.MatchEvidence))
+                            {
+                                <p><strong>Possible match — review required:</strong> @job.MatchEvidence</p>
+                            }
                             <div class="form-actions">
                                 <a class="secondary-action" href="@($"history/{job.WorkoutSessionId}")">Open history</a>
                                 @if (status.WatchActivityHandling == "MergeAndReplace" && job.Status == "Confirmed" && job.RemoteId is null && job.OperationPhase == "WatchSearch" && job.MatchedRemoteId is null && job.ReplacementRemoteId is null)
@@ -101,7 +106,7 @@
                                         <button class="secondary-action" type="button" @onclick="() => { confirmAbsentJobId = job.Id; confirmFoundJobId = null; }">Not found—retry</button>
                                     }
                                 }
-                                @if (job.Status is "Failed" or "Unknown") { <button class="secondary-action" type="button" @onclick="() => DismissAsync(job.Id)">Dismiss</button> }
+                                @if (job.Status is "Failed" or "Unknown" or "ReviewRequired") { <button class="secondary-action" type="button" @onclick="() => DismissAsync(job.Id)">Dismiss</button> }
                             </div>
                         </article>
                     }
@@ -365,9 +370,9 @@
         finally { busy = false; }
     }
 
-    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? WatchActivityHandling, string? AccountLabel, string State, int Pending, int Confirmed, int FoundInGarmin, int Failed, int Unknown, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
+    private sealed record GarminActivityStatusView(Guid ProfileId, bool Connected, bool Enabled, string? WatchActivityHandling, string? AccountLabel, string State, int Pending, int Confirmed, int FoundInGarmin, int Failed, int Unknown, int ReviewRequired, DateTimeOffset? LastSuccessAtUtc, string? LastError, int? Version, string AdapterState, string AdapterMessage, bool CanConnect);
     private static string FormatDuration(double? seconds) => seconds is null ? "duration unavailable" : TimeSpan.FromSeconds(seconds.Value).ToString(@"h\:mm\:ss");
-    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string OperationPhase, string? MatchedRemoteId, string? ReplacementRemoteId, string? MatchEvidence, string? FailureKind, bool CanRetry, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc, DateTimeOffset? AcknowledgedAtUtc);
+    private sealed record GarminActivityJobView(Guid Id, Guid WorkoutSessionId, string Status, int AttemptCount, string? RemoteId, string OperationPhase, string? MatchedRemoteId, string? ReplacementRemoteId, string? MatchEvidence, string? FailureKind, bool CanRetry, DateTimeOffset? RetryAtUtc, string? WorkoutTitle, DateTimeOffset? StartedAtUtc, double? DurationSeconds, string? LastError, DateTimeOffset UpdatedAtUtc, DateTimeOffset? AcknowledgedAtUtc);
     private sealed record GarminActivityConnectResultView(string State, Guid? ChallengeId, string? AccountLabel, string Message);
     private sealed record GarminActivityErrorView(string Error, string? AdapterState);
     private sealed record GarminWatchBindingView(Guid Id, Guid UserProfileId, string RunnerName, string DeviceLabel, DateTimeOffset CreatedAtUtc, DateTimeOffset? LastSeenAtUtc, int Version);

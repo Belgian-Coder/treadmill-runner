@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using Dynastream.Fit;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Protocols.Exports;
@@ -86,6 +87,67 @@ public sealed class SessionExporterTests
     Assert.Equal((byte)5, records[1].GetZone());
     Assert.Equal((byte)2, records[2].GetZone());
     Assert.InRange(records[^1].GetEnhancedAltitude() ?? float.NaN, 4.9f, 5.1f);
+  }
+
+  [Fact]
+  public void Native_json_export_is_metric_versioned_and_keeps_full_resolution_samples()
+  {
+    using JsonDocument document = JsonDocument.Parse(SessionNativeJsonExporter.Export(Session()));
+    JsonElement root = document.RootElement;
+
+    Assert.Equal("treadmillrunner.session/v1", root.GetProperty("schema").GetString());
+    Assert.Equal("Metric", root.GetProperty("unitSystem").GetString());
+    Assert.Equal("Export test", root.GetProperty("session").GetProperty("workoutTitle").GetString());
+    Assert.Equal(3, root.GetProperty("samples").GetArrayLength());
+    Assert.Equal(8, root.GetProperty("samples")[1].GetProperty("measuredSpeedKph").GetDouble());
+  }
+
+  [Fact]
+  public void Tcx_activity_export_is_metric_and_contains_trackpoint_heart_rate_and_speed()
+  {
+    XDocument document = XDocument.Parse(Encoding.UTF8.GetString(SessionTcxActivityExporter.Export(Session())));
+    XNamespace tcx = "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2";
+    XNamespace activity = "http://www.garmin.com/xmlschemas/ActivityExtension/v2";
+
+    XElement lap = Assert.Single(document.Descendants(tcx + "Lap"));
+    Assert.Equal("3.333", lap.Element(tcx + "DistanceMeters")?.Value);
+    Assert.Equal(3, document.Descendants(tcx + "Trackpoint").Count());
+    XElement secondTrackpoint = document.Descendants(tcx + "Trackpoint").Skip(1).First();
+    Assert.Equal("150", secondTrackpoint.Element(tcx + "HeartRateBpm")?.Element(tcx + "Value")?.Value);
+    Assert.Equal("2.222", document.Descendants(activity + "Speed").Skip(1).First().Value);
+  }
+
+  [Fact]
+  public void Fit_workout_export_encodes_an_immutable_metric_revision()
+  {
+    const string definition = """
+      {"schemaVersion":1,"title":"Metric intervals","description":null,"blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":600000000},"speed":{"kind":"fixed","kilometersPerHour":7.2},"incline":{"kind":"fixed","percent":1.5},"cue":"Steady","notes":null}]}
+      """;
+    byte[] fit = WorkoutFitExporter.Export(
+      Guid.Parse("c0123456-789a-4bcd-8ef0-123456789abc"),
+      definition,
+      new DateTimeOffset(2026, 8, 23, 9, 0, 0, TimeSpan.Zero));
+    using var stream = new MemoryStream(fit);
+    var decoder = new Decode();
+    Dynastream.Fit.File? fileType = null;
+    WorkoutMesg? workout = null;
+    WorkoutStepMesg? step = null;
+    var broadcaster = new MesgBroadcaster();
+    broadcaster.FileIdMesgEvent += (_, args) => fileType = new FileIdMesg(args.mesg).GetType();
+    broadcaster.WorkoutMesgEvent += (_, args) => workout = new WorkoutMesg(args.mesg);
+    broadcaster.WorkoutStepMesgEvent += (_, args) => step = new WorkoutStepMesg(args.mesg);
+    decoder.MesgEvent += broadcaster.OnMesg;
+    decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+
+    Assert.True(decoder.Read(stream));
+    Assert.Equal(Dynastream.Fit.File.Workout, fileType);
+    Assert.Equal("Metric intervals", workout?.GetWktNameAsString());
+    Assert.Equal((ushort)1, workout?.GetNumValidSteps());
+    Assert.Equal(WktStepDuration.Time, step?.GetDurationType());
+    Assert.Equal(60, step?.GetDurationTime());
+    Assert.Equal(WktStepTarget.Speed, step?.GetTargetType());
+    Assert.InRange(step?.GetCustomTargetSpeedLow() ?? float.NaN, 1.999f, 2.001f);
+    Assert.Contains("incline 1.5%", step?.GetNotesAsString(), StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]

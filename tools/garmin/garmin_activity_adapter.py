@@ -12,7 +12,7 @@ import sys
 import io
 import math
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -163,49 +163,63 @@ def search(request: dict[str, Any]) -> None:
     if local_start is None:
         raise ValueError("A UTC session start is required.")
     # Garmin's private activities endpoint does not consistently accept the
-    # treadmill_running type key as a server-side filter. Keep the request
+    # treadmill_running type key as a server-side filter. Keep pagination
     # bounded and apply the exact type/start filters below instead.
-    activities = client.get_activities(0, 20)
+    page_size = 20
+    max_pages = 10
     candidates: list[dict[str, Any]] = []
-    for activity in activities if isinstance(activities, list) else []:
-        if not isinstance(activity, dict):
-            continue
-        remote_id = activity.get("activityId")
-        started = _utc(activity.get("startTimeGMT"))
-        activity_type = activity.get("activityType") or {}
-        type_key = activity_type.get("typeKey") if isinstance(activity_type, dict) else None
-        if remote_id is None or started is None or abs((started - local_start).total_seconds()) > 600:
-            continue
-        if str(type_key or "").lower() != "treadmill_running":
-            continue
-        heart_rate_samples: list[dict[str, Any]] = []
-        try:
-            details = client.get_activity_details(str(remote_id), maxchart=1000, maxpoly=0)
-            parsed = parse_activity_detail_metrics(details if isinstance(details, dict) else {})
-        except Exception:
-            parsed = []  # bounded summary HR can still corroborate when chart details are unavailable
-        stride = max(1, math.ceil(len(parsed) / 200))
-        for sample in parsed[::stride]:
-            elapsed = sample.get("sumElapsedDuration", sample.get("sumDuration"))
-            bpm = sample.get("directHeartRate", sample.get("heartRate"))
-            if isinstance(elapsed, (int, float)) and isinstance(bpm, (int, float)) and 0 < bpm <= 255:
-                heart_rate_samples.append({"elapsedSeconds": float(elapsed), "bpm": int(round(bpm))})
-        candidates.append(
-            {
-                "remoteId": str(remote_id),
-                "activityType": "treadmill_running",
-                "startedAtUtc": started.isoformat(),
-                "durationSeconds": float(activity.get("duration") or 0),
-                "distanceKilometers": float(activity.get("distance") or 0) / 1000.0,
-                "averageHeartRate": _heart_rate(activity.get("averageHR"), integral=False),
-                # Garmin commonly serializes summary heart rate as a JSON
-                # decimal (for example 155.0). The gateway contract uses an
-                # unsigned integral BPM value, so normalize it at this boundary.
-                "maximumHeartRate": _heart_rate(activity.get("maxHR"), integral=True),
-                "heartRateSamples": heart_rate_samples,
-            }
-        )
-        if len(candidates) >= 5:
+    for page in range(max_pages):
+        activities = client.get_activities(page * page_size, page_size)
+        if not isinstance(activities, list) or not activities:
+            break
+        page_dates: list[datetime] = []
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            remote_id = activity.get("activityId")
+            started = _utc(activity.get("startTimeGMT"))
+            if started is not None:
+                page_dates.append(started)
+            activity_type = activity.get("activityType") or {}
+            type_key = activity_type.get("typeKey") if isinstance(activity_type, dict) else None
+            if remote_id is None or started is None or abs((started - local_start).total_seconds()) > 600:
+                continue
+            if str(type_key or "").lower() != "treadmill_running":
+                continue
+            heart_rate_samples: list[dict[str, Any]] = []
+            try:
+                details = client.get_activity_details(str(remote_id), maxchart=1000, maxpoly=0)
+                parsed = parse_activity_detail_metrics(details if isinstance(details, dict) else {})
+            except Exception:
+                parsed = []  # bounded summary HR can still corroborate when chart details are unavailable
+            stride = max(1, math.ceil(len(parsed) / 200))
+            for sample in parsed[::stride]:
+                elapsed = sample.get("sumElapsedDuration", sample.get("sumDuration"))
+                bpm = sample.get("directHeartRate", sample.get("heartRate"))
+                if isinstance(elapsed, (int, float)) and isinstance(bpm, (int, float)) and 0 < bpm <= 255:
+                    heart_rate_samples.append({"elapsedSeconds": float(elapsed), "bpm": int(round(bpm))})
+            candidates.append(
+                {
+                    "remoteId": str(remote_id),
+                    "activityType": "treadmill_running",
+                    "startedAtUtc": started.isoformat(),
+                    "durationSeconds": float(activity.get("duration") or 0),
+                    "distanceKilometers": float(activity.get("distance") or 0) / 1000.0,
+                    "averageHeartRate": _heart_rate(activity.get("averageHR"), integral=False),
+                    # Garmin commonly serializes summary heart rate as a JSON
+                    # decimal (for example 155.0). The gateway contract uses an
+                    # unsigned integral BPM value, so normalize it at this boundary.
+                    "maximumHeartRate": _heart_rate(activity.get("maxHR"), integral=True),
+                    "heartRateSamples": heart_rate_samples,
+                }
+            )
+            if len(candidates) >= 5:
+                break
+        if len(candidates) >= 5 or len(activities) < page_size:
+            break
+        # Activity pages are normally newest-first. Once the oldest item in a
+        # page is older than the local session window, later pages cannot match.
+        if page_dates and min(page_dates) < local_start - timedelta(seconds=600):
             break
     emit({"state": "confirmed", "tokenStore": client.client.dumps(), "candidates": candidates})
 

@@ -1,0 +1,24 @@
+<div class="@CssClass" role="group" aria-label="@AriaLabel">
+    @foreach ((string label, int flag) in Days)
+    {
+        bool selected = (Value & flag) != 0;
+        <button type="button"
+                aria-pressed="@(selected.ToString().ToLowerInvariant())"
+                class="@(selected ? "is-selected" : null)"
+                @onclick="() => ToggleAsync(flag)">@label</button>
+    }
+</div>
+
+@code {
+    private static readonly (string Label, int Flag)[] Days =
+    [
+        ("Mon", 1), ("Tue", 2), ("Wed", 4), ("Thu", 8), ("Fri", 16), ("Sat", 32), ("Sun", 64),
+    ];
+
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Training weekdays";
+    [Parameter] public string? CssClass { get; set; }
+
+    private Task ToggleAsync(int flag) => ValueChanged.InvokeAsync((Value & flag) != 0 ? Value & ~flag : Value | flag);
+}

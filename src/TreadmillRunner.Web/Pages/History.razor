@@ -1,5 +1,6 @@
 @page "/history"
 @inject HttpClient Http
+@inject LocalFirstApiClient LocalFirst
 @inject ActiveProfileState ActiveProfile
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -16,6 +17,44 @@
         <button type="button" class="@(showTests ? "secondary-action" : "primary-action")" aria-pressed="@((!showTests).ToString().ToLowerInvariant())" @onclick="() => SetTestModeAsync(false)">Runs</button>
         <button type="button" class="@(showTests ? "primary-action" : "secondary-action")" aria-pressed="@(showTests.ToString().ToLowerInvariant())" @onclick="() => SetTestModeAsync(true)">Tests</button>
     </div>
+
+    @if (!loading && !showTests && profileId is not null && string.IsNullOrWhiteSpace(loadError) && insights is not null)
+    {
+        <section class="panel-card" aria-labelledby="history-goals-title">
+            <div class="panel-heading">
+                <div><p class="eyebrow">Metric goals</p><h2 id="history-goals-title">Weekly and monthly targets</h2></div>
+                <span>Completed runs only</span>
+            </div>
+            <p class="field-hint">Distance is measured in kilometres and duration in minutes. Progress comes from this runner’s completed local sessions.</p>
+            <div class="goal-progress-grid">
+                @foreach (GoalDraft goal in goalDrafts)
+                {
+                    double progress = GoalProgress(goal);
+                    double remaining = Math.Max(0, goal.TargetValue - progress);
+                    <article class="goal-progress-card">
+                        <div class="weekly-summary-heading">
+                            <strong>@goal.Period @GoalLabel(goal.Kind)</strong>
+                            <span>@(goal.Enabled ? "Active" : "Paused")</span>
+                        </div>
+                        <progress max="@Math.Max(0.01, goal.TargetValue)" value="@Math.Min(progress, Math.Max(0.01, goal.TargetValue))" aria-label="@goal.Period @GoalLabel(goal.Kind) progress"></progress>
+                        <p><strong>@FormatGoalValue(goal.Kind, progress)</strong> of @FormatGoalValue(goal.Kind, goal.TargetValue)</p>
+                        <p class="field-hint">@(remaining <= 0 ? "Target reached." : $"{FormatGoalValue(goal.Kind, remaining)} remaining.")</p>
+                        <div class="form-grid">
+                            <label class="field">Target (@GoalUnit(goal.Kind))
+                                <input type="number" min="1" step="@(goal.Kind == "Distance" ? "0.1" : "1")" @bind="goal.TargetValue" />
+                            </label>
+                            <label class="field field--checkbox"><input type="checkbox" @bind="goal.Enabled" /> Active</label>
+                        </div>
+                        <button class="secondary-action compact-action" type="button" disabled="@goal.Saving" @onclick="() => SaveGoalAsync(goal)">@(goal.Saving ? "Saving…" : "Save target")</button>
+                        @if (!string.IsNullOrWhiteSpace(goal.Message))
+                        {
+                            <p class="field-hint" role="status">@goal.Message</p>
+                        }
+                    </article>
+                }
+            </div>
+        </section>
+    }
 
     @if (loading)
     {
@@ -181,6 +220,7 @@
     private CancellationTokenSource? historyLoadCancellation;
     private int historyLoadGeneration;
     private IReadOnlyList<SessionSummary> filteredSessions = Array.Empty<SessionSummary>();
+    private IReadOnlyList<GoalDraft> goalDrafts = Array.Empty<GoalDraft>();
 
     private IReadOnlyList<SessionSummary> FilteredSessions => filteredSessions;
     private IReadOnlyList<SessionSummary> VisibleSessions => filteredSessions.Take(historyDisplayLimit).ToArray();
@@ -354,6 +394,7 @@
         filteredSessions = Array.Empty<SessionSummary>();
         weekly = null;
         insights = null;
+        goalDrafts = Array.Empty<GoalDraft>();
         if (requestedProfileId is not { } selected)
         {
             loading = false;
@@ -375,12 +416,12 @@
                 {
                     Task<WeeklySessionTotals?> weeklyTask = Http.GetFromJsonAsync<WeeklySessionTotals>(
                         $"api/history/weekly?profileId={selected}", cancellationToken);
-                    Task<LocalInsightsView?> insightsTask = Http.GetFromJsonAsync<LocalInsightsView>(
-                        $"api/local-first/profiles/{selected}/insights", cancellationToken);
+                    Task<LocalInsightsView?> insightsTask = LocalFirst.GetInsightsAsync(selected, cancellationToken);
                     await Task.WhenAll(weeklyTask, insightsTask);
                     if (generation != historyLoadGeneration || profileId != requestedProfileId) return;
                     weekly = await weeklyTask;
                     insights = await insightsTask;
+                    SyncGoalDrafts();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -411,6 +452,117 @@
             : $"{session.AverageHeartRateBpm:0} bpm";
     }
 
+    private void SyncGoalDrafts()
+    {
+        if (insights is null)
+        {
+            goalDrafts = Array.Empty<GoalDraft>();
+            return;
+        }
+
+        var result = new List<GoalDraft>(6);
+        foreach (string period in new[] { "Weekly", "Monthly" })
+        {
+            foreach (string kind in new[] { "Distance", "Minutes", "Sessions" })
+            {
+                LocalGoalView? stored = insights.Goals.FirstOrDefault(goal =>
+                    string.Equals(goal.Period, period, StringComparison.Ordinal) &&
+                    string.Equals(goal.Kind, kind, StringComparison.Ordinal));
+                result.Add(new GoalDraft
+                {
+                    Id = stored?.Id,
+                    Kind = kind,
+                    Period = period,
+                    TargetValue = stored?.TargetValue ?? DefaultGoalTarget(kind, period),
+                    Enabled = stored?.Enabled ?? false,
+                    Version = stored?.Version,
+                });
+            }
+        }
+        goalDrafts = result;
+    }
+
+    private async Task SaveGoalAsync(GoalDraft goal)
+    {
+        if (profileId is not { } selected || goal.TargetValue <= 0 || !double.IsFinite(goal.TargetValue))
+        {
+            goal.Message = "Enter a target greater than zero.";
+            return;
+        }
+
+        goal.Saving = true;
+        goal.Message = null;
+        try
+        {
+            LocalApiResult<LocalGoalView> result = await LocalFirst.SaveGoalAsync(
+                selected,
+                new LocalGoalUpdate(goal.Id, goal.Kind, goal.Period, goal.TargetValue, goal.Enabled, goal.Version));
+            LocalGoalView? saved = result.Value;
+            if (saved is null)
+            {
+                goal.Message = result.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "This target changed elsewhere. Reload History and try again."
+                    : "The target could not be saved.";
+                return;
+            }
+            goal.Id = saved.Id;
+            goal.Version = saved.Version;
+            goal.Enabled = saved.Enabled;
+            goal.TargetValue = saved.TargetValue;
+            goal.Message = "Target saved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            goal.Message = "The target could not be saved to the local gateway.";
+        }
+        finally
+        {
+            goal.Saving = false;
+        }
+    }
+
+    private double GoalProgress(GoalDraft goal)
+    {
+        LocalTrendView trend = goal.Period == "Weekly" ? insights!.WeeklyTrends : insights!.MonthlyTrends;
+        return goal.Kind switch
+        {
+            "Distance" => trend.DistanceKilometers,
+            "Minutes" => trend.Duration.TotalMinutes,
+            _ => trend.CompletedSessions,
+        };
+    }
+
+    private static string GoalLabel(string kind) => kind switch
+    {
+        "Distance" => "distance",
+        "Minutes" => "duration",
+        _ => "run count",
+    };
+
+    private static string GoalUnit(string kind) => kind switch
+    {
+        "Distance" => "km",
+        "Minutes" => "min",
+        _ => "runs",
+    };
+
+    private static string FormatGoalValue(string kind, double value) => kind switch
+    {
+        "Distance" => $"{value:0.0} km",
+        "Minutes" => $"{value:0} min",
+        _ => $"{value:0} {(Math.Abs(value - 1) < 0.001 ? "run" : "runs")}",
+    };
+
+    private static double DefaultGoalTarget(string kind, string period) => (kind, period) switch
+    {
+        ("Distance", "Weekly") => 15,
+        ("Distance", _) => 60,
+        ("Minutes", "Weekly") => 150,
+        ("Minutes", _) => 600,
+        ("Sessions", "Weekly") => 3,
+        _ => 12,
+    };
+
     private void ClearFilters()
     {
         searchTextValue = string.Empty;
@@ -419,9 +571,17 @@
         RefreshFilteredSessions();
     }
 
-    private sealed record LocalInsightsView(LocalTrendView Trends, LocalTrendView WeeklyTrends, LocalTrendView MonthlyTrends, IReadOnlyList<LocalGoalView> Goals);
-    private sealed record LocalTrendView(Guid ProfileId, int CompletedSessions, TimeSpan Duration, double DistanceKilometers, int IncompleteTelemetrySessions, double LongestDistanceKilometers, TimeSpan LongestDuration, int? HighestAverageHeartRateBpm);
-    private sealed record LocalGoalView(Guid Id, Guid ProfileId, string Kind, string Period, double TargetValue, bool Enabled, int Version, DateTimeOffset UpdatedAtUtc);
+    private sealed class GoalDraft
+    {
+        public Guid? Id { get; set; }
+        public required string Kind { get; init; }
+        public required string Period { get; init; }
+        public double TargetValue { get; set; }
+        public bool Enabled { get; set; }
+        public int? Version { get; set; }
+        public bool Saving { get; set; }
+        public string? Message { get; set; }
+    }
 
     public async ValueTask DisposeAsync()
     {

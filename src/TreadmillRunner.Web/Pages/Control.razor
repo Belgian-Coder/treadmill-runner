@@ -940,9 +940,15 @@
                 return;
             }
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            Guid completedSessionId = session?.SessionId ?? Guid.Empty;
             await KeepSessionPausedAsync();
             actionStatus = successMessage;
-            if (navigateHome) Navigation.NavigateTo("/", replace: true);
+            if (navigateHome)
+            {
+                Navigation.NavigateTo(
+                    completedSessionId == Guid.Empty ? "/history" : $"/history/{completedSessionId:D}",
+                    replace: true);
+            }
         }
         finally { sessionActionBusy = false; }
     }

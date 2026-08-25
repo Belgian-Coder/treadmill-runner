@@ -49,6 +49,7 @@ public interface IOperationReceiptStore
 {
   Task<OperationReceipt?> FindAsync(Guid clientOperationId, CancellationToken cancellationToken = default);
   Task<bool> TryAddAsync(OperationReceipt receipt, CancellationToken cancellationToken = default);
+  Task<int> PruneAsync(DateTimeOffset olderThanUtc, CancellationToken cancellationToken = default);
 }
 
 internal static class PersistenceReceipts
@@ -169,5 +170,16 @@ public sealed class OperationReceiptStore(IDbContextFactory<TreadmillRunnerDbCon
     {
       return false;
     }
+  }
+
+  public async Task<int> PruneAsync(
+    DateTimeOffset olderThanUtc,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    return await context.Database.ExecuteSqlInterpolatedAsync($"""
+      DELETE FROM OperationReceipts
+      WHERE julianday(CreatedAtUtc) < julianday({olderThanUtc})
+      """, cancellationToken);
   }
 }

@@ -4,7 +4,7 @@ type: operations-plan
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-04
+updated: 2026-08-23
 ---
 
 # Windows gateway operations plan
@@ -31,10 +31,12 @@ Use a dedicated least-privilege service identity. SMB update access is granted t
 ## Startup and recovery
 
 1. Windows starts the service without requiring a logged-in desktop.
-2. Kestrel, health endpoints, UI, and database readiness start independently of BLE.
+2. Kestrel, health endpoints, UI, and cached database readiness start independently of BLE; full integrity/backup work is deferred from ordinary startup.
 3. The BLE supervisor waits for the adapter, scans for enrolled fingerprints, and reconnects with bounded jittered backoff.
 4. Reconnect returns device state to `Ready`; it never restores a running/armed session or queued writes.
 5. Service recovery restarts after a crash. Any unfinished session becomes `Interrupted`.
+
+The reviewed schema migration reconciles pre-existing active-session conflicts before enforcing the filtered unique active-session slot. Recovery loads only the selected crash-recovery candidate. Session effects, one-second checkpoint writes, and browser fan-out are versioned and run outside transition locks; slow persistence or browsers cannot delay heartbeats, Stop, or the serialized hardware command path.
 
 Health surfaces are `/health/live`, `/health/ready`, and `/health/ble`. Treadmill power-off degrades `/health/ble` diagnostics but does not fail process liveness/readiness.
 

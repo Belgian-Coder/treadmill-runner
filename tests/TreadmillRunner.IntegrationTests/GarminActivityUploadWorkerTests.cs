@@ -103,7 +103,43 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       Assert.Equal(new[] { "search", "download", "upload" }, adapter.Calls);
   }
 
-  private static async Task SeedCompletedSessionAsync(IDbContextFactory<TreadmillRunnerDbContext> factory, Guid profileId, DateTimeOffset started)
+  [Fact]
+  public async Task Possible_watch_match_without_local_heart_rate_stops_before_upload_for_review()
+  {
+    string databasePath = Path.Combine(directory, $"review-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started, includeHeartRate: false);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new OutcomeAdapter(AdapterMode.Confirmed, returnMatch: true);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter, store, DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))), clock);
+    await store.ConnectAsync(profileId, "marc", connections.Protect("original-token-store"), true, now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await using ServiceProvider services = new ServiceCollection().AddSingleton(factory).AddScoped<ISessionStore, SessionStore>().BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(services.GetRequiredService<IServiceScopeFactory>(), store, adapter, connections, clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
+
+    await worker.ProcessOneAsync(leased, default);
+
+    GarminActivityUploadJob review = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("ReviewRequired", review.Status);
+    Assert.Equal("Review", review.OperationPhase);
+    Assert.Equal("watch-123", review.MatchedRemoteId);
+    Assert.Equal("review-required", review.FailureKind);
+    Assert.Contains("heart-rate", review.MatchEvidence, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(new[] { "search" }, adapter.Calls);
+    Assert.False(adapter.SawReadableFit);
+    Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
+  }
+
+  private static async Task SeedCompletedSessionAsync(
+    IDbContextFactory<TreadmillRunnerDbContext> factory,
+    Guid profileId,
+    DateTimeOffset started,
+    bool includeHeartRate = true)
   {
     await using TreadmillRunnerDbContext context = await factory.CreateDbContextAsync();
     await context.Database.MigrateAsync();
@@ -125,8 +161,8 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       DurationSeconds = 60,
       DistanceKilometers = 0.1,
       EstimatedCalories = 8,
-      AverageHeartRateBpm = 130,
-      MaximumHeartRateBpm = 140,
+      AverageHeartRateBpm = includeHeartRate ? 130 : null,
+      MaximumHeartRateBpm = includeHeartRate ? 140 : null,
       AverageSpeedKph = 6,
       AverageInclinePercent = 1,
       MetricAlgorithmVersion = "v1",
@@ -144,7 +180,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       PlannedInclinePercent = 1,
       RequestedInclinePercent = 1,
       MeasuredInclinePercent = 1,
-      HeartRateBpm = 130,
+      HeartRateBpm = includeHeartRate ? (ushort)130 : null,
       DistanceKilometers = .0017,
       EstimatedCalories = .13,
       TelemetryAgeMilliseconds = 10,

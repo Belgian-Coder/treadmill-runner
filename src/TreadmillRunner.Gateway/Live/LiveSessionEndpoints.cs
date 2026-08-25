@@ -61,6 +61,10 @@ public sealed record DeleteHistorySessionRequest(
   Guid ProfileId,
   string ExpectedRevision,
   bool Confirmed);
+public sealed record SessionDebriefRequest(
+  Guid ProfileId,
+  int? PerceivedExertion,
+  string? Note);
 public sealed record HistoryEventResponse(
   string EventType,
   DateTimeOffset OccurredAt,
@@ -105,43 +109,69 @@ public static class LiveSessionEndpoints
     history.MapGet("", ListHistoryAsync);
     history.MapGet("/weekly", GetWeeklyHistoryAsync);
     history.MapGet("/{sessionId:guid}", GetHistoryAsync);
+    history.MapPut("/{sessionId:guid}/debrief", SaveDebriefAsync);
     history.MapGet("/{sessionId:guid}/deletion-preview", GetDeletionPreviewAsync);
     history.MapPost("/{sessionId:guid}/delete", DeleteHistoryAsync);
     history.MapGet("/{sessionId:guid}/export.csv", ExportCsvAsync);
     history.MapGet("/{sessionId:guid}/export.fit", ExportFitAsync);
+    history.MapGet("/{sessionId:guid}/export.tcx", ExportTcxAsync);
+    history.MapGet("/{sessionId:guid}/export.json", ExportJsonAsync);
     return endpoints;
   }
 
   private static Task<IResult> ExportCsvAsync(
     Guid sessionId,
     TreadmillRunner.Core.Sessions.ISessionStore store,
-    CancellationToken cancellationToken) => ExportAsync(sessionId, store, isFit: false, cancellationToken);
+    CancellationToken cancellationToken) => ExportAsync(sessionId, store, SessionExportFormat.Csv, cancellationToken);
 
   private static Task<IResult> ExportFitAsync(
     Guid sessionId,
     TreadmillRunner.Core.Sessions.ISessionStore store,
-    CancellationToken cancellationToken) => ExportAsync(sessionId, store, isFit: true, cancellationToken);
+    CancellationToken cancellationToken) => ExportAsync(sessionId, store, SessionExportFormat.Fit, cancellationToken);
+
+  private static Task<IResult> ExportTcxAsync(
+    Guid sessionId,
+    TreadmillRunner.Core.Sessions.ISessionStore store,
+    CancellationToken cancellationToken) => ExportAsync(sessionId, store, SessionExportFormat.Tcx, cancellationToken);
+
+  private static Task<IResult> ExportJsonAsync(
+    Guid sessionId,
+    TreadmillRunner.Core.Sessions.ISessionStore store,
+    CancellationToken cancellationToken) => ExportAsync(sessionId, store, SessionExportFormat.Json, cancellationToken);
 
   private static async Task<IResult> ExportAsync(
     Guid sessionId,
     TreadmillRunner.Core.Sessions.ISessionStore store,
-    bool isFit,
+    SessionExportFormat format,
     CancellationToken cancellationToken)
   {
     StoredWorkoutSession? session = await store.FindAsync(sessionId, cancellationToken);
     if (session is null) return Results.NotFound();
     if (session.Samples.Count > 100_000)
       return Results.Problem("The session exceeds the bounded export sample limit.", statusCode: 413);
-    byte[] content = isFit
-      ? SessionFitActivityExporter.Export(session)
-      : SessionCsvExporter.Export(session);
+    byte[] content = format switch
+    {
+      SessionExportFormat.Csv => SessionCsvExporter.Export(session),
+      SessionExportFormat.Fit => SessionFitActivityExporter.Export(session),
+      SessionExportFormat.Tcx => SessionTcxActivityExporter.Export(session),
+      SessionExportFormat.Json => SessionNativeJsonExporter.Export(session),
+      _ => throw new ArgumentOutOfRangeException(nameof(format)),
+    };
     if (content.Length > 64 * 1024 * 1024)
       return Results.Problem("The generated export exceeds 64 MiB.", statusCode: 413);
     return Results.File(
       content,
-      isFit ? "application/vnd.ant.fit" : "text/csv; charset=utf-8",
-      $"treadmillrunner-{sessionId:N}.{(isFit ? "fit" : "csv")}");
+      format switch
+      {
+        SessionExportFormat.Csv => "text/csv; charset=utf-8",
+        SessionExportFormat.Fit => "application/vnd.ant.fit",
+        SessionExportFormat.Tcx => "application/vnd.garmin.tcx+xml",
+        _ => "application/json; charset=utf-8",
+      },
+      $"treadmillrunner-{sessionId:N}.{format.ToString().ToLowerInvariant()}");
   }
+
+  private enum SessionExportFormat { Csv, Fit, Tcx, Json }
 
   private static async Task<IResult> GetPreflightAsync(
     Guid profileId,
@@ -617,26 +647,27 @@ public static class LiveSessionEndpoints
   private static async Task<IResult> GetHistoryAsync(
     Guid sessionId,
     ISessionStore store,
+    IGarminActivityUploadStore garminUploadStore,
     CancellationToken cancellationToken)
   {
-    StoredWorkoutSessionDisplay? display = await store.FindDisplayAsync(sessionId, cancellationToken);
-    if (display is null)
+    // The details query loads events and samples once, then derives exact
+    // analytics/statistics from that same snapshot while returning a bounded
+    // display sample series.
+    Task<SessionHistoryDetails?> detailsTask = store.GetHistoryDetailsAsync(sessionId, cancellationToken: cancellationToken);
+    Task<GarminActivityUploadJob?> garminTask = garminUploadStore.FindBySessionAsync(sessionId, cancellationToken);
+    await Task.WhenAll(detailsTask, garminTask);
+    SessionHistoryDetails? details = await detailsTask;
+    if (details is null)
     {
       return Results.NotFound();
     }
 
-    StoredWorkoutSession session = display.Session;
+    GarminActivityUploadJob? garminJob = await garminTask;
+    StoredWorkoutSession session = details.Display.Session;
     IReadOnlyList<SessionHeartRateZoneSnapshot> heartRateZoneSnapshots = ReadProfileHeartRateZoneSnapshots(
       session.Definition.ControllerConfigurationJson);
-    SessionAnalytics? analytics = await store.CalculateAnalyticsAsync(
-      sessionId,
-      heartRateZoneSnapshots.Select(static zone => zone.ToHeartRateZone()).ToArray(),
-      cancellationToken);
-    SessionSampleStatistics? statistics = await store.CalculateSampleStatisticsAsync(sessionId, cancellationToken);
-    if (analytics is null || statistics is null)
-    {
-      return Results.NotFound();
-    }
+    SessionAnalytics analytics = details.Analytics;
+    SessionSampleStatistics statistics = details.Statistics;
     return Results.Ok(new
     {
       session.Definition,
@@ -655,10 +686,27 @@ public static class LiveSessionEndpoints
       statistics.NetElevationMeters,
       session.Debrief,
       Samples = session.Samples,
-      TotalSampleCount = display.TotalSampleCount,
+      TotalSampleCount = details.Display.TotalSampleCount,
       Events = session.Events.Select(ToHistoryEvent).ToArray(),
       Analytics = analytics,
       HeartRateZones = heartRateZoneSnapshots,
+      Garmin = garminJob is null ? null : new
+      {
+        garminJob.Id,
+        garminJob.Status,
+        ReviewRequired = string.Equals(garminJob.Status, "ReviewRequired", StringComparison.Ordinal),
+        garminJob.OperationPhase,
+        garminJob.RemoteId,
+        garminJob.MatchedRemoteId,
+        garminJob.ReplacementRemoteId,
+        garminJob.MatchEvidence,
+        garminJob.FailureKind,
+        garminJob.CanRetry,
+        garminJob.RetryAtUtc,
+        garminJob.LastError,
+        garminJob.UpdatedAtUtc,
+        garminJob.AcknowledgedAtUtc,
+      },
     });
   }
 
@@ -670,6 +718,47 @@ public static class LiveSessionEndpoints
   {
     HistoryDeletionPreview? preview = await store.PreviewDeletionAsync(sessionId, profileId, cancellationToken);
     return preview is null ? TypedResults.NotFound() : TypedResults.Ok(preview);
+  }
+
+  private static async Task<IResult> SaveDebriefAsync(
+    Guid sessionId,
+    SessionDebriefRequest request,
+    ISessionStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (sessionId == Guid.Empty || request.ProfileId == Guid.Empty)
+    {
+      return Results.BadRequest(new { error = "Profile and session IDs are required." });
+    }
+
+    StoredWorkoutSessionDisplay? stored = await store.FindDisplayAsync(sessionId, cancellationToken);
+    if (stored is null || stored.Session.Definition.UserProfileId != request.ProfileId)
+    {
+      return Results.NotFound();
+    }
+
+    try
+    {
+      var debrief = new SessionDebrief(
+        sessionId,
+        request.PerceivedExertion,
+        request.Note,
+        timeProvider.GetUtcNow());
+      await store.SaveDebriefAsync(debrief, cancellationToken);
+      return Results.Ok(debrief);
+    }
+    catch (ArgumentException exception)
+    {
+      return Results.ValidationProblem(new Dictionary<string, string[]>
+      {
+        ["request"] = [exception.Message],
+      });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return Results.Conflict(new { error = exception.Message });
+    }
   }
 
   private static async Task<IResult> DeleteHistoryAsync(

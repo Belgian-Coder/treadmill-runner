@@ -4,7 +4,7 @@ type: integration-runbook
 status: implemented-setup-required
 owner: project
 audience: runner-operator-and-developer
-updated: 2026-08-22
+updated: 2026-08-23
 ---
 
 # Garmin integrations
@@ -17,7 +17,7 @@ TreadmillRunner deliberately separates three Garmin paths because they have diff
 | Completed-activity upload | Reconcile a completed TreadmillRunner run with a watch activity, or upload the local FIT when no single match exists | **Unsupported private Garmin consumer interface** through pinned `garminconnect` adapter | Runner's own Garmin credentials and possibly MFA; no Connect Developer Program approval | Disabled per profile; duplicate mode defaults to `PreferWatch` |
 | Official training sync (TR-011) | Publish workouts/plans/calendar content to Garmin | Supported Garmin Connect Developer Program Training API | Approved program credentials and Garmin-supplied contract | Disabled until approved/configured |
 
-When enabled, TreadmillRunner waits five minutes after local completion and looks for a Garmin treadmill activity with a start within ten minutes, close duration and distance, and corroborating heart-rate summary/curve. No match uploads the local FIT. Multiple plausible matches also upload the local FIT and leave manual duplicate cleanup to the runner; ambiguity never authorizes deletion.
+When enabled, TreadmillRunner waits five minutes after local completion and searches a bounded date window in pages for Garmin treadmill activities with a start within ten minutes, close duration and distance, and corroborating heart-rate summary/curve. A no-heart-rate possible match is retained as **ReviewRequired** instead of being uploaded automatically. Multiple plausible matches retain bounded evidence for manual review; ambiguity never authorizes deletion or a blind replacement.
 
 ## Recommended household choices
 
@@ -45,7 +45,7 @@ After the one-time login completes, unattended operation does not require the pa
 
 The operator may explicitly call `POST /api/integrations/garmin/activity-upload/profiles/{profileId}/test-activity` with a fresh `operationId` and the connected account's `expectedVersion`. The route is idle-only and limited to the same local/private/HTTPS transport policy. It creates a clearly labelled one-minute synthetic completed session with 60 samples, then uses the normal `SessionFitActivityExporter`, durable queue, encrypted account token, and worker. It never issues a treadmill command.
 
-Treat the operation ID as single-use. A repeated ID is rejected. Poll the profile job list until it is `Confirmed`, `Failed`, or `Unknown`; an `Unknown` test must be reviewed in Garmin Connect and must not be blindly resent. The synthetic session remains visible in local History so the exact FIT source is auditable.
+Treat the operation ID as single-use. A repeated ID is rejected. Poll the profile job list until it is `Confirmed`, `Failed`, `ReviewRequired`, or `Unknown`; a `ReviewRequired` or `Unknown` test must be reviewed in Garmin Connect and must not be blindly resent. The synthetic session remains visible in local History so the exact FIT source is auditable.
 
 The pinned library can return `{"status":"uploaded"}` after a successful import HTTP response without exposing Garmin's activity ID. TreadmillRunner treats that documented library-success shape as Confirmed with an empty remote ID. Empty, malformed, interrupted, or otherwise unrecognized responses remain Unknown and are never automatically retried.
 
@@ -57,12 +57,12 @@ The pinned library can return `{"status":"uploaded"}` after a successful import 
 - Treadmill incline provides relative vertical movement, not absolute altitude above sea level. App-only FIT records therefore use a zero-based relative elevation trace; a merged FIT retains the watch's starting altitude as its baseline. Garmin/Firstbeat fields such as aerobic or anaerobic Training Effect, Training Load, recovery, VO2 max, stamina, and primary benefit (`Base`, `Tempo`, and similar labels) are never guessed. They remain watch-owned when present and are omitted from app-only files, as are cadence, power, running dynamics, GPS, temperature, respiration, HRV, and other values without a real source.
 - In merge mode, the original watch activity is deleted only after Garmin confirms the merged import with a distinct activity ID. A missing ID, duplicate rejection, timeout, interrupted response, or other uncertainty retains the original. Once replacement upload is durable, deletion is a separate auditable phase so service restart cannot lose its IDs.
 - A legacy `Confirmed` job that predates watch-search result tracking can expose a one-time **Re-run merge check** action after `MergeAndReplace` is selected. The idempotent operation reuses the durable job only when it has no remote or match IDs, and it retains the normal unknown-outcome protections.
-- No or multiple plausible matches cause the normal local upload. Multiple matches are deliberately left for the runner to resolve manually.
+- A strong match follows the selected `PreferWatch` or `MergeAndReplace` behavior. A no-HR possible match or ambiguous result is `ReviewRequired`, retains the match/replacement candidates and evidence, and does not upload or delete anything until the runner acknowledges the review. A true no-match can upload the local FIT under the normal queue rules.
 - A job is unique by local session and has a deterministic SHA-256 idempotency key over exporter version, profile, and session. Leasing uses an atomic status/attempt compare-and-set so two workers cannot upload the same pending job.
 - The gateway exports FIT from authoritative local session history into a temporary file, invokes the adapter, and deletes the temporary file.
 - Confirmed uploads are terminal. Refreshed Garmin tokens replace the prior encrypted token envelope.
 - Known authentication or provider failures use bounded attempts/backoff and are visible with the matching workout, start, duration, and History link. Only a known retryable provider failure can be retried explicitly. Authentication requires reconnect; provider-declared duplicate/rejection is terminal and dismiss-only.
-- A timeout, interrupted in-flight lease, or ambiguous response is **Unknown**. Unknown is never retried automatically or by the normal retry action, because doing so can create a duplicate. Review Garmin Connect, then dismiss the local warning; upload manually only if absence is certain.
+- A timeout or interrupted in-flight lease is **Unknown**. A no-HR possible match or ambiguous candidate is **ReviewRequired**. Neither state is retried automatically or by the normal retry action, because doing so can create a duplicate. History exposes the match/replacement IDs, status, failure phase, retry and acknowledgement times, and copyable identifiers; review Garmin Connect, then acknowledge or dismiss explicitly.
 - A started upload cannot be cancelled safely. Disconnect is rejected while a request is in flight so its Confirmed/Failed/Unknown audit outcome cannot be erased. Wait for that outcome and disconnect again; a successful disconnect then deletes the profile's local protected token and queue. It does not delete activities already present in Garmin Connect.
 
 ### Credential and process security
@@ -104,6 +104,7 @@ Developers may still override `GarminActivityUpload__PythonExecutable`, `GarminA
 | Pending | Job is waiting for the five-minute watch check, upload, or confirmed-replacement cleanup phase | Wait for the next worker interval |
 | Confirmed | Garmin returned a successful import result | Verify activity in that runner's Garmin Connect history |
 | FoundInGarmin | One strong watch match was retained under `PreferWatch` | No upload is required; review the stored match evidence if needed |
+| ReviewRequired | A possible or ambiguous match lacks enough evidence for an automatic decision | Review the bounded candidate evidence in History, then acknowledge or dismiss; no upload or deletion occurs automatically |
 | Failed | Known provider/authentication error | Correct network/authentication; reconnect for auth errors or select retry for a known provider failure |
 | Unknown | Request may have reached Garmin, but confirmation was lost | Check Garmin Connect; do not retry blindly; dismiss after review |
 | Adapter setup required | Bundled runtime/script/dependency missing, invalid, or unavailable | Install or repair the current signed release, select **Check again**, and leave upload disabled until `Ready` |
@@ -116,7 +117,7 @@ The companion uses Garmin's public ActivityRecording API with running/treadmill 
 
 ## Official Training API path
 
-TR-011 remains separate. It uses OAuth/PKCE, profile-owned encrypted tokens, and a durable publication outbox for supported structured workouts, plans, and calendar items. Garmin's detailed Training API contract is available after program approval, so production publication remains intentionally unavailable until approved endpoint/payload documentation and credentials exist. Do not point it at private consumer routes or reuse completed-activity tokens.
+TR-011 remains separate. It uses OAuth/PKCE, profile-owned encrypted tokens, and a durable publication outbox for supported structured workouts, plans, and calendar items. Garmin's detailed Training API contract is available after program approval, so production publication remains intentionally unavailable until an approved endpoint/payload contract adapter and credentials exist. Profiles show an explicit **Training API setup required** state while that boundary is unavailable; no proprietary payload is guessed, and this path never reuses private completed-activity tokens or consumer routes.
 
 Service configuration is documented by `GarminConnect__*` settings. `Provider=Mock` is development/test only; `Provider=Configured` additionally requires an independently implemented and fixture-tested approved contract adapter.
 

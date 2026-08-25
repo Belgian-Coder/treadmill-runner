@@ -61,6 +61,7 @@ builder.Services.AddTreadmillRunnerServices(builder.Configuration);
 var app = builder.Build();
 DateTimeOffset serviceStartedAtUtc = DateTimeOffset.UtcNow;
 
+app.UseResponseCompression();
 app.UseTreadmillRunnerRequestTelemetry();
 app.UseOptionalOperatorAccess();
 app.UseClientBuildContract();

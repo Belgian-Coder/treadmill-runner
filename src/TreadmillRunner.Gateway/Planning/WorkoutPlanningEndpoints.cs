@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using TreadmillRunner.Core.Workouts;
 using TreadmillRunner.Infrastructure.Persistence;
+using TreadmillRunner.Protocols.Exports;
 using TreadmillRunner.Protocols.Imports;
 
 namespace TreadmillRunner.Gateway.Planning;
@@ -19,6 +20,7 @@ public static class WorkoutPlanningEndpoints
     group.MapGet("/", ListAsync);
     group.MapGet("/reuse", ListReuseAsync);
     group.MapGet("/revisions/{revisionId:guid}", GetRevisionAsync);
+    group.MapGet("/revisions/{revisionId:guid}/export.fit", ExportFitAsync);
     group.MapGet("/{id:guid}/revisions", ListRevisionsAsync);
     group.MapPost("/", CreateAsync);
     group.MapPost("/{id:guid}/revisions", AppendRevisionAsync);
@@ -26,6 +28,17 @@ public static class WorkoutPlanningEndpoints
     group.MapPost("/import/preview", PreviewImportAsync).DisableAntiforgery();
     group.MapPost("/import/confirm", ConfirmImportAsync);
     return endpoints;
+  }
+
+  private static async Task<IResult> ExportFitAsync(
+    Guid revisionId,
+    IWorkoutStore store,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutRevision? revision = await store.FindRevisionAsync(revisionId, cancellationToken);
+    if (revision is null) return Results.NotFound();
+    byte[] content = WorkoutFitExporter.Export(revision.Id, revision.DefinitionJson, revision.CreatedAtUtc);
+    return Results.File(content, "application/vnd.ant.fit", $"treadmillrunner-workout-{revision.Id:N}.fit");
   }
 
   private static async Task<IResult> ListAsync(IWorkoutStore store, CancellationToken cancellationToken)
@@ -786,69 +799,19 @@ public static class WorkoutPlanningEndpoints
       return result;
     }
 
-    if (units is not ("KilometersPerHour" or "MilesPerHour"))
+    if (units != "KilometersPerHour")
     {
-      throw new ArgumentException("QDomyosUnits must explicitly be KilometersPerHour or MilesPerHour.");
+      throw new ArgumentException("QDomyosUnits must be KilometersPerHour. TreadmillRunner accepts Metric workout sources only.");
     }
 
     WorkoutImportWarning[] confirmedWarnings =
     [
       .. result.Warnings.Where(static warning => warning.Code != "qdomyos.assumed-speed-units"),
       new WorkoutImportWarning(
-        units == "KilometersPerHour" ? "qdomyos.confirmed-kph-units" : "qdomyos.confirmed-mph-units",
-        units == "KilometersPerHour"
-          ? "The source speed and distance units were explicitly confirmed as metric."
-          : "The chosen source miles/mph units were converted to kilometers and km/h."),
+        "qdomyos.confirmed-kph-units",
+        "The source speed and distance units were explicitly confirmed as Metric."),
     ];
-    if (units == "KilometersPerHour")
-    {
-      return result with { Warnings = confirmedWarnings };
-    }
-
-    const double milesToKilometers = 1.609344;
-    WorkoutBlock ConvertBlock(WorkoutBlock block) => block switch
-    {
-      WorkoutRepeat repeat => new WorkoutRepeat(repeat.Repetitions, repeat.Blocks.Select(ConvertBlock).ToArray()),
-      WorkoutStep step => new WorkoutStep(
-        step.Goal is DistanceGoal distance
-          ? new DistanceGoal(distance.Kilometers * milesToKilometers)
-          : step.Goal,
-        step.Speed switch
-        {
-          FixedSpeed speed => new FixedSpeed(speed.KilometersPerHour * milesToKilometers),
-          SpeedRamp speed => new SpeedRamp(
-            speed.StartKilometersPerHour * milesToKilometers,
-            speed.EndKilometersPerHour * milesToKilometers),
-          HeartRateSpeed speed => new HeartRateSpeed(
-            speed.MinimumBpm,
-            speed.MaximumBpm,
-            speed.InitialKilometersPerHour * milesToKilometers,
-            speed.MinimumKilometersPerHour * milesToKilometers,
-            speed.MaximumKilometersPerHour * milesToKilometers),
-          HeartRateZoneSpeed speed => new HeartRateZoneSpeed(
-            speed.ZoneNumber,
-            speed.InitialKilometersPerHour * milesToKilometers,
-            speed.MinimumKilometersPerHour * milesToKilometers,
-            speed.MaximumKilometersPerHour * milesToKilometers),
-          _ => step.Speed,
-        },
-        step.Incline,
-        step.Cue,
-        step.Notes),
-      _ => throw new ArgumentException("Unsupported workout block."),
-    };
-
-    var converted = new WorkoutDefinition(
-      result.Definition.SchemaVersion,
-      result.Definition.Title,
-      result.Definition.Description,
-      result.Definition.Blocks.Select(ConvertBlock).ToArray());
-    return new WorkoutImportResult(
-      result.Format,
-      converted,
-      converted.ExpandedStepCount,
-      converted.KnownDuration,
-      confirmedWarnings);
+    return result with { Warnings = confirmedWarnings };
   }
 
   private static void ValidateOperationId(Guid operationId)

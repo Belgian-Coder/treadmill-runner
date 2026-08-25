@@ -35,10 +35,35 @@ export function initialize(root) {
   }
 }
 
+export function observeVisibility(root, dotNet) {
+  if (!root) return;
+  let state = states.get(root);
+  if (!state) {
+    state = createState(root);
+    states.set(root, state);
+  }
+  state.dotNet = dotNet;
+  if (state.observer) return;
+  if (!('IntersectionObserver' in window)) {
+    dotNet.invokeMethodAsync('SetChartVisibility', true);
+    return;
+  }
+  state.observer = new IntersectionObserver(entries => {
+    const visible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0);
+    if (visible === state.intersecting) return;
+    state.intersecting = visible;
+    state.dotNet?.invokeMethodAsync('SetChartVisibility', visible);
+  }, { rootMargin: '160px 0px', threshold: 0 });
+  state.observer.observe(root);
+}
+
 export function dispose(root) {
   const state = states.get(root);
   if (!state) return;
   detach(state);
+  state.observer?.disconnect();
+  state.observer = null;
+  state.dotNet = null;
   states.delete(root);
 }
 
@@ -57,6 +82,9 @@ function createState(root) {
     pinned: false,
     attachedSurface: null,
     handlers: null,
+    observer: null,
+    dotNet: null,
+    intersecting: false,
   };
 }
 

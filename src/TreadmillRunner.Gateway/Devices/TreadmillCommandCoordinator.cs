@@ -57,7 +57,10 @@ public sealed class TreadmillCommandCoordinator(
   private static readonly Guid FtmsService = Expand(0x1826);
   private static readonly Guid FitnessMachineControlPoint = Expand(0x2AD9);
   private readonly SemaphoreSlim _commandGate = new(1, 1);
-  private readonly ConcurrentDictionary<Guid, byte> _consumedOperations = new();
+  private static readonly TimeSpan TerminalOperationRetention = TimeSpan.FromMinutes(15);
+  private const int MaximumOperationStates = 4_096;
+  private readonly object _operationStateGate = new();
+  private readonly ConcurrentDictionary<CommandOperationKey, CommandOperationState> _consumedOperations = new();
   private IBleCommandConnection? _connection;
   private string? _connectionDeviceId;
   private long _connectionGeneration;
@@ -105,23 +108,58 @@ public sealed class TreadmillCommandCoordinator(
   {
     ArgumentNullException.ThrowIfNull(intent);
     ArgumentNullException.ThrowIfNull(contextValidator);
-    if (!_consumedOperations.TryAdd(intent.OperationId, 0))
+    DateTimeOffset initialNow = timeProvider.GetUtcNow();
+    var operationKey = new CommandOperationKey(intent.SessionId, intent.OperationId);
+    TreadmillCommandResult? terminalResult = null;
+    TreadmillCommandResult Complete(TreadmillCommandResult result)
     {
-      return Publish(Reject(intent, "This command operation was already consumed."));
+      terminalResult = Publish(result);
+      return terminalResult;
+    }
+    lock (_operationStateGate)
+    {
+      PruneConsumedOperations(initialNow);
+      if (!_consumedOperations.ContainsKey(operationKey) &&
+          _consumedOperations.Count >= MaximumOperationStates)
+      {
+        int evict = _consumedOperations.Count - MaximumOperationStates + 1;
+        foreach ((CommandOperationKey key, CommandOperationState state) in _consumedOperations
+          .Where(static pair => pair.Value.Terminal)
+          .OrderBy(static pair => pair.Value.CompletedAtUtc)
+          .Take(evict))
+        {
+          _consumedOperations.TryRemove(key, out _);
+        }
+        if (_consumedOperations.Count >= MaximumOperationStates)
+          return Publish(Reject(intent, "The command operation ledger is full; retry after an in-flight command completes."));
+      }
+
+      if (_consumedOperations.TryGetValue(operationKey, out CommandOperationState existing))
+      {
+        return existing.Terminal && existing.Result is not null
+          ? Publish(existing.Result)
+          : Publish(Reject(intent, "This command operation is already admitted or in flight."));
+      }
+      _consumedOperations[operationKey] = new CommandOperationState(initialNow);
     }
 
-    await _commandGate.WaitAsync(cancellationToken);
+    var admitted = false;
     try
     {
+      await _commandGate.WaitAsync(cancellationToken);
+      admitted = true;
+      _consumedOperations[operationKey] = new CommandOperationState(
+        timeProvider.GetUtcNow(),
+        InFlight: true);
       DateTimeOffset now = timeProvider.GetUtcNow();
       if (now > intent.ExpiresAt)
       {
-        return Publish(Reject(intent, "The command intent expired before execution."));
+        return Complete(Reject(intent, "The command intent expired before execution."));
       }
 
       if (!contextValidator.IsCurrent(intent))
       {
-        return Publish(Reject(intent, "The session state, version, or control lease changed."));
+        return Complete(Reject(intent, "The session state, version, or control lease changed."));
       }
 
       VersionedDeviceEnrollment? stored = await LoadEnrollmentAsync(cancellationToken);
@@ -133,13 +171,13 @@ public sealed class TreadmillCommandCoordinator(
             out double? acceptedValue,
             out string? enrollmentError))
       {
-        return Publish(Reject(intent, enrollmentError!));
+        return Complete(Reject(intent, enrollmentError!));
       }
 
       DeviceTelemetrySnapshot before = deviceCoordinator.Current;
       if (!TryValidateDevice(before, intent, requireStopped: intent.Kind == TreadmillCommandKind.Start, out string? deviceError))
       {
-        return Publish(Reject(intent, deviceError!));
+        return Complete(Reject(intent, deviceError!));
       }
 
       IBleCommandConnection connection;
@@ -154,7 +192,7 @@ public sealed class TreadmillCommandCoordinator(
       {
         logger.LogWarning(exception, "FTMS command connection failed before a motion command was sent.");
         await ResetConnectionAsync();
-        return Publish(Reject(intent, "FTMS command connection failed; no motion command was sent."));
+        return Complete(Reject(intent, "FTMS command connection failed; no motion command was sent."));
       }
 
       if (!_controlOwned)
@@ -173,7 +211,7 @@ public sealed class TreadmillCommandCoordinator(
               !controlResponse.IsSuccess)
           {
             await ResetConnectionAsync();
-            return Publish(Reject(intent, "FTMS control was not granted; no motion command was sent."));
+            return Complete(Reject(intent, "FTMS control was not granted; no motion command was sent."));
           }
           _controlOwned = true;
         }
@@ -188,7 +226,7 @@ public sealed class TreadmillCommandCoordinator(
         {
           logger.LogWarning(exception, "FTMS control acquisition failed before a motion command was sent.");
           await ResetConnectionAsync();
-          return Publish(Reject(intent, "FTMS control acquisition failed; no motion command was sent."));
+          return Complete(Reject(intent, "FTMS control acquisition failed; no motion command was sent."));
         }
       }
 
@@ -201,7 +239,7 @@ public sealed class TreadmillCommandCoordinator(
             requireStopped: intent.Kind == TreadmillCommandKind.Start,
             out deviceError))
       {
-        return Publish(Reject(intent, deviceError ?? "The command guards changed before the motion write."));
+        return Complete(Reject(intent, deviceError ?? "The command guards changed before the motion write."));
       }
 
       byte[] payload = intent.Kind switch
@@ -237,19 +275,19 @@ public sealed class TreadmillCommandCoordinator(
       {
         logger.LogError(exception, "The physical outcome of treadmill command {CommandKind} is unknown.", intent.Kind);
         await ResetConnectionAsync();
-        return Publish(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "The BLE command outcome is unknown; inspect the treadmill and use physical Stop if needed."));
+        return Complete(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "The BLE command outcome is unknown; inspect the treadmill and use physical Stop if needed."));
       }
 
       if (!FtmsControlPointCodec.TryParseResponse(operationNotification.Value.Span, out FtmsControlPointResponse operationResponse) ||
           operationResponse.RequestOpCode != expectedOpCode)
       {
         await ResetConnectionAsync();
-        return Publish(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "The treadmill returned an invalid command response; physical outcome is unknown."));
+        return Complete(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "The treadmill returned an invalid command response; physical outcome is unknown."));
       }
 
       if (!operationResponse.IsSuccess)
       {
-        return Publish(Reject(intent, $"The treadmill rejected {intent.Kind}: {operationResponse.ResultCode}."));
+        return Complete(Reject(intent, $"The treadmill rejected {intent.Kind}: {operationResponse.ResultCode}."));
       }
 
       double? measured;
@@ -272,10 +310,10 @@ public sealed class TreadmillCommandCoordinator(
       if (measured is null)
       {
         await ResetConnectionAsync();
-        return Publish(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "Fresh measured telemetry did not confirm the command; physical outcome is unknown."));
+        return Complete(Unknown(intent, acceptedValue, CurrentMeasuredValue(intent.Kind), "Fresh measured telemetry did not confirm the command; physical outcome is unknown."));
       }
 
-      return Publish(new TreadmillCommandResult(
+      return Complete(new TreadmillCommandResult(
         intent.OperationId,
         intent.Kind,
         TreadmillCommandDisposition.Confirmed,
@@ -287,9 +325,55 @@ public sealed class TreadmillCommandCoordinator(
         intent.IssuedAt,
         timeProvider.GetUtcNow()));
     }
+    catch (OperationCanceledException) when (!admitted && cancellationToken.IsCancellationRequested)
+    {
+      // Waiting for the serialized hardware path is not physical execution. Let
+      // callers retry an operation canceled before it was admitted.
+      lock (_operationStateGate)
+        _consumedOperations.TryRemove(operationKey, out _);
+      throw;
+    }
+    catch (OperationCanceledException) when (admitted && cancellationToken.IsCancellationRequested)
+    {
+      terminalResult = Publish(Reject(intent, "The command was canceled after admission and before a motion outcome was recorded."));
+      throw;
+    }
     finally
     {
-      _commandGate.Release();
+      if (admitted)
+      {
+        lock (_operationStateGate)
+        {
+          _consumedOperations[operationKey] = new CommandOperationState(
+            terminalResult?.CompletedAt ?? timeProvider.GetUtcNow(),
+            InFlight: false,
+            Terminal: true,
+            Result: terminalResult);
+        }
+        _commandGate.Release();
+      }
+    }
+  }
+
+  private void PruneConsumedOperations(DateTimeOffset nowUtc)
+  {
+    lock (_operationStateGate)
+    {
+      foreach ((CommandOperationKey key, CommandOperationState state) in _consumedOperations)
+      {
+        if (state.Terminal && nowUtc - state.CompletedAtUtc >= TerminalOperationRetention)
+          _consumedOperations.TryRemove(key, out _);
+      }
+
+      int excess = _consumedOperations.Count - MaximumOperationStates;
+      if (excess <= 0) return;
+      foreach ((CommandOperationKey key, CommandOperationState state) in _consumedOperations
+        .Where(static pair => pair.Value.Terminal)
+        .OrderBy(static pair => pair.Value.CompletedAtUtc)
+        .Take(excess))
+      {
+        _consumedOperations.TryRemove(key, out _);
+      }
     }
   }
 
@@ -544,11 +628,16 @@ public sealed class TreadmillCommandCoordinator(
       return false;
     }
 
+    TimeSpan? relevantAge = intent.Kind == TreadmillCommandKind.SetIncline
+      ? devices.TreadmillInclineAge
+      : devices.TreadmillSpeedAge;
     if (devices.TreadmillTelemetry is not { } telemetry ||
-        devices.TreadmillAge is not { } age ||
+        relevantAge is not { } age ||
         age > policy.TelemetryFreshness)
     {
-      error = "Fresh treadmill telemetry is required.";
+      error = intent.Kind == TreadmillCommandKind.SetIncline
+        ? "Fresh treadmill incline telemetry is required."
+        : "Fresh treadmill speed telemetry is required.";
       return false;
     }
 
@@ -578,9 +667,17 @@ public sealed class TreadmillCommandCoordinator(
         return null;
       }
 
+      DateTimeOffset? relevantObservedAt = intent.Kind == TreadmillCommandKind.SetIncline
+        ? telemetry?.InclineObservedAt
+        : telemetry?.SpeedObservedAt;
+      TimeSpan? relevantAge = intent.Kind == TreadmillCommandKind.SetIncline
+        ? devices.TreadmillInclineAge
+        : devices.TreadmillSpeedAge;
       if (telemetry is not null &&
-          telemetry.ObservedAt >= responseObservedAt &&
-          devices.TreadmillAge <= policy.TelemetryFreshness)
+          relevantObservedAt is { } observedAt &&
+          observedAt >= responseObservedAt &&
+          relevantAge is { } age &&
+          age <= policy.TelemetryFreshness)
       {
         if (intent.Kind is (TreadmillCommandKind.Stop or TreadmillCommandKind.Pause) &&
             telemetry.SpeedKph <= 0.05)
@@ -614,9 +711,17 @@ public sealed class TreadmillCommandCoordinator(
     return null;
   }
 
-  private double? CurrentMeasuredValue(TreadmillCommandKind kind) => kind == TreadmillCommandKind.SetIncline
-    ? deviceCoordinator.Current.TreadmillTelemetry?.InclinePercent
-    : deviceCoordinator.Current.TreadmillTelemetry?.SpeedKph;
+  private double? CurrentMeasuredValue(TreadmillCommandKind kind)
+  {
+    DeviceTelemetrySnapshot snapshot = deviceCoordinator.Current;
+    if (kind == TreadmillCommandKind.SetIncline)
+      return snapshot.TreadmillInclineAge is { } inclineAge && inclineAge <= policy.TelemetryFreshness
+        ? snapshot.TreadmillTelemetry?.InclinePercent
+        : null;
+    return snapshot.TreadmillSpeedAge is { } speedAge && speedAge <= policy.TelemetryFreshness
+      ? snapshot.TreadmillTelemetry?.SpeedKph
+      : null;
+  }
 
   private TreadmillCommandResult Publish(TreadmillCommandResult result)
   {
@@ -656,4 +761,12 @@ public sealed class TreadmillCommandCoordinator(
 
   private static Guid Expand(ushort shortUuid) =>
     Guid.Parse($"0000{shortUuid:x4}-0000-1000-8000-00805f9b34fb");
+
+  private readonly record struct CommandOperationKey(Guid SessionId, Guid OperationId);
+
+  private readonly record struct CommandOperationState(
+    DateTimeOffset CompletedAtUtc,
+    bool InFlight = false,
+    bool Terminal = false,
+    TreadmillCommandResult? Result = null);
 }

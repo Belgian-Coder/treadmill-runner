@@ -98,6 +98,151 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
     Assert.False(remaining.IsPreferred);
   }
 
+  [Fact]
+  public async Task Metric_only_hardening_upgrades_legacy_rows_reconciles_active_sessions_and_enforces_indexes()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    Guid olderProfileId = Guid.NewGuid();
+    Guid newerProfileId = Guid.NewGuid();
+    Guid workoutId = Guid.NewGuid();
+    Guid revisionId = Guid.NewGuid();
+    Guid olderSessionId = Guid.NewGuid();
+    Guid newerSessionId = Guid.NewGuid();
+    const string predecessor = "20260821222435_AddGarminWatchDuplicateHandling";
+    const string latest = "20260823111127_MetricOnlySessionAndLeaseHardening";
+    const string olderArmed = "2026-08-22 08:00:00+00:00";
+    const string newerArmed = "2026-08-22 09:00:00+00:00";
+
+    await using (TreadmillRunnerDbContext oldContext = await factory.CreateDbContextAsync())
+    {
+      IMigrator migrator = oldContext.GetService<IMigrator>();
+      await migrator.MigrateAsync(predecessor);
+      Assert.Equal(predecessor, (await oldContext.Database.GetAppliedMigrationsAsync()).Last());
+      await oldContext.Database.ExecuteSqlRawAsync(
+        "INSERT INTO UserProfiles (Id,DisplayName,NormalizedDisplayName,UnitSystem,WeightKilograms,MaximumHeartRateBpm,MaximumSpeedKph,HeartRateIncreaseStepKph,HeartRateIncreaseCooldownSeconds,HeartRateDecreaseStepKph,HeartRateDecreaseCooldownSeconds,Version,IsArchived,ArchivedAtUtc,CreatedAtUtc,UpdatedAtUtc) VALUES " +
+        "({0},'Legacy runner','LEGACY RUNNER','Imperial',75,190,18,0.2,30,0.5,15,1,0,NULL,{6},{6})," +
+        "({1},'Other legacy runner','OTHER LEGACY RUNNER','USCustomary',70,185,16,0.2,30,0.5,15,1,0,NULL,{6},{6});" +
+        "INSERT INTO Workouts (Id,Name,Kind,CreatedAtUtc,IsArchived) VALUES ({2},'Migration evidence','Structured',{6},0);" +
+        "INSERT INTO WorkoutRevisions (Id,WorkoutId,RevisionNumber,DefinitionJson,ContentSha256,CreatedAtUtc) VALUES ({3},{2},1,'{{}}','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',{6});" +
+        "INSERT INTO WorkoutSessions (Id,UserProfileId,UserProfileName,WorkoutRevisionId,SelectionSource,SessionOrigin,WorkoutTitle,State,ArmedAtUtc,StartedAtUtc,EndedAtUtc,DurationSeconds,DistanceKilometers,EstimatedCalories,AverageHeartRateBpm,MaximumHeartRateBpm,AverageSpeedKph,AverageInclinePercent,MetricAlgorithmVersion,ControllerConfigurationJson) VALUES " +
+        "({4},{0},'Legacy runner',{3},'Legacy','Hardware','Older active session','Running',{7},{7},NULL,60,0.1,1,130,140,6,1,'v1','{{}}')," +
+        "({5},{1},'Other legacy runner',{3},'Legacy','Hardware','Newer active session','Running',{8},{8},NULL,30,0.05,1,125,135,6,1,'v1','{{}}');",
+        olderProfileId,
+        newerProfileId,
+        workoutId,
+        revisionId,
+        olderSessionId,
+        newerSessionId,
+        "2026-08-22 07:00:00+00:00",
+        olderArmed,
+        newerArmed);
+
+      await migrator.MigrateAsync();
+      Assert.Equal(latest, (await oldContext.Database.GetAppliedMigrationsAsync()).Last());
+    }
+
+    await using (TreadmillRunnerDbContext current = await factory.CreateDbContextAsync())
+    {
+      string[] units = await current.UserProfiles.AsNoTracking()
+        .Where(profile => profile.Id == olderProfileId || profile.Id == newerProfileId)
+        .OrderBy(profile => profile.Id)
+        .Select(profile => profile.UnitSystem)
+        .ToArrayAsync();
+      Assert.Equal(["Metric", "Metric"], units);
+
+      Dictionary<Guid, WorkoutSessionEntity> sessions = await current.WorkoutSessions.AsNoTracking()
+        .Where(session => session.Id == olderSessionId || session.Id == newerSessionId)
+        .ToDictionaryAsync(session => session.Id);
+      Assert.Equal("Interrupted", sessions[olderSessionId].State);
+      Assert.NotNull(sessions[olderSessionId].EndedAtUtc);
+      Assert.Equal("Running", sessions[newerSessionId].State);
+      Assert.Null(sessions[newerSessionId].EndedAtUtc);
+      SessionEventEntity interruption = Assert.Single(await current.SessionEvents.AsNoTracking()
+        .Where(item => item.WorkoutSessionId == olderSessionId && item.Kind == "session-interrupted")
+        .ToArrayAsync());
+      Assert.Contains("newer active session", interruption.DetailsJson, StringComparison.OrdinalIgnoreCase);
+
+      Dictionary<string, string> indexes = await ReadIndexSqlAsync(current);
+      string[] requiredIndexes =
+      [
+        "UX_WorkoutSessions_ActiveSession",
+        "IX_WorkoutSessions_RecoveryCandidates",
+        "IX_OperationReceipts_CreatedAtUtc",
+        "IX_GarminSyncItems_Status_LeaseExpiresAtUtc",
+        "IX_GarminActivityUploadJobs_Status_LeaseExpiresAtUtc",
+      ];
+      Assert.All(requiredIndexes, name => Assert.Contains(name, indexes.Keys));
+      Assert.Contains("UNIQUE", indexes["UX_WorkoutSessions_ActiveSession"], StringComparison.OrdinalIgnoreCase);
+      Assert.Contains("ActiveSessionKey", indexes["UX_WorkoutSessions_ActiveSession"], StringComparison.Ordinal);
+      Assert.Contains("WHERE", indexes["IX_WorkoutSessions_RecoveryCandidates"], StringComparison.OrdinalIgnoreCase);
+      Assert.Contains("SessionOrigin", indexes["IX_WorkoutSessions_RecoveryCandidates"], StringComparison.Ordinal);
+    }
+
+    await using (TreadmillRunnerDbContext metricGuard = await factory.CreateDbContextAsync())
+    {
+      string rejectedUnit = "Imperial";
+      await Assert.ThrowsAsync<SqliteException>(() => metricGuard.Database.ExecuteSqlInterpolatedAsync(
+        $"UPDATE UserProfiles SET UnitSystem = {rejectedUnit} WHERE Id = {olderProfileId}"));
+    }
+
+    await using (TreadmillRunnerDbContext activeGuard = await factory.CreateDbContextAsync())
+    {
+      activeGuard.WorkoutSessions.Add(new WorkoutSessionEntity
+      {
+        Id = Guid.NewGuid(),
+        UserProfileId = olderProfileId,
+        UserProfileName = "Legacy runner",
+        WorkoutRevisionId = revisionId,
+        SelectionSource = "Legacy",
+        SessionOrigin = "Hardware",
+        WorkoutTitle = "Conflicting active session",
+        State = "ArmedWaitingForPhysicalStart",
+        ArmedAtUtc = DateTimeOffset.Parse("2026-08-22T10:00:00Z"),
+        DurationSeconds = 0,
+        MetricAlgorithmVersion = "v1",
+        ControllerConfigurationJson = "{}",
+      });
+      DbUpdateException conflict = await Assert.ThrowsAsync<DbUpdateException>(() => activeGuard.SaveChangesAsync());
+      Assert.IsType<SqliteException>(conflict.InnerException);
+    }
+
+    await using (TreadmillRunnerDbContext reviewState = await factory.CreateDbContextAsync())
+    {
+      Guid accountId = Guid.NewGuid();
+      var account = new GarminActivityUploadAccountEntity
+      {
+        Id = accountId,
+        UserProfileId = olderProfileId,
+        AccountLabel = "Migration evidence",
+        ProtectedTokenStore = "protected-test-token",
+        Enabled = true,
+        WatchActivityHandling = "PreferWatch",
+        State = "Connected",
+        ConnectedAtUtc = DateTimeOffset.Parse("2026-08-22T11:00:00Z"),
+        UpdatedAtUtc = DateTimeOffset.Parse("2026-08-22T11:00:00Z"),
+        Version = 1,
+      };
+      reviewState.GarminActivityUploadAccounts.Add(account);
+      reviewState.GarminActivityUploadJobs.Add(new GarminActivityUploadJobEntity
+      {
+        Id = Guid.NewGuid(),
+        UserProfileId = olderProfileId,
+        GarminActivityUploadAccountId = accountId,
+        WorkoutSessionId = olderSessionId,
+        IdempotencyKey = new string('b', 64),
+        Status = "ReviewRequired",
+        AttemptCount = 1,
+        AvailableAtUtc = DateTimeOffset.Parse("2026-08-22T11:00:00Z"),
+        OperationPhase = "Review",
+        MatchEvidence = "Possible shape match without heart-rate evidence.",
+        CreatedAtUtc = DateTimeOffset.Parse("2026-08-22T11:00:00Z"),
+        UpdatedAtUtc = DateTimeOffset.Parse("2026-08-22T11:00:00Z"),
+      });
+      await reviewState.SaveChangesAsync();
+      Assert.Equal("ReviewRequired", (await reviewState.GarminActivityUploadJobs.AsNoTracking().SingleAsync()).Status);
+    }
+  }
+
   public Task DisposeAsync()
   {
     SqliteConnection.ClearAllPools();
@@ -367,6 +512,21 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
     }
 
     return names;
+  }
+
+  private static async Task<Dictionary<string, string>> ReadIndexSqlAsync(TreadmillRunnerDbContext context)
+  {
+    await context.Database.OpenConnectionAsync();
+    await using var command = context.Database.GetDbConnection().CreateCommand();
+    command.CommandText = "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL;";
+    await using var reader = await command.ExecuteReaderAsync();
+    var indexes = new Dictionary<string, string>(StringComparer.Ordinal);
+    while (await reader.ReadAsync())
+    {
+      indexes[reader.GetString(0)] = reader.GetString(1);
+    }
+
+    return indexes;
   }
 
   private static void AssertSuperset(HashSet<string> actual, params string[] expected)

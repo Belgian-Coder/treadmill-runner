@@ -231,6 +231,32 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     Assert.True(fitDecoder.IsFIT(fitStream));
     fitStream.Position = 0;
     Assert.True(fitDecoder.CheckIntegrity(fitStream));
+    string tcx = await client.GetStringAsync($"/api/history/{completed.SessionId}/export.tcx");
+    Assert.Contains("TrainingCenterDatabase", tcx, StringComparison.Ordinal);
+    Assert.Contains("DistanceMeters", tcx, StringComparison.Ordinal);
+    using JsonDocument nativeExport = JsonDocument.Parse(
+      await client.GetByteArrayAsync($"/api/history/{completed.SessionId}/export.json"));
+    Assert.Equal("treadmillrunner.session/v1", nativeExport.RootElement.GetProperty("schema").GetString());
+    Assert.Equal("Metric", nativeExport.RootElement.GetProperty("unitSystem").GetString());
+    Assert.Equal(
+      detail.RootElement.GetProperty("totalSampleCount").GetInt32(),
+      nativeExport.RootElement.GetProperty("samples").GetArrayLength());
+
+    using HttpResponseMessage firstDebrief = await client.PutAsJsonAsync(
+      $"/api/history/{completed.SessionId}/debrief",
+      new { profileId, perceivedExertion = 7, note = "  Controlled finish.  " });
+    Assert.Equal(HttpStatusCode.OK, firstDebrief.StatusCode);
+    SessionDebrief savedDebrief = Assert.IsType<SessionDebrief>(
+      await firstDebrief.Content.ReadFromJsonAsync<SessionDebrief>());
+    Assert.Equal("Controlled finish.", savedDebrief.Note);
+    using HttpResponseMessage editedDebrief = await client.PutAsJsonAsync(
+      $"/api/history/{completed.SessionId}/debrief",
+      new { profileId, perceivedExertion = 6, note = "Edited from History." });
+    Assert.Equal(HttpStatusCode.OK, editedDebrief.StatusCode);
+    using JsonDocument detailAfterDebrief = JsonDocument.Parse(
+      await client.GetStringAsync($"/api/history/{completed.SessionId}"));
+    Assert.Equal(6, detailAfterDebrief.RootElement.GetProperty("debrief").GetProperty("perceivedExertion").GetInt32());
+    Assert.Equal("Edited from History.", detailAfterDebrief.RootElement.GetProperty("debrief").GetProperty("note").GetString());
 
     JsonElement weekly = await client.GetFromJsonAsync<JsonElement>(
       $"/api/history/weekly?profileId={profileId}");
@@ -465,6 +491,8 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     ActiveSessionSnapshot stale = Assert.IsType<ActiveSessionSnapshot>(
       await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
     Assert.Equal(HeartRateAutomationMode.SuspendedSafety, stale.HeartRateAutomationMode);
+    Assert.Null(stale.Live.HeartRateBpm);
+    Assert.NotNull(stale.Live.HeartRateObservedAt);
     Assert.Contains("stale", stale.HeartRateAutomationReason, StringComparison.OrdinalIgnoreCase);
 
     using HttpResponseMessage stop = await client.PostAsJsonAsync("/api/live/sessions/stop", new

@@ -4,7 +4,7 @@ type: safety-policy
 status: active
 owner: project
 audience: agent-developer-and-runner
-updated: 2026-08-21
+updated: 2026-08-23
 ---
 
 # Treadmill safety guidelines
@@ -31,13 +31,15 @@ updated: 2026-08-21
 - Only the serialized device coordinator may write GATT.
 - Bind commands to operation ID, expected state, control lease, short expiry, and connection generation.
 - Treat every recovered generation as new: expire old intents, compare fresh physical values with the pre-gap values, and send only newly confirmed current-position targets.
-- Clamp finite values to verified machine, profile, workout, and personal limits.
+- Normalize requested targets only against verified machine, profile, workout, and personal limits. Never clamp an implausible device observation into a value that could drive control; reject it as a protocol/device fault.
 - Rate-limit increases; coalesce only commands proven safe to supersede.
 - A successful BLE write is not success. Require measured telemetry confirmation.
 - Correlate each control-point indication to the opcode written by that serialized exchange. Ignore a late or unrelated acknowledgement inside the bounded wait; it must not confirm, reject, or trigger a replay of the current command.
 - Do not blindly retry when the physical outcome is unknown.
 - Reaching the final workout step is not physical completion. For hardware sessions, keep the run live and out of completed History until fresh stopped telemetry is observed. Send at most one verified completion Stop; a rejected, stale, disconnected, or unknown outcome requires the physical Stop control and must not be finalized or retried blindly.
-- Stale treadmill or HR telemetry suspends automation and blocks increases.
+- Treadmill speed and incline observation times are independent. An omitted FTMS field does not refresh the previous timestamp; command confirmation checks the relevant field's age. Stale or missing fields suspend automation and cannot confirm a command.
+- Heart-rate source, contact state, quality, observation time, and freshness are profile-scoped. Values below 30 BPM, above 250 BPM, invalid, stale, unsupported, or reported with no sensor contact are unavailable, are persisted as `null`, and reset any HR automation dwell timer. A forgotten device cannot remain selected at runtime, and another profile's source is never used silently.
+- A generic FTMS profile exposes standard read-only telemetry only. Model-independent control remains disabled regardless of advertised feature support.
 - Reconnect returns to `Ready` and requires explicit re-arming.
 
 ## Hardware progression

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.WebAssembly.Services;
 using Microsoft.JSInterop;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
@@ -41,10 +42,24 @@ public sealed class GatewayConnectionSupervisor(
   NavigationManager navigation,
   IJSRuntime js,
   ClientRuntimeState runtime,
-  TimeProvider timeProvider) : IAsyncDisposable
+  TimeProvider timeProvider,
+  LazyAssemblyLoader assemblyLoader) : IAsyncDisposable
 {
   private const string HolderStorageKey = "treadmillrunner.controller-holder";
   private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan InitialConnectionWait = TimeSpan.FromSeconds(15);
+  private static readonly string[] LiveAssemblies =
+  [
+    "Microsoft.AspNetCore.Connections.Abstractions.dll",
+    "Microsoft.AspNetCore.Http.Connections.Client.dll",
+    "Microsoft.AspNetCore.Http.Connections.Common.dll",
+    "Microsoft.AspNetCore.SignalR.Client.dll",
+    "Microsoft.AspNetCore.SignalR.Client.Core.dll",
+    "Microsoft.AspNetCore.SignalR.Common.dll",
+    "Microsoft.AspNetCore.SignalR.Protocols.Json.dll",
+    "Microsoft.Extensions.Features.dll",
+    "TreadmillRunner.Web.SignalR.dll",
+  ];
   private readonly SemaphoreSlim lifecycleGate = new(1, 1);
   private ILiveHubClient? hubConnection;
   private CancellationTokenSource? lifetimeCancellation;
@@ -69,6 +84,7 @@ public sealed class GatewayConnectionSupervisor(
     "Connecting to the gateway.");
 
   public string HolderId => holderId;
+  public bool IsStarted => initialized;
   public event Action? ConnectionChanged;
   public event Action? SessionChanged;
   public event Action? HeartRateChanged;
@@ -81,6 +97,7 @@ public sealed class GatewayConnectionSupervisor(
     {
       if (disposed) throw new ObjectDisposedException(nameof(GatewayConnectionSupervisor));
       if (initialized) return;
+      await assemblyLoader.LoadAssembliesAsync(LiveAssemblies);
       initialized = true;
       holderId = await js.InvokeAsync<string?>("localStorage.getItem", cancellationToken, HolderStorageKey) ?? string.Empty;
       if (string.IsNullOrWhiteSpace(holderId))
@@ -111,6 +128,7 @@ public sealed class GatewayConnectionSupervisor(
   {
     await EnsureStartedAsync(cancellationToken);
     Update(Current with { WantsControl = true });
+    await WaitForInitialConnectionAsync(cancellationToken);
     if (!CanAttemptControl()) return null;
 
     try
@@ -137,6 +155,20 @@ public sealed class GatewayConnectionSupervisor(
         GatewayClientConnectionPhase.Reconnecting,
         "The controller request was interrupted. No treadmill command was sent.");
       return null;
+    }
+  }
+
+  private async Task WaitForInitialConnectionAsync(CancellationToken cancellationToken)
+  {
+    if (CanAttemptControl() || connectionTask is not { } pendingConnection) return;
+    try
+    {
+      await pendingConnection.WaitAsync(InitialConnectionWait, cancellationToken);
+    }
+    catch (TimeoutException)
+    {
+      // The background reconnect loop remains authoritative. The caller reports
+      // that control is unavailable and may explicitly retry without replaying a command.
     }
   }
 
@@ -445,9 +477,12 @@ public sealed class GatewayConnectionSupervisor(
     : (snapshot.HeartRateConnectionState,
       snapshot.HeartRateBpm,
       snapshot.HeartRateTelemetryAge,
+      snapshot.HeartRateObservedAt,
       snapshot.HeartRateDeviceName,
       snapshot.HeartRateDeviceKind,
-      snapshot.HeartRateBatteryPercent);
+      snapshot.HeartRateBatteryPercent,
+      snapshot.HeartRateQuality,
+      snapshot.HeartRateContactState);
 
   private static TimeSpan RetryDelay(int attempt)
   {

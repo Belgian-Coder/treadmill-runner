@@ -25,6 +25,7 @@ public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, ICl
 
     ILocator runnerPicker = Page.Locator("details.active-runner-picker");
     ILocator runnerSummary = runnerPicker.Locator("summary");
+    await Expect(runnerSummary).ToHaveAttributeAsync("aria-label", "Choose runner");
     await runnerSummary.ClickAsync();
     await Expect(runnerPicker).ToHaveAttributeAsync("open", "");
     await runnerSummary.PressAsync("Escape");

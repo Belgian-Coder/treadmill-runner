@@ -21,13 +21,14 @@ public sealed class OmegaFrameReassemblerTests
   }
 
   [Fact]
-  public void New_header_reports_truncated_frame_and_restarts()
+  public void Reset_reports_truncated_frame_then_accepts_a_replacement()
   {
     var truncated = CreateFrame(64).AsSpan(0, 20).ToArray();
     var replacement = CreateFrame(2);
     var sut = new OmegaFrameReassembler();
 
     Assert.Empty(sut.Append(truncated));
+    sut.Reset();
     var output = sut.Append(replacement);
 
     Assert.Equal(replacement, Assert.Single(output));
@@ -35,6 +36,20 @@ public sealed class OmegaFrameReassemblerTests
     Assert.Equal(OmegaFrameDiagnosticCode.TruncatedFrame, diagnostic.Code);
     Assert.Equal(74, diagnostic.ExpectedLength);
     Assert.Equal(20, diagnostic.ReceivedLength);
+  }
+
+  [Fact]
+  public void Declared_payload_can_contain_the_header_marker()
+  {
+    var frame = CreateFrame(8);
+    frame[10] = 0x55;
+    frame[11] = 0xAA;
+    var sut = new OmegaFrameReassembler();
+
+    IReadOnlyList<byte[]> output = sut.Append(frame);
+
+    Assert.Equal(frame, Assert.Single(output));
+    Assert.Empty(sut.Diagnostics);
   }
 
   [Fact]
@@ -53,7 +68,30 @@ public sealed class OmegaFrameReassemblerTests
         frame => Assert.Equal(second, frame));
   }
 
-  private static byte[] CreateFrame(ushort payloadLength)
+  [Fact]
+  public void Rejects_declared_payload_that_exceeds_the_reassembly_bound()
+  {
+    var frame = CreateFrame(5000);
+    var sut = new OmegaFrameReassembler();
+
+    Assert.Empty(sut.Append(frame));
+    var diagnostic = Assert.Single(sut.Diagnostics);
+    Assert.Equal(OmegaFrameDiagnosticCode.LengthOutOfRange, diagnostic.Code);
+    Assert.Equal(5010, diagnostic.ExpectedLength);
+  }
+
+  [Fact]
+  public void Rejects_frame_with_invalid_terminator()
+  {
+    var frame = CreateFrame(2);
+    frame[^1] = 0x00;
+    var sut = new OmegaFrameReassembler();
+
+    Assert.Empty(sut.Append(frame));
+    Assert.Equal(OmegaFrameDiagnosticCode.InvalidTerminator, Assert.Single(sut.Diagnostics).Code);
+  }
+
+  private static byte[] CreateFrame(int payloadLength)
   {
     var frame = new byte[payloadLength + 10];
     frame[0] = 0x55;

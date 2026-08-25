@@ -8,6 +8,7 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.Services.AddScoped<ClientRuntimeState>();
 builder.Services.AddScoped<OperatorSessionState>();
 builder.Services.AddScoped<OperatorAccessClient>();
+builder.Services.AddScoped<LocalFirstApiClient>();
 builder.Services.AddScoped(_ => TimeProvider.System);
 builder.Services.AddScoped(services => new HttpClient(new ClientBuildFingerprintHandler(services.GetRequiredService<ClientRuntimeState>())
 {

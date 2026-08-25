@@ -4,7 +4,7 @@ type: delivery-index
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-22
+updated: 2026-08-25
 ---
 
 # TreadmillRunner stories
@@ -38,3 +38,5 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-037 — Connected PWA polish and offline safety](tr-037-connected-pwa-polish.md)
 - [TR-039 — Mobile control layout and landscape graph](tr-039-mobile-control-layout.md)
 - [TR-040 — Interactive chart inspector](tr-040-interactive-chart-inspector.md)
+- [US-TR-041 — Coordinated TreadmillRunner improvement program](tr-041-coordinated-improvement-program.md)
+- [TR-042 — Idle Home live-transport lazy loading](tr-042-idle-home-live-transport-lazy-loading.md)

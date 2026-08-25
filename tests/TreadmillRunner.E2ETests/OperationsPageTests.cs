@@ -7,6 +7,36 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 {
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Idle_home_keeps_live_transport_lazy_until_control_is_needed()
+  {
+    var requestedUrls = new List<string>();
+    Page.Request += (_, request) => requestedUrls.Add(request.Url);
+
+    await Page.GotoAsync(
+      new Uri(gateway.BaseAddress, "/").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
+      .ToBeVisibleAsync(new() { Timeout = 20_000 });
+
+    Assert.DoesNotContain(
+      requestedUrls,
+      static url => url.Contains("TreadmillRunner.Web.SignalR", StringComparison.Ordinal));
+
+    requestedUrls.Clear();
+    Task<IRequest> liveTransportRequest = Page.WaitForRequestAsync(
+      static request => request.Url.Contains("TreadmillRunner.Web.SignalR", StringComparison.Ordinal),
+      new() { Timeout = 20_000 });
+    await Page.GotoAsync(
+      new Uri(gateway.BaseAddress, "/control").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+    await liveTransportRequest;
+    Assert.Contains(
+      requestedUrls,
+      static url => url.Contains("TreadmillRunner.Web.SignalR", StringComparison.Ordinal));
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Route_budgets_keep_operations_code_lazy_and_bound_interactive_DOM()
   {
     var requestedUrls = new List<string>();

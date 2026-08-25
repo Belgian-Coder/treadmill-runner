@@ -104,6 +104,17 @@ public sealed class GarminActivityUploadWorker(
         }
         tokens = search.TokenStore;
         match = GarminWatchActivityMatcher.Match(ToMatchReference(session), search.Candidates ?? []);
+        if (match.Disposition == GarminWatchActivityMatchDisposition.ReviewRequired)
+        {
+          await store.MarkReviewRequiredAsync(
+            job.Id,
+            match.Candidate?.RemoteId,
+            match.Evidence,
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+          logger.LogInformation("Garmin watch candidate for upload job {JobId} requires manual review because local heart-rate evidence is absent: {Evidence}", job.Id, match.Evidence);
+          return;
+        }
         if (match.Disposition == GarminWatchActivityMatchDisposition.Single && match.Candidate is { } candidate)
         {
           if (account.WatchActivityHandling == GarminWatchActivityHandling.PreferWatch)

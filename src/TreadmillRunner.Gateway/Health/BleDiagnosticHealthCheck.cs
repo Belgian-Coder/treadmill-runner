@@ -21,14 +21,16 @@ public sealed class BleDiagnosticHealthCheck(IReadOnlyDeviceCoordinator devices)
       ["heartRateState"] = snapshot.HeartRate.State.ToString(),
       ["heartRateGeneration"] = snapshot.HeartRate.ConnectionGeneration,
       ["treadmillAgeMilliseconds"] = snapshot.TreadmillAge?.TotalMilliseconds ?? -1,
+      ["treadmillSpeedAgeMilliseconds"] = snapshot.TreadmillSpeedAge?.TotalMilliseconds ?? -1,
+      ["treadmillInclineAgeMilliseconds"] = snapshot.TreadmillInclineAge?.TotalMilliseconds ?? -1,
       ["heartRateAgeMilliseconds"] = snapshot.HeartRateAge?.TotalMilliseconds ?? -1,
     };
     if (snapshot.Treadmill.DisplayName is null)
       return Task.FromResult(HealthCheckResult.Degraded("No treadmill is enrolled.", data: data));
     if (snapshot.Treadmill.State != DeviceConnectionState.Ready)
       return Task.FromResult(HealthCheckResult.Degraded("The enrolled treadmill BLE connection is not ready.", data: data));
-    if (snapshot.TreadmillAge is not { } treadmillAge || treadmillAge > FreshnessLimit)
-      return Task.FromResult(HealthCheckResult.Degraded("The enrolled treadmill is not providing fresh telemetry.", data: data));
+    if (snapshot.TreadmillSpeedAge is not { } treadmillSpeedAge || treadmillSpeedAge > FreshnessLimit)
+      return Task.FromResult(HealthCheckResult.Degraded("The enrolled treadmill is not providing fresh speed telemetry.", data: data));
     if (snapshot.HeartRate.DisplayName is null)
       return Task.FromResult(HealthCheckResult.Degraded("No heart-rate sensor is enrolled or selected.", data: data));
     if (snapshot.HeartRate.State != DeviceConnectionState.Ready)

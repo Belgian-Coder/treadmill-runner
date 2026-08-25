@@ -4,7 +4,7 @@ type: delivery-backlog
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-08
+updated: 2026-08-25
 ---
 
 # Story backlog
@@ -56,5 +56,7 @@ All implementation stories use the reusable `user-story-workflow`; no project-sp
 | TR-032 | Exact WalkingPad 5K-to-10K source plan, same-date workout variants, clear-upcoming lifecycle, plan-detail links, and one-session-at-a-time Garmin calendar sync | software implemented and installed in 1.5.20; live Garmin acceptance pending | Existing history is immutable unless explicitly reset; no bulk Garmin enqueue, automatic treadmill Start, or legacy low-speed Stop workaround |
 | [TR-033](stories/tr-033-session-controls-and-planning-ownership.md) | Two-button resumable Stop controls, explicit end/reset decisions, compact plan details, idempotent template installs, and Plan-owned scheduling | completed and validated for 1.5.23; owner installation pending | Stop must be confirmed before decisions; reset preserves recording evidence and never starts; Calendar cannot create training |
 | [TR-037](stories/tr-037-connected-pwa-polish.md) | Trusted-HTTPS installed polish, outbound file sharing, and one offline safety document | implemented and deterministically validated; owner HTTPS acceptance pending | No cached app shell/data, background work, direct Bluetooth, command path, or forced service-worker takeover |
+| US-TR-041 | Coordinated device/session correctness, Metric-only product surfaces, exports, Garmin review evidence, provenance, iPhone icon, and Lighthouse-preserving performance work | software implemented; focused/final repository evidence pending | Focused feature suites, documentation/schema review, and exactly one final repository gate; no release, deployment, installation, backup-target change, or physical-equipment proof |
+| [TR-042](stories/tr-042-idle-home-live-transport-lazy-loading.md) | Keep the SignalR transport group out of idle Home while preserving recovery and explicit control acquisition | implemented; approved for 1.5.58 release and rollout | Idle Home makes no live-group request; Control loads on demand; no command replay or physical movement |
 
 Every story owns acceptance mapping, failing-first tests where practical, deterministic validation, documentation delta, skipped hardware checks, and finish evidence.

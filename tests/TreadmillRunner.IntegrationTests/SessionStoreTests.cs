@@ -244,8 +244,6 @@ public sealed class SessionStoreTests : IAsyncLifetime
     var activeId = Guid.NewGuid();
     var completedId = Guid.NewGuid();
 
-    await store.CreateAsync(New(activeId, ids, now));
-    await store.MarkRunningAsync(activeId, now.AddSeconds(3));
     await store.CreateAsync(New(completedId, ids, now.AddMinutes(-30)));
     await store.MarkRunningAsync(completedId, now.AddMinutes(-30).AddSeconds(3));
     await store.FinalizeAsync(new SessionSummary(
@@ -264,6 +262,8 @@ public sealed class SessionStoreTests : IAsyncLifetime
       146,
       6.5,
       1));
+    await store.CreateAsync(New(activeId, ids, now));
+    await store.MarkRunningAsync(activeId, now.AddSeconds(3));
 
     int interrupted = await store.InterruptUnfinishedAsync(now, "Gateway restarted.");
 
@@ -328,8 +328,10 @@ public sealed class SessionStoreTests : IAsyncLifetime
       SavedAtUtc = checkpoint.SavedAtUtc.AddSeconds(1),
       SessionVersion = checkpoint.SessionVersion + 1,
     };
-    await Assert.ThrowsAsync<DbUpdateException>(() => store.AppendSampleAndRecoveryCheckpointAsync(
-      Sample(sessionId, 0, started.AddSeconds(2), 2, 6, 6, 121), replacement));
+    InvalidOperationException duplicate = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+      store.AppendSampleAndRecoveryCheckpointAsync(
+        Sample(sessionId, 0, started.AddSeconds(2), 2, 6, 6, 121), replacement));
+    Assert.Contains("different telemetry", duplicate.Message, StringComparison.Ordinal);
 
     RecoverableWorkoutSession recovered = Assert.IsType<RecoverableWorkoutSession>(await store.FindRecoverableAsync());
     Assert.Equal(checkpoint, recovered.Checkpoint);
@@ -504,6 +506,7 @@ public sealed class SessionStoreTests : IAsyncLifetime
     await store.CreateAsync(new NewWorkoutSession(nonterminalId, ids.ProfileId, "Runner", ids.RevisionId,
       "Active", now, "{}", SessionMetricAlgorithms.EstimatedCaloriesV1, origin: SessionOrigin.Hardware));
     Assert.False(Assert.IsType<HistoryDeletionPreview>(await store.PreviewDeletionAsync(nonterminalId, ids.ProfileId)).CanDelete);
+    Assert.Equal(1, await store.InterruptUnfinishedAsync(now.AddMinutes(1), "Feature test cleanup."));
 
     Guid linkedId = await CreateTerminalSessionAsync(store, ids, now.AddMinutes(2), SessionOrigin.Hardware);
     await using (var context = await factory.CreateDbContextAsync())

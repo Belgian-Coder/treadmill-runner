@@ -214,14 +214,7 @@
                                             </label>
                                             <fieldset class="program-training-days">
                                                 <legend>Choose exactly @RequiredTrainingDays training day(s)</legend>
-                                                <div>
-                                                    @foreach ((string label, int flag) in ScheduleWeekdays)
-                                                    {
-                                                        <button type="button" aria-pressed="@((programScheduleWeekdayMask & flag) != 0)"
-                                                                class="@((programScheduleWeekdayMask & flag) != 0 ? "is-selected" : null)"
-                                                                @onclick="() => ToggleProgramWeekday(flag)">@label</button>
-                                                    }
-                                                </div>
+                                                <WeekdaySelector @bind-Value="programScheduleWeekdayMask" AriaLabel="Choose training weekdays" />
                                             </fieldset>
                                             <p class="field-help">Sessions stay in exact order and appear only on @ActiveProfileName’s calendar.</p>
                                         </div>
@@ -588,6 +581,10 @@
             </section>
             <div class="card-actions workout-details-actions">
                 <button class="secondary-action" type="button" @onclick="CloseWorkoutDetailsAsync">Close</button>
+                @if (selectedWorkoutRevision is not null)
+                {
+                    <a class="secondary-action" href="@($"/api/planning/workouts/revisions/{selectedWorkoutRevision.RevisionId:D}/export.fit")" download>Download FIT Workout</a>
+                }
                 @if (selectedWorkoutDetails is not null)
                 {
                     <a class="primary-action" href="@RevisionHref(selectedWorkoutDetails)">Create new revision</a>

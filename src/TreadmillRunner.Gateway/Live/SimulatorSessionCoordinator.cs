@@ -139,12 +139,31 @@ public sealed class LiveSessionCoordinator(
   private static readonly TimeSpan PersistenceInterval = TimeSpan.FromSeconds(1);
   private static readonly TimeSpan FreshTelemetryLimit = TimeSpan.FromSeconds(5);
   private readonly SemaphoreSlim _gate = new(1, 1);
+  private readonly SemaphoreSlim _armAdmission = new(1, 1);
+  private readonly SemaphoreSlim _effectsGate = new(1, 1);
+  private readonly object _effectsQueueGate = new();
+  private Task _effectsTail = Task.CompletedTask;
   private ActiveRun? _active;
   private LiveSnapshot _current = DisconnectedIdleSnapshot(timeProvider.GetUtcNow());
   private bool _startupRecoveryComplete;
   private bool _startupRecoveryWaitLogged;
+  private int _startupRecoveryAttempt;
+  private DateTimeOffset _nextStartupRecoveryAttemptUtc;
   private bool _maintenanceActive;
   private readonly Guid _serviceInstanceId = Guid.NewGuid();
+  private SessionTelemetryWriter? _telemetryWriter;
+  private readonly LatestLiveSnapshotBroadcaster _snapshotBroadcaster = new(hubContext, logger, timeProvider);
+
+  private SessionTelemetryWriter TelemetryWriter
+  {
+    get
+    {
+      SessionTelemetryWriter? existing = Volatile.Read(ref _telemetryWriter);
+      if (existing is not null) return existing;
+      var created = new SessionTelemetryWriter(scopeFactory, logger, timeProvider, IsCurrentTelemetryAsync);
+      return Interlocked.CompareExchange(ref _telemetryWriter, created, null) ?? created;
+    }
+  }
 
   public LiveSnapshot Current => Volatile.Read(ref _current);
 
@@ -165,9 +184,12 @@ public sealed class LiveSessionCoordinator(
     bool hardwareMode = !SimulatorAvailable;
     bool treadmillFresh = hardwareMode &&
       devices.Treadmill.State == DeviceConnectionState.Ready &&
-      devices.TreadmillAge <= FreshTelemetryLimit;
-    bool heartRateFresh = devices.HeartRate.DisplayName is not null &&
+      devices.TreadmillSpeedAge <= FreshTelemetryLimit;
+    bool heartRateFresh = devices.SelectedHeartRateEnrollmentId is not null &&
       devices.HeartRate.State == DeviceConnectionState.Ready &&
+      devices.HeartRateBpm is >= 30 and <= 250 &&
+      devices.SelectedHeartRateQuality == HeartRateSignalQuality.Valid &&
+      devices.SelectedHeartRateContactState != HeartRateContactState.NotDetected &&
       devices.HeartRateAge <= FreshTelemetryLimit;
     HeartRateSource heartRateSource = hardwareMode
       ? MapHeartRateSource(devices)
@@ -249,34 +271,42 @@ public sealed class LiveSessionCoordinator(
     CancellationToken cancellationToken = default,
     WorkoutSessionSelection? selection = null)
   {
-    if (leaseCoordinator.Current is not ControlLease lease ||
-        lease.Id != leaseId ||
-        !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
-    {
-      throw new InvalidOperationException("A current controller lease is required to arm a workout.");
-    }
-
-    (VersionedUserProfile profile, StoredWorkoutRevision revision, WorkoutDefinition workout) =
-      await LoadPlanAsync(profileId, workoutRevisionId, cancellationToken);
-    PreflightSnapshot preflight = await GetPreflightAsync(
-      profileId,
-      workoutRevisionId,
-      cancellationToken);
-    if (!preflight.IsReady)
-    {
-      throw new InvalidOperationException("Preflight is not ready; fresh required device telemetry is missing.");
-    }
-    await _gate.WaitAsync(cancellationToken);
+    await _armAdmission.WaitAsync(cancellationToken);
     try
     {
-      if (_maintenanceActive)
-        throw new InvalidOperationException("A software update is being activated; new sessions are temporarily unavailable.");
-      if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted) })
+      var terminalSessionWasActive = false;
+      if (leaseCoordinator.Current is not ControlLease initialLease ||
+          initialLease.Id != leaseId ||
+          !string.Equals(initialLease.HolderId, holderId, StringComparison.Ordinal))
       {
-        throw new InvalidOperationException("Another workout session is already active.");
+        throw new InvalidOperationException("A current controller lease is required to arm a workout.");
       }
 
-      var now = timeProvider.GetUtcNow();
+      await _gate.WaitAsync(cancellationToken);
+      try
+      {
+        if (!_startupRecoveryComplete)
+          throw new InvalidOperationException("Gateway startup recovery is still in progress; try arming again shortly.");
+        if (_maintenanceActive)
+          throw new InvalidOperationException("A software update is being activated; new sessions are temporarily unavailable.");
+        if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted) })
+          throw new InvalidOperationException("Another workout session is already active.");
+        terminalSessionWasActive = _active is { Machine.State: SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted };
+      }
+      finally
+      {
+        _gate.Release();
+      }
+
+      (VersionedUserProfile profile, StoredWorkoutRevision revision, WorkoutDefinition workout) =
+        await LoadPlanAsync(profileId, workoutRevisionId, cancellationToken);
+      PreflightSnapshot preflight = await GetPreflightAsync(profileId, workoutRevisionId, cancellationToken);
+      if (!preflight.IsReady)
+        throw new InvalidOperationException("Preflight is not ready; fresh required device telemetry is missing.");
+
+      // Capability/enrollment reads are deliberately outside _gate. The arm
+      // admission semaphore serializes competing arms while the authoritative
+      // session lock remains reserved for fast state transitions.
       DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(profileId);
       bool hardwareMode = !SimulatorAvailable;
       bool requiresHeartRate = ContainsHeartRateTarget(workout.Blocks);
@@ -290,6 +320,8 @@ public sealed class LiveSessionCoordinator(
       if (!capabilityResult.IsValid)
         throw new InvalidOperationException("Workout targets exceed the selected profile or verified treadmill capabilities.");
       workout = capabilityResult.Definition;
+
+      DateTimeOffset now = timeProvider.GetUtcNow();
       SessionTreadmillSnapshot? treadmillSnapshot = hardwareMode
         ? new SessionTreadmillSnapshot(
           devices.Treadmill.DisplayName ?? "Treadmill",
@@ -353,15 +385,98 @@ public sealed class LiveSessionCoordinator(
 
       using IServiceScope scope = scopeFactory.CreateScope();
       ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.CreateAsync(definition, cancellationToken);
-      _active = active;
-      await deviceCoordinator.HoldRunConnectionsAsync(profileId, requiresHeartRate, cancellationToken);
-      PublishSnapshot(active, now, SessionControlAccess.Controller, lease.ExpiresAt);
-      return active.Snapshot;
+      if (terminalSessionWasActive)
+      {
+        Task pendingTerminalEffects;
+        lock (_effectsQueueGate) pendingTerminalEffects = _effectsTail;
+        await pendingTerminalEffects.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+      }
+      bool persisted = false;
+      try
+      {
+        await store.CreateAsync(definition, cancellationToken);
+        persisted = true;
+        await deviceCoordinator.HoldRunConnectionsAsync(profileId, requiresHeartRate, cancellationToken);
+      }
+      catch
+      {
+        if (persisted)
+        {
+          try
+          {
+            await store.InterruptUnfinishedAsync(
+              timeProvider.GetUtcNow(),
+              "Session arm could not hold the required device connections.",
+              CancellationToken.None);
+          }
+          catch (Exception cleanupException)
+          {
+            logger.LogWarning(cleanupException, "The newly created session could not be reconciled after arm setup failed.");
+          }
+        }
+        try
+        {
+          await deviceCoordinator.ReleaseRunConnectionsAsync(CancellationToken.None);
+        }
+        catch (Exception cleanupException)
+        {
+          logger.LogWarning(cleanupException, "Run device connections could not be released after arm setup failed.");
+        }
+        throw;
+      }
+
+      string? admissionFailure = null;
+      DateTimeOffset? leaseExpiry = null;
+      await _gate.WaitAsync(cancellationToken);
+      try
+      {
+        if (!_startupRecoveryComplete)
+          admissionFailure = "Gateway startup recovery is still in progress; try arming again shortly.";
+        else if (_maintenanceActive)
+          admissionFailure = "A software update is being activated; new sessions are temporarily unavailable.";
+        else if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted) })
+          admissionFailure = "Another workout session is already active.";
+        else if (leaseCoordinator.Current is not ControlLease finalLease ||
+                 finalLease.Id != leaseId ||
+                 !string.Equals(finalLease.HolderId, holderId, StringComparison.Ordinal))
+          admissionFailure = "The controller lease changed while the workout was being prepared.";
+        else
+        {
+          _active = active;
+          leaseExpiry = finalLease.ExpiresAt;
+          PublishSnapshot(active, now, SessionControlAccess.Controller, leaseExpiry);
+          return active.Snapshot;
+        }
+      }
+      finally
+      {
+        _gate.Release();
+      }
+
+      try
+      {
+        await store.InterruptUnfinishedAsync(
+          timeProvider.GetUtcNow(),
+          "Session arm was invalidated before it became the active in-memory session.",
+          CancellationToken.None);
+      }
+      catch (Exception cleanupException)
+      {
+        logger.LogWarning(cleanupException, "The invalidated armed session could not be reconciled immediately.");
+      }
+      try
+      {
+        await deviceCoordinator.ReleaseRunConnectionsAsync(CancellationToken.None);
+      }
+      catch (Exception cleanupException)
+      {
+        logger.LogWarning(cleanupException, "Run device connections could not be released after arm admission was invalidated.");
+      }
+      throw new InvalidOperationException(admissionFailure ?? "The workout could not be armed.");
     }
     finally
     {
-      _gate.Release();
+      _armAdmission.Release();
     }
   }
 
@@ -386,6 +501,7 @@ public sealed class LiveSessionCoordinator(
       throw new ArgumentOutOfRangeException(nameof(measuredInclinePercent));
     }
 
+    LiveEffectBatch effects = new();
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -405,7 +521,7 @@ public sealed class LiveSessionCoordinator(
       }
 
       var now = timeProvider.GetUtcNow();
-      await MarkRunningIfTransitionedAsync(active, previous, now, cancellationToken);
+      MarkRunningIfTransitioned(active, previous, now, effects);
 
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
     }
@@ -413,6 +529,9 @@ public sealed class LiveSessionCoordinator(
     {
       _gate.Release();
     }
+
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
   }
 
   public async Task SetSimulatedHeartRateAsync(
@@ -421,6 +540,7 @@ public sealed class LiveSessionCoordinator(
   {
     if (beatsPerMinute is 0 or > 250)
       throw new ArgumentOutOfRangeException(nameof(beatsPerMinute), "Heart rate must be between 1 and 250 bpm, or null to simulate stale telemetry.");
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -432,16 +552,21 @@ public sealed class LiveSessionCoordinator(
       active.HeartRateObservedAt = beatsPerMinute is null ? null : now;
       active.HeartRateAge = beatsPerMinute is null ? TimeSpan.FromSeconds(6) : TimeSpan.Zero;
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
   }
 
   public async Task CompletePhysicalSessionAsync(CancellationToken cancellationToken = default)
   {
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
+    Task? terminalEffects = null;
+    var releaseConnections = false;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -456,21 +581,32 @@ public sealed class LiveSessionCoordinator(
       active.Machine.Complete();
       active.IsMoving = false;
       active.MeasuredSpeedKph = 0;
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(
-        active.Definition.SessionId,
-        new SessionCompletedEvent(now),
-        cancellationToken);
-      await store.FinalizeAsync(CreateSummary(active, SessionState.Completed, now), cancellationToken);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      SessionCompletedEvent completed = new(now);
+      SessionSummary summary = CreateSummary(active, SessionState.Completed, now);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.AppendEventAsync(metadata.SessionId, completed, token);
+        await store.FinalizeAsync(summary, token);
+      }, terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
-      await ReleaseDeviceConnectionsAsync(cancellationToken);
+      snapshotToPublish = active.Snapshot;
+      releaseConnections = true;
+      if (!effects.IsEmpty)
+        terminalEffects = QueueEffects(effects, CancellationToken.None, deferExecution: true);
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (releaseConnections)
+      await ReleaseDeviceConnectionsAsync(cancellationToken);
+    if (terminalEffects is not null)
+      await terminalEffects.ConfigureAwait(false);
   }
 
   public async Task<TreadmillCommandResult> StopSimulatorAsync(
@@ -488,6 +624,9 @@ public sealed class LiveSessionCoordinator(
       throw new InvalidOperationException("A current controller lease is required to stop the simulator session.");
     }
 
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
+    TreadmillCommandResult? resultToReturn = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -529,19 +668,28 @@ public sealed class LiveSessionCoordinator(
         timeProvider.GetUtcNow());
       active.LastCommandResult = result;
 
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(active.Definition.SessionId,
-        new SessionPausedEvent(SessionPauseReason.TreadmillStopped, result.CompletedAt), cancellationToken);
-      await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, result.CompletedAt), cancellationToken);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      SessionPausedEvent stopped = new(SessionPauseReason.TreadmillStopped, result.CompletedAt);
+      SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, result.CompletedAt);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.AppendEventAsync(metadata.SessionId, stopped, token);
+        await store.SaveRecoveryCheckpointAsync(checkpoint, token);
+      });
       PublishSnapshot(active, result.CompletedAt, SessionControlAccess.Controller, lease.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return result;
+      snapshotToPublish = active.Snapshot;
+      resultToReturn = result;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
+    return resultToReturn!;
   }
 
   public async Task<ActiveSessionSnapshot> EndSessionAsync(
@@ -552,6 +700,10 @@ public sealed class LiveSessionCoordinator(
     CancellationToken cancellationToken = default)
   {
     ValidateSessionAction(operationId, leaseId, holderId);
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
+    Task? terminalEffects = null;
+    var releaseConnections = false;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -566,20 +718,33 @@ public sealed class LiveSessionCoordinator(
       DateTimeOffset now = timeProvider.GetUtcNow();
       active.Machine.Stop();
       active.ProcessedOperationIds.Add(operationId);
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(active.Definition.SessionId, new SessionStoppedEvent(now), cancellationToken);
-      await store.FinalizeAsync(CreateSummary(active, SessionState.Stopped, now), cancellationToken);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      SessionStoppedEvent stopped = new(now);
+      SessionSummary summary = CreateSummary(active, SessionState.Stopped, now);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.AppendEventAsync(metadata.SessionId, stopped, token);
+        await store.FinalizeAsync(summary, token);
+      }, terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      await ReleaseDeviceConnectionsAsync(cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
+      releaseConnections = true;
+      if (!effects.IsEmpty)
+        terminalEffects = QueueEffects(effects, CancellationToken.None, deferExecution: true);
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (releaseConnections)
+      await ReleaseDeviceConnectionsAsync(cancellationToken);
+    if (terminalEffects is not null)
+      await terminalEffects.ConfigureAwait(false);
+    return snapshotToPublish!;
   }
 
   public async Task<ActiveSessionSnapshot> ResetWorkoutProgressAsync(
@@ -590,6 +755,8 @@ public sealed class LiveSessionCoordinator(
     CancellationToken cancellationToken = default)
   {
     ValidateSessionAction(operationId, leaseId, holderId);
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -618,19 +785,27 @@ public sealed class LiveSessionCoordinator(
       active.Machine.MarkConfigurationChanged();
       active.ProcessedOperationIds.Add(operationId);
 
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(active.Definition.SessionId,
-        new WorkoutProgressResetEvent(previousStepIndex, previousWorkoutElapsed, now), cancellationToken);
-      await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      WorkoutProgressResetEvent resetEvent = new(previousStepIndex, previousWorkoutElapsed, now);
+      SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.AppendEventAsync(metadata.SessionId, resetEvent, token);
+        await store.SaveRecoveryCheckpointAsync(checkpoint, token);
+      });
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
+    return snapshotToPublish!;
   }
 
   private void ValidateSessionAction(Guid operationId, Guid leaseId, string holderId)
@@ -667,6 +842,8 @@ public sealed class LiveSessionCoordinator(
       throw new InvalidOperationException("A current controller lease is required to override speed.");
     }
 
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -695,11 +872,6 @@ public sealed class LiveSessionCoordinator(
         MidpointRounding.AwayFromZero);
       active.Machine.RecordManualSpeedOverride(previous, requested);
       var speedOverride = (ManualSpeedOverrideEvent)active.Machine.Events[^1];
-      using IServiceScope scope = scopeFactory.CreateScope();
-      await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-        active.Definition.SessionId,
-        speedOverride,
-        cancellationToken);
       active.SpeedOverrideKph = requested;
       active.MeasuredSpeedKph = requested;
       active.IsMoving = requested > SessionStateMachine.PhysicalStartThresholdKph;
@@ -712,14 +884,26 @@ public sealed class LiveSessionCoordinator(
         active.HeartRateAutomationReason =
           "A manual speed override suspends heart-rate automation until explicitly re-enabled.";
       }
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+          metadata.SessionId,
+          speedOverride,
+          token);
+      });
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
+    return snapshotToPublish!;
   }
 
   public async Task<ActiveSessionSnapshot> AdjustRequestedInclineAsync(
@@ -749,6 +933,8 @@ public sealed class LiveSessionCoordinator(
       throw new InvalidOperationException("A current controller lease is required to override incline.");
     }
 
+    LiveEffectBatch effects = new();
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -781,24 +967,31 @@ public sealed class LiveSessionCoordinator(
         previous,
         requested,
         timeProvider.GetUtcNow());
-      using IServiceScope scope = scopeFactory.CreateScope();
-      await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-        active.Definition.SessionId,
-        inclineOverride,
-        cancellationToken);
       active.InclineOverridePercent = requested;
       active.MeasuredInclinePercent = requested;
       active.TelemetryAge = TimeSpan.Zero;
       active.Machine.MarkConfigurationChanged();
       active.ProcessedOperationIds.Add(operationId);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+          metadata.SessionId,
+          inclineOverride,
+          token);
+      });
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
+    return snapshotToPublish!;
   }
 
   public async Task<TreadmillCommandIntent> PrepareCommandAsync(
@@ -988,6 +1181,8 @@ public sealed class LiveSessionCoordinator(
       throw new ArgumentException("The command result does not match its intent.", nameof(result));
     }
 
+    ActiveSessionSnapshot? snapshotToPublish = null;
+    var effects = new LiveEffectBatch();
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -1046,16 +1241,20 @@ public sealed class LiveSessionCoordinator(
           double previous = active.RequestedSpeedKph;
           active.Machine.RecordManualSpeedOverride(previous, acceptedSpeed);
           var speedOverride = (ManualSpeedOverrideEvent)active.Machine.Events[^1];
-          using IServiceScope speedScope = scopeFactory.CreateScope();
-          await speedScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-            active.Definition.SessionId,
-            speedOverride,
-            cancellationToken);
           active.SpeedOverrideKph = acceptedSpeed;
           active.ProcessedOperationIds.Add(intent.OperationId);
           active.HeartRateController.ResetDwell();
           active.HeartRateAutomationMode = HeartRateAutomationMode.SuspendedManualOverride;
           active.HeartRateAutomationReason = "A manual speed override suspends heart-rate automation until explicitly re-enabled.";
+          LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+          effects.Add(metadata, async token =>
+          {
+            using IServiceScope speedScope = scopeFactory.CreateScope();
+            await speedScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+              metadata.SessionId,
+              speedOverride,
+              token);
+          });
         }
         else if (result.Kind == TreadmillCommandKind.SetIncline &&
                  intent.Origin == TreadmillCommandOrigin.Manual &&
@@ -1064,11 +1263,16 @@ public sealed class LiveSessionCoordinator(
           double previous = active.RequestedInclinePercent;
           active.InclineOverridePercent = acceptedIncline;
           active.ProcessedOperationIds.Add(intent.OperationId);
-          using IServiceScope inclineScope = scopeFactory.CreateScope();
-          await inclineScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-            active.Definition.SessionId,
-            new ManualInclineOverrideEvent(previous, acceptedIncline, timeProvider.GetUtcNow()),
-            cancellationToken);
+          ManualInclineOverrideEvent inclineOverride = new(previous, acceptedIncline, timeProvider.GetUtcNow());
+          LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+          effects.Add(metadata, async token =>
+          {
+            using IServiceScope inclineScope = scopeFactory.CreateScope();
+            await inclineScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+              metadata.SessionId,
+              inclineOverride,
+              token);
+          });
         }
         else if (intent.Origin == TreadmillCommandOrigin.PlannedTransition &&
                  result.Kind == TreadmillCommandKind.SetSpeed)
@@ -1087,11 +1291,16 @@ public sealed class LiveSessionCoordinator(
           active.CommandsSuspended = true;
           active.HeartRateAutomationMode = HeartRateAutomationMode.SuspendedSafety;
           active.HeartRateAutomationReason = "Pause suspends automation until explicitly re-enabled after physical resume.";
-          using IServiceScope pauseScope = scopeFactory.CreateScope();
-          await pauseScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-            active.Definition.SessionId,
-            new SessionPausedEvent(SessionPauseReason.WebControl, timeProvider.GetUtcNow()),
-            cancellationToken);
+          SessionPausedEvent paused = new(SessionPauseReason.WebControl, timeProvider.GetUtcNow());
+          LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+          effects.Add(metadata, async token =>
+          {
+            using IServiceScope pauseScope = scopeFactory.CreateScope();
+            await pauseScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+              metadata.SessionId,
+              paused,
+              token);
+          });
         }
         else if (result.Kind == TreadmillCommandKind.Stop &&
             intent.Origin == TreadmillCommandOrigin.WorkoutCompletion &&
@@ -1104,7 +1313,7 @@ public sealed class LiveSessionCoordinator(
           active.IsMoving = false;
           active.MeasuredSpeedKph = result.MeasuredValue ?? 0;
           active.ProcessedOperationIds.Add(intent.OperationId);
-          await FinalizeCompletedSessionAsync(active, now, cancellationToken);
+          FinalizeCompletedSession(active, now, effects);
         }
         else if (result.Kind == TreadmillCommandKind.Stop &&
             intent.Origin == TreadmillCommandOrigin.WorkoutCompletion)
@@ -1124,22 +1333,31 @@ public sealed class LiveSessionCoordinator(
           active.MeasuredSpeedKph = result.MeasuredValue ?? 0;
           SuspendAutomation(active, "The treadmill is stopped; press Start when you are ready to resume.");
           active.ProcessedOperationIds.Add(intent.OperationId);
-          using IServiceScope scope = scopeFactory.CreateScope();
-          ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-          await store.AppendEventAsync(active.Definition.SessionId,
-            new SessionPausedEvent(SessionPauseReason.TreadmillStopped, now), cancellationToken);
-          await store.SaveRecoveryCheckpointAsync(CreateRecoveryCheckpoint(active, now), cancellationToken);
+          SessionPausedEvent stopped = new(SessionPauseReason.TreadmillStopped, now);
+          SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
+          LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+          effects.Add(metadata, async token =>
+          {
+            using IServiceScope scope = scopeFactory.CreateScope();
+            ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+            await store.AppendEventAsync(metadata.SessionId, stopped, token);
+            await store.SaveRecoveryCheckpointAsync(checkpoint, token);
+          });
         }
       }
 
       var capturedAt = timeProvider.GetUtcNow();
       PublishSnapshot(active, capturedAt, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    if (!effects.IsEmpty)
+      _ = QueueEffects(effects, CancellationToken.None);
   }
 
   public async Task<ActiveSessionSnapshot> SetHeartRateAutomationAsync(
@@ -1158,6 +1376,7 @@ public sealed class LiveSessionCoordinator(
         !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
       throw new InvalidOperationException("A current controller lease is required to change heart-rate automation.");
 
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -1191,13 +1410,14 @@ public sealed class LiveSessionCoordinator(
       active.Warnings.Remove("Automatic treadmill commands are suspended after a rejected command.");
       active.Warnings.Remove("A treadmill command has an unknown physical outcome; automation is suspended.");
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    return snapshotToPublish!;
   }
 
   public async Task<ActiveSessionSnapshot> ResumePlannedControlsAsync(
@@ -1213,6 +1433,7 @@ public sealed class LiveSessionCoordinator(
         !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal))
       throw new InvalidOperationException("A current controller lease is required to resume planned controls.");
 
+    ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -1245,27 +1466,26 @@ public sealed class LiveSessionCoordinator(
       active.Machine.MarkConfigurationChanged();
       active.ProcessedOperationIds.Add(operationId);
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
-      await hubContext.Clients.All.SendAsync("sessionSnapshot", active.Snapshot, cancellationToken);
-      return active.Snapshot;
+      snapshotToPublish = active.Snapshot;
     }
     finally
     {
       _gate.Release();
     }
+    _snapshotBroadcaster.Publish(null, snapshotToPublish);
+    return snapshotToPublish!;
   }
 
   public async Task ResetAsync(CancellationToken cancellationToken = default)
   {
+    DateTimeOffset? interruptAt = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
       if (_active is { } active &&
           active.Machine.State is not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted))
       {
-        var now = timeProvider.GetUtcNow();
-        using IServiceScope scope = scopeFactory.CreateScope();
-        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-        await store.InterruptUnfinishedAsync(now, "Simulator reset.", cancellationToken);
+        interruptAt = timeProvider.GetUtcNow();
       }
 
       _active = null;
@@ -1275,6 +1495,12 @@ public sealed class LiveSessionCoordinator(
     finally
     {
       _gate.Release();
+    }
+    if (interruptAt is { } resetAt)
+    {
+      using IServiceScope scope = scopeFactory.CreateScope();
+      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+      await store.InterruptUnfinishedAsync(resetAt, "Simulator reset.", cancellationToken);
     }
     await ReleaseDeviceConnectionsAsync(cancellationToken);
   }
@@ -1316,12 +1542,48 @@ public sealed class LiveSessionCoordinator(
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
     logger.LogInformation("Starting authoritative live session loop at {UpdateRateHz} Hz.", 4);
-    await TryCompleteStartupRecoveryAsync(stoppingToken);
-
-    using var timer = new PeriodicTimer(UpdateInterval);
-    while (await timer.WaitForNextTickAsync(stoppingToken))
+    // These queues run independently of the 250 ms authoritative loop. They
+    // get a separate cancellation source so shutdown can give a bounded drain
+    // window without allowing a slow database or SignalR client to hang host
+    // shutdown indefinitely.
+    using var backgroundStop = new CancellationTokenSource();
+    Task telemetryWriter = TelemetryWriter.RunAsync(backgroundStop.Token);
+    Task snapshotBroadcaster = _snapshotBroadcaster.RunAsync(backgroundStop.Token);
+    try
     {
-      await TickAsync(stoppingToken);
+      await TryCompleteStartupRecoveryAsync(stoppingToken);
+
+      using var timer = new PeriodicTimer(UpdateInterval);
+      while (await timer.WaitForNextTickAsync(stoppingToken))
+      {
+        await TickAsync(stoppingToken);
+      }
+    }
+    finally
+    {
+      Task pendingEffects;
+      lock (_effectsQueueGate) pendingEffects = _effectsTail;
+      try
+      {
+        await pendingEffects.WaitAsync(TimeSpan.FromSeconds(5));
+      }
+      catch (TimeoutException)
+      {
+        logger.LogWarning("Live-session persistence effects did not drain during the bounded shutdown window.");
+      }
+      TelemetryWriter.Complete();
+      _snapshotBroadcaster.Complete();
+      try
+      {
+        await Task.WhenAll(telemetryWriter, snapshotBroadcaster).WaitAsync(TimeSpan.FromSeconds(5));
+      }
+      catch (TimeoutException)
+      {
+        logger.LogWarning("Live-session telemetry or SignalR publication did not drain during the bounded shutdown window.");
+        backgroundStop.Cancel();
+        try { await Task.WhenAll(telemetryWriter, snapshotBroadcaster); }
+        catch (OperationCanceledException) { }
+      }
     }
   }
 
@@ -1330,106 +1592,135 @@ public sealed class LiveSessionCoordinator(
     AutomatedCommandRequest? automatedCommand = null;
     LiveSnapshot? liveSnapshotToPublish = null;
     ActiveSessionSnapshot? sessionSnapshotToPublish = null;
+    SessionTelemetryWrite? telemetryToQueue = null;
+    var startupRecoveryNeeded = false;
+    var effectsQueued = false;
+    var effects = new LiveEffectBatch();
     var releaseConnections = false;
     await _gate.WaitAsync(cancellationToken);
     try
     {
       if (!_startupRecoveryComplete)
       {
-        await TryCompleteStartupRecoveryAsync(cancellationToken);
-      }
-
-      var now = timeProvider.GetUtcNow();
-      if (_active is not { } active)
-      {
-        Volatile.Write(ref _current, CreateIdleSnapshot(now));
-        liveSnapshotToPublish = Current;
+        // Recovery performs database/device IO and is intentionally retried
+        // outside this authoritative state lock.
+        startupRecoveryNeeded = true;
       }
       else
       {
-        await ApplyHardwareTelemetryAsync(active, now, cancellationToken);
-        if (active.RecoveryState == SessionRecoveryState.Recovered &&
-            active.LastReconciledAtUtc is { } reconciledAt &&
-            now - reconciledAt >= TimeSpan.FromSeconds(5))
+        var now = timeProvider.GetUtcNow();
+        if (_active is not { } active)
         {
-          active.RecoveryState = SessionRecoveryState.None;
-          active.ConnectionPhase = SessionConnectionPhase.Ready;
+          Volatile.Write(ref _current, CreateIdleSnapshot(now));
+          liveSnapshotToPublish = Current;
         }
-        if (active.RecoveredAfterRestart && active.RestartRecoveryDeadlineUtc <= now &&
-            active.RecoveryState == SessionRecoveryState.RestartTracking && !active.IsMoving)
+        else
         {
-          using IServiceScope interruptedScope = scopeFactory.CreateScope();
-          await interruptedScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
-            now,
-            "Fresh movement from the enrolled treadmill was not confirmed after gateway restart.",
-            cancellationToken);
-          active.Machine.Interrupt();
-          active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
-          active.CommandsSuspendedReason = "Session recovery timed out without fresh treadmill movement.";
-        }
-        if (!active.HardwareMode)
-        {
-          active.HeartRateAge = active.HeartRateObservedAt is null
-            ? TimeSpan.MaxValue
-            : NonNegative(now - active.HeartRateObservedAt.Value);
-        }
-        UpdateMotion(active, now);
-        if (active.Machine.State == SessionState.Running)
-        {
-          int previousStepIndex = active.Progression.CurrentStepIndex;
-          foreach (WorkoutStepTransition transition in active.Progression.Advance(active.Elapsed, active.DistanceKilometers))
+          ApplyHardwareTelemetry(active, now, effects);
+          if (active.RecoveryState == SessionRecoveryState.Recovered &&
+              active.LastReconciledAtUtc is { } reconciledAt &&
+              now - reconciledAt >= TimeSpan.FromSeconds(5))
           {
-            using IServiceScope transitionScope = scopeFactory.CreateScope();
-            await transitionScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-              active.Definition.SessionId,
-              new WorkoutStepTransitionEvent(
+            active.RecoveryState = SessionRecoveryState.None;
+            active.ConnectionPhase = SessionConnectionPhase.Ready;
+          }
+          if (active.RecoveredAfterRestart && active.RestartRecoveryDeadlineUtc <= now &&
+              active.RecoveryState == SessionRecoveryState.RestartTracking && !active.IsMoving)
+          {
+            active.Machine.Interrupt();
+            active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
+            active.CommandsSuspendedReason = "Session recovery timed out without fresh treadmill movement.";
+            LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+            effects.Add(metadata, async token =>
+            {
+              using IServiceScope interruptedScope = scopeFactory.CreateScope();
+              await interruptedScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+                now,
+                "Fresh movement from the enrolled treadmill was not confirmed after gateway restart.",
+                token);
+            });
+          }
+          if (!active.HardwareMode)
+          {
+            active.HeartRateAge = active.HeartRateObservedAt is null
+              ? TimeSpan.MaxValue
+              : NonNegative(now - active.HeartRateObservedAt.Value);
+            if (active.HeartRateAge > FreshTelemetryLimit)
+              active.HeartRateBpm = null;
+          }
+          UpdateMotion(active, now);
+          if (active.Machine.State == SessionState.Running)
+          {
+            int previousStepIndex = active.Progression.CurrentStepIndex;
+            foreach (WorkoutStepTransition transition in active.Progression.Advance(active.Elapsed, active.DistanceKilometers))
+            {
+              LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+              WorkoutStepTransitionEvent transitionEvent = new(
                 transition.CompletedStepIndex,
                 transition.CurrentStepIndex,
                 active.Progression.CurrentStep?.Cue,
-                now),
-              cancellationToken);
+                now);
+              effects.Add(metadata, async token =>
+              {
+                using IServiceScope transitionScope = scopeFactory.CreateScope();
+                await transitionScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+                  metadata.SessionId,
+                  transitionEvent,
+                  token);
+              });
+            }
+
+            if (active.Progression.CurrentStepIndex != previousStepIndex)
+            {
+              active.SpeedOverrideKph = null;
+              active.InclineOverridePercent = null;
+            }
+
+            if (active.Progression.IsComplete)
+            {
+              if (CompletionAction(active) == WorkoutCompletionAction.Finalize)
+              {
+                FinalizeCompletedSession(active, now, effects);
+              }
+              else
+              {
+                AddWarningOnce(active,
+                  "Workout steps are complete. The session will stay open until the treadmill confirms a physical stop; use the physical Stop control if needed.");
+              }
+            }
+            else if (active.SampleCadence.TryAdvance(now))
+            {
+              SessionSample sample = CreateSample(active, now);
+              SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
+              SessionTelemetryWrite telemetry = new(
+                active.Definition.SessionId,
+                sample,
+                checkpoint,
+                active.Machine.Version,
+                active.ConnectionGeneration,
+                active.AutomationAuthorityId);
+              telemetryToQueue = telemetry;
+            }
           }
 
-          if (active.Progression.CurrentStepIndex != previousStepIndex)
+          if (!active.DeviceConnectionsReleased &&
+              active.Machine.State is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted &&
+              !active.IsMoving && active.MeasuredSpeedKph <= 0.05)
           {
-            active.SpeedOverrideKph = null;
-            active.InclineOverridePercent = null;
+            active.DeviceConnectionsReleased = true;
+            releaseConnections = true;
           }
 
-          if (active.Progression.IsComplete)
+          PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+          automatedCommand = BuildAutomatedCommand(active, now);
+          liveSnapshotToPublish = Current;
+          sessionSnapshotToPublish = active.Snapshot;
+          if (effects.HasTerminalEffects)
           {
-            if (CompletionAction(active) == WorkoutCompletionAction.Finalize)
-            {
-              await FinalizeCompletedSessionAsync(active, now, cancellationToken);
-            }
-            else
-            {
-              AddWarningOnce(active,
-                "Workout steps are complete. The session will stay open until the treadmill confirms a physical stop; use the physical Stop control if needed.");
-            }
-          }
-          else if (active.SampleCadence.TryAdvance(now))
-          {
-            using IServiceScope sampleScope = scopeFactory.CreateScope();
-            ISessionStore store = sampleScope.ServiceProvider.GetRequiredService<ISessionStore>();
-            SessionSample sample = CreateSample(active, now);
-            SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
-            await store.AppendSampleAndRecoveryCheckpointAsync(sample, checkpoint, cancellationToken);
+            _ = QueueEffects(effects, CancellationToken.None, deferExecution: true);
+            effectsQueued = true;
           }
         }
-
-        if (!active.DeviceConnectionsReleased &&
-            active.Machine.State is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted &&
-            !active.IsMoving && active.MeasuredSpeedKph <= 0.05)
-        {
-          active.DeviceConnectionsReleased = true;
-          releaseConnections = true;
-        }
-
-        PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
-        automatedCommand = BuildAutomatedCommand(active, now);
-        liveSnapshotToPublish = Current;
-        sessionSnapshotToPublish = active.Snapshot;
       }
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
@@ -1444,23 +1735,105 @@ public sealed class LiveSessionCoordinator(
     if (releaseConnections)
       await ReleaseDeviceConnectionsAsync(cancellationToken);
 
-    try
-    {
-      if (liveSnapshotToPublish is not null)
-        await hubContext.Clients.All.SendAsync("snapshot", liveSnapshotToPublish, cancellationToken);
-      if (sessionSnapshotToPublish is not null)
-        await hubContext.Clients.All.SendAsync("sessionSnapshot", sessionSnapshotToPublish, cancellationToken);
-    }
-    catch (Exception exception) when (exception is not OperationCanceledException)
-    {
-      logger.LogWarning(exception, "Live snapshot publication failed; the authoritative session loop will continue.");
-    }
+    if (startupRecoveryNeeded)
+      await TryCompleteStartupRecoveryAsync(cancellationToken);
+
+    _snapshotBroadcaster.Publish(liveSnapshotToPublish, sessionSnapshotToPublish);
+
+    if (telemetryToQueue is not null && !TelemetryWriter.TryEnqueue(telemetryToQueue))
+      logger.LogDebug("The live-session telemetry writer has completed; the next gateway startup will recover from the latest durable checkpoint.");
+
+    if (!effects.IsEmpty && !effectsQueued)
+      _ = QueueEffects(effects, CancellationToken.None);
 
     if (automatedCommand is not null)
     {
       await ExecuteAutomatedCommandAsync(automatedCommand, cancellationToken);
     }
+
   }
+
+  private async Task RunEffectsAsync(LiveEffectBatch effects, CancellationToken cancellationToken)
+  {
+    await _effectsGate.WaitAsync(cancellationToken);
+    try
+    {
+      await effects.ExecuteAsync(IsCurrentEffectAsync, cancellationToken);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      // Host shutdown owns cancellation; no new physical command is issued by an
+      // effect runner after the authoritative loop stops.
+    }
+    catch (Exception exception)
+    {
+      logger.LogError(exception, "A live-session effect batch failed outside the authoritative state lock.");
+    }
+    finally
+    {
+      _effectsGate.Release();
+    }
+  }
+
+  private Task QueueEffects(
+    LiveEffectBatch effects,
+    CancellationToken cancellationToken,
+    bool deferExecution = false)
+  {
+    lock (_effectsQueueGate)
+    {
+      Task previous = _effectsTail;
+      _effectsTail = deferExecution
+        ? Task.Run(() => RunQueuedEffectsAsync(previous, effects, cancellationToken))
+        : RunQueuedEffectsAsync(previous, effects, cancellationToken);
+      return _effectsTail;
+    }
+  }
+
+  private async Task RunQueuedEffectsAsync(
+    Task previous,
+    LiveEffectBatch effects,
+    CancellationToken cancellationToken)
+  {
+    await previous.ConfigureAwait(false);
+    await RunEffectsAsync(effects, cancellationToken).ConfigureAwait(false);
+  }
+
+  private async Task<bool> IsCurrentEffectAsync(
+    LiveEffectMetadata metadata,
+    CancellationToken cancellationToken)
+  {
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      return _active is { } active &&
+        active.Definition.SessionId == metadata.SessionId &&
+        active.Machine.Version == metadata.SessionVersion &&
+        active.ConnectionGeneration == metadata.ConnectionGeneration &&
+        active.AutomationAuthorityId == metadata.AuthorityId;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  private Task<bool> IsCurrentTelemetryAsync(
+    SessionTelemetryWrite write,
+    CancellationToken cancellationToken) =>
+    IsCurrentEffectAsync(
+      new LiveEffectMetadata(
+        write.SessionId,
+        write.SessionVersion,
+        write.ConnectionGeneration,
+        write.AuthorityId),
+      cancellationToken);
+
+  private static LiveEffectMetadata CaptureEffectMetadata(ActiveRun active) => new(
+    active.Definition.SessionId,
+    active.Machine.Version,
+    active.ConnectionGeneration,
+    active.AutomationAuthorityId);
 
   private AutomatedCommandRequest? BuildAutomatedCommand(ActiveRun active, DateTimeOffset now)
   {
@@ -1648,23 +2021,24 @@ public sealed class LiveSessionCoordinator(
     }
   }
 
-  private async Task FinalizeCompletedSessionAsync(
+  private void FinalizeCompletedSession(
     ActiveRun active,
     DateTimeOffset completedAt,
-    CancellationToken cancellationToken)
+    LiveEffectBatch effects)
   {
     if (active.Machine.State == SessionState.Completed) return;
 
     active.Machine.Complete();
-    using IServiceScope completionScope = scopeFactory.CreateScope();
-    ISessionStore store = completionScope.ServiceProvider.GetRequiredService<ISessionStore>();
-    await store.AppendEventAsync(
-      active.Definition.SessionId,
-      new SessionCompletedEvent(completedAt),
-      cancellationToken);
-    await store.FinalizeAsync(
-      CreateSummary(active, SessionState.Completed, completedAt),
-      cancellationToken);
+    LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+    SessionCompletedEvent completedEvent = new(completedAt);
+    SessionSummary summary = CreateSummary(active, SessionState.Completed, completedAt);
+    effects.Add(metadata, async cancellationToken =>
+    {
+      using IServiceScope completionScope = scopeFactory.CreateScope();
+      ISessionStore store = completionScope.ServiceProvider.GetRequiredService<ISessionStore>();
+      await store.AppendEventAsync(metadata.SessionId, completedEvent, cancellationToken);
+      await store.FinalizeAsync(summary, cancellationToken);
+    }, terminal: true);
   }
 
   private async Task<bool> ApplySimulatedCommandMeasurementAsync(
@@ -1714,23 +2088,28 @@ public sealed class LiveSessionCoordinator(
 
   private async Task TryCompleteStartupRecoveryAsync(CancellationToken cancellationToken)
   {
+    if (_startupRecoveryComplete) return;
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    if (now < _nextStartupRecoveryAttemptUtc) return;
+
     try
     {
       using IServiceScope recoveryScope = scopeFactory.CreateScope();
       ISessionStore sessionStore = recoveryScope.ServiceProvider.GetRequiredService<ISessionStore>();
+      await sessionStore.ReconcileActiveSessionsAsync(now, cancellationToken);
       RecoverableWorkoutSession? recoverable = await sessionStore.FindRecoverableAsync(cancellationToken);
       if (recoverable is null)
       {
         await sessionStore.InterruptUnfinishedAsync(
-          timeProvider.GetUtcNow(),
+          now,
           "Gateway restarted without a complete recovery checkpoint.",
           cancellationToken);
-        _startupRecoveryComplete = true;
+        await MarkStartupRecoveryCompleteAsync(null, cancellationToken);
         return;
       }
 
-      await RestoreActiveSessionAsync(recoverable, cancellationToken);
-      _startupRecoveryComplete = true;
+      ActiveRun? restored = await RestoreActiveSessionAsync(recoverable, cancellationToken);
+      await MarkStartupRecoveryCompleteAsync(restored, cancellationToken);
     }
     catch (SqliteException exception) when (
       exception.SqliteErrorCode == 1 &&
@@ -1742,21 +2121,61 @@ public sealed class LiveSessionCoordinator(
           "Session restart recovery is waiting for database schema readiness; no treadmill command was issued.");
         _startupRecoveryWaitLogged = true;
       }
+      ScheduleStartupRecoveryRetry(now);
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
       logger.LogError(exception, "Session restart recovery was rejected; no treadmill command was issued.");
-      using IServiceScope failureScope = scopeFactory.CreateScope();
-      await failureScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
-        timeProvider.GetUtcNow(),
-        "Gateway restart recovery data was invalid or unavailable.",
-        cancellationToken);
-      _active = null;
-      _startupRecoveryComplete = true;
+      try
+      {
+        using IServiceScope failureScope = scopeFactory.CreateScope();
+        await failureScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+          now,
+          "Gateway restart recovery data was invalid or unavailable.",
+          cancellationToken);
+        await MarkStartupRecoveryCompleteAsync(null, cancellationToken);
+      }
+      catch (Exception cleanupException) when (cleanupException is not OperationCanceledException)
+      {
+        logger.LogWarning(cleanupException, "Session restart recovery cleanup was unavailable; retrying with bounded backoff.");
+        ScheduleStartupRecoveryRetry(now);
+      }
     }
   }
 
-  private async Task RestoreActiveSessionAsync(
+  private async Task MarkStartupRecoveryCompleteAsync(
+    ActiveRun? restored,
+    CancellationToken cancellationToken)
+  {
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      if (restored is not null)
+      {
+        if (_active is not null)
+          throw new InvalidOperationException("A live session appeared while startup recovery was being committed.");
+        _active = restored;
+        PublishSnapshot(restored, timeProvider.GetUtcNow(), AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+      }
+
+      _startupRecoveryComplete = true;
+      _startupRecoveryAttempt = 0;
+      _nextStartupRecoveryAttemptUtc = DateTimeOffset.MinValue;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  private void ScheduleStartupRecoveryRetry(DateTimeOffset nowUtc)
+  {
+    _startupRecoveryAttempt = Math.Min(_startupRecoveryAttempt + 1, 8);
+    double seconds = Math.Min(30, Math.Pow(2, _startupRecoveryAttempt - 1));
+    _nextStartupRecoveryAttemptUtc = nowUtc.AddSeconds(seconds);
+  }
+
+  private async Task<ActiveRun?> RestoreActiveSessionAsync(
     RecoverableWorkoutSession recoverable,
     CancellationToken cancellationToken)
   {
@@ -1788,7 +2207,8 @@ public sealed class LiveSessionCoordinator(
         timeProvider.GetUtcNow(),
         "Gateway restart recovery could not confirm the same enrolled treadmill.",
         cancellationToken);
-      return;
+      await deviceCoordinator.ReleaseRunConnectionsAsync(cancellationToken);
+      return null;
     }
     var progression = new WorkoutProgression(workout);
     progression.Restore(checkpoint.Progression);
@@ -1851,8 +2271,7 @@ public sealed class LiveSessionCoordinator(
       ? HeartRateAutomationMode.SuspendedSafety
       : HeartRateAutomationMode.Disabled;
     AddWarningOnce(active, "Gateway restarted; tracking recovery never issues Start and planned controls remain paused.");
-    _active = active;
-    PublishSnapshot(active, timeProvider.GetUtcNow(), AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+    return active;
   }
 
   private async Task<(VersionedUserProfile Profile, StoredWorkoutRevision Revision, WorkoutDefinition Workout)> LoadPlanAsync(
@@ -1911,10 +2330,10 @@ public sealed class LiveSessionCoordinator(
       enrollment.IdentityFingerprint);
   }
 
-  private async Task ApplyHardwareTelemetryAsync(
+  private void ApplyHardwareTelemetry(
     ActiveRun active,
     DateTimeOffset now,
-    CancellationToken cancellationToken)
+    LiveEffectBatch effects)
   {
     if (!active.HardwareMode) return;
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId);
@@ -1929,30 +2348,37 @@ public sealed class LiveSessionCoordinator(
       {
         SuspendAutomation(active, "The heart-rate source changed; explicitly re-enable automation after confirming the new sensor.");
         AddWarningOnce(active, "Heart-rate source changed; automatic speed control is paused.");
-        using IServiceScope sourceScope = scopeFactory.CreateScope();
-        await sourceScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-          active.Definition.SessionId,
-          new SessionWarningEvent(
-            "heart-rate-source-changed",
-            $"Heart-rate source changed to {devices.HeartRate.DisplayName ?? "no fresh sensor"}.",
-            now),
-          cancellationToken);
+        SessionWarningEvent warning = new(
+          "heart-rate-source-changed",
+          $"Heart-rate source changed to {devices.HeartRate.DisplayName ?? "no fresh sensor"}.",
+          now);
+        LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+        effects.Add(metadata, async token =>
+        {
+          using IServiceScope sourceScope = scopeFactory.CreateScope();
+          await sourceScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+            metadata.SessionId,
+            warning,
+            token);
+        });
       }
     }
-    TimeSpan? treadmillAge = devices.TreadmillAge;
+    TimeSpan? treadmillSpeedAge = devices.TreadmillSpeedAge;
+    TimeSpan? treadmillInclineAge = devices.TreadmillInclineAge;
     bool generationChanged = devices.Treadmill.ConnectionGeneration != active.ConnectionGeneration;
-    if (devices.TreadmillTelemetry is { } treadmill && treadmillAge <= FreshTelemetryLimit)
+    if (devices.TreadmillTelemetry is { } treadmill && treadmillSpeedAge <= FreshTelemetryLimit)
     {
       if (generationChanged && active.TelemetryGapStartedAtUtc is null)
-        await BeginTelemetryGapAsync(active, now, "The treadmill connection generation changed.", cancellationToken);
+        BeginTelemetryGap(active, now, "The treadmill connection generation changed.", effects);
 
       SessionState previous = active.Machine.State;
       active.MeasuredSpeedKph = treadmill.SpeedKph;
-      active.MeasuredInclinePercent = treadmill.InclinePercent;
+      if (treadmillInclineAge <= FreshTelemetryLimit)
+        active.MeasuredInclinePercent = treadmill.InclinePercent;
       active.IsMoving = treadmill.SpeedKph > SessionStateMachine.PhysicalStartThresholdKph;
-      active.TelemetryAge = treadmillAge ?? TimeSpan.Zero;
+      active.TelemetryAge = treadmillSpeedAge ?? TimeSpan.Zero;
       active.Machine.ObserveTelemetry(treadmill.SpeedKph);
-      await MarkRunningIfTransitionedAsync(active, previous, now, cancellationToken);
+      MarkRunningIfTransitioned(active, previous, now, effects);
       active.Warnings.Remove("Treadmill telemetry is stale; session automation is suspended.");
 
       if (active.TelemetryGapStartedAtUtc is not null)
@@ -1968,14 +2394,14 @@ public sealed class LiveSessionCoordinator(
         active.ConnectionPhase = SessionConnectionPhase.Reconnecting;
         active.RecoveryState = SessionRecoveryState.Reconciling;
         if (active.ReconnectStableSamples >= 2)
-          await CompleteTelemetryReconnectAsync(active, devices, treadmill, now, cancellationToken);
+          CompleteTelemetryReconnect(active, devices, treadmill, now, effects);
       }
     }
     else
     {
-      await BeginTelemetryGapAsync(active, now, devices.Treadmill.Fault ?? "Treadmill telemetry became stale.", cancellationToken);
+      BeginTelemetryGap(active, now, devices.Treadmill.Fault ?? "Treadmill telemetry became stale.", effects);
       active.IsMoving = false;
-      active.TelemetryAge = treadmillAge ?? TimeSpan.MaxValue;
+      active.TelemetryAge = treadmillSpeedAge ?? TimeSpan.MaxValue;
       AddWarningOnce(active, "Treadmill telemetry is stale; session automation is suspended.");
       if (active.Machine.State == SessionState.Running && !active.CommandsSuspended)
         SuspendAutomation(active, "Treadmill telemetry is stale; session automation is suspended.");
@@ -2002,11 +2428,11 @@ public sealed class LiveSessionCoordinator(
     }
   }
 
-  private async Task BeginTelemetryGapAsync(
+  private void BeginTelemetryGap(
     ActiveRun active,
     DateTimeOffset now,
     string reason,
-    CancellationToken cancellationToken)
+    LiveEffectBatch effects)
   {
     if (active.TelemetryGapStartedAtUtc is not null) return;
     active.TelemetryGapStartedAtUtc = now;
@@ -2019,19 +2445,24 @@ public sealed class LiveSessionCoordinator(
       ? SessionRecoveryState.RestartTracking
       : SessionRecoveryState.TelemetryGap;
     active.CanResumePlannedControls = false;
-    using IServiceScope scope = scopeFactory.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-      active.Definition.SessionId,
-      new DeviceDisconnectedEvent(SessionDeviceRole.Treadmill, reason, now),
-      cancellationToken);
+    LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+    DeviceDisconnectedEvent disconnected = new(SessionDeviceRole.Treadmill, reason, now);
+    effects.Add(metadata, async token =>
+    {
+      using IServiceScope scope = scopeFactory.CreateScope();
+      await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+        metadata.SessionId,
+        disconnected,
+        token);
+    });
   }
 
-  private async Task CompleteTelemetryReconnectAsync(
+  private void CompleteTelemetryReconnect(
     ActiveRun active,
     DeviceTelemetrySnapshot devices,
     TreadmillTelemetry treadmill,
     DateTimeOffset now,
-    CancellationToken cancellationToken)
+    LiveEffectBatch effects)
   {
     RecoveryReconciliationDecision decision = RecoveryReconciliationPolicy.Evaluate(new(
       active.Machine.State,
@@ -2051,11 +2482,16 @@ public sealed class LiveSessionCoordinator(
     active.ReconnectStableSamples = 0;
     active.ReconnectCandidateGeneration = 0;
     active.LastReconciledAtUtc = now;
-    using IServiceScope scope = scopeFactory.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-      active.Definition.SessionId,
-      new DeviceReconnectedEvent(SessionDeviceRole.Treadmill, now),
-      cancellationToken);
+    LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+    DeviceReconnectedEvent reconnected = new(SessionDeviceRole.Treadmill, now);
+    effects.Add(metadata, async token =>
+    {
+      using IServiceScope scope = scopeFactory.CreateScope();
+      await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+        metadata.SessionId,
+        reconnected,
+        token);
+    });
 
     if (decision.Action == RecoveryReconciliationAction.ResumeAutomatically)
     {
@@ -2095,30 +2531,44 @@ public sealed class LiveSessionCoordinator(
     active.DesiredHeartRateAutomationMode,
     active.ConnectionGeneration);
 
-  private async Task MarkRunningIfTransitionedAsync(
+  private void MarkRunningIfTransitioned(
     ActiveRun active,
     SessionState previous,
     DateTimeOffset now,
-    CancellationToken cancellationToken)
+    LiveEffectBatch effects)
   {
     if (previous == SessionState.Running || active.Machine.State != SessionState.Running) return;
     if (previous == SessionState.ArmedWaitingForPhysicalStart)
       active.StartedAt = now;
     active.LastTickAt = now;
-    using IServiceScope scope = scopeFactory.CreateScope();
-    ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
     if (previous == SessionState.ArmedWaitingForPhysicalStart)
     {
       AddWarningOnce(active, "Physical movement detected");
-      await store.MarkRunningAsync(active.Definition.SessionId, now, cancellationToken);
-      await store.AppendEventAsync(active.Definition.SessionId, new SessionWarningEvent(
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      SessionWarningEvent warning = new(
         "physical-movement-detected",
         "Physical movement detected",
-        now), cancellationToken);
+        now);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        await store.MarkRunningAsync(metadata.SessionId, now, token);
+        await store.AppendEventAsync(metadata.SessionId, warning, token);
+      });
     }
     else
     {
-      await store.AppendEventAsync(active.Definition.SessionId, new SessionResumedEvent(now), cancellationToken);
+      LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+      SessionResumedEvent resumed = new(now);
+      effects.Add(metadata, async token =>
+      {
+        using IServiceScope scope = scopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+          metadata.SessionId,
+          resumed,
+          token);
+      });
     }
   }
 
@@ -2165,6 +2615,7 @@ public sealed class LiveSessionCoordinator(
       ? TimeSpan.FromHours(1 / active.MeasuredSpeedKph)
       : null;
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId);
+    TreadmillTelemetry? treadmillTelemetry = devices.TreadmillTelemetry;
     var live = new LiveSnapshot(
       now,
       active.HardwareMode ? devices.Treadmill.State : DeviceConnectionState.Ready,
@@ -2201,7 +2652,14 @@ public sealed class LiveSessionCoordinator(
       active.HardwareMode ? devices.Treadmill.ConnectionGeneration : 1,
       active.HardwareMode ? devices.SelectedHeartRateBatteryPercent : null,
       active.HardwareMode ? devices.SelectedHeartRateBatteryObservedAt : null,
-      active.EstimatedKilocalories);
+      active.EstimatedKilocalories,
+      active.HardwareMode ? devices.SelectedHeartRateQuality : HeartRateSignalQuality.Valid,
+      active.HardwareMode ? devices.SelectedHeartRateContactState : HeartRateContactState.NotSupported,
+      active.HardwareMode ? treadmillTelemetry?.SpeedObservedAt : now,
+      active.HardwareMode ? treadmillTelemetry?.InclineObservedAt : now,
+      active.HardwareMode ? devices.TreadmillSpeedAge : TimeSpan.Zero,
+      active.HardwareMode ? devices.TreadmillInclineAge : TimeSpan.Zero,
+      active.HardwareMode ? devices.HeartRateObservedAt : active.HeartRateObservedAt);
     Volatile.Write(ref _current, live);
     active.Snapshot = new ActiveSessionSnapshot(
       active.Definition.SessionId,
@@ -2413,7 +2871,10 @@ public sealed class LiveSessionCoordinator(
     HeartRateDeviceKind.Sensor,
     HeartRateDeviceFamily.Other,
     1,
-    "Development simulator source.");
+    "Development simulator source.",
+    HeartRateQuality: HeartRateSignalQuality.Valid,
+    HeartRateContactState: HeartRateContactState.NotSupported,
+    HeartRateObservedAt: now);
 
   private static LiveSnapshot DisconnectedIdleSnapshot(DateTimeOffset now) => new(
     now,
@@ -2445,7 +2906,7 @@ public sealed class LiveSessionCoordinator(
         TimeSpan.Zero,
         0,
         treadmill is { SpeedKph: > 0 } ? TimeSpan.FromHours(1 / treadmill.SpeedKph) : null,
-        devices.TreadmillAge ?? TimeSpan.MaxValue,
+        devices.TreadmillSpeedAge ?? TimeSpan.MaxValue,
         devices.HeartRate.DisplayName,
         devices.HeartRateAge,
         devices.SelectedHeartRateEnrollmentId,
@@ -2462,7 +2923,14 @@ public sealed class LiveSessionCoordinator(
         devices.Treadmill.Capabilities,
         devices.Treadmill.ConnectionGeneration,
         devices.SelectedHeartRateBatteryPercent,
-        devices.SelectedHeartRateBatteryObservedAt)
+        devices.SelectedHeartRateBatteryObservedAt,
+        HeartRateQuality: devices.SelectedHeartRateQuality,
+        HeartRateContactState: devices.SelectedHeartRateContactState,
+        TreadmillSpeedObservedAt: treadmill?.SpeedObservedAt,
+        TreadmillInclineObservedAt: treadmill?.InclineObservedAt,
+        TreadmillSpeedTelemetryAge: devices.TreadmillSpeedAge,
+        TreadmillInclineTelemetryAge: devices.TreadmillInclineAge,
+        HeartRateObservedAt: devices.HeartRateObservedAt)
       : SimulatorIdleSnapshot(now);
   }
 

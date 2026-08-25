@@ -53,6 +53,47 @@ else
                 <p class="field-hint">@sameRevision.Explanation</p>
             </section>
         }
+        <section class="panel-card debrief-card" aria-labelledby="debrief-title">
+            <div class="panel-heading">
+                <div><p class="eyebrow">Post-run debrief</p><h2 id="debrief-title">How did this run feel?</h2></div>
+                @if (!debriefEditing && session.Debrief is not null)
+                {
+                    <button class="secondary-action compact-action" type="button" @onclick="EditDebrief">Edit</button>
+                }
+            </div>
+            @if (debriefEditing)
+            {
+                <div class="form-grid">
+                    <label class="field">Effort (RPE 1–10)
+                        <input aria-label="Perceived exertion" @bind="debriefPerceivedExertion" type="number" min="1" max="10" placeholder="Optional" />
+                    </label>
+                    <label class="field field--wide">Note
+                        <textarea aria-label="Debrief note" @bind="debriefNote" maxlength="1000" rows="4" placeholder="Optional notes about effort, comfort, or conditions"></textarea>
+                        <small>@debriefNote.Length / 1000</small>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="primary-action" type="button" disabled="@debriefBusy" @onclick="() => SaveDebriefAsync(false)">@(debriefBusy ? "Saving…" : "Save debrief")</button>
+                    <button class="secondary-action" type="button" disabled="@debriefBusy" @onclick="() => SaveDebriefAsync(true)">Skip</button>
+                    @if (session.Debrief is not null)
+                    {
+                        <button class="secondary-action" type="button" disabled="@debriefBusy" @onclick="CancelDebriefEdit">Cancel</button>
+                    }
+                </div>
+            }
+            else if (session.Debrief is { } debrief)
+            {
+                <dl class="device-facts">
+                    <div><dt>Perceived effort</dt><dd>@(debrief.PerceivedExertion is { } rpe ? $"{rpe} / 10" : "Skipped")</dd></div>
+                    <div><dt>Updated</dt><dd>@debrief.UpdatedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</dd></div>
+                </dl>
+                <p>@(debrief.Note ?? "No note added.")</p>
+            }
+            @if (!string.IsNullOrWhiteSpace(debriefMessage))
+            {
+                <p role="status">@debriefMessage</p>
+            }
+        </section>
         <section class="controls-card session-export-actions" aria-label="Session exports">
             <a class="secondary-action" href="@($"/api/history/{SessionId}/export.csv")" download>Download CSV</a>
             @if (shareSupported)
@@ -64,11 +105,65 @@ else
             {
                 <button class="secondary-action" type="button" disabled="@shareBusy" @onclick="ShareFitAsync">Share FIT Activity</button>
             }
+            <a class="secondary-action" href="@($"/api/history/{SessionId}/export.tcx")" download>Download TCX Activity</a>
+            <a class="secondary-action" href="@($"/api/history/{SessionId}/export.json")" download>Download native JSON</a>
             <button class="touch-action danger-action" type="button" disabled="@previewLoading" @onclick="LoadDeletionPreviewAsync">@(previewLoading ? "Checking…" : "Delete local session")</button>
         </section>
         @if (!string.IsNullOrWhiteSpace(shareMessage))
         {
             <p class="action-status" role="status" aria-live="polite">@shareMessage</p>
+        }
+        @if (session.Garmin is { } garmin)
+        {
+            <section class="panel-card" aria-labelledby="garmin-reconciliation-title">
+                <div class="panel-heading">
+                    <div><p class="eyebrow">Garmin reconciliation</p><h2 id="garmin-reconciliation-title">@(garmin.ReviewRequired ? "Possible match — review required" : garmin.Status)</h2></div>
+                    <span>@garmin.OperationPhase</span>
+                </div>
+                <dl class="device-facts">
+                    <div><dt>Status</dt><dd>@garmin.Status</dd></div>
+                    <div><dt>Failure phase</dt><dd>@(garmin.FailureKind ?? "None")</dd></div>
+                    <div><dt>Updated</dt><dd>@garmin.UpdatedAtUtc.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss")</dd></div>
+                    <div><dt>Retry time</dt><dd>@FormatOptionalTimestamp(garmin.RetryAtUtc)</dd></div>
+                    <div><dt>Acknowledged</dt><dd>@FormatOptionalTimestamp(garmin.AcknowledgedAtUtc)</dd></div>
+                    <div><dt>Retry eligible</dt><dd>@(garmin.CanRetry ? "Yes" : "No")</dd></div>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(garmin.MatchEvidence))
+                {
+                    <p><strong>Match evidence:</strong> @garmin.MatchEvidence</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(garmin.LastError))
+                {
+                    <p class="field-error">@garmin.LastError</p>
+                }
+                <div class="form-grid">
+                    <label class="field field--wide">Upload job ID
+                        <span class="field-inline"><input readonly value="@garmin.Id" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminJobIdAsync">Copy</button></span>
+                    </label>
+                    @if (!string.IsNullOrWhiteSpace(garmin.RemoteId))
+                    {
+                        <label class="field field--wide">Garmin activity ID
+                            <span class="field-inline"><input readonly value="@garmin.RemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminRemoteIdAsync">Copy</button></span>
+                        </label>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(garmin.MatchedRemoteId))
+                    {
+                        <label class="field field--wide">Matched activity ID
+                            <span class="field-inline"><input readonly value="@garmin.MatchedRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminMatchedIdAsync">Copy</button></span>
+                        </label>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(garmin.ReplacementRemoteId))
+                    {
+                        <label class="field field--wide">Replacement activity ID
+                            <span class="field-inline"><input readonly value="@garmin.ReplacementRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminReplacementIdAsync">Copy</button></span>
+                        </label>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(identifierCopyMessage))
+                {
+                    <p class="field-hint" role="status">@identifierCopyMessage</p>
+                }
+            </section>
         }
         <section class="panel-card adviser-card" aria-labelledby="adviser-title">
             <div class="panel-heading"><div><p class="eyebrow">Deterministic local adviser</p><h2 id="adviser-title">What next?</h2></div><span>No plan changes without confirmation</span></div>
@@ -143,19 +238,19 @@ else
                         <span>@tick</span>
                     }
                 </div>
-                <ChartInspector Series="@SpeedInclineInspectionSeries" Points="@SpeedInclineInspectionPoints" AriaLabel="Interactive historical speed and incline chart. Hover, touch and drag, or use Left and Right arrow keys to inspect every plotted value.">
+                <ChartInspector Series="@SpeedInclineInspectionSeries" PointFactory="@GetSpeedInclineInspectionPoints" ProjectionVersion="@Projection.Version" AriaLabel="Interactive historical speed and incline chart. Hover, touch and drag, or use Left and Right arrow keys to inspect every plotted value.">
                     <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical speed and incline over elapsed time">
                         @foreach (int tick in SpeedAxisTicks)
                         {
                             double y = ChartY(tick, SpeedAxisMaximum);
                             <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
                         }
-                        <path class="chart-plan" data-series="planned-speed" d="@BuildMetricPath(static sample => sample.PlannedSpeedKph, SpeedAxisMaximum)" />
-                        <path class="chart-requested" data-series="requested-speed" d="@BuildMetricPath(static sample => sample.RequestedSpeedKph, SpeedAxisMaximum)" />
-                        <path class="chart-current" data-series="measured-speed" d="@BuildMetricPath(static sample => sample.MeasuredSpeedKph, SpeedAxisMaximum)" />
-                        <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildMetricPath(static sample => sample.PlannedInclinePercent, InclineAxisMaximum)" />
-                        <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildMetricPath(static sample => sample.RequestedInclinePercent, InclineAxisMaximum)" />
-                        <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildMetricPath(static sample => sample.MeasuredInclinePercent, InclineAxisMaximum)" />
+                        <path class="chart-plan" data-series="planned-speed" d="@Projection.PlannedSpeedPath" />
+                        <path class="chart-requested" data-series="requested-speed" d="@Projection.RequestedSpeedPath" />
+                        <path class="chart-current" data-series="measured-speed" d="@Projection.MeasuredSpeedPath" />
+                        <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@Projection.PlannedInclinePath" />
+                        <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@Projection.RequestedInclinePath" />
+                        <path class="chart-current chart-current--incline" data-series="measured-incline" d="@Projection.MeasuredInclinePath" />
                         @if (session.Samples.LastOrDefault() is { } latest)
                         {
                             <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph, SpeedAxisMaximum)" r="5" />
@@ -201,7 +296,7 @@ else
                             <span>@tick</span>
                         }
                     </div>
-                    <ChartInspector Series="@HeartRateInspectionSeries" Points="@HeartRateInspectionPoints" AriaLabel="Interactive historical heart-rate chart. Hover, touch and drag, or use Left and Right arrow keys to inspect heart rate.">
+                    <ChartInspector Series="@HeartRateInspectionSeries" PointFactory="@GetHeartRateInspectionPoints" ProjectionVersion="@Projection.Version" AriaLabel="Interactive historical heart-rate chart. Hover, touch and drag, or use Left and Right arrow keys to inspect heart rate.">
                         <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical heart rate over elapsed time">
                             @foreach (int tick in HeartRateAxisTicks)
                             {
@@ -217,7 +312,7 @@ else
                                     <text class="chart-zone-label" x="16" y="@labelY" dominant-baseline="middle" aria-hidden="true">Zone @zone.Number · @zone.MinimumBpm</text>
                                 </g>
                             }
-                            <path class="chart-current chart-current--heart-rate" data-series="heart-rate" d="@BuildHeartRatePath()" />
+                            <path class="chart-current chart-current--heart-rate" data-series="heart-rate" d="@Projection.HeartRatePath" />
                         </svg>
                     </ChartInspector>
                     <div></div>
@@ -292,7 +387,8 @@ else
         new("Heart rate", "Measured", "bpm", 0, "legend-line--heart-rate"),
     ];
     private StoredWorkoutSessionView? session;
-    private int speedAxisMaximum = 10;
+    private readonly SessionChartProjectionCache projectionCache = new();
+    private SessionChartProjection Projection => projectionCache.Get(session!);
     private HistoryDeletionPreview? deletionPreview;
     private Guid deletionOperationId;
     private bool previewLoading;
@@ -309,6 +405,12 @@ else
     private bool shareSupported;
     private bool shareBusy;
     private string? shareMessage;
+    private int? debriefPerceivedExertion;
+    private string debriefNote = string.Empty;
+    private bool debriefEditing;
+    private bool debriefBusy;
+    private string? debriefMessage;
+    private string? identifierCopyMessage;
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
     private bool HasHeartRateSamples => session?.Samples.Any(static sample => sample.HeartRateBpm is not null) == true;
     private string HistoryGraphSampleSummary => session is null
@@ -370,6 +472,10 @@ else
         session = null;
         recommendation = null;
         comparison = null;
+        debriefPerceivedExertion = null;
+        debriefNote = string.Empty;
+        debriefEditing = false;
+        debriefMessage = null;
         try
         {
             using HttpResponseMessage response = await Http.GetAsync($"api/history/{SessionId}");
@@ -380,6 +486,9 @@ else
                 return;
             }
             session = await response.Content.ReadFromJsonAsync<StoredWorkoutSessionView>();
+            debriefPerceivedExertion = session?.Debrief?.PerceivedExertion;
+            debriefNote = session?.Debrief?.Note ?? string.Empty;
+            debriefEditing = session?.Debrief is null;
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -391,13 +500,90 @@ else
             loading = false;
         }
 
-        double observedMaximum = session?.Samples.Count is > 0
-            ? session.Samples.SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }).Max()
-            : 0;
-        speedAxisMaximum = (int)Math.Ceiling(Math.Max(10, observedMaximum));
         if (session is not null)
         {
             await LoadLocalInsightsAsync();
+        }
+    }
+
+    private void EditDebrief()
+    {
+        debriefPerceivedExertion = session?.Debrief?.PerceivedExertion;
+        debriefNote = session?.Debrief?.Note ?? string.Empty;
+        debriefMessage = null;
+        debriefEditing = true;
+    }
+
+    private void CancelDebriefEdit()
+    {
+        debriefPerceivedExertion = session?.Debrief?.PerceivedExertion;
+        debriefNote = session?.Debrief?.Note ?? string.Empty;
+        debriefMessage = null;
+        debriefEditing = false;
+    }
+
+    private async Task SaveDebriefAsync(bool skip)
+    {
+        if (session is null || debriefBusy) return;
+        debriefBusy = true;
+        debriefMessage = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.PutAsJsonAsync(
+                $"api/history/{SessionId}/debrief",
+                new
+                {
+                    ProfileId = session.Definition.UserProfileId,
+                    PerceivedExertion = skip ? null : debriefPerceivedExertion,
+                    Note = skip ? null : debriefNote,
+                });
+            if (!response.IsSuccessStatusCode)
+            {
+                debriefMessage = "The debrief could not be saved. Check the effort and note, then try again.";
+                return;
+            }
+
+            SessionDebrief? saved = await response.Content.ReadFromJsonAsync<SessionDebrief>();
+            if (saved is null)
+            {
+                debriefMessage = "The gateway saved an unreadable debrief response. Reload before editing again.";
+                return;
+            }
+
+            session = session with { Debrief = saved };
+            debriefPerceivedExertion = saved.PerceivedExertion;
+            debriefNote = saved.Note ?? string.Empty;
+            debriefEditing = false;
+            bool recommendationRefreshed = await RefreshRecommendationAfterDebriefAsync();
+            debriefMessage = recommendationRefreshed
+                ? skip ? "Debrief skipped. The local suggestion was refreshed." : "Debrief saved. The local suggestion was refreshed."
+                : skip ? "Debrief skipped. The local suggestion could not be refreshed yet." : "Debrief saved. The local suggestion could not be refreshed yet.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            debriefMessage = "The local gateway could not save the debrief. No existing debrief was changed.";
+        }
+        finally
+        {
+            debriefBusy = false;
+        }
+    }
+
+    private async Task<bool> RefreshRecommendationAfterDebriefAsync()
+    {
+        if (session is null) return false;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations",
+                new { OperationId = Guid.NewGuid(), SessionId });
+            if (!response.IsSuccessStatusCode) return false;
+            recommendation = await response.Content.ReadFromJsonAsync<RecommendationView>();
+            return recommendation is not null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            return false;
         }
     }
 
@@ -463,6 +649,20 @@ else
     private sealed record ComparisonView(Guid WorkoutRevisionId, int ComparisonCount, SessionSummary? Previous, string Explanation);
     private static string FormatDelta(TimeSpan value) =>
         $"{(value < TimeSpan.Zero ? "−" : value > TimeSpan.Zero ? "+" : string.Empty)}{value.Duration().ToString(@"hh\:mm\:ss")}";
+
+    private static string FormatOptionalTimestamp(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss") ?? "Not recorded";
+
+    private async Task CopyIdentifierAsync(string value, string label)
+    {
+        bool copied = await JS.InvokeAsync<bool>("treadmillRunnerSound.copyText", value);
+        identifierCopyMessage = copied ? $"{label} copied." : $"Select and copy the {label.ToLowerInvariant()} manually.";
+    }
+
+    private Task CopyGarminJobIdAsync() => CopyIdentifierAsync(session!.Garmin!.Id.ToString(), "Upload job ID");
+    private Task CopyGarminRemoteIdAsync() => CopyIdentifierAsync(session!.Garmin!.RemoteId!, "Garmin activity ID");
+    private Task CopyGarminMatchedIdAsync() => CopyIdentifierAsync(session!.Garmin!.MatchedRemoteId!, "Matched activity ID");
+    private Task CopyGarminReplacementIdAsync() => CopyIdentifierAsync(session!.Garmin!.ReplacementRemoteId!, "Replacement activity ID");
 
     private async Task LoadDeletionPreviewAsync()
     {
@@ -617,29 +817,14 @@ else
         return selected;
     }
 
-    private int SpeedAxisMaximum => speedAxisMaximum;
-    private int InclineAxisMaximum => session is null
-        ? 10
-        : (int)Math.Ceiling(Math.Max(10, session.Samples.SelectMany(static sample => new[] { sample.PlannedInclinePercent ?? 0, sample.RequestedInclinePercent, sample.MeasuredInclinePercent }).DefaultIfEmpty(0).Max()));
+    private int SpeedAxisMaximum => session is null ? 10 : Projection.SpeedAxisMaximum;
+    private int InclineAxisMaximum => session is null ? 10 : Projection.InclineAxisMaximum;
 
     private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
     private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
-    private IReadOnlyList<SessionHeartRateZoneSnapshot> HeartRateBoundaryZones => session?.HeartRateZones?
-        .Where(static zone => zone.MinimumBpm > 0)
-        .OrderBy(static zone => zone.Number)
-        .ToArray() ?? Array.Empty<SessionHeartRateZoneSnapshot>();
-    private int HeartRateDataAxisMinimum => session is null ? 60 : Math.Max(0, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(60).Min() - 10) / 10) * 10);
-    private int HeartRateDataAxisMaximum => session is null ? 180 : Math.Max(HeartRateDataAxisMinimum + 20, ((session.Samples.Where(static sample => sample.HeartRateBpm is not null).Select(static sample => (int)sample.HeartRateBpm!.Value).DefaultIfEmpty(170).Max() + 19) / 10) * 10);
-    private int HeartRateAxisMinimum => session is null
-        ? 60
-        : Math.Min(
-            HeartRateDataAxisMinimum,
-            HeartRateBoundaryZones.Select(static zone => (zone.MinimumBpm / 10) * 10).DefaultIfEmpty(HeartRateDataAxisMinimum).Min());
-    private int HeartRateAxisMaximum => session is null
-        ? 180
-        : Math.Max(
-            HeartRateDataAxisMaximum,
-            HeartRateBoundaryZones.Select(static zone => ((zone.MinimumBpm + 19) / 10) * 10).DefaultIfEmpty(HeartRateDataAxisMaximum).Max());
+    private IReadOnlyList<SessionHeartRateZoneSnapshot> HeartRateBoundaryZones => session is null ? [] : Projection.HeartRateBoundaryZones;
+    private int HeartRateAxisMinimum => session is null ? 60 : Projection.HeartRateAxisMinimum;
+    private int HeartRateAxisMaximum => session is null ? 180 : Projection.HeartRateAxisMaximum;
     private IEnumerable<int> HeartRateAxisTicks
     {
         get
@@ -652,29 +837,10 @@ else
     private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, ChartDuration.TotalSeconds), 0, 1) * 700);
     private static double ChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
     private double HeartRateChartY(double value) => 210 - (Math.Clamp((value - HeartRateAxisMinimum) / Math.Max(1, HeartRateAxisMaximum - HeartRateAxisMinimum), 0, 1) * 200);
-    private IReadOnlyList<ChartInspectionPoint> SpeedInclineInspectionPoints => session is null
-        ? []
-        : RenderSamples(session.Samples).Select(sample => new ChartInspectionPoint(sample.Elapsed, ChartX(sample.Elapsed),
-        [
-            sample.PlannedSpeedKph,
-            sample.RequestedSpeedKph,
-            sample.MeasuredSpeedKph,
-            sample.PlannedInclinePercent,
-            sample.RequestedInclinePercent,
-            sample.MeasuredInclinePercent,
-        ])).ToArray();
-    private IReadOnlyList<ChartInspectionPoint> HeartRateInspectionPoints => session is null
-        ? []
-        : RenderSamples(session.Samples).Select(sample => new ChartInspectionPoint(sample.Elapsed, ChartX(sample.Elapsed),
-        [
-            sample.HeartRateBpm,
-        ])).ToArray();
+    private IReadOnlyList<ChartInspectionPoint> GetSpeedInclineInspectionPoints() => session is null ? [] : Projection.SpeedInclineInspectionPoints;
+    private IReadOnlyList<ChartInspectionPoint> GetHeartRateInspectionPoints() => session is null ? [] : Projection.HeartRateInspectionPoints;
 
-    private TimeSpan ChartDuration => session is null
-        ? TimeSpan.Zero
-        : session.Samples.Count > 0 && session.Samples[^1].Elapsed > session.Duration
-            ? session.Samples[^1].Elapsed
-            : session.Duration;
+    private TimeSpan ChartDuration => session is null ? TimeSpan.Zero : Projection.Duration;
 
     private IReadOnlyList<ChartTimeTick> ChartTimeTicks
     {

@@ -1,0 +1,157 @@
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<section class="integration-card" aria-labelledby="garmin-training-title">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">Official Garmin integration</p>
+            <h3 id="garmin-training-title">Training API workout publishing</h3>
+        </div>
+        @if (status is not null)
+        {
+            <span class="integration-badge @(status.Connected ? "integration-badge--connected" : null)">@(status.Connected ? "Connected" : status.ProviderConfigured ? "Ready to connect" : "Setup required")</span>
+        }
+    </div>
+
+    @if (loading)
+    {
+        <p role="status">Checking the server setup…</p>
+    }
+    else if (status is null)
+    {
+        <p class="field-error" role="alert">The official Garmin setup state is unavailable. No workout can be published.</p>
+        <button class="secondary-action compact-action" type="button" @onclick="LoadAsync">Try again</button>
+    }
+    else
+    {
+        <p>@status.SetupMessage</p>
+        <p class="field-hint">This supported route publishes immutable workout revisions only. Completed-activity upload below is a separate, opt-in integration.</p>
+        @if (!status.ProviderConfigured)
+        {
+            <p class="field-error"><strong>Publishing is disabled.</strong> An approved Garmin Training API contract adapter, exact HTTPS endpoints, and server credentials are required. TreadmillRunner will not guess a proprietary payload.</p>
+        }
+        else if (status.Connected)
+        {
+            <dl class="device-facts">
+                <div><dt>Account</dt><dd>@(status.AccountLabel ?? "Connected Garmin account")</dd></div>
+                <div><dt>Queued</dt><dd>@status.PendingItems</dd></div>
+                <div><dt>Published</dt><dd>@status.SyncedItems</dd></div>
+                <div><dt>Failed</dt><dd>@status.FailedItems</dd></div>
+            </dl>
+            <button class="secondary-action compact-action" type="button" disabled="@busy" @onclick="DisconnectAsync">Disconnect official integration</button>
+        }
+        else
+        {
+            <button class="primary-action compact-action" type="button" disabled="@busy" @onclick="ConnectAsync">Connect approved Garmin account</button>
+        }
+    }
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="field-error" role="status">@message</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid ProfileId { get; set; }
+
+    private GarminTrainingStatus? status;
+    private bool loading = true;
+    private bool busy;
+    private string? message;
+    private Guid loadedProfileId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ProfileId == Guid.Empty || (loadedProfileId == ProfileId && status is not null)) return;
+        loadedProfileId = ProfileId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        message = null;
+        try
+        {
+            status = await Http.GetFromJsonAsync<GarminTrainingStatus>($"api/integrations/garmin/profiles/{ProfileId}/status");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            status = null;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task ConnectAsync()
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{ProfileId}/connect", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The official Garmin connection could not start. Review the server setup state.";
+                return;
+            }
+            GarminConnectStart? start = await response.Content.ReadFromJsonAsync<GarminConnectStart>();
+            if (start is null || !Uri.TryCreate(start.AuthorizationUrl, UriKind.Absolute, out _))
+            {
+                message = "The server returned an invalid Garmin authorization address.";
+                return;
+            }
+            Navigation.NavigateTo(start.AuthorizationUrl, forceLoad: true);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            message = "The local gateway could not start the official Garmin connection.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/integrations/garmin/profiles/{ProfileId}/disconnect", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                message = "The official Garmin connection could not be removed.";
+                return;
+            }
+            await LoadAsync();
+        }
+        catch (HttpRequestException)
+        {
+            message = "The local gateway could not remove the official Garmin connection.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private sealed record GarminConnectStart(string AuthorizationUrl, DateTimeOffset ExpiresAtUtc);
+    private sealed record GarminTrainingStatus(
+        Guid ProfileId,
+        bool ProviderConfigured,
+        string SetupMessage,
+        bool Connected,
+        string? AccountLabel,
+        DateTimeOffset? ConnectedAtUtc,
+        DateTimeOffset? LastSyncAttemptAtUtc,
+        DateTimeOffset? LastSyncSuccessAtUtc,
+        string? LastError,
+        int PendingItems,
+        int FailedItems,
+        int SyncedItems);
+}

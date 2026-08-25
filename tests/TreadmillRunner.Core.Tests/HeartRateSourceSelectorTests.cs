@@ -10,8 +10,8 @@ public sealed class HeartRateSourceSelectorTests
     DateTimeOffset now = new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);
     Guid polarId = Guid.NewGuid();
     Guid garminId = Guid.NewGuid();
-    HeartRateSourceSnapshot polar = new(polarId, "Polar H10", HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar, DeviceConnectionState.Ready, 1, 130, now, null);
-    HeartRateSourceSnapshot garmin = new(garminId, "Garmin fēnix 8", HeartRateDeviceKind.Watch, HeartRateDeviceFamily.Garmin, DeviceConnectionState.Ready, 1, 131, now, null);
+    HeartRateSourceSnapshot polar = new(polarId, "Polar H10", HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar, DeviceConnectionState.Ready, 1, 130, now, null, Quality: HeartRateSignalQuality.Valid);
+    HeartRateSourceSnapshot garmin = new(garminId, "Garmin fēnix 8", HeartRateDeviceKind.Watch, HeartRateDeviceFamily.Garmin, DeviceConnectionState.Ready, 1, 131, now, null, Quality: HeartRateSignalQuality.Valid);
     Guid profileId = Guid.NewGuid();
     HeartRateDeviceAssignment[] assignments =
     [
@@ -98,6 +98,36 @@ public sealed class HeartRateSourceSelectorTests
   }
 
   [Theory]
+  [InlineData(HeartRateSignalQuality.ContactLost)]
+  [InlineData(HeartRateSignalQuality.Invalid)]
+  [InlineData(HeartRateSignalQuality.Unavailable)]
+  public void Does_not_select_unusable_contact_or_invalid_samples(HeartRateSignalQuality quality)
+  {
+    HeartRateSourceSnapshot source = Source(Polar, "Polar H10", HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar) with
+    {
+      Quality = quality,
+    };
+
+    Assert.Null(HeartRateSourceSelector.Select(
+      [source], [Assignment(Marc, Polar, 0, preferred: true)], Marc, Now, TimeSpan.FromSeconds(5)));
+  }
+
+  [Theory]
+  [InlineData(29)]
+  [InlineData(251)]
+  public void Does_not_select_out_of_usable_bpm_range(ushort bpm)
+  {
+    HeartRateSourceSnapshot source = Source(Polar, "Polar H10", HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar) with
+    {
+      BeatsPerMinute = bpm,
+      Quality = HeartRateSignalQuality.Valid,
+    };
+
+    Assert.Null(HeartRateSourceSelector.Select(
+      [source], [Assignment(Marc, Polar, 0, preferred: true)], Marc, Now, TimeSpan.FromSeconds(5)));
+  }
+
+  [Theory]
   [InlineData("Garmin Fenix 8")]
   [InlineData("Garmin fēnix 8")]
   [InlineData("Garmin Vivoactive 5")]
@@ -122,7 +152,8 @@ public sealed class HeartRateSourceSelectorTests
       1,
       132,
       Now.AddSeconds(-ageSeconds),
-      null);
+      null,
+      Quality: HeartRateSignalQuality.Valid);
 
   private static HeartRateDeviceAssignment Assignment(
     Guid profileId,

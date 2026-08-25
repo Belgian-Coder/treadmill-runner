@@ -4,7 +4,7 @@ type: feature-guide
 status: implemented-with-pending-hardware-evidence
 owner: project
 audience: agent-and-developer
-updated: 2026-08-08
+updated: 2026-08-23
 ---
 
 # Authoritative live session
@@ -39,14 +39,17 @@ Source: [Mermaid](diagrams/live-session-command-flow.mmd)
 - Gateway startup restores tracking only from a bounded checkpoint for the same enrolled treadmill. Fresh movement must be confirmed within 30 seconds; all commands remain suspended until **Resume planned controls**. Invalid/unavailable recovery becomes `Interrupted` and never sends Start.
 - Every treadmill request includes operation ID, lease/holder, and expected session version. The gateway adds session state, short expiry, and connection generation, serializes writes, consumes the operation before writing, and returns `Rejected`, `Confirmed`, or `Unknown`.
 - `Confirmed` requires the matching FTMS response plus fresh measured telemetry. `Unknown` is persistent, suspends automation, instructs physical inspection, and is never blindly retried.
-- Repeated manual operation IDs return the current result without creating another event.
+- Repeated manual operation IDs return the current terminal result without creating another event; admitted and in-flight IDs remain scoped to the session and terminal receipts are retained for 90 days.
+- The transition lock covers only the state change. Persistence, event fan-out, and browser delivery run from an immutable generation/versioned effect batch after the lock; stale batches are discarded. One-second sample/checkpoint writes are serialized and coalesced within a second, while browser snapshots are latest-only so a slow client cannot delay heartbeats, Stop, or hardware commands.
+- Speed and incline have independent observation timestamps and ages. An omitted field does not refresh its previous observation; command confirmation checks the relevant field age. Heart-rate source, contact, quality, and observation time remain profile-scoped, and stale, invalid, unsupported, or no-contact values persist as unavailable and suspend HR automation.
 - The exact selected workout revision, profile name and ID, profile HR-zone/controller snapshot, metric algorithm version, requested/measured values, samples, and events are persisted.
 
 ## Current limits
 
-- The Development simulator reports a fixed HR value. An enrolled Polar H10 supplies real HR; Garmin is outside v1. The HR controller supports Shadow, Decrease only, Full, and Off, with configurable steps/cooldowns. Browser lease loss removes manual authority but does not suspend gateway-owned control; stale telemetry, unsafe reconnect, write uncertainty, pause, protocol fault, or manual speed override still suspends it.
+- The Development simulator reports a fixed HR value. An enrolled profile-scoped HR source supplies real HR when contact and freshness are valid; unavailable readings suspend HR automation. The HR controller supports Shadow, Decrease only, Full, and Off, with configurable steps/cooldowns. Browser lease loss removes manual authority but does not suspend gateway-owned control; stale telemetry, unsafe reconnect, write uncertainty, pause, protocol fault, or manual speed override still suspends it.
 - FTMS Start/Resume, Stop, Pause, speed, and incline software paths exist, but each stays blocked unless persisted exact-model evidence is `HardwareVerified` for that capability. The daily Pause interaction deliberately uses verified Stop; the separate raw Pause opcode remains unused and capability-disabled.
 - Accelerated four-hour cadence and bounded chart-memory tests pass. An explicit soak persists and reads 14,400 one-second SQLite samples. In-process controller acceptance stays below 100 ms p95 and loopback browser telemetry stays below 500 ms p95. Formal household-Wi-Fi p95 measurement is not a deployment acceptance check; retained timestamps are diagnostic evidence if normal use feels delayed.
+- Active BLE reconnect uses 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. A matching advertisement and manual Retry bypass the delay. Reliability evidence is priority-preserved while disposable status churn may be coalesced. Readiness/integrity results are cached and full integrity/backup work is deferred away from ordinary startup.
 - Signed update check/stage/activate and helper rollback are implemented and deterministically tested. Real A→B activation and broken-C rollback on the Windows VM remain deployment evidence; publishing the Playwright host is not update evidence.
 - Screen Wake Lock is not promised over the selected private-LAN HTTP deployment. Configure device Auto-Lock if a continuously visible display is required.
 

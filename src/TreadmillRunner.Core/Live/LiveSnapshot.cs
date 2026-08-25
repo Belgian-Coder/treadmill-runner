@@ -32,4 +32,11 @@ public sealed record LiveSnapshot(
     long TreadmillConnectionGeneration = 0,
     byte? HeartRateBatteryPercent = null,
     DateTimeOffset? HeartRateBatteryObservedAt = null,
-    double EstimatedKilocalories = 0);
+    double EstimatedKilocalories = 0,
+    HeartRateSignalQuality HeartRateQuality = HeartRateSignalQuality.Unavailable,
+    HeartRateContactState HeartRateContactState = HeartRateContactState.Unknown,
+    DateTimeOffset? TreadmillSpeedObservedAt = null,
+    DateTimeOffset? TreadmillInclineObservedAt = null,
+    TimeSpan? TreadmillSpeedTelemetryAge = null,
+    TimeSpan? TreadmillInclineTelemetryAge = null,
+    DateTimeOffset? HeartRateObservedAt = null);

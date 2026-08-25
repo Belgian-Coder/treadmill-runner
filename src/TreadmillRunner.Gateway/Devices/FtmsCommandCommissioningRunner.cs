@@ -197,9 +197,11 @@ public sealed class FtmsDailyControlSequenceRunner(
       final = devices.Current;
     }
 
-    double? speed = final.TreadmillTelemetry?.SpeedKph;
-    double? incline = final.TreadmillTelemetry?.InclinePercent;
-    bool fresh = final.TreadmillAge <= TimeSpan.FromSeconds(5);
+    bool speedFresh = final.TreadmillSpeedAge is { } speedAge && speedAge <= TimeSpan.FromSeconds(5);
+    bool inclineFresh = final.TreadmillInclineAge is { } inclineAge && inclineAge <= TimeSpan.FromSeconds(5);
+    double? speed = speedFresh ? final.TreadmillTelemetry?.SpeedKph : null;
+    double? incline = inclineFresh ? final.TreadmillTelemetry?.InclinePercent : null;
+    bool fresh = speedFresh && inclineFresh;
     return new FtmsDailyControlSequenceOutcome(
       request.SequenceOperationId,
       results,
@@ -230,7 +232,8 @@ public sealed class FtmsDailyControlSequenceRunner(
   }
 
   private static bool IsFreshAndZero(DeviceTelemetrySnapshot snapshot) =>
-    snapshot.TreadmillAge <= TimeSpan.FromSeconds(5) &&
+    snapshot.TreadmillSpeedAge is { } speedAge && speedAge <= TimeSpan.FromSeconds(5) &&
+    snapshot.TreadmillInclineAge is { } inclineAge && inclineAge <= TimeSpan.FromSeconds(5) &&
     snapshot.TreadmillTelemetry is { SpeedKph: <= 0.05, InclinePercent: >= -0.05 and <= 0.05 };
 }
 
@@ -264,7 +267,7 @@ public sealed class FtmsCommandCommissioningRunner(
     Validate(request);
     VersionedDeviceEnrollment enrollment = await LoadEnrollmentAsync(cancellationToken);
     ValidateIdentity(enrollment.Enrollment, request);
-    DeviceTelemetrySnapshot devices = await WaitForFreshDeviceAsync(cancellationToken);
+    DeviceTelemetrySnapshot devices = await WaitForFreshDeviceAsync(request.Kind, cancellationToken);
     double observedSpeed = devices.TreadmillTelemetry!.SpeedKph;
     if (request.Kind == TreadmillCommandKind.Start && observedSpeed > 0.05)
       throw new InvalidOperationException("The Start stage requires fresh telemetry confirming a stopped belt; no attempt was reserved.");
@@ -360,7 +363,9 @@ public sealed class FtmsCommandCommissioningRunner(
       ?? throw new InvalidOperationException("No treadmill is enrolled.");
   }
 
-  private async Task<DeviceTelemetrySnapshot> WaitForFreshDeviceAsync(CancellationToken cancellationToken)
+  private async Task<DeviceTelemetrySnapshot> WaitForFreshDeviceAsync(
+    TreadmillCommandKind kind,
+    CancellationToken cancellationToken)
   {
     DateTimeOffset deadline = timeProvider.GetUtcNow() + TelemetryWait;
     while (timeProvider.GetUtcNow() <= deadline)
@@ -369,7 +374,9 @@ public sealed class FtmsCommandCommissioningRunner(
       if (snapshot.Treadmill.State == DeviceConnectionState.Ready &&
           snapshot.Treadmill.ConnectionGeneration > 0 &&
           snapshot.TreadmillTelemetry is not null &&
-          snapshot.TreadmillAge <= TimeSpan.FromSeconds(5))
+          snapshot.TreadmillSpeedAge is { } speedAge && speedAge <= TimeSpan.FromSeconds(5) &&
+          (kind != TreadmillCommandKind.SetIncline ||
+            snapshot.TreadmillInclineAge is { } inclineAge && inclineAge <= TimeSpan.FromSeconds(5)))
       {
         return snapshot;
       }

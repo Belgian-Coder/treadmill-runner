@@ -101,6 +101,8 @@ public static class DataRecoveryEndpoints
           devices.Current.Treadmill.State,
           devices.Current.Treadmill.ConnectionGeneration,
           TelemetryAgeMilliseconds = devices.Current.TreadmillAge?.TotalMilliseconds,
+          SpeedTelemetryAgeMilliseconds = devices.Current.TreadmillSpeedAge?.TotalMilliseconds,
+          InclineTelemetryAgeMilliseconds = devices.Current.TreadmillInclineAge?.TotalMilliseconds,
         },
         HeartRate = new
         {
@@ -111,6 +113,8 @@ public static class DataRecoveryEndpoints
           TelemetryAgeMilliseconds = devices.Current.HeartRateAge?.TotalMilliseconds,
           devices.Current.SelectedHeartRateBatteryPercent,
           devices.Current.SelectedHeartRateBatteryObservedAt,
+          devices.Current.SelectedHeartRateQuality,
+          devices.Current.SelectedHeartRateContactState,
         },
         DatabaseIntegrity = databaseIntegrity.Current,
         BluetoothReliability = new

@@ -44,5 +44,5 @@ These are hardware observations, not claims made by the deterministic suite:
 
 - The treadmill console, safety key, and physical Stop remain authoritative.
 - The telemetry path is explicit (`Ftms` or `Vendor`) and never silently mixed or switched.
-- Garmin and other treadmill adapters are outside v1.
-- Motion control, command intents, HR-speed automation, deployment, update activation, and recovery/export belong to later stories.
+- Garmin reconciliation and additional treadmill adapters remain separate feature boundaries; this story covers only read-only Omega/Polar telemetry enrollment and does not grant them control authority.
+- Motion control, command intents, HR-speed automation, deployment, and update activation remain separate gates. Session recovery and export contracts are now documented by US-TR-041, but this story still records only the read-only telemetry acceptance boundary.

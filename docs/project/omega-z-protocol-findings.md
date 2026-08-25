@@ -122,8 +122,8 @@ the previous frame completes.
 
 For a reassembled frame whose byte 5 is `17`, QZ interprets:
 
-- speed as little-endian bytes 24-25 divided by 100 in mph, then multiplied by
-  `1.60934` to produce km/h;
+- speed as little-endian bytes 24-25 with the captured device-scale factor,
+  then multiplied by `1.60934` to produce km/h;
 - incline as byte 30 divided by 10.
 
 Distance, calories, and estimated watts in this path are derived locally and

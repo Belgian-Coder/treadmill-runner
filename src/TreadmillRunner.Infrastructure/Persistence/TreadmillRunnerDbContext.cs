@@ -282,6 +282,7 @@ public sealed class TreadmillRunnerDbContext(
     syncItem.Property(entity => entity.LastError).HasMaxLength(1000);
     syncItem.HasIndex(entity => entity.IdempotencyKey).IsUnique();
     syncItem.HasIndex(entity => new { entity.Status, entity.AvailableAtUtc });
+    syncItem.HasIndex(entity => new { entity.Status, entity.LeaseExpiresAtUtc });
     syncItem.HasIndex(entity => new { entity.UserProfileId, entity.Kind, entity.SourceId });
     syncItem.HasOne(entity => entity.AccountLink)
       .WithMany(entity => entity.SyncItems)
@@ -329,7 +330,7 @@ public sealed class TreadmillRunnerDbContext(
     var uploadJob = modelBuilder.Entity<GarminActivityUploadJobEntity>();
     uploadJob.ToTable("GarminActivityUploadJobs", table =>
     {
-      table.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin')");
+      table.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin', 'ReviewRequired')");
       table.HasCheckConstraint("CK_GarminActivityUploadJobs_Attempts", "\"AttemptCount\" >= 0 AND \"AttemptCount\" <= 3");
       table.HasCheckConstraint("CK_GarminActivityUploadJobs_Key", "length(\"IdempotencyKey\") = 64");
     });
@@ -346,6 +347,7 @@ public sealed class TreadmillRunnerDbContext(
     uploadJob.HasIndex(entity => entity.WorkoutSessionId).IsUnique();
     uploadJob.HasIndex(entity => entity.IdempotencyKey).IsUnique();
     uploadJob.HasIndex(entity => new { entity.Status, entity.AvailableAtUtc });
+    uploadJob.HasIndex(entity => new { entity.Status, entity.LeaseExpiresAtUtc });
     uploadJob.HasOne(entity => entity.Account).WithMany(entity => entity.Jobs)
       .HasForeignKey(entity => entity.GarminActivityUploadAccountId).OnDelete(DeleteBehavior.Cascade);
     uploadJob.HasOne<WorkoutSessionEntity>().WithMany()
@@ -411,6 +413,7 @@ public sealed class TreadmillRunnerDbContext(
     profile.ToTable("UserProfiles", table =>
     {
       table.HasCheckConstraint("CK_UserProfiles_DisplayName", "length(\"DisplayName\") > 0");
+      table.HasCheckConstraint("CK_UserProfiles_UnitSystem", "\"UnitSystem\" = 'Metric'");
       table.HasCheckConstraint("CK_UserProfiles_Weight", "\"WeightKilograms\" > 0");
       table.HasCheckConstraint("CK_UserProfiles_MaximumHeartRate", "\"MaximumHeartRateBpm\" IS NULL OR \"MaximumHeartRateBpm\" > 0");
       table.HasCheckConstraint("CK_UserProfiles_MaximumSpeed", "\"MaximumSpeedKph\" IS NULL OR \"MaximumSpeedKph\" > 0");
@@ -578,6 +581,8 @@ public sealed class TreadmillRunnerDbContext(
     receipt.Property(entity => entity.OperationType).HasMaxLength(100);
     receipt.Property(entity => entity.RequestFingerprint).HasMaxLength(64).IsFixedLength();
     receipt.HasIndex(entity => entity.ClientOperationId).IsUnique();
+    receipt.HasIndex(entity => entity.CreatedAtUtc)
+      .HasDatabaseName("IX_OperationReceipts_CreatedAtUtc");
   }
 
   private static void ConfigureWorkoutPrograms(ModelBuilder modelBuilder)
@@ -753,6 +758,16 @@ public sealed class TreadmillRunnerDbContext(
     session.Property(entity => entity.DebriefNote).HasMaxLength(1000);
     session.HasIndex(entity => new { entity.UserProfileId, entity.ArmedAtUtc });
     session.HasIndex(entity => entity.State);
+    session.Property<int?>("ActiveSessionKey")
+      .HasComputedColumnSql(
+        "CASE WHEN \"State\" IN ('ArmedWaitingForPhysicalStart', 'Running', 'PausedWaitingForPhysicalResume') THEN 1 ELSE NULL END",
+        stored: false);
+    session.HasIndex("ActiveSessionKey")
+      .IsUnique()
+      .HasDatabaseName("UX_WorkoutSessions_ActiveSession");
+    session.HasIndex(entity => new { entity.State, entity.SessionOrigin, entity.RecoveryCheckpointUpdatedAtUtc })
+      .HasDatabaseName("IX_WorkoutSessions_RecoveryCandidates")
+      .HasFilter("\"State\" = 'Running' AND \"SessionOrigin\" = 'Hardware' AND \"RecoveryCheckpointJson\" IS NOT NULL");
     session.HasIndex(entity => new { entity.UserProfileId, entity.SessionOrigin, entity.EndedAtUtc });
     session.HasIndex(entity => new { entity.UserProfileId, entity.EndedAtUtc })
       .IsDescending(false, true)

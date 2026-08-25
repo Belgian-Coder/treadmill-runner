@@ -27,7 +27,7 @@ Make active and recorded workout graphs inspectable without changing their telem
 
 Inspection points are derived from the same bounded, rendered timestamps used to build the visible paths. Live selection remains transient browser state across chart refreshes and is never persisted. This story adds no gateway API, database, command, Bluetooth, Garmin/FIT, PWA cache, background, or offline-control behavior.
 
-The Garmin workout-data task owns FIT reconciliation and its release gate. TR-040 owns chart UI, its focused browser tests, and these documents only. With 1.5.54 published and 1.5.55 in the signed release gate, this unreleased dashboard work targets 1.5.56 or later and still requires separate release authorization.
+US-TR-041 owns the new FIT/TCX/native export and Garmin reconciliation evidence contracts. TR-040 owns chart UI, its focused browser tests, and these documents only. With 1.5.54 published and 1.5.55 in the signed release gate, this unreleased dashboard work targets 1.5.56 or later and still requires separate release authorization.
 
 ## Verification boundary
 

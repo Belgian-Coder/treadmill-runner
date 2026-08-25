@@ -193,17 +193,15 @@ public static class ProfilePlanningEndpoints
       throw new ArgumentException("HeartRateZones cannot be null.");
     }
 
-    if (int.TryParse(request.UnitSystem, out _) ||
-        !Enum.TryParse(request.UnitSystem, ignoreCase: true, out UnitSystem unitSystem) ||
-        !Enum.IsDefined(unitSystem))
+    if (!string.Equals(request.UnitSystem, nameof(UnitSystem.Metric), StringComparison.Ordinal))
     {
-      throw new ArgumentException("UnitSystem must be Metric or Imperial.");
+      throw new ArgumentException("UnitSystem must be Metric.");
     }
 
     return new UserProfile(
       id,
       request.DisplayName,
-      unitSystem,
+      UnitSystem.Metric,
       request.WeightKilograms,
       request.MaximumHeartRateBpm,
       request.MaximumSpeedKph,
@@ -228,7 +226,7 @@ public static class ProfilePlanningEndpoints
   private static ProfileDto ToDto(VersionedUserProfile profile) => new(
     profile.Profile.Id,
     profile.Profile.DisplayName,
-    profile.Profile.UnitSystem.ToString(),
+    nameof(UnitSystem.Metric),
     profile.Profile.WeightKilograms,
     profile.Profile.MaximumHeartRateBpm,
     profile.Profile.MaximumSpeedKph,

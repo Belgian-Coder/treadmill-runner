@@ -25,6 +25,7 @@ public enum GarminWatchActivityMatchDisposition
   None,
   Single,
   Multiple,
+  ReviewRequired,
 }
 
 public sealed record GarminWatchActivityMatch(
@@ -52,6 +53,21 @@ public static class GarminWatchActivityMatcher
       return new(GarminWatchActivityMatchDisposition.Multiple, null, $"{plausible.Length} Garmin treadmill activities are plausible; normal upload remains enabled.");
 
     GarminWatchActivityCandidate candidate = plausible[0];
+    bool localHasHeartRate = local.AverageHeartRate is not null ||
+      local.MaximumHeartRate is not null ||
+      local.HeartRateSamples.Count > 0;
+    bool candidateHasHeartRate = candidate.AverageHeartRate is not null ||
+      candidate.MaximumHeartRate is not null ||
+      candidate.HeartRateSamples.Count > 0;
+    if (!localHasHeartRate || !candidateHasHeartRate)
+    {
+      return new(
+        GarminWatchActivityMatchDisposition.ReviewRequired,
+        candidate,
+        !localHasHeartRate
+          ? "The local session has no heart-rate evidence; the shape match is retained for manual review and upload is paused."
+          : "The Garmin watch activity has no heart-rate evidence; the shape match is retained for manual review and upload is paused.");
+    }
     HeartRateComparison comparison = CompareHeartRate(local, candidate);
     if (!comparison.IsMatch)
       return new(GarminWatchActivityMatchDisposition.None, null, comparison.Evidence);

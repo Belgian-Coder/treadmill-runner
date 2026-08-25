@@ -183,9 +183,22 @@ public sealed class LocalFirstExperienceStore(IDbContextFactory<TreadmillRunnerD
     RequireId(sessionId, nameof(sessionId));
     RequireUtc(nowUtc, nameof(nowUtc));
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    ProgressionRecommendationEntity? existing = await context.ProgressionRecommendations.AsNoTracking()
+    ProgressionRecommendationEntity? existing = await context.ProgressionRecommendations
       .SingleOrDefaultAsync(item => item.UserProfileId == profileId && item.WorkoutSessionId == sessionId, cancellationToken);
-    if (existing is not null) return Map(existing);
+    if (existing is not null)
+    {
+      if (string.Equals(existing.Status, "Pending", StringComparison.Ordinal))
+      {
+        existing.Action = recommendation.Action.ToString();
+        existing.Reason = recommendation.Reason;
+        existing.AlgorithmVersion = recommendation.AlgorithmVersion;
+        existing.EvidenceJson = JsonSerializer.Serialize(evidence, JsonOptions);
+        existing.Version++;
+        await context.SaveChangesAsync(cancellationToken);
+      }
+
+      return Map(existing);
+    }
     var entity = new ProgressionRecommendationEntity
     {
       Id = Guid.NewGuid(),

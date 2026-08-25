@@ -58,15 +58,9 @@
             }
             @if (preview.Format == "QDomyosXml")
             {
-                <label class="field">Source speed and distance units
-                    <select @bind="qDomyosUnits" required>
-                        <option value="">Choose units before confirmation</option>
-                        <option value="KilometersPerHour">Kilometers / km/h</option>
-                        <option value="MilesPerHour">Miles / mph</option>
-                    </select>
-                </label>
+                <p class="field-help"><strong>Metric source required:</strong> QDomyos distance must be kilometres and speed must be km/h. Other unit encodings are rejected.</p>
             }
-            <button class="primary-action" type="button" @onclick="(MouseEventArgs _) => ConfirmAsync()" disabled="@(confirming || (preview.Format == "QDomyosXml" && string.IsNullOrEmpty(qDomyosUnits)))">@(confirming ? "Confirming…" : "Confirm and save workout")</button>
+            <button class="primary-action" type="button" @onclick="(MouseEventArgs _) => ConfirmAsync()" disabled="@confirming">@(confirming ? "Confirming…" : "Confirm and save workout")</button>
         </section>
     }
     else if (setPreview is not null)
@@ -129,7 +123,6 @@
     private Guid? activeProfileId;
     private bool confirming;
     private bool initialized;
-    private string? qDomyosUnits;
     private Guid pendingConfirmOperationId = Guid.NewGuid();
     private string setStrategy = "Default";
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
@@ -197,7 +190,6 @@
             }
 
             preview = await response.Content.ReadFromJsonAsync<ImportPreviewView>();
-            qDomyosUnits = null;
             pendingConfirmOperationId = Guid.NewGuid();
             message = preview is null ? "No preview was returned." : "Preview ready. Review warnings before confirming.";
         }
@@ -251,7 +243,7 @@
                 preview.PreviewId,
                 preview.SourceSha256,
                 activeProfileId,
-                qDomyosUnits));
+                preview.Format == "QDomyosXml" ? "KilometersPerHour" : null));
         if (response.IsSuccessStatusCode)
         {
             pendingConfirmOperationId = Guid.NewGuid();

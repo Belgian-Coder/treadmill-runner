@@ -123,30 +123,75 @@ public sealed class SessionStore(
       throw new ArgumentException("The sample and recovery checkpoint must belong to the same session.", nameof(checkpoint));
     }
 
+    await AppendSamplesAndRecoveryCheckpointAsync([sample], checkpoint, cancellationToken);
+  }
+
+  public async Task AppendSamplesAndRecoveryCheckpointAsync(
+    IReadOnlyList<SessionSample> samples,
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(samples);
+    ArgumentNullException.ThrowIfNull(checkpoint);
+    if (samples.Count == 0)
+      throw new ArgumentException("At least one sample is required.", nameof(samples));
+    if (samples.Any(sample => sample is null))
+      throw new ArgumentException("Samples cannot contain null values.", nameof(samples));
+    if (samples.Any(sample => sample.SessionId != checkpoint.SessionId))
+      throw new ArgumentException("All samples and the recovery checkpoint must belong to the same session.", nameof(samples));
+
     RequireId(checkpoint.SessionId, nameof(checkpoint.SessionId));
     RequireUtc(checkpoint.SavedAtUtc, nameof(checkpoint.SavedAtUtc));
     // Serialize and validate before attaching either entity so an invalid checkpoint
-    // cannot leave a sample tracked for a later caller on this context.
+    // cannot leave samples tracked for a later caller on this context.
     string checkpointJson = SerializeRecoveryCheckpoint(checkpoint);
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    WorkoutSessionEntity session = await FindRequiredAsync(context, sample.SessionId, cancellationToken);
+    WorkoutSessionEntity session = await FindRequiredAsync(context, checkpoint.SessionId, cancellationToken);
     SessionState state = ParseState(session.State);
     if (IsTerminal(state))
     {
-      throw new InvalidOperationException($"Cannot append a sample to terminal session {sample.SessionId}.");
+      throw new InvalidOperationException($"Cannot append a sample to terminal session {checkpoint.SessionId}.");
     }
 
-    if (!string.Equals(
+    if (samples.Any(sample => !string.Equals(
       session.MetricAlgorithmVersion,
       sample.MetricAlgorithmVersion,
-      StringComparison.Ordinal))
+      StringComparison.Ordinal)))
     {
       throw new InvalidOperationException("The sample metric algorithm must match the session definition.");
     }
 
-    context.SessionSamples.Add(CreateSampleEntity(sample));
-    session.RecoveryCheckpointJson = checkpointJson;
-    session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
+    long[] sequences = samples.Select(static sample => sample.Sequence).ToArray();
+    Dictionary<long, SessionSampleEntity> existing = await context.SessionSamples
+      .Where(sample => sample.WorkoutSessionId == checkpoint.SessionId && sequences.Contains(sample.Sequence))
+      .ToDictionaryAsync(sample => sample.Sequence, cancellationToken);
+    SessionSample? previous = null;
+    foreach (SessionSample sample in samples)
+    {
+      if (previous is not null &&
+          (sample.Sequence <= previous.Sequence ||
+           sample.CapturedAt < previous.CapturedAt ||
+           sample.Elapsed < previous.Elapsed))
+      {
+        throw new InvalidOperationException("A sample batch must have increasing sequence, capture time, and elapsed time.");
+      }
+      if (existing.TryGetValue(sample.Sequence, out SessionSampleEntity? persisted))
+      {
+        if (MapSample(persisted) != sample)
+          throw new InvalidOperationException($"Sample sequence {sample.Sequence} already exists with different telemetry.");
+      }
+      else
+      {
+        context.SessionSamples.Add(CreateSampleEntity(sample));
+      }
+      previous = sample;
+    }
+    if (session.RecoveryCheckpointUpdatedAtUtc is null ||
+        checkpoint.SavedAtUtc >= session.RecoveryCheckpointUpdatedAtUtc.Value)
+    {
+      session.RecoveryCheckpointJson = checkpointJson;
+      session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
+    }
     // A single SaveChanges call makes EF Core enlist both inserts/updates in one
     // provider transaction; a constraint failure rolls back both mutations.
     await context.SaveChangesAsync(cancellationToken);
@@ -423,6 +468,55 @@ public sealed class SessionStore(
       SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson));
   }
 
+  public async Task<SessionHistoryDetails?> GetHistoryDetailsAsync(
+    Guid sessionId,
+    IReadOnlyList<HeartRateZone>? heartRateZones = null,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    WorkoutSessionEntity? entity = await context.WorkoutSessions.AsNoTracking()
+      .SingleOrDefaultAsync(candidate => candidate.Id == sessionId, cancellationToken);
+    if (entity is null) return null;
+    HeartRateZone[] effectiveZones = heartRateZones?.ToArray() ?? ReadProfileHeartRateZones(entity.ControllerConfigurationJson);
+
+    SessionEventEntity[] events = await context.SessionEvents
+      .FromSqlInterpolated($"""
+        SELECT *
+        FROM "SessionEvents"
+        WHERE "WorkoutSessionId" = {sessionId}
+        ORDER BY "OccurredAtUtc", "Id"
+        """)
+      .AsNoTracking()
+      .ToArrayAsync(cancellationToken);
+    SessionSampleEntity[] samples = await context.SessionSamples.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .OrderBy(candidate => candidate.Sequence)
+      .ToArrayAsync(cancellationToken);
+
+    entity.Events = events.ToList();
+    entity.Samples = samples.ToList();
+    StoredWorkoutSession full = Map(entity);
+    SessionSample[] mappedSamples = full.Samples.ToArray();
+    SessionEvent[] mappedEvents = full.Events.ToArray();
+    SessionAnalytics analytics = SessionAnalyticsCalculator.Calculate(
+      sessionId,
+      mappedSamples,
+      mappedEvents,
+      effectiveZones);
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      mappedSamples,
+      SessionCalorieCalculator.ReadWeightKilograms(entity.ControllerConfigurationJson));
+    StoredWorkoutSession displaySession = full with
+    {
+      Samples = SelectDisplaySamples(mappedSamples),
+    };
+    return new SessionHistoryDetails(
+      new StoredWorkoutSessionDisplay(displaySession, mappedSamples.Length),
+      analytics,
+      statistics);
+  }
+
   public async Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
     Guid userProfileId,
     int take = 50,
@@ -447,7 +541,7 @@ public sealed class SessionStore(
           "DurationSeconds", "DistanceKilometers", "EstimatedCalories", "AverageHeartRateBpm",
           "MaximumHeartRateBpm", "AverageSpeedKph", "AverageInclinePercent", "MetricAlgorithmVersion",
           "ControllerConfigurationJson", "RecoveryCheckpointJson", "RecoveryCheckpointUpdatedAtUtc",
-          "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc"
+          "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc", "ActiveSessionKey"
         FROM "WorkoutSessions"
         WHERE "UserProfileId" = {0}
           AND "StartedAtUtc" IS NOT NULL
@@ -546,23 +640,77 @@ public sealed class SessionStore(
     CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    List<WorkoutSessionEntity> candidates = await context.WorkoutSessions.AsNoTracking()
-      .AsSplitQuery()
-      .Include(candidate => candidate.Samples)
-      .Include(candidate => candidate.Events)
-      .Where(candidate => candidate.State == nameof(SessionState.Running) &&
-        candidate.SessionOrigin == nameof(SessionOrigin.Hardware) &&
-        candidate.RecoveryCheckpointJson != null)
-      .ToListAsync(cancellationToken);
-    WorkoutSessionEntity? entity = candidates
-      .OrderByDescending(candidate => candidate.RecoveryCheckpointUpdatedAtUtc)
-      .FirstOrDefault();
+    // EF/SQLite cannot translate DateTimeOffset ordering. SQLite stores these
+    // UTC values as canonical text, so the bounded SQL order remains stable.
+    WorkoutSessionEntity? entity = await context.WorkoutSessions
+      .FromSqlRaw("""
+        SELECT *
+        FROM "WorkoutSessions"
+        WHERE "State" = 'Running'
+          AND "SessionOrigin" = 'Hardware'
+          AND "RecoveryCheckpointJson" IS NOT NULL
+        ORDER BY "RecoveryCheckpointUpdatedAtUtc" DESC, "Id" DESC
+        LIMIT 1
+        """)
+      .AsNoTracking()
+      .SingleOrDefaultAsync(cancellationToken);
     if (entity?.RecoveryCheckpointJson is null) return null;
+    entity.Samples = await context.SessionSamples.AsNoTracking()
+      .Where(sample => sample.WorkoutSessionId == entity.Id)
+      .OrderBy(sample => sample.Sequence)
+      .ToListAsync(cancellationToken);
+    entity.Events = await context.SessionEvents
+      .FromSqlInterpolated($"""
+        SELECT *
+        FROM "SessionEvents"
+        WHERE "WorkoutSessionId" = {entity.Id}
+        ORDER BY "OccurredAtUtc", "Id"
+        """)
+      .AsNoTracking()
+      .ToListAsync(cancellationToken);
     SessionRecoveryCheckpoint? checkpoint = JsonSerializer.Deserialize<SessionRecoveryCheckpoint>(
       entity.RecoveryCheckpointJson, EventJsonOptions);
     if (checkpoint is null || checkpoint.SessionId != entity.Id)
       throw new InvalidOperationException("The active session recovery checkpoint is invalid.");
     return new RecoverableWorkoutSession(Map(entity), checkpoint);
+  }
+
+  public async Task<int> ReconcileActiveSessionsAsync(
+    DateTimeOffset reconciledAtUtc,
+    CancellationToken cancellationToken = default)
+  {
+    RequireUtc(reconciledAtUtc, nameof(reconciledAtUtc));
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+    List<WorkoutSessionEntity> active = await context.WorkoutSessions
+      .FromSqlRaw("""
+        SELECT *
+        FROM "WorkoutSessions"
+        WHERE "State" IN ('ArmedWaitingForPhysicalStart', 'Running', 'PausedWaitingForPhysicalResume')
+        ORDER BY "ArmedAtUtc" DESC, "Id" DESC
+        """)
+      .ToListAsync(cancellationToken);
+    if (active.Count <= 1)
+    {
+      await transaction.CommitAsync(cancellationToken);
+      return 0;
+    }
+
+    foreach (WorkoutSessionEntity stale in active.Skip(1))
+    {
+      stale.State = nameof(SessionState.Interrupted);
+      stale.EndedAtUtc = reconciledAtUtc;
+      if (stale.StartedAtUtc is { } startedAt)
+        stale.DurationSeconds = Math.Max(stale.DurationSeconds, (reconciledAtUtc - startedAt).TotalSeconds);
+      context.SessionEvents.Add(CreateEventEntity(
+        stale.Id,
+        new SessionInterruptedEvent(
+          "A newer active session was found during gateway reconciliation.",
+          reconciledAtUtc)));
+    }
+    await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
+    return active.Count - 1;
   }
 
   public async Task<HistoryDeletionPreview?> PreviewDeletionAsync(
@@ -672,13 +820,13 @@ public sealed class SessionStore(
     bool terminal = IsTerminal(state) && data.Session.StartedAtUtc is not null && data.Session.EndedAtUtc is not null;
     bool linked = data.Session.WorkoutProgramRunId is not null || data.Session.WorkoutProgramItemId is not null;
     string? garminStatus = data.Garmin?.Status;
-    bool garminSettled = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed";
+    bool garminSettled = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed" or "ReviewRequired";
     bool canDelete = terminal && garminSettled;
     string reason = !terminal
       ? "Only a terminal session can be permanently deleted."
       : !garminSettled
         ? "Wait for the Garmin upload to finish, or acknowledge its unknown outcome, before deleting it."
-        : garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed"
+        : garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed" or "ReviewRequired"
           ? "This local session and its settled Garmin upload record can be deleted. The remote Garmin activity is not deleted."
           : linked
             ? "This session can be permanently deleted. Its training-plan progress will be recalculated from the remaining history."
@@ -697,7 +845,7 @@ public sealed class SessionStore(
       garminStatus ?? string.Empty,
       data.Garmin?.UpdatedAtUtc.ToString("O") ?? string.Empty);
     string revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(revisionMaterial)));
-    bool remoteMayRemain = garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed";
+    bool remoteMayRemain = garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed" or "ReviewRequired";
     return new HistoryDeletionPreview(
       data.Session.Id,
       data.Session.UserProfileId,
@@ -762,6 +910,34 @@ public sealed class SessionStore(
       debrief,
       entity.Samples.OrderBy(sample => sample.Sequence).Select(MapSample).ToArray(),
       entity.Events.OrderBy(sessionEvent => sessionEvent.OccurredAtUtc).Select(MapEvent).ToArray());
+  }
+
+  private static IReadOnlyList<SessionSample> SelectDisplaySamples(IReadOnlyList<SessionSample> samples)
+  {
+    if (samples.Count <= SessionDisplayLimits.MaximumSamples) return samples;
+    var selected = new SessionSample[SessionDisplayLimits.MaximumSamples];
+    long lastIndex = samples.Count - 1L;
+    long lastSlot = SessionDisplayLimits.MaximumSamples - 1L;
+    for (var slot = 0; slot < selected.Length; slot++)
+      selected[slot] = samples[checked((int)((slot * lastIndex) / lastSlot))];
+    return selected;
+  }
+
+  private static HeartRateZone[] ReadProfileHeartRateZones(string configurationJson)
+  {
+    try
+    {
+      SessionExecutionConfiguration? configuration = JsonSerializer.Deserialize<SessionExecutionConfiguration>(
+        configurationJson,
+        EventJsonOptions);
+      return configuration?.Profile?.HeartRateZones
+        .Select(static zone => zone.ToHeartRateZone())
+        .ToArray() ?? [];
+    }
+    catch (JsonException)
+    {
+      return [];
+    }
   }
 
   private static SessionSummary MapSummary(WorkoutSessionEntity entity, double? estimatedCalories = null) => new(

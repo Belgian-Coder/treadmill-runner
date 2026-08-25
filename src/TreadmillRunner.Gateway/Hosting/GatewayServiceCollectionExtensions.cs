@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.ResponseCompression;
 using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Devices;
@@ -26,6 +27,15 @@ public static class GatewayServiceCollectionExtensions
     IConfiguration configuration)
   {
     services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
+    services.AddResponseCompression(options =>
+    {
+      // The generated entry document and Blazor resource collection are
+      // intentionally no-store and change with the running build. Keep
+      // compression scoped to those document/script responses so API/SignalR
+      // payloads (including sensitive JSON) retain their existing behavior.
+      options.EnableForHttps = true;
+      options.MimeTypes = ["text/html", "application/javascript"];
+    });
     services.AddSignalR();
     services.AddHealthChecks()
       .AddCheck<SimulatorReadyHealthCheck>("simulator-live", tags: ["ready"])
@@ -75,6 +85,7 @@ public static class GatewayServiceCollectionExtensions
     services.AddScoped<IWorkoutProgramStore, WorkoutProgramStore>();
     services.AddScoped<IPremadePlanStore, PremadePlanStore>();
     services.AddScoped<IOperationReceiptStore, OperationReceiptStore>();
+    services.AddHostedService<OperationReceiptRetentionWorker>();
     services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
     services.AddScoped<IBleReliabilityStore, BleReliabilityStore>();
     services.AddScoped<ITreadmillMaintenanceStore, TreadmillMaintenanceStore>();

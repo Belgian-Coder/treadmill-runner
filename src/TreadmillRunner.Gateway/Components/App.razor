@@ -4,6 +4,8 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>TreadmillRunner</title>
+    <meta name="description" content="Plan workouts, connect devices, and track runs with TreadmillRunner." />
     <base href="/" />
     <meta name="theme-color" content="#071f29" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -11,7 +13,7 @@
     <meta name="apple-mobile-web-app-title" content="TreadmillRunner" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180.png" />
-    <script src="@Assets["pwa-shell.js"]"></script>
+    <script src="@Assets["pwa-shell.js"]" defer></script>
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <ImportMap />
@@ -38,8 +40,8 @@
     <div id="app-interactive-shell" class="app-interactive-shell">
         <Routes @rendermode="new InteractiveWebAssemblyRenderMode(prerender: false)" />
     </div>
-    <script src="@Assets["runner-sound.js"]"></script>
-    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["runner-sound.js"]" defer></script>
+    <script src="@Assets["_framework/blazor.web.js"]" defer></script>
 </body>
 
 </html>

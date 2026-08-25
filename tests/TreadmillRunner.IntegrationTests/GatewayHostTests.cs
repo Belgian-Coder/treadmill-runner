@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Buffers.Binary;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -87,6 +88,12 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Contains("no-store", manifest.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
     using HttpResponseMessage touchIcon = await client.GetAsync("/apple-touch-icon-180.png");
     Assert.Contains("no-store", touchIcon.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+    Assert.Equal("image/png", touchIcon.Content.Headers.ContentType?.MediaType);
+    byte[] touchIconBytes = await touchIcon.Content.ReadAsByteArrayAsync();
+    Assert.True(touchIconBytes.Length > 4_000, "The Apple touch icon must contain the complete branded artwork, not a clipped blank tile.");
+    Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, touchIconBytes[..8]);
+    Assert.Equal(180, BinaryPrimitives.ReadInt32BigEndian(touchIconBytes.AsSpan(16, 4)));
+    Assert.Equal(180, BinaryPrimitives.ReadInt32BigEndian(touchIconBytes.AsSpan(20, 4)));
 
     using var request = new HttpRequestMessage(HttpMethod.Post, "/api/updates/check") { Content = JsonContent.Create(new { }) };
     request.Headers.Add("X-TreadmillRunner-Client-Build", "stale-build");
@@ -106,6 +113,42 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     matchingRequest.Headers.Add("X-TreadmillRunner-Client-Build", AppBuildInfo.Fingerprint);
     using HttpResponseMessage matching = await client.SendAsync(matchingRequest);
     Assert.NotEqual(HttpStatusCode.Conflict, matching.StatusCode);
+  }
+
+  [Fact]
+  public async Task Dynamic_entry_html_is_compressed_without_changing_no_store_contract()
+  {
+    using HttpRequestMessage request = new(HttpMethod.Get, "/");
+    request.Headers.AcceptEncoding.ParseAdd("br");
+
+    using HttpResponseMessage response = await factory.CreateClient().SendAsync(request);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Contains("br", response.Content.Headers.ContentEncoding, StringComparer.OrdinalIgnoreCase);
+    Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
+    Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public async Task Dynamic_blazor_resource_collection_is_compressed_without_enabling_api_compression()
+  {
+    using HttpClient client = factory.CreateClient();
+    using HttpRequestMessage resourceRequest = new(HttpMethod.Get, "/_framework/resource-collection.js");
+    resourceRequest.Headers.AcceptEncoding.ParseAdd("br");
+
+    using HttpResponseMessage resource = await client.SendAsync(resourceRequest);
+
+    Assert.Equal(HttpStatusCode.OK, resource.StatusCode);
+    Assert.Equal("application/javascript", resource.Content.Headers.ContentType?.MediaType);
+    Assert.Contains("br", resource.Content.Headers.ContentEncoding, StringComparer.OrdinalIgnoreCase);
+    Assert.Contains("no-store", resource.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+    using HttpRequestMessage apiRequest = new(HttpMethod.Get, "/api/system/version");
+    apiRequest.Headers.AcceptEncoding.ParseAdd("br");
+    using HttpResponseMessage api = await client.SendAsync(apiRequest);
+
+    Assert.Equal(HttpStatusCode.OK, api.StatusCode);
+    Assert.Empty(api.Content.Headers.ContentEncoding);
   }
 
   [Fact]
@@ -142,6 +185,13 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
 
     using HttpResponseMessage entry = await client.GetAsync("/workouts");
     string entryDocument = await entry.Content.ReadAsStringAsync();
+    Assert.Contains("<title>TreadmillRunner</title>", entryDocument, StringComparison.Ordinal);
+    Assert.Contains("<meta name=\"description\" content=\"Plan workouts, connect devices, and track runs with TreadmillRunner.\">", entryDocument, StringComparison.Ordinal);
+    int pwaScript = AssertDeferredScript(entryDocument, "pwa-shell");
+    int soundScript = AssertDeferredScript(entryDocument, "runner-sound");
+    int blazorScript = AssertDeferredScript(entryDocument, "_framework/blazor.web");
+    Assert.True(pwaScript < soundScript && soundScript < blazorScript,
+      "Deferred shell scripts must retain pwa, sound, then Blazor execution order.");
     Assert.Contains("id=\"app-boot-shell\"", entryDocument, StringComparison.Ordinal);
     Assert.Contains("Loading TreadmillRunner", entryDocument, StringComparison.Ordinal);
 
@@ -167,6 +217,17 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Contains("physical Stop control", offlineDocument, StringComparison.Ordinal);
     Assert.DoesNotContain("<script", offlineDocument, StringComparison.OrdinalIgnoreCase);
     Assert.DoesNotContain("<link", offlineDocument, StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static int AssertDeferredScript(string document, string assetPrefix)
+  {
+    string marker = $"<script src=\"{assetPrefix}";
+    int start = document.IndexOf(marker, StringComparison.Ordinal);
+    Assert.True(start >= 0, $"The entry document did not load {assetPrefix}.");
+    int end = document.IndexOf('>', start);
+    Assert.True(end > start, $"The {assetPrefix} script tag was incomplete.");
+    Assert.Contains(" defer", document[start..(end + 1)], StringComparison.Ordinal);
+    return start;
   }
 
   [Fact]
@@ -199,7 +260,7 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
       now,
       new DeviceConnectionSnapshot(DeviceRole.Treadmill, DeviceConnectionState.Ready, 4, "Omega Z", "horizon-omega-z", "Ftms", now, null),
       new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Ready, 7, "Polar H10", "bluetooth-heart-rate", null, now, null),
-      new TreadmillTelemetry(now, 0, 0),
+      new TreadmillTelemetry(now, 0, 0, now, now),
       132,
       now,
       null));

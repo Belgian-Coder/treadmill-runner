@@ -35,6 +35,8 @@
     private DeviceConnectionState sensorState = DeviceConnectionState.Disconnected;
     private ushort? heartRateBpm;
     private TimeSpan? heartRateAge;
+    private HeartRateSignalQuality heartRateQuality = HeartRateSignalQuality.Unavailable;
+    private HeartRateContactState heartRateContactState = HeartRateContactState.Unknown;
     private HeartRateDeviceKind? sensorKind;
     private bool gatewayAvailable = true;
 
@@ -49,6 +51,8 @@
     private bool HasSensor => !string.IsNullOrWhiteSpace(sensorName);
     private bool HasFreshReading => gatewayAvailable && HasSensor &&
         heartRateBpm is not null &&
+        heartRateQuality == HeartRateSignalQuality.Valid &&
+        heartRateContactState != HeartRateContactState.NotDetected &&
         heartRateAge <= FreshnessLimit;
     private bool IsConnected => gatewayAvailable && HasSensor &&
         (HasFreshReading || sensorState is DeviceConnectionState.Ready or
@@ -84,6 +88,9 @@
         DeviceConnectionState.Connecting => "Connecting…",
         DeviceConnectionState.Reconnecting => "Reconnecting…",
         DeviceConnectionState.Faulted => "Sensor fault",
+        DeviceConnectionState.Ready when heartRateContactState == HeartRateContactState.NotDetected ||
+            heartRateQuality == HeartRateSignalQuality.ContactLost => "No sensor contact",
+        DeviceConnectionState.Ready when heartRateQuality == HeartRateSignalQuality.Invalid => "Reading unavailable",
         DeviceConnectionState.Ready when heartRateAge > FreshnessLimit => "Signal stale",
         DeviceConnectionState.Ready => "Waiting for pulse",
         _ => "Sensor offline",
@@ -134,6 +141,8 @@
         sensorState = incoming.HeartRateConnectionState;
         heartRateBpm = incoming.HeartRateBpm;
         heartRateAge = incoming.HeartRateTelemetryAge;
+        heartRateQuality = incoming.HeartRateQuality;
+        heartRateContactState = incoming.HeartRateContactState;
         sensorKind = incoming.HeartRateDeviceKind;
     }
 

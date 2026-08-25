@@ -1,10 +1,12 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
+using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Health;
 
 public sealed class DatabaseReadyHealthCheck(
-  IDatabaseIntegrityChecker integrity,
+  IDatabaseIntegrityCoordinator integrity,
   IHostEnvironment environment) : IHealthCheck
 {
   public async Task<HealthCheckResult> CheckHealthAsync(
@@ -13,16 +15,18 @@ public sealed class DatabaseReadyHealthCheck(
   {
     try
     {
-      DatabaseIntegrityCheckResult result = await integrity.CheckAsync(
-        DatabaseIntegrityCheckLevel.Quick,
-        cancellationToken);
-      if (result.IsHealthy)
+      DatabaseIntegrityStatus status = integrity.Current;
+      if (status.State is DatabaseIntegrityState.Healthy or DatabaseIntegrityState.HealthyWithBackupWarning)
       {
-        return HealthCheckResult.Healthy("The database is current and passed SQLite quick_check.");
+        string message = status.State == DatabaseIntegrityState.HealthyWithBackupWarning
+          ? status.Message
+          : "The database is current according to the cached integrity status.";
+        return HealthCheckResult.Healthy(message);
       }
 
-      string description = result.Issues.FirstOrDefault()
-        ?? "The application database failed SQLite quick_check.";
+      string description = status.Issues.FirstOrDefault() ?? status.Message;
+      if (status.State is DatabaseIntegrityState.Checking or DatabaseIntegrityState.Deferred or DatabaseIntegrityState.NotChecked)
+        return HealthCheckResult.Degraded(description);
       return environment.IsProduction()
         ? HealthCheckResult.Unhealthy(description)
         : HealthCheckResult.Degraded(description);

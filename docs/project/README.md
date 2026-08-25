@@ -4,7 +4,7 @@ type: index
 status: active
 owner: project-context-generator
 audience: both
-updated: 2026-08-06
+updated: 2026-08-23
 ---
 
 # Project Documentation
@@ -20,6 +20,8 @@ The [story backlog](backlog.md) owns delivery order. Safety- or extension-sensit
 Operators publishing or installing application updates should use the [release operations runbook](release-operations.md). It documents signing trust, UI activation, rollback, and recovery.
 
 Garmin's supported Training API path, unsupported per-profile completed-activity upload, credential/retry boundaries, duplicate prevention, and removal are documented in [Garmin integrations](garmin-connect.md). The watch source, pairing protocol, SDK validation, physical acceptance, and complete IQ Store submission package are documented in [Connect IQ companion setup and store release](connect-iq-companion.md).
+
+Metric session/workout export routes and their immutable-source guarantees are documented in [Session and workout exports](exports.md). The generated WalkingPad catalog's sanitized source boundary, content hash, generator hash, and regeneration command are documented in [WalkingPad plan provenance](walkingpad-plan-provenance.md).
 
 One-tap reuse, Screen Wake Lock behavior, local QR access, generated workout-set import, BLE reliability/battery reporting, and database integrity maintenance are documented in [Local reliability, access, and generated workout sets](local-daily-use-reliability.md).
 

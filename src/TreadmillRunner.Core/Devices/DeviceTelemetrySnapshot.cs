@@ -29,11 +29,21 @@ public sealed record DeviceTelemetrySnapshot(
   long HeartRateSelectionGeneration = 0,
   string? HeartRateSelectionReason = null,
   byte? SelectedHeartRateBatteryPercent = null,
-  DateTimeOffset? SelectedHeartRateBatteryObservedAt = null)
+  DateTimeOffset? SelectedHeartRateBatteryObservedAt = null,
+  HeartRateSignalQuality SelectedHeartRateQuality = HeartRateSignalQuality.Unavailable,
+  HeartRateContactState SelectedHeartRateContactState = HeartRateContactState.Unknown)
 {
   public TimeSpan? TreadmillAge => TreadmillTelemetry is null
     ? null
     : NonNegative(CapturedAt - TreadmillTelemetry.ObservedAt);
+
+  public TimeSpan? TreadmillSpeedAge => TreadmillTelemetry is { SpeedObservedAt: { } observedAt }
+    ? NonNegative(CapturedAt - observedAt)
+    : null;
+
+  public TimeSpan? TreadmillInclineAge => TreadmillTelemetry is { InclineObservedAt: { } observedAt }
+    ? NonNegative(CapturedAt - observedAt)
+    : null;
 
   public TimeSpan? HeartRateAge => HeartRateObservedAt is null
     ? null

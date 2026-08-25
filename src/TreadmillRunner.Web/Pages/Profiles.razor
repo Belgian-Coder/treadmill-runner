@@ -45,7 +45,7 @@
                         <article class="profile-row @(activeProfileId == profile.Id ? "profile-row--active" : null)">
                             <button class="profile-select" type="button" @onclick="(MouseEventArgs _) => SelectAsync(profile)" aria-label="Use @profile.DisplayName as active profile" aria-pressed="@(activeProfileId == profile.Id)">
                                 <span class="profile-avatar" aria-hidden="true">@Initial(profile.DisplayName)</span>
-                                <span><strong>@profile.DisplayName</strong><small>@profile.UnitSystem · @profile.WeightKilograms.ToString("0.#") kg</small></span>
+                                <span><strong>@profile.DisplayName</strong><small>@profile.WeightKilograms.ToString("0.#") kg</small></span>
                             </button>
                             <button class="secondary-action compact-action" type="button" @onclick="() => StartEdit(profile)">Edit</button>
                             <div class="profile-row__badges">
@@ -83,7 +83,6 @@
             <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="profile-form">
                 <div class="form-grid">
                     <label class="field field--wide">Display name<input @bind="form.DisplayName" maxlength="100" required autocomplete="name" /></label>
-                    <label class="field">Units<select @bind="form.UnitSystem"><option value="Metric">Metric</option><option value="Imperial">Imperial</option></select></label>
                     <label class="field">Weight (kg)<input @bind="form.WeightKilograms" type="number" min="20" max="350" step="0.1" required /></label>
                     <label class="field">Maximum heart rate<input aria-label="Maximum heart rate" @bind="form.MaximumHeartRateBpm" @bind:after="MaximumHeartRateChanged" type="number" min="50" max="250" /><small>@ZoneSuggestionStatus</small></label>
                     <label class="field">Maximum speed (km/h)<input @bind="form.MaximumSpeedKph" type="number" min="1" max="30" step="0.1" /></label>
@@ -129,6 +128,8 @@
 
             @if (editingId is { } profileId)
             {
+                <ProfileExperiencePreferences ProfileId="profileId" />
+                <GarminTrainingSetupPanel ProfileId="profileId" />
                 <GarminActivityUploadPanel ProfileId="profileId" />
             }
         </section>
@@ -236,7 +237,6 @@
         pendingArchiveOperationId = Guid.NewGuid();
         editingVersion = profile.Version;
         form.DisplayName = profile.DisplayName;
-        form.UnitSystem = profile.UnitSystem;
         form.WeightKilograms = profile.WeightKilograms;
         form.MaximumHeartRateBpm = profile.MaximumHeartRateBpm;
         form.MaximumSpeedKph = profile.MaximumSpeedKph;
@@ -275,7 +275,7 @@
             var request = new ProfileUpsertRequest(
                 pendingSaveOperationId,
                 form.DisplayName,
-                form.UnitSystem,
+                "Metric",
                 form.WeightKilograms,
                 form.MaximumHeartRateBpm,
                 form.MaximumSpeedKph,
@@ -363,7 +363,6 @@
         pendingArchiveOperationId = Guid.NewGuid();
         editingVersion = 0;
         form.DisplayName = string.Empty;
-        form.UnitSystem = "Metric";
         form.WeightKilograms = 70;
         form.MaximumHeartRateBpm = null;
         form.MaximumSpeedKph = null;
@@ -468,7 +467,6 @@
     private sealed class ProfileForm
     {
         public string DisplayName { get; set; } = string.Empty;
-        public string UnitSystem { get; set; } = "Metric";
         public double WeightKilograms { get; set; } = 70;
         public ushort? MaximumHeartRateBpm { get; set; }
         public double? MaximumSpeedKph { get; set; }

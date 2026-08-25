@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Dynastream.Fit;
+using DayOfWeek = System.DayOfWeek;
+using DateTime = System.DateTime;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -138,6 +141,26 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
   }
 
   [Fact]
+  public async Task Profiles_reject_every_non_metric_unit_value()
+  {
+    using HttpClient client = factory.CreateClient();
+    using HttpResponseMessage response = await client.PostAsJsonAsync("/api/planning/profiles", new
+    {
+      operationId = Guid.NewGuid(),
+      displayName = $"Metric only {Guid.NewGuid():N}",
+      unitSystem = "NonMetric",
+      weightKilograms = 70,
+      maximumHeartRateBpm = (int?)null,
+      maximumSpeedKph = (double?)null,
+      heartRateZones = Array.Empty<object>(),
+      expectedVersion = (int?)null,
+    });
+
+    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    Assert.Contains("Metric", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+  }
+
+  [Fact]
   public async Task Workouts_round_trip_full_definition_and_append_immutable_revision()
   {
     using HttpClient client = factory.CreateClient();
@@ -195,7 +218,23 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
     Guid firstRevisionId = revisions[0].GetProperty("revisionId").GetGuid();
     JsonElement revisionById = (await client.GetFromJsonAsync<JsonElement>($"/api/planning/workouts/revisions/{firstRevisionId}"));
     Assert.Equal(workoutId, revisionById.GetProperty("workoutId").GetGuid());
+    byte[] workoutFit = await client.GetByteArrayAsync($"/api/planning/workouts/revisions/{firstRevisionId}/export.fit");
+    using (var fitStream = new MemoryStream(workoutFit))
+    {
+      var decoder = new Decode();
+      Dynastream.Fit.File? fileType = null;
+      var steps = new List<WorkoutStepMesg>();
+      var broadcaster = new MesgBroadcaster();
+      broadcaster.FileIdMesgEvent += (_, args) => fileType = new FileIdMesg(args.mesg).GetType();
+      broadcaster.WorkoutStepMesgEvent += (_, args) => steps.Add(new WorkoutStepMesg(args.mesg));
+      decoder.MesgEvent += broadcaster.OnMesg;
+      decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+      Assert.True(decoder.Read(fitStream));
+      Assert.Equal(Dynastream.Fit.File.Workout, fileType);
+      Assert.Equal(3, steps.Count);
+    }
     Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/planning/workouts/revisions/{Guid.NewGuid()}")).StatusCode);
+    Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/planning/workouts/revisions/{Guid.NewGuid()}/export.fit")).StatusCode);
 
     Guid appendOperation = Guid.NewGuid();
     var appendRequest = new
@@ -343,7 +382,7 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
       previewId = preview.GetProperty("previewId").GetGuid(),
       sourceSha256 = preview.GetProperty("sourceSha256").GetString(),
       profileId = (Guid?)Guid.NewGuid(),
-      qDomyosUnits = "mph",
+      qDomyosUnits = "NonMetric",
     });
     Assert.Equal(HttpStatusCode.Conflict, changedScope.StatusCode);
   }

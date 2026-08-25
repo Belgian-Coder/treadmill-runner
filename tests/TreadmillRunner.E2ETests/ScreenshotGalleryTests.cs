@@ -159,6 +159,8 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Page.GetByRole(AriaRole.Button, new() { Name = "Close schedule manager", Exact = true }).ClickAsync();
       }
 
+      if (fileName == "control")
+        await scenario.SetSimulatedHeartRateAsync(gateway.BaseAddress, 132);
       await Page.SetViewportSizeAsync(440, 956);
       await Page.EvaluateAsync("() => { window.scrollTo(0, 0); document.activeElement?.blur(); }");
       await Page.WaitForTimeoutAsync(100);
@@ -523,6 +525,7 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
       await scenario.SetPhysicalMotionAsync(gateway.BaseAddress, speed, incline);
       await Page.WaitForTimeoutAsync(350);
     }
+    await scenario.SetSimulatedHeartRateAsync(gateway.BaseAddress, 132);
   }
 
   private async Task SelectFeaturedRunAsync()

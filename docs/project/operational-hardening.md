@@ -4,7 +4,7 @@ type: operator-and-developer-guide
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-13
+updated: 2026-08-23
 ---
 
 # Operational hardening and performance acceptance
@@ -61,10 +61,11 @@ Do not commit the hash or passphrase. To roll back this boundary, set `OperatorA
 - The Operations feature is a lazy WebAssembly assembly. History and other read-only routes do not download it.
 - The server-rendered, noninteractive Operations boot shell requests the preferred local QR code immediately, before WebAssembly becomes interactive.
 - The live SignalR closure remains lazy and route-owned by Run and Control.
+- Live-session persistence and fan-out effects run after transition locks from immutable generation/versioned batches. The serialized writer preserves the one-second recovery checkpoint bound, and the browser broadcaster is latest-only so a slow client cannot delay heartbeats, Stop, or serialized hardware commands.
 - Premade and installed plans render phase/week session rows only after the user expands that group. Flat plans render 24 rows at a time.
 - History reads remain server-bounded at 500 rows per request and render 100 cards at a time. Detail charts remain capped at 240 representative samples while export and analytics keep full fidelity.
 - Browser acceptance caps History at 1,000 DOM nodes and Operations at 1,200, requires History readiness within 20 seconds on the test host, and proves the Operations assembly is absent before that route is opened.
-- SQLite acceptance seeds 1,095 daily sessions, requires newest-first 500-row history in under five seconds, verifies detail retrieval, and caps the fixture database at 25 MB.
+- SQLite acceptance seeds 1,095 daily sessions, requires newest-first 500-row history in under five seconds, verifies detail retrieval, and caps the fixture database at 25 MB. Readiness/integrity results are cached; full integrity and backup work runs away from ordinary startup.
 
 ## Evidence and recovery notes
 

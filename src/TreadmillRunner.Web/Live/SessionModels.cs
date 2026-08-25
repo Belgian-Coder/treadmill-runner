@@ -23,8 +23,25 @@ public sealed record StoredWorkoutSessionView(
   IReadOnlyList<JsonElement> Events,
   SessionAnalytics Analytics,
   int TotalSampleCount = 0,
-  IReadOnlyList<SessionHeartRateZoneSnapshot>? HeartRateZones = null)
+  IReadOnlyList<SessionHeartRateZoneSnapshot>? HeartRateZones = null,
+  GarminReconciliationView? Garmin = null)
 {
   public int PersistedSampleCount => Math.Max(TotalSampleCount, Samples.Count);
   public bool SamplesAreDownsampled => PersistedSampleCount > Samples.Count;
 }
+
+public sealed record GarminReconciliationView(
+  Guid Id,
+  string Status,
+  bool ReviewRequired,
+  string OperationPhase,
+  string? RemoteId,
+  string? MatchedRemoteId,
+  string? ReplacementRemoteId,
+  string? MatchEvidence,
+  string? FailureKind,
+  bool CanRetry,
+  DateTimeOffset? RetryAtUtc,
+  string? LastError,
+  DateTimeOffset UpdatedAtUtc,
+  DateTimeOffset? AcknowledgedAtUtc);

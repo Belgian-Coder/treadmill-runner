@@ -41,7 +41,7 @@
     {
         <span class="visually-hidden" data-chart-announcement role="status" aria-live="polite"></span>
         <div class="chart-inspector__data" hidden aria-hidden="true">
-            @foreach (ChartInspectionPoint point in Points)
+            @foreach (ChartInspectionPoint point in EffectivePoints)
             {
                 <i data-chart-point
                    data-x="@point.X.ToString("0.###", CultureInfo.InvariantCulture)"
@@ -56,11 +56,19 @@
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
     [Parameter] public IReadOnlyList<ChartInspectionSeries> Series { get; set; } = [];
     [Parameter] public IReadOnlyList<ChartInspectionPoint> Points { get; set; } = [];
+    [Parameter] public Func<IReadOnlyList<ChartInspectionPoint>>? PointFactory { get; set; }
+    [Parameter] public long ProjectionVersion { get; set; }
     [Parameter] public string AriaLabel { get; set; } = "Interactive chart. Hover, touch and drag, or use Left and Right arrow keys to inspect plotted values.";
 
     private ElementReference root;
     private IJSObjectReference? module;
-    private bool Enabled => Series.Count > 0 && Points.Count > 0;
+    private DotNetObjectReference<ChartInspector>? reference;
+    private IReadOnlyList<ChartInspectionPoint> materializedPoints = [];
+    private long materializedVersion = long.MinValue;
+    private bool visible;
+    private bool observing;
+    private IReadOnlyList<ChartInspectionPoint> EffectivePoints => PointFactory is null ? Points : materializedPoints;
+    private bool Enabled => Series.Count > 0 && (EffectivePoints.Count > 0 || PointFactory is not null);
     private IEnumerable<IGrouping<string, IndexedSeries>> IndexedSeriesByGroup =>
         Series.Select((series, index) => new IndexedSeries(index, series)).GroupBy(static item => item.Series.Group);
 
@@ -68,6 +76,45 @@
     {
         module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./chart-inspector.js");
         await module.InvokeVoidAsync("initialize", root);
+        if (PointFactory is not null && !observing)
+        {
+            reference ??= DotNetObjectReference.Create(this);
+            observing = true;
+            await module.InvokeVoidAsync("observeVisibility", root, reference);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (PointFactory is null)
+        {
+            materializedPoints = [];
+            materializedVersion = long.MinValue;
+            return;
+        }
+        if (visible && materializedVersion != ProjectionVersion)
+        {
+            materializedPoints = PointFactory();
+            materializedVersion = ProjectionVersion;
+        }
+    }
+
+    [JSInvokable]
+    public Task SetChartVisibility(bool isVisible)
+    {
+        if (visible == isVisible) return Task.CompletedTask;
+        visible = isVisible;
+        if (visible)
+        {
+            materializedPoints = PointFactory?.Invoke() ?? [];
+            materializedVersion = ProjectionVersion;
+        }
+        else
+        {
+            materializedPoints = [];
+            materializedVersion = long.MinValue;
+        }
+        return InvokeAsync(StateHasChanged);
     }
 
     public async ValueTask DisposeAsync()
@@ -82,6 +129,8 @@
         {
             // The browser can disconnect while navigation tears down the component.
         }
+        reference?.Dispose();
+        reference = null;
     }
 
     private static string FormatValues(IReadOnlyList<double?> values) => string.Join('|', values.Select(static value =>

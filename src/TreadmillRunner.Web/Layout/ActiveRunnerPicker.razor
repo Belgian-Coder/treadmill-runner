@@ -34,7 +34,7 @@
     private string ActiveName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "Choose runner";
     private string ActiveInitial => ActiveName == "Choose runner" ? "?" : ActiveName[..1].ToUpperInvariant();
     private string ActiveRunnerLabel => ActiveName == "Choose runner"
-        ? "Choose active runner"
+        ? "Choose runner"
         : $"Active runner: {ActiveName}. Choose runner";
 
     protected override void OnInitialized() => ActiveProfile.Changed += ActiveProfileChanged;

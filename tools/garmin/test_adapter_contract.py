@@ -81,6 +81,55 @@ class ImportDispositionTests(unittest.TestCase):
         self.assertEqual(155, payload["candidates"][0]["maximumHeartRate"])
         self.assertEqual(20, len(payload["candidates"][0]["heartRateSamples"]))
 
+    @patch("garmin_activity_adapter.emit")
+    def test_watch_search_pages_until_the_local_date_window(self, emit) -> None:
+        class TokenClient:
+            def dumps(self):
+                return "x" * 128
+
+        class FakeGarmin:
+            calls = []
+
+            def __init__(self, retry_attempts=0):
+                self.client = TokenClient()
+
+            def login(self, token_store):
+                self.token_store = token_store
+
+            def get_activities(self, start, limit):
+                self.calls.append((start, limit))
+                if start == 0:
+                    return [
+                        {
+                            "activityId": index,
+                            "activityType": {"typeKey": "cycling"},
+                            "startTimeGMT": f"2026-08-05T08:{index:02d}:00",
+                            "duration": 1200,
+                            "distance": 2500,
+                        }
+                        for index in range(20)
+                    ]
+                return [{
+                    "activityId": 999,
+                    "activityType": {"typeKey": "treadmill_running"},
+                    "startTimeGMT": "2026-08-05T08:00:20",
+                    "duration": 1200,
+                    "distance": 2500,
+                    "averageHR": 130,
+                    "maxHR": 155,
+                }]
+
+            def get_activity_details(self, activity_id, maxchart, maxpoly):
+                return {}
+
+        module = SimpleNamespace(Garmin=FakeGarmin, parse_activity_detail_metrics=lambda details: [])
+        with patch.dict(sys.modules, {"garminconnect": module}):
+            search({"tokenStore": "t" * 128, "startedAtUtc": "2026-08-05T08:00:00Z"})
+
+        payload = emit.call_args.args[0]
+        self.assertEqual("999", payload["candidates"][0]["remoteId"])
+        self.assertEqual([(0, 20), (20, 20)], FakeGarmin.calls)
+
 
 if __name__ == "__main__":
     unittest.main()

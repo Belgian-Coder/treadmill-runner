@@ -317,43 +317,59 @@ public sealed class GarminStore(IDbContextFactory<TreadmillRunnerDbContext> cont
     CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-    GarminSyncItemEntity[] expiredLeases = (await context.GarminSyncItems
-      .Where(item => item.Status == "InFlight")
-      .ToArrayAsync(cancellationToken))
-      .Where(item => item.LeaseExpiresAtUtc <= nowUtc)
-      .ToArray();
-    foreach (GarminSyncItemEntity expired in expiredLeases)
-    {
-      expired.Status = "Failed";
-      expired.AvailableAtUtc = nowUtc;
-      expired.LeaseExpiresAtUtc = null;
-    }
+    await context.Database.ExecuteSqlInterpolatedAsync($"""
+      UPDATE GarminSyncItems
+      SET Status = 'Failed',
+          AvailableAtUtc = {nowUtc},
+          LeaseExpiresAtUtc = NULL,
+          UpdatedAtUtc = {nowUtc}
+      WHERE Status = 'InFlight'
+        AND LeaseExpiresAtUtc IS NOT NULL
+        AND julianday(LeaseExpiresAtUtc) <= julianday({nowUtc})
+      """, cancellationToken);
 
-    GarminSyncItemEntity? item = (await context.GarminSyncItems
-      .Where(candidate => (candidate.Status == "Pending" || candidate.Status == "Failed") &&
-        candidate.AttemptCount < maximumAttempts)
-      .ToArrayAsync(cancellationToken))
-      .Where(candidate => candidate.AvailableAtUtc <= nowUtc)
-      .OrderBy(candidate => candidate.AvailableAtUtc)
-      .ThenBy(candidate => candidate.CreatedAtUtc)
-      .FirstOrDefault();
-    if (item is null)
+    for (var contentionAttempt = 0; contentionAttempt < 3; contentionAttempt++)
     {
-      await transaction.CommitAsync(cancellationToken);
-      return null;
-    }
+      GarminSyncItemEntity? item = await context.GarminSyncItems
+        .FromSqlInterpolated($"""
+          SELECT *
+          FROM GarminSyncItems
+          WHERE (Status = 'Pending' OR Status = 'Failed')
+            AND AttemptCount < {maximumAttempts}
+            AND julianday(AvailableAtUtc) <= julianday({nowUtc})
+          ORDER BY julianday(AvailableAtUtc), julianday(CreatedAtUtc), Id
+          LIMIT 1
+          """)
+        .AsNoTracking()
+        .SingleOrDefaultAsync(cancellationToken);
+      if (item is null) return null;
 
-    item.Status = "InFlight";
-    item.AttemptCount++;
-    item.LeaseExpiresAtUtc = nowUtc + leaseDuration;
-    item.UpdatedAtUtc = nowUtc;
-    GarminAccountLinkEntity link = await context.GarminAccountLinks.SingleAsync(candidate => candidate.Id == item.GarminAccountLinkId, cancellationToken);
-    link.LastSyncAttemptAtUtc = nowUtc;
-    link.UpdatedAtUtc = nowUtc;
-    await context.SaveChangesAsync(cancellationToken);
-    await transaction.CommitAsync(cancellationToken);
-    return Map(item);
+      int nextAttempt = item.AttemptCount + 1;
+      DateTimeOffset leaseExpiresAtUtc = nowUtc + leaseDuration;
+      int changed = await context.Database.ExecuteSqlInterpolatedAsync($"""
+        UPDATE GarminSyncItems
+        SET Status = 'InFlight',
+            AttemptCount = {nextAttempt},
+            LeaseExpiresAtUtc = {leaseExpiresAtUtc},
+            UpdatedAtUtc = {nowUtc}
+        WHERE Id = {item.Id}
+          AND (Status = 'Pending' OR Status = 'Failed')
+          AND AttemptCount = {item.AttemptCount}
+        """, cancellationToken);
+      if (changed == 0) continue;
+
+      await context.Database.ExecuteSqlInterpolatedAsync($"""
+        UPDATE GarminAccountLinks
+        SET LastSyncAttemptAtUtc = {nowUtc}, UpdatedAtUtc = {nowUtc}
+        WHERE Id = {item.GarminAccountLinkId}
+        """, cancellationToken);
+      item.Status = "InFlight";
+      item.AttemptCount = nextAttempt;
+      item.LeaseExpiresAtUtc = leaseExpiresAtUtc;
+      item.UpdatedAtUtc = nowUtc;
+      return Map(item);
+    }
+    return null;
   }
 
   public async Task MarkSyncedAsync(Guid itemId, string? remoteId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)

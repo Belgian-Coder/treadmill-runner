@@ -102,6 +102,11 @@ public sealed record StoredWorkoutSessionDisplay(
     StoredWorkoutSession Session,
     int TotalSampleCount);
 
+public sealed record SessionHistoryDetails(
+    StoredWorkoutSessionDisplay Display,
+    SessionAnalytics Analytics,
+    SessionSampleStatistics Statistics);
+
 public static class SessionDisplayLimits
 {
   public const int MaximumSamples = 240;
@@ -177,6 +182,16 @@ public interface ISessionStore
     SessionRecoveryCheckpoint checkpoint,
     CancellationToken cancellationToken = default);
 
+  /// <summary>
+  /// Appends a contiguous batch of samples and advances the recovery checkpoint
+  /// in one provider transaction. The checkpoint must represent the last sample
+  /// in the batch; callers use this as the bounded crash-loss point.
+  /// </summary>
+  Task AppendSamplesAndRecoveryCheckpointAsync(
+    IReadOnlyList<SessionSample> samples,
+    SessionRecoveryCheckpoint checkpoint,
+    CancellationToken cancellationToken = default);
+
   Task AppendEventAsync(
     Guid sessionId,
     SessionEvent sessionEvent,
@@ -201,6 +216,11 @@ public interface ISessionStore
 
   Task<SessionSampleStatistics?> CalculateSampleStatisticsAsync(
     Guid sessionId,
+    CancellationToken cancellationToken = default);
+
+  Task<SessionHistoryDetails?> GetHistoryDetailsAsync(
+    Guid sessionId,
+    IReadOnlyList<HeartRateZone>? heartRateZones = null,
     CancellationToken cancellationToken = default);
 
   Task<IReadOnlyList<SessionSummary>> ListSummariesAsync(
@@ -228,5 +248,9 @@ public interface ISessionStore
     CancellationToken cancellationToken = default);
 
   Task<RecoverableWorkoutSession?> FindRecoverableAsync(
+    CancellationToken cancellationToken = default);
+
+  Task<int> ReconcileActiveSessionsAsync(
+    DateTimeOffset reconciledAtUtc,
     CancellationToken cancellationToken = default);
 }

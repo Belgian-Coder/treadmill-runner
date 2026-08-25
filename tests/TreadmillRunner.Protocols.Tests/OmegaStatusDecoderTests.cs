@@ -11,6 +11,9 @@ public sealed class OmegaStatusDecoderTests
     frame[0] = 0x55;
     frame[1] = 0xAA;
     frame[5] = 0x17;
+    frame[6] = 30;
+    frame[^2] = 0x0D;
+    frame[^1] = 0x0A;
     frame[24] = 0x6D;
     frame[25] = 0x02; // 6.21 mph
     frame[30] = 53;   // 5.3%
@@ -32,5 +35,23 @@ public sealed class OmegaStatusDecoderTests
     wrongCommand[1] = 0xAA;
     wrongCommand[5] = 0x16;
     Assert.False(OmegaStatusDecoder.TryDecode(wrongCommand, out _));
+  }
+
+  [Fact]
+  public void Rejects_status_frame_with_mismatched_declared_length_or_terminator()
+  {
+    var frame = new byte[40];
+    frame[0] = 0x55;
+    frame[1] = 0xAA;
+    frame[5] = 0x17;
+    frame[6] = 30;
+    frame[^2] = 0x0D;
+    frame[^1] = 0x00;
+
+    Assert.False(OmegaStatusDecoder.TryDecode(frame, out _));
+
+    frame[^1] = 0x0A;
+    frame[6] = 29;
+    Assert.False(OmegaStatusDecoder.TryDecode(frame, out _));
   }
 }

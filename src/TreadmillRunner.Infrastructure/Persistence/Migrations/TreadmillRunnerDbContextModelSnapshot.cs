@@ -619,13 +619,15 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Status", "AvailableAtUtc");
 
+                    b.HasIndex("Status", "LeaseExpiresAtUtc");
+
                     b.ToTable("GarminActivityUploadJobs", null, t =>
                         {
                             t.HasCheckConstraint("CK_GarminActivityUploadJobs_Attempts", "\"AttemptCount\" >= 0 AND \"AttemptCount\" <= 3");
 
                             t.HasCheckConstraint("CK_GarminActivityUploadJobs_Key", "length(\"IdempotencyKey\") = 64");
 
-                            t.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin')");
+                            t.HasCheckConstraint("CK_GarminActivityUploadJobs_Status", "\"Status\" IN ('Pending', 'InFlight', 'Confirmed', 'Failed', 'Unknown', 'Dismissed', 'FoundInGarmin', 'ReviewRequired')");
                         });
                 });
 
@@ -742,6 +744,8 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("Status", "AvailableAtUtc");
+
+                    b.HasIndex("Status", "LeaseExpiresAtUtc");
 
                     b.HasIndex("UserProfileId", "Kind", "SourceId");
 
@@ -1067,6 +1071,9 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ClientOperationId")
                         .IsUnique();
+
+                    b.HasIndex("CreatedAtUtc")
+                        .HasDatabaseName("IX_OperationReceipts_CreatedAtUtc");
 
                     b.ToTable("OperationReceipts", (string)null);
                 });
@@ -1551,6 +1558,8 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_UserProfiles_MaximumSpeed", "\"MaximumSpeedKph\" IS NULL OR \"MaximumSpeedKph\" > 0");
 
+                            t.HasCheckConstraint("CK_UserProfiles_UnitSystem", "\"UnitSystem\" = 'Metric'");
+
                             t.HasCheckConstraint("CK_UserProfiles_Version", "\"Version\" > 0");
 
                             t.HasCheckConstraint("CK_UserProfiles_Weight", "\"WeightKilograms\" > 0");
@@ -1915,6 +1924,11 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ActiveSessionKey")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("INTEGER")
+                        .HasComputedColumnSql("CASE WHEN \"State\" IN ('ArmedWaitingForPhysicalStart', 'Running', 'PausedWaitingForPhysicalResume') THEN 1 ELSE NULL END", false);
+
                     b.Property<DateTimeOffset>("ArmedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -2010,6 +2024,10 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ActiveSessionKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_WorkoutSessions_ActiveSession");
+
                     b.HasIndex("State");
 
                     b.HasIndex("WorkoutProgramItemId");
@@ -2026,6 +2044,10 @@ namespace TreadmillRunner.Infrastructure.Persistence.Migrations
                     b.HasIndex("WorkoutProgramRunId", "WorkoutProgramItemId")
                         .IsUnique()
                         .HasFilter("\"State\" = 'Completed' AND \"WorkoutProgramRunId\" IS NOT NULL");
+
+                    b.HasIndex("State", "SessionOrigin", "RecoveryCheckpointUpdatedAtUtc")
+                        .HasDatabaseName("IX_WorkoutSessions_RecoveryCandidates")
+                        .HasFilter("\"State\" = 'Running' AND \"SessionOrigin\" = 'Hardware' AND \"RecoveryCheckpointJson\" IS NOT NULL");
 
                     b.HasIndex("UserProfileId", "SessionOrigin", "EndedAtUtc");
 

@@ -496,7 +496,9 @@
     private bool disposed;
     private ControlLease? lease => Gateway.Current.Lease;
     private string holderId => Gateway.HolderId;
-    private string connectionStatus => Gateway.Current.ConnectionPhase switch
+    private string connectionStatus => !Gateway.IsStarted
+        ? "Gateway ready on demand"
+        : Gateway.Current.ConnectionPhase switch
     {
         GatewayClientConnectionPhase.Connected => "Gateway ready",
         GatewayClientConnectionPhase.Starting => "Connecting to gateway",
@@ -610,7 +612,7 @@
     }
     private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
     private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected && Gateway.Current.ControlsBlockedReason is null;
-    private bool CanTakeControl => ClientReady && preflight?.IsReady == true;
+    private bool CanTakeControl => Runtime.IsConnected && !Runtime.UpdateRequired && preflight?.IsReady == true;
     private static bool CanRecord(PreflightSnapshot value) => value.UserProfileId != Guid.Empty && value.WorkoutRevisionId != Guid.Empty;
     private static bool CanUseManualControl(PreflightSnapshot value) => value.IsReady && value.CanStopRemotely && (value.CanSetSpeedRemotely || value.CanSetInclineRemotely);
     private static bool CanUsePlannedAutomation(PreflightSnapshot value) => value.IsReady && value.CanSetSpeedRemotely && value.CanSetInclineRemotely && value.TargetEvaluations.All(static target => target.Disposition != WorkoutTargetDisposition.Rejected);
@@ -660,17 +662,14 @@
         ActiveProfile.Changed += ActiveProfileChanged;
         try
         {
-            await Gateway.EnsureStartedAsync();
-            await ReloadRunSelectionDataAsync();
-            session = Gateway.Current.Session;
-            if (session is not null)
+            Task reloadTask = ReloadRunSelectionDataAsync();
+            Task<ActiveSessionSnapshot?> activeSessionTask = LoadActiveSessionAsync();
+            await Task.WhenAll(reloadTask, activeSessionTask);
+            session = await activeSessionTask;
+            if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
             {
-                AppendLiveChartPoint(session);
-                if (session.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
-                {
-                    Navigation.NavigateTo("/control", replace: true);
-                    return;
-                }
+                Navigation.NavigateTo("/control", replace: true);
+                return;
             }
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
@@ -679,26 +678,60 @@
         }
     }
 
+    private async Task<ActiveSessionSnapshot?> LoadActiveSessionAsync()
+    {
+        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+    }
+
     private async Task ReloadRunSelectionDataAsync()
     {
+        // These first-screen reads are independent. Start them together, then await and
+        // commit in the original order below so partial responses never affect selection.
+        Task<TreadmillMaintenanceSnapshot?> maintenanceTask = LoadMaintenanceAsync();
+        Task<ProfileView[]?> profilesTask = Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles");
+        Task<WorkoutSummaryView[]?> workoutsTask = Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts");
+        Task<QuickStartView?> quickStartTask = Http.GetFromJsonAsync<QuickStartView>("api/local-first/quick-start");
+        Task<Guid?> activeProfileTask = ActiveProfile.GetAsync().AsTask();
+
+        // Ensure all started requests settle before replaying the original await order. This
+        // observes sibling failures if one request fails, while the individual awaits below
+        // preserve the previous exception type and maintenance JSON fallback.
         try
         {
-            using HttpResponseMessage maintenanceResponse = await Http.GetAsync("api/devices/treadmill/maintenance");
-            maintenance = maintenanceResponse.StatusCode == System.Net.HttpStatusCode.NoContent
-                ? null
-                : await maintenanceResponse.Content.ReadFromJsonAsync<TreadmillMaintenanceSnapshot>();
+            await Task.WhenAll(maintenanceTask, profilesTask, workoutsTask, quickStartTask, activeProfileTask);
         }
-        catch (JsonException) { maintenance = null; }
-        profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? Array.Empty<ProfileView>();
-        workouts = await Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts") ?? Array.Empty<WorkoutSummaryView>();
-        quickStart = await Http.GetFromJsonAsync<QuickStartView>("api/local-first/quick-start");
-        selectedProfileId = await ActiveProfile.GetAsync();
+        catch (Exception)
+        {
+        }
+
+        try
+        {
+            maintenance = await maintenanceTask;
+        }
+        catch (JsonException)
+        {
+            maintenance = null;
+        }
+        profiles = await profilesTask ?? Array.Empty<ProfileView>();
+        workouts = await workoutsTask ?? Array.Empty<WorkoutSummaryView>();
+        quickStart = await quickStartTask;
+        selectedProfileId = await activeProfileTask;
         await ApplyProfileSelectionAsync(selectedProfileId, announce: false);
+    }
+
+    private async Task<TreadmillMaintenanceSnapshot?> LoadMaintenanceAsync()
+    {
+        using HttpResponseMessage maintenanceResponse = await Http.GetAsync("api/devices/treadmill/maintenance");
+        return maintenanceResponse.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await maintenanceResponse.Content.ReadFromJsonAsync<TreadmillMaintenanceSnapshot>();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await Gateway.EnsureStartedAsync();
         if (openStopDecisionPending && isStopDecisionOpen)
         {
             openStopDecisionPending = false;
@@ -1619,9 +1652,15 @@
             using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new { operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version });
             if (!response.IsSuccessStatusCode) { actionStatus = "The session action was rejected."; return; }
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            Guid completedSessionId = session?.SessionId ?? Guid.Empty;
             await KeepSessionPausedAsync();
             actionStatus = successMessage;
-            if (navigateHome) Navigation.NavigateTo("/", replace: true);
+            if (navigateHome)
+            {
+                Navigation.NavigateTo(
+                    completedSessionId == Guid.Empty ? "/history" : $"/history/{completedSessionId:D}",
+                    replace: true);
+            }
         }
         finally { sessionActionBusy = false; }
     }

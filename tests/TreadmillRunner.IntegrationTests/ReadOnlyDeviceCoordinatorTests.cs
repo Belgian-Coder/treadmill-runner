@@ -268,6 +268,285 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Marks_heart_rate_contact_loss_unavailable_without_publishing_a_pulse()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(HeartRate(), now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { HeartRateNotificationValue = [0x04, 142] };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: true);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (true)
+      {
+        DeviceTelemetrySnapshot current = coordinator.Current;
+        if (current.HeartRateSources is { Count: 1 } sources &&
+            sources[0].Quality == HeartRateSignalQuality.ContactLost) break;
+        await Task.Delay(25, timeout.Token);
+      }
+
+      DeviceTelemetrySnapshot snapshot = coordinator.Current;
+      Assert.Null(snapshot.HeartRateBpm);
+      Assert.Equal(HeartRateSignalQuality.ContactLost, snapshot.SelectedHeartRateQuality);
+      Assert.Equal(HeartRateContactState.NotDetected, snapshot.SelectedHeartRateContactState);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData(29)]
+  [InlineData(251)]
+  public async Task Invalid_heart_rate_values_are_observed_but_never_published(int beatsPerMinute)
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(HeartRate(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { HeartRateNotificationValue = [0x00, checked((byte)beatsPerMinute)] };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: true);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.HeartRateSources is not { Count: 1 } sources ||
+             sources[0].Quality != HeartRateSignalQuality.Invalid)
+        await Task.Delay(25, timeout.Token);
+
+      DeviceTelemetrySnapshot snapshot = coordinator.Current;
+      Assert.Null(snapshot.HeartRateBpm);
+      Assert.Null(Assert.Single(snapshot.HeartRateSources!).BeatsPerMinute);
+      Assert.Equal(HeartRateSignalQuality.Invalid, snapshot.SelectedHeartRateQuality);
+      Assert.Equal(HeartRateContactState.NotSupported, snapshot.SelectedHeartRateContactState);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Stale_heart_rate_observation_keeps_diagnostics_but_removes_the_pulse()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(HeartRate(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      HeartRateNotificationValue = [0x00, 142],
+      HeartRateObservedAt = now.AddSeconds(-10),
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: true);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.HeartRateSources is not { Count: 1 } sources ||
+             sources[0].ObservedAt is null)
+        await Task.Delay(25, timeout.Token);
+
+      DeviceTelemetrySnapshot snapshot = coordinator.Current;
+      HeartRateSourceSnapshot source = Assert.Single(snapshot.HeartRateSources!);
+      Assert.Equal(HeartRateSignalQuality.Valid, source.Quality);
+      Assert.NotNull(source.ObservedAt);
+      Assert.Null(source.BeatsPerMinute);
+      Assert.Null(snapshot.HeartRateBpm);
+      Assert.Null(snapshot.SelectedHeartRateEnrollmentId);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Empty_ftms_packet_does_not_publish_ready_or_synthesize_motion_telemetry()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(Treadmill(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillNotificationValues = [[0x01, 0x00], [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00]],
+      ReleaseAdditionalTreadmillNotifications = new(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.NotEqual(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+
+      transport.ReleaseAdditionalTreadmillNotifications.SetResult();
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+      Assert.Equal(6, coordinator.Current.TreadmillTelemetry?.SpeedKph);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Omitted_incline_does_not_refresh_its_observation_time()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(Treadmill(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillNotificationValues = [[0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00], [0x00, 0x00, 0xBC, 0x02]],
+      ReleaseAdditionalTreadmillNotifications = new(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      TreadmillTelemetry first = Assert.IsType<TreadmillTelemetry>(coordinator.Current.TreadmillTelemetry);
+      transport.ReleaseAdditionalTreadmillNotifications.SetResult();
+      await transport.AllTreadmillNotificationsConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      TreadmillTelemetry second = Assert.IsType<TreadmillTelemetry>(coordinator.Current.TreadmillTelemetry);
+
+      Assert.Equal(7, second.SpeedKph);
+      Assert.True(second.SpeedObservedAt > first.SpeedObservedAt);
+      Assert.Equal(first.InclineObservedAt, second.InclineObservedAt);
+      Assert.Equal(first.InclinePercent, second.InclinePercent);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Implausible_ftms_speed_faults_the_device_instead_of_clamping()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(Treadmill(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { TreadmillNotificationValues = [[0x00, 0x00, 0xFF, 0xFF]] };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.Equal(DeviceConnectionState.Faulted, coordinator.Current.Treadmill.State);
+      Assert.Contains("implausible", coordinator.Current.Treadmill.Fault, StringComparison.OrdinalIgnoreCase);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Implausible_ftms_sample_clears_previous_telemetry_and_keeps_device_faulted()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    await store.EnrollAsync(Treadmill(), now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillNotificationValues =
+      [
+        [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00],
+        [0x00, 0x00, 0xFF, 0xFF],
+      ],
+      ReleaseAdditionalTreadmillNotifications = new(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.Equal(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+      Assert.NotNull(coordinator.Current.TreadmillTelemetry);
+
+      transport.ReleaseAdditionalTreadmillNotifications.SetResult();
+      await transport.AllTreadmillNotificationsConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.Equal(DeviceConnectionState.Faulted, coordinator.Current.Treadmill.State);
+      Assert.Contains("implausible", coordinator.Current.Treadmill.Fault, StringComparison.OrdinalIgnoreCase);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Shutdown_does_not_wait_for_blocked_evidence_or_reliability_persistence()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -376,6 +655,12 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     public DateTimeOffset? FirstHeartRateNotificationAt { get; private set; }
     public DateTimeOffset? FirstBatterySubscriptionAt { get; private set; }
     public bool DisconnectAfterFirstTreadmillNotification { get; set; }
+    public byte[] HeartRateNotificationValue { get; set; } = [0x00, 142];
+    public DateTimeOffset? HeartRateObservedAt { get; set; }
+    public IReadOnlyList<byte[]> TreadmillNotificationValues { get; set; } = [[0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00]];
+    public TaskCompletionSource? ReleaseAdditionalTreadmillNotifications { get; set; }
+    public TaskCompletionSource FirstTreadmillNotificationConsumed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource AllTreadmillNotificationsConsumed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _treadmillFailureObserved;
     public bool TreadmillFailureObserved => Volatile.Read(ref _treadmillFailureObserved) != 0;
 
@@ -453,12 +738,30 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           owner.FirstHeartRateNotificationAt ??= DateTimeOffset.UtcNow;
         if (characteristicUuid == BatteryLevel)
           owner.FirstBatterySubscriptionAt ??= DateTimeOffset.UtcNow;
-        byte[] value = characteristicUuid == BatteryLevel
-          ? [86]
-          : characteristicUuid == TreadmillData
-          ? [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00]
-          : [0x00, DeviceId.Contains("GARMIN", StringComparison.Ordinal) ? (byte)135 : (byte)142];
-        yield return new BleNotification(serviceUuid, characteristicUuid, value, DateTimeOffset.UtcNow);
+        if (characteristicUuid == TreadmillData)
+        {
+          for (int index = 0; index < owner.TreadmillNotificationValues.Count; index++)
+          {
+            yield return new BleNotification(serviceUuid, characteristicUuid, owner.TreadmillNotificationValues[index], DateTimeOffset.UtcNow);
+            if (index == 0) owner.FirstTreadmillNotificationConsumed.TrySetResult();
+            if (characteristicUuid == TreadmillData && owner.DisconnectAfterFirstTreadmillNotification)
+            {
+              Volatile.Write(ref owner._treadmillFailureObserved, 1);
+              throw new WindowsBleDisconnectedException();
+            }
+            if (index == 0 && owner.ReleaseAdditionalTreadmillNotifications is not null)
+              await owner.ReleaseAdditionalTreadmillNotifications.Task.WaitAsync(cancellationToken);
+          }
+          owner.AllTreadmillNotificationsConsumed.TrySetResult();
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          yield break;
+        }
+
+        byte[] value = characteristicUuid == BatteryLevel ? [86] : owner.HeartRateNotificationValue;
+        DateTimeOffset observedAt = characteristicUuid == HeartRateMeasurement
+          ? owner.HeartRateObservedAt ?? DateTimeOffset.UtcNow
+          : DateTimeOffset.UtcNow;
+        yield return new BleNotification(serviceUuid, characteristicUuid, value, observedAt);
         if (characteristicUuid == TreadmillData && owner.DisconnectAfterFirstTreadmillNotification)
         {
           Volatile.Write(ref owner._treadmillFailureObserved, 1);

@@ -3,7 +3,6 @@ namespace TreadmillRunner.Core.Profiles;
 public enum UnitSystem
 {
   Metric,
-  Imperial,
 }
 
 public sealed record HeartRateControllerSettings
@@ -86,6 +85,10 @@ public sealed class UserProfile
 
     ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
     ArgumentNullException.ThrowIfNull(heartRateZones);
+    if (unitSystem != UnitSystem.Metric)
+    {
+      throw new ArgumentOutOfRangeException(nameof(unitSystem), "Profiles use Metric units.");
+    }
     ValidatePositiveFinite(weightKilograms, nameof(weightKilograms));
 
     if (maximumHeartRateBpm is 0 or > 250)

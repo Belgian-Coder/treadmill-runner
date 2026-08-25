@@ -52,8 +52,30 @@ public sealed class DatabaseIntegrityCoordinator(
 
   public override async Task StartAsync(CancellationToken cancellationToken)
   {
-    await CheckNowAsync(cancellationToken);
+    await RunStartupReadinessCheckAsync(cancellationToken);
     await base.StartAsync(cancellationToken);
+  }
+
+  private async Task RunStartupReadinessCheckAsync(CancellationToken cancellationToken)
+  {
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    DatabaseIntegrityCheckResult quick = await checker.CheckAsync(
+      DatabaseIntegrityCheckLevel.Quick,
+      cancellationToken);
+    DatabaseIntegrityStatus previous = statuses.Current;
+    DatabaseIntegrityStatus status = previous with
+    {
+      State = quick.IsHealthy ? DatabaseIntegrityState.Healthy : DatabaseIntegrityState.Unhealthy,
+      Message = quick.IsHealthy
+        ? "The database passed the startup quick integrity check; full maintenance is deferred."
+        : "The database failed the startup quick integrity check.",
+      UpdatedAtUtc = now,
+      LastQuickCheckAtUtc = quick.CompletedAtUtc,
+      NextCheckAtUtc = now + _interval,
+      RecoveryRequired = !quick.IsHealthy,
+      Issues = quick.Issues,
+    };
+    await statuses.SaveAsync(status, cancellationToken);
   }
 
   public async Task<DatabaseIntegrityStatus> CheckNowAsync(

@@ -4,7 +4,7 @@ type: platform-guidance
 status: reviewed
 owner: project
 audience: user-and-developer
-updated: 2026-08-11
+updated: 2026-08-23
 ---
 
 # Offline and iPhone/iPad behavior
@@ -20,6 +20,8 @@ Direct Web Bluetooth remains rejected: Safari/iOS support and background lifecyc
 ## Home Screen installation and fresh-client recovery
 
 On the household Wi-Fi, open the HTTPS URL shown under Operations → Open on another device in Safari. Tap Share, choose **Add to Home Screen**, and confirm. Chrome or Edge can use **Install app** or the browser-menu install command. The manifest requests standalone display, publishes Run/Calendar/History/Operations shortcuts, and asks supporting Chromium browsers to navigate an existing installed window. Unsupported launch-handler and shortcut behavior degrades to normal launching.
+
+The Apple touch icon is served as a complete opaque 180×180 PNG from `/apple-touch-icon-180.png`, using the canonical TreadmillRunner artwork. Safari may retain an older Home Screen raster after an asset update; remove the old shortcut and add it again (or clear the site data) when checking a refreshed icon. This source change does not claim physical iPhone/Safari acceptance or installation.
 
 On HTTPS or loopback, the early browser bridge registers a root-scoped service worker. Its private versioned cache contains exactly `/offline.html`. Only top-level navigation is intercepted, using the current network response first; network failures and gateway-proxy 502/503/504 responses show the safety document. The worker does not force activation or claim an already open client.
 

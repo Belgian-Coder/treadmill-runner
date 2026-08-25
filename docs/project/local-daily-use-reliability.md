@@ -4,7 +4,7 @@ type: runbook
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-06
+updated: 2026-08-23
 ---
 
 # Local reliability, access, and generated workout sets
@@ -35,7 +35,7 @@ The importer accepts manifest format 2, a v4 tool version, compatibility `treadm
 
 ## Bluetooth reliability and battery
 
-Enabled devices reconnect automatically with bounded 1, 2, 4, 8, then 10 second delays. A native disconnect, failed notification stream, GATT timeout, or 30 seconds without valid telemetry opens one outage incident; further failed attempts increment it. Valid telemetry closes the incident. A stable 30-second stream resets the backoff. Reconnect always moves to a new generation and never replays a treadmill command.
+Enabled devices reconnect automatically during an active session with 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. A matching advertisement and manual **Retry** bypass the delay. A native disconnect, failed notification stream, GATT timeout, or 30 seconds without valid telemetry opens one outage incident; further failed attempts increment it. Valid telemetry closes the incident. A stable 30-second stream resets the backoff. Reconnect always moves to a new generation and never replays a treadmill command. Critical reliability evidence is non-dropping; disposable status churn is coalesced separately.
 
 Open **Devices → Bluetooth reliability report** for sanitized 1, 7, 30, or 90-day results. Reports contain the enrollment label, state, outage/recovery timing, attempt count, failure category, and sanitized fault—not the raw Windows BLE identifier or identity fingerprint. Recovered incidents older than 90 days are pruned. The same seven-day summary is included in the bounded diagnostic ZIP.
 
@@ -43,7 +43,7 @@ For HR sensors exposing Bluetooth Battery Service `180F` / Battery Level `2A19`,
 
 ## Database health and automatic maintenance
 
-The gateway awaits an integrity pass before starting background writers, then repeats it approximately daily while idle. **Operations → Database health** shows the last full check, verified backup, next check, and unresolved issues. **Check now** requests the same idle-only flow.
+The gateway caches database readiness and integrity results for the configured interval; full integrity and backup work runs off the ordinary startup path and then repeats approximately daily while idle. **Operations → Database health** shows the last full check, verified backup, next check, and unresolved issues. **Check now** requests the same idle-only flow. A stale or unavailable readiness result is surfaced explicitly and never treated as a healthy database.
 
 The flow runs bounded SQLite quick/full checks plus application semantic checks, performs a passive WAL checkpoint and `PRAGMA optimize`, removes only stale TreadmillRunner integrity-temp files, and promotes a SHA-256-verified last-known-good online backup. Three backups are retained by default (configurable from 2–10). Open **Backup and diagnostics** to download either a fresh full backup or the latest verified recovery backup. If corruption remains, readiness and Operations show recovery required; use the preview-before-restore flow. The app never deletes data or substitutes a backup automatically.
 

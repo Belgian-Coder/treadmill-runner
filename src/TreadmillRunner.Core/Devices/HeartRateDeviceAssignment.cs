@@ -20,6 +20,22 @@ public sealed record HeartRateDeviceAssignment(
   }
 }
 
+public enum HeartRateSignalQuality
+{
+  Unavailable,
+  Valid,
+  ContactLost,
+  Invalid,
+}
+
+public enum HeartRateContactState
+{
+  Unknown,
+  NotSupported,
+  Detected,
+  NotDetected,
+}
+
 public sealed record HeartRateSourceSnapshot(
   Guid EnrollmentId,
   string DisplayName,
@@ -31,12 +47,16 @@ public sealed record HeartRateSourceSnapshot(
   DateTimeOffset? ObservedAt,
   string? Fault,
   byte? BatteryPercent = null,
-  DateTimeOffset? BatteryObservedAt = null)
+  DateTimeOffset? BatteryObservedAt = null,
+  HeartRateSignalQuality Quality = HeartRateSignalQuality.Unavailable,
+  HeartRateContactState ContactState = HeartRateContactState.Unknown)
 {
   public bool IsFresh(DateTimeOffset now, TimeSpan freshnessLimit) =>
     State == DeviceConnectionState.Ready &&
-    BeatsPerMinute is not null &&
+    Quality == HeartRateSignalQuality.Valid &&
+    BeatsPerMinute is >= 30 and <= 250 &&
     ObservedAt is not null &&
+    now - ObservedAt.Value >= TimeSpan.Zero &&
     now - ObservedAt.Value <= freshnessLimit;
 }
 

@@ -3,6 +3,8 @@ namespace TreadmillRunner.Protocols.Omega;
 public enum OmegaFrameDiagnosticCode
 {
   TruncatedFrame,
+  LengthOutOfRange,
+  InvalidTerminator,
 }
 
 public sealed record OmegaFrameDiagnostic(
@@ -12,6 +14,10 @@ public sealed record OmegaFrameDiagnostic(
 
 public sealed class OmegaFrameReassembler
 {
+  // The status stream has no negotiated maximum. Keep a generous hard bound
+  // so a corrupt declared length cannot retain unbounded bytes in memory.
+  internal const int MaximumPayloadLength = 4096;
+  private const int HeaderLength = 10;
   private readonly List<byte> _buffer = [];
   private readonly List<OmegaFrameDiagnostic> _diagnostics = [];
   private int? _expectedLength;
@@ -68,7 +74,10 @@ public sealed class OmegaFrameReassembler
       return;
     }
 
-    if (_buffer[^1] == 0x55 && value == 0xAA)
+    // Before the declared length is known a new header is the only safe
+    // resynchronization signal. Once known, payload bytes are opaque and may
+    // legitimately contain 0x55,0xAA; honor the declared boundary.
+    if (_expectedLength is null && _buffer[^1] == 0x55 && value == 0xAA)
     {
       ReportTruncated(_buffer.Count - 1);
       _buffer.Clear();
@@ -83,12 +92,32 @@ public sealed class OmegaFrameReassembler
     if (_buffer.Count == 8)
     {
       var payloadLength = _buffer[6] | (_buffer[7] << 8);
-      _expectedLength = payloadLength + 10;
+      if (payloadLength > MaximumPayloadLength)
+      {
+        _diagnostics.Add(new OmegaFrameDiagnostic(
+          OmegaFrameDiagnosticCode.LengthOutOfRange,
+          payloadLength + HeaderLength,
+          _buffer.Count));
+        ClearCandidate();
+        return;
+      }
+
+      _expectedLength = payloadLength + HeaderLength;
     }
 
     if (_expectedLength is not null && _buffer.Count == _expectedLength)
     {
-      frames.Add(_buffer.ToArray());
+      if (_buffer[^2] != 0x0D || _buffer[^1] != 0x0A)
+      {
+        _diagnostics.Add(new OmegaFrameDiagnostic(
+          OmegaFrameDiagnosticCode.InvalidTerminator,
+          _expectedLength,
+          _buffer.Count));
+      }
+      else
+      {
+        frames.Add(_buffer.ToArray());
+      }
       ClearCandidate();
     }
   }

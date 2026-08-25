@@ -54,6 +54,46 @@ public sealed class GarminWatchActivityMatcherTests
     Assert.Equal(GarminWatchActivityMatchDisposition.None, result.Disposition);
   }
 
+  [Fact]
+  public void Requires_review_when_local_session_has_no_heart_rate_evidence()
+  {
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
+    GarminActivityMatchReference local = new(
+      started,
+      2010,
+      3.10,
+      null,
+      null,
+      []);
+    GarminWatchActivityMatch result = GarminWatchActivityMatcher.Match(
+      local,
+      [Candidate("review", started.AddMinutes(2), 2091, 3.10, 136, 161, 15)]);
+
+    Assert.Equal(GarminWatchActivityMatchDisposition.ReviewRequired, result.Disposition);
+    Assert.Equal("review", result.Candidate?.RemoteId);
+    Assert.Contains("manual review", result.Evidence, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public void Requires_review_when_watch_candidate_has_no_heart_rate_evidence()
+  {
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
+    GarminWatchActivityCandidate candidate = new(
+      "watch-no-hr",
+      "treadmill_running",
+      started,
+      2010,
+      3.10,
+      null,
+      null,
+      []);
+
+    GarminWatchActivityMatch result = GarminWatchActivityMatcher.Match(Reference(started), [candidate]);
+
+    Assert.Equal(GarminWatchActivityMatchDisposition.ReviewRequired, result.Disposition);
+    Assert.Equal("watch-no-hr", result.Candidate?.RemoteId);
+  }
+
   private static GarminActivityMatchReference Reference(DateTimeOffset started) => new(
     started,
     2010,

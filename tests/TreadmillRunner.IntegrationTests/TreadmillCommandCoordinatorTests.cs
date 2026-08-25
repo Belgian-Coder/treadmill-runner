@@ -38,7 +38,40 @@ public sealed class TreadmillCommandCoordinatorTests
     Assert.Equal(0.8, result.AcceptedValue);
     Assert.Equal(0.8, result.MeasuredValue);
     Assert.Equal(new[] { "00", "07" }, connection.Payloads.Select(Convert.ToHexString));
-    Assert.Equal(TreadmillCommandDisposition.Rejected, duplicate.Disposition);
+    Assert.Equal(result, duplicate);
+    Assert.Equal(2, connection.Payloads.Count);
+  }
+
+  [Fact]
+  public async Task Terminal_command_outcomes_are_replayed_per_session_then_expire()
+  {
+    var clock = new AdjustableTimeProvider(DateTimeOffset.UtcNow);
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(7, speedKph: 0));
+    var connection = new FakeCommandConnection((payload, observedAt) =>
+    {
+      if (payload.Span[0] == 0x07)
+        devices.Set(ReadySnapshot(7, 0.8, observedAt.AddMilliseconds(1)));
+    });
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(
+      devices,
+      connection,
+      VerifiedEnrollment(),
+      timeProvider: clock);
+    TreadmillCommandIntent intent = Reissue(StartIntent(7), Guid.NewGuid(), clock.GetUtcNow());
+
+    TreadmillCommandResult terminal = await coordinator.ExecuteAsync(intent, AlwaysCurrent.Instance);
+    TreadmillCommandResult replay = await coordinator.ExecuteAsync(intent, NeverCurrent.Instance);
+    Assert.Equal(terminal, replay);
+
+    TreadmillCommandIntent otherSession = Reissue(intent, Guid.NewGuid(), clock.GetUtcNow());
+    TreadmillCommandResult scoped = await coordinator.ExecuteAsync(otherSession, NeverCurrent.Instance);
+    Assert.Contains("session state", scoped.Reason, StringComparison.OrdinalIgnoreCase);
+
+    clock.Advance(TimeSpan.FromMinutes(16));
+    TreadmillCommandIntent expiredLedgerEntry = Reissue(intent, intent.SessionId, clock.GetUtcNow());
+    TreadmillCommandResult readmitted = await coordinator.ExecuteAsync(expiredLedgerEntry, NeverCurrent.Instance);
+    Assert.Contains("session state", readmitted.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.DoesNotContain("already", readmitted.Reason, StringComparison.OrdinalIgnoreCase);
     Assert.Equal(2, connection.Payloads.Count);
   }
 
@@ -84,9 +117,134 @@ public sealed class TreadmillCommandCoordinatorTests
     TreadmillCommandResult result = await coordinator.ExecuteAsync(StartIntent(7), AlwaysCurrent.Instance);
 
     Assert.Equal(TreadmillCommandDisposition.Rejected, result.Disposition);
-    Assert.Contains("Fresh treadmill telemetry", result.Reason, StringComparison.Ordinal);
+    Assert.Contains("Fresh treadmill speed telemetry", result.Reason, StringComparison.Ordinal);
     Assert.Equal(0, transport.ConnectCount);
     Assert.Empty(connection.Payloads);
+  }
+
+  [Fact]
+  public async Task Rejects_speed_command_when_only_speed_observation_is_stale()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(
+      7,
+      speedKph: 0,
+      observedAt: now,
+      inclinePercent: 0,
+      speedObservedAt: now.AddSeconds(-10),
+      inclineObservedAt: now));
+    var connection = new FakeCommandConnection();
+    var transport = new FakeCommandTransport(connection);
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, transport, VerifiedEnrollment());
+
+    TreadmillCommandResult result = await coordinator.ExecuteAsync(StartIntent(7), AlwaysCurrent.Instance);
+
+    Assert.Equal(TreadmillCommandDisposition.Rejected, result.Disposition);
+    Assert.Contains("speed", result.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(0, transport.ConnectCount);
+    Assert.Empty(connection.Payloads);
+  }
+
+  [Fact]
+  public async Task Rejects_incline_command_when_only_incline_observation_is_stale()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(
+      7,
+      speedKph: 0.8,
+      observedAt: now,
+      inclinePercent: 1,
+      speedObservedAt: now,
+      inclineObservedAt: now.AddSeconds(-10)));
+    var connection = new FakeCommandConnection();
+    var transport = new FakeCommandTransport(connection);
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, transport, VerifiedEnrollment());
+
+    TreadmillCommandResult result = await coordinator.ExecuteAsync(
+      TargetIntent(TreadmillCommandKind.SetIncline, 2.5, 7),
+      AlwaysCurrent.Instance);
+
+    Assert.Equal(TreadmillCommandDisposition.Rejected, result.Disposition);
+    Assert.Contains("incline", result.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(0, transport.ConnectCount);
+    Assert.Empty(connection.Payloads);
+  }
+
+  [Fact]
+  public async Task Does_not_confirm_speed_command_from_new_aggregate_with_stale_speed_field()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(
+      7,
+      speedKph: 0.8,
+      observedAt: now,
+      speedObservedAt: now,
+      inclineObservedAt: now));
+    var connection = new FakeCommandConnection((payload, observedAt) =>
+    {
+      if (payload.Span[0] == 0x02)
+      {
+        devices.Set(ReadySnapshot(
+          7,
+          speedKph: 1.0,
+          observedAt: observedAt.AddMilliseconds(1),
+          inclinePercent: 0,
+          speedObservedAt: observedAt.AddSeconds(-10),
+          inclineObservedAt: observedAt.AddMilliseconds(1)));
+      }
+    });
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(
+      devices,
+      connection,
+      VerifiedEnrollment(),
+      confirmationTimeout: TimeSpan.FromMilliseconds(20));
+
+    TreadmillCommandResult result = await coordinator.ExecuteAsync(
+      TargetIntent(TreadmillCommandKind.SetSpeed, 1.0, 7),
+      AlwaysCurrent.Instance);
+
+    Assert.Equal(TreadmillCommandDisposition.Unknown, result.Disposition);
+    Assert.Contains("confirm", result.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(new[] { "00", "026400" }, connection.Payloads.Select(Convert.ToHexString));
+  }
+
+  [Fact]
+  public async Task Does_not_confirm_incline_command_from_new_aggregate_with_stale_incline_field()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(
+      7,
+      speedKph: 0.8,
+      observedAt: now,
+      inclinePercent: 1,
+      speedObservedAt: now,
+      inclineObservedAt: now));
+    var connection = new FakeCommandConnection((payload, observedAt) =>
+    {
+      if (payload.Span[0] == 0x03)
+      {
+        devices.Set(ReadySnapshot(
+          7,
+          speedKph: 0.8,
+          observedAt: observedAt.AddMilliseconds(1),
+          inclinePercent: 2.5,
+          speedObservedAt: observedAt.AddMilliseconds(1),
+          inclineObservedAt: observedAt.AddSeconds(-10)));
+      }
+    });
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(
+      devices,
+      connection,
+      VerifiedEnrollment(),
+      confirmationTimeout: TimeSpan.FromMilliseconds(20));
+
+    TreadmillCommandResult result = await coordinator.ExecuteAsync(
+      TargetIntent(TreadmillCommandKind.SetIncline, 2.5, 7),
+      AlwaysCurrent.Instance);
+
+    Assert.Equal(TreadmillCommandDisposition.Unknown, result.Disposition);
+    Assert.Contains("confirm", result.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(new[] { "00", "031900" }, connection.Payloads.Select(Convert.ToHexString));
   }
 
   [Fact]
@@ -122,7 +280,7 @@ public sealed class TreadmillCommandCoordinatorTests
     TreadmillCommandResult duplicate = await coordinator.ExecuteAsync(intent, AlwaysCurrent.Instance);
 
     Assert.Equal(TreadmillCommandDisposition.Unknown, result.Disposition);
-    Assert.Equal(TreadmillCommandDisposition.Rejected, duplicate.Disposition);
+    Assert.Equal(result, duplicate);
     Assert.Equal(new[] { "00", "07" }, connection.Payloads.Select(Convert.ToHexString));
   }
 
@@ -293,7 +451,7 @@ public sealed class TreadmillCommandCoordinatorTests
     Assert.Equal(TreadmillCommandDisposition.Confirmed, result.Disposition);
     Assert.Equal(0, result.MeasuredValue);
     Assert.Equal(new[] { "00", "0801" }, connection.Payloads.Select(Convert.ToHexString));
-    Assert.Equal(TreadmillCommandDisposition.Rejected, duplicate.Disposition);
+    Assert.Equal(result, duplicate);
     Assert.Equal(2, connection.Payloads.Count);
   }
 
@@ -364,19 +522,23 @@ public sealed class TreadmillCommandCoordinatorTests
   private static TreadmillCommandCoordinator CreateCoordinator(
     FakeDeviceCoordinator devices,
     FakeCommandConnection connection,
-    VersionedDeviceEnrollment enrollment) =>
-    CreateCoordinator(devices, new FakeCommandTransport(connection), enrollment);
+    VersionedDeviceEnrollment enrollment,
+    TimeSpan? confirmationTimeout = null,
+    TimeProvider? timeProvider = null) =>
+    CreateCoordinator(devices, new FakeCommandTransport(connection), enrollment, confirmationTimeout, timeProvider);
 
   private static TreadmillCommandCoordinator CreateCoordinator(
     FakeDeviceCoordinator devices,
     FakeCommandTransport transport,
-    VersionedDeviceEnrollment enrollment)
+    VersionedDeviceEnrollment enrollment,
+    TimeSpan? confirmationTimeout = null,
+    TimeProvider? timeProvider = null)
   {
     var services = new ServiceCollection();
     services.AddSingleton<IDeviceEnrollmentStore>(new FakeEnrollmentStore(enrollment));
     ServiceProvider provider = services.BuildServiceProvider();
     return new TreadmillCommandCoordinator(
-      TimeProvider.System,
+      timeProvider ?? TimeProvider.System,
       provider.GetRequiredService<IServiceScopeFactory>(),
       transport,
       devices,
@@ -384,10 +546,27 @@ public sealed class TreadmillCommandCoordinatorTests
         TimeSpan.FromSeconds(5),
         TimeSpan.FromMilliseconds(10),
         TimeSpan.FromMilliseconds(100),
-        TimeSpan.FromMilliseconds(35),
+        confirmationTimeout ?? TimeSpan.FromMilliseconds(35),
         TimeSpan.FromMilliseconds(5)),
       NullLogger<TreadmillCommandCoordinator>.Instance);
   }
+
+  private static TreadmillCommandIntent Reissue(
+    TreadmillCommandIntent source,
+    Guid sessionId,
+    DateTimeOffset issuedAt) => new(
+      source.OperationId,
+      sessionId,
+      source.Kind,
+      issuedAt,
+      issuedAt.AddSeconds(4),
+      source.ExpectedSessionVersion,
+      source.ExpectedSessionState,
+      source.LeaseId,
+      source.HolderId,
+      source.ConnectionGeneration,
+      source.RequestedValue,
+      source.Origin);
 
   private static VersionedDeviceEnrollment VerifiedEnrollment()
   {
@@ -460,7 +639,9 @@ public sealed class TreadmillCommandCoordinatorTests
     long generation,
     double speedKph,
     DateTimeOffset? observedAt = null,
-    double inclinePercent = 0)
+    double inclinePercent = 0,
+    DateTimeOffset? speedObservedAt = null,
+    DateTimeOffset? inclineObservedAt = null)
   {
     DateTimeOffset observed = observedAt ?? DateTimeOffset.UtcNow;
     return new DeviceTelemetrySnapshot(
@@ -483,7 +664,12 @@ public sealed class TreadmillCommandCoordinatorTests
         null,
         null,
         null),
-      new TreadmillTelemetry(observed, speedKph, inclinePercent),
+      new TreadmillTelemetry(
+        observed,
+        speedKph,
+        inclinePercent,
+        speedObservedAt ?? observed,
+        inclineObservedAt ?? observed),
       null,
       null,
       null);
@@ -496,6 +682,19 @@ public sealed class TreadmillCommandCoordinatorTests
   {
     public static AlwaysCurrent Instance { get; } = new();
     public bool IsCurrent(TreadmillCommandIntent intent) => true;
+  }
+
+  private sealed class NeverCurrent : ITreadmillCommandContextValidator
+  {
+    public static NeverCurrent Instance { get; } = new();
+    public bool IsCurrent(TreadmillCommandIntent intent) => false;
+  }
+
+  private sealed class AdjustableTimeProvider(DateTimeOffset nowUtc) : TimeProvider
+  {
+    private DateTimeOffset current = nowUtc;
+    public override DateTimeOffset GetUtcNow() => current;
+    public void Advance(TimeSpan value) => current = current.Add(value);
   }
 
   private sealed class FakeDeviceCoordinator(DeviceTelemetrySnapshot initial) : IReadOnlyDeviceCoordinator

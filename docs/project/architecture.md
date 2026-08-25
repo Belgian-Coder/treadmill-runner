@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-13
+updated: 2026-08-23
 ---
 
 # Architecture
@@ -58,11 +58,27 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 - First telemetry evidence is queued to a bounded lifecycle writer rather than
   blocking notification consumption. Passive evidence remains non-controlling;
   only an explicit verification/commissioning flow can promote capabilities.
+- Live-session transition locks cover state changes only. Each transition emits
+  an immutable generation/versioned effect batch; persistence, event fan-out,
+  and latest-only browser delivery execute after the lock and discard stale
+  generations. A serialized session writer batches work arriving in the same
+  second while retaining the one-second recovery durability bound.
+- Critical BLE reliability evidence uses a non-dropping priority queue while
+  disposable status churn is coalesced separately. Readiness and integrity
+  results are cached and full checks/backups are deferred from ordinary startup.
 - Start/Stop intents carry operation ID, session ID/version/state, lease/holder, four-second expiry, and connection generation. Reconnect invalidates them; Start is consumed before its single motion-affecting write and is never retried. Natural hardware completion uses a distinct gateway-owned Stop origin and does not transition to Completed or History until stopped telemetry is confirmed; rejected or unknown outcomes remain live and are not retried.
 - The deterministic session engine uses `TimeProvider` and emits immutable snapshots/events.
 - SignalR publishes simulated live state at 4 Hz; durable session sampling is 1 Hz.
+- Treadmill speed and incline observations carry independent timestamps and
+  freshness. Heart-rate source/contact/quality is profile-scoped; stale,
+  invalid, unsupported, or no-contact values are represented as unavailable.
 - The compiled premade-plan catalog is read-only. Preview reuses capability evaluation; explicit materialization stores profile/template provenance, deduplicates identical definitions within the copy, preserves every phase/week/session position, and never activates the plan.
 - Garmin integration has three non-interchangeable seams: supported Training API publication, unsupported completed-FIT upload, and native Connect IQ watch recording. The private uploader runs out of process, stores only protected session tokens, admits sessions only after an enable watermark, and atomically leases each job. Unknown/duplicate outcomes cannot auto-retry. Watch tokens are profile-owned SHA-256 hashes and authorize only read-only session status.
+- Operation IDs are admitted, in-flight, or terminal within their session; terminal
+  receipts remain durable for 90 days and are not consumed permanently by an
+  attempted replay. SQL indexes select available Garmin leases and the chosen
+  crash-recovery candidate, while the active-session uniqueness constraint is
+  reconciled before enforcement.
 - Gateway requests receive bounded correlation identifiers and normalized in-memory route telemetry. Query strings and record identifiers never become metric dimensions, and the route catalog is capped.
 - Optional operator access is disabled by default. When enabled, reads stay anonymous and API mutations require a short-lived opaque bearer held in bounded gateway memory and browser session storage; no authentication cookie exists.
 

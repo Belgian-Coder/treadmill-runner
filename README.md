@@ -43,6 +43,7 @@ See the [complete installation guide](docs/installation.md) for first-run enroll
 - Windows Service Session 0 behavior and exact Omega/Polar simultaneous hardware acceptance remain external gates.
 - No unverified command is enabled, no Unknown outcome is retried, and reconnect expires every pending intent.
 - TR-013 adds opt-in per-profile Garmin FIT upload through a pinned unsupported adapter and an explicit-recording Connect IQ companion for Fenix 8 and Vivoactive 5/6. SDK 9.2.0 builds and representative tests pass; layouts, watches, trusted HTTPS, and IQ Store review remain external.
+- US-TR-041 adds trustworthy telemetry/session durability, Metric-only features and exports, UI evidence, provenance, and an iPhone icon. See the [story](docs/project/stories/tr-041-coordinated-improvement-program.md).
 
 ## Prerequisites
 
@@ -94,7 +95,7 @@ Use the navigation in the simulator UI to create or select a local profile, buil
 
 Workout cards show the practical differences before selection: structure, expanded segment count, total goal, speed range, incline range, and whether heart-rate control is used. **View details** opens the current revision as a grouped session outline with repeat patterns, ramps, cues, and notes. Training-plan cards expose their complete ordered session list, grouped by phase and week when that metadata exists.
 
-Imports are previewed before anything is saved. The supported import paths are native workout JSON, QDomyos XML, and Garmin FIT workouts. Confirming a preview rechecks the original bounded file; QDomyos files that do not state units require an explicit unit choice.
+Imports are previewed before anything is saved. The supported import paths are native workout JSON, Metric QDomyos XML, and Garmin FIT workouts. Confirming a preview rechecks the original bounded file; QDomyos distance and speed are accepted only as kilometres and km/h.
 
 Choose the active runner once from the application header; Run, Workouts, Calendar, History, and editors use that browser-local selection until it is changed. The calendar supports weekly schedules, alternatives for a day, and previewed plan actions. An unfinished plan session can be moved alone, moved with all following sessions, skipped, or restored. A completed but unsatisfactory run can be added as an extra repeat while either keeping later dates or shifting the remainder. If the calendar is full, both sessions remain visible and the preview warns about the collision—nothing is overwritten.
 
@@ -104,7 +105,7 @@ For an active training plan, **Change training days** replaces its default weekd
 
 ## Running in the simulator
 
-On the Today page, select a workout for the active runner, review readiness, take control, and arm the session. Arming never starts a belt. The simulator test action represents measured physical movement; the gateway then owns progression and continues if the browser reloads or disconnects. After completion, save an optional RPE score and note, then open History for persisted charts, zone time, adherence, events, and weekly totals.
+On Today, select a workout, review readiness, take control, and arm it. Arming never starts a belt. Simulator motion lets the gateway own progression across disconnects. Afterwards, save or skip a debrief; History offers goals and Metric activity exports, and Planning exports FIT Workout revisions.
 
 See [the live-session guide](docs/project/live-session.md) for contracts, recovery behavior, and current limitations. The Windows service supports signed check, verify/stage, explicit UI activation, health verification, and automatic rollback. Use the [release operations runbook](docs/project/release-operations.md) to publish, update, rotate trust, or recover a feed.
 
@@ -119,6 +120,8 @@ SQLite uses reviewed EF migrations and WAL. Application startup does not create 
 ```
 
 The `Script` action writes `artifacts/database/treadmillrunner.sql` by default. The TR-003 backup proof uses SQLite's online backup API and opens the backup as a separate database; replacing a live user database is deferred to TR-007.
+
+The current migration normalizes profiles to Metric, reconciles active-session conflicts, and adds uniqueness and lease/recovery/receipt indexes. Startup does not apply it automatically.
 
 For a Release WebAssembly publish, run `.\eng\clean-wasm-publish.ps1 -Configuration Release` first when stale WebCIL output is possible. `dotnet clean` can retain generated WebCIL assets.
 
@@ -137,6 +140,8 @@ For a Release WebAssembly publish, run `.\eng\clean-wasm-publish.ps1 -Configurat
 11. [Garmin integrations](docs/project/garmin-connect.md)
 12. [Connect IQ companion and IQ Store release](docs/project/connect-iq-companion.md)
 13. [Premade training plans](docs/project/premade-plans.md)
+14. [WalkingPad plan provenance](docs/project/walkingpad-plan-provenance.md)
+15. [Session and workout exports](docs/project/exports.md)
 
 ## License
 
