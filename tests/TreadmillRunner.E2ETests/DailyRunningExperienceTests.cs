@@ -178,8 +178,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" })).ToBeEnabledAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run" }).ClickAsync();
     await Expect(Page.Locator(".connection-state")).ToContainTextAsync("retrying", new() { Timeout = 15_000 });
-    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/history/[0-9a-f-]+$"));
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = plan.WorkoutName, Exact = true })).ToBeVisibleAsync();
+    await Page.WaitForTimeoutAsync(16_000);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
 
     await Page.UnrouteAsync("**/hubs/live**");
 
@@ -441,7 +441,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     ILocator stopDialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(stopDialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await stopDialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true })).ToBeVisibleAsync();
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/history/[0-9a-f-]+$"));
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = plan.WorkoutName, Exact = true })).ToBeVisibleAsync();
   }
 
   [Fact]
