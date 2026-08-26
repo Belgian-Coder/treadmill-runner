@@ -436,7 +436,18 @@ try {
     if (-not $SkipValidation -and (Test-Path -LiteralPath $acceptanceReceiptPath -PathType Leaf)) {
         try {
             $acceptanceReceipt = Get-Content -LiteralPath $acceptanceReceiptPath -Raw | ConvertFrom-Json
-            $completedAt = [DateTimeOffset]::Parse([string]$acceptanceReceipt.completedAtUtc)
+            $completedAt = if ($acceptanceReceipt.completedAtUtc -is [DateTime]) {
+                [DateTimeOffset]$acceptanceReceipt.completedAtUtc
+            }
+            elseif ($acceptanceReceipt.completedAtUtc -is [DateTimeOffset]) {
+                $acceptanceReceipt.completedAtUtc
+            }
+            else {
+                [DateTimeOffset]::Parse(
+                    [string]$acceptanceReceipt.completedAtUtc,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Globalization.DateTimeStyles]::RoundtripKind)
+            }
             $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 2 -and
                 [string]$acceptanceReceipt.sourceRevision -eq $head -and
                 [string]$acceptanceReceipt.configuration -eq 'Release' -and
