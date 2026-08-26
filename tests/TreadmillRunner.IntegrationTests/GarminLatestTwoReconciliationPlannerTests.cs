@@ -5,6 +5,18 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class GarminLatestTwoReconciliationPlannerTests
 {
   [Fact]
+  public void Finds_the_single_canonical_activity_after_an_uncertain_delete_response()
+  {
+    DateTimeOffset start = DateTimeOffset.Parse("2026-08-26T18:13:10Z");
+    GarminWatchActivityCandidate complete = Candidate("complete", start.AddSeconds(2), 1710, 2.67);
+
+    bool accepted = GarminLatestTwoReconciliationPlanner.TryFindCanonicalOnly(Local(start), [complete], out GarminWatchActivityCandidate? canonical);
+
+    Assert.True(accepted);
+    Assert.Equal("complete", canonical?.RemoteId);
+  }
+
+  [Fact]
   public void Keeps_the_complete_local_upload_and_selects_only_the_late_partial_watch_activity()
   {
     DateTimeOffset start = DateTimeOffset.Parse("2026-08-26T18:13:10Z");

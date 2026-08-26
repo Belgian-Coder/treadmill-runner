@@ -100,6 +100,17 @@ public static class GarminActivityUploadEndpoints
       if (!string.Equals(search.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(search.TokenStore))
         return TypedResults.Conflict(new { error = "The two Garmin activities could not be inspected safely." });
       GarminActivityMatchReference local = GarminActivityUploadWorker.ToMatchReference(session);
+      if (GarminLatestTwoReconciliationPlanner.TryFindCanonicalOnly(local, search.Candidates ?? [], out GarminWatchActivityCandidate? alreadyKept))
+      {
+        await uploads.MarkConfirmedAsync(job.Id, alreadyKept!.RemoteId, connections.Protect(search.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+        return TypedResults.Ok(new
+        {
+          sessionId,
+          keptRemoteId = alreadyKept.RemoteId,
+          deletedRemoteId = (string?)null,
+          evidence = $"The canonical activity {alreadyKept.RemoteId} is already the only Garmin activity in the bounded session window.",
+        });
+      }
       if (!GarminLatestTwoReconciliationPlanner.TryCreate(local, search.Candidates ?? [], out GarminLatestTwoReconciliationPlan? plan, out string error))
         return TypedResults.Conflict(new { error });
 
