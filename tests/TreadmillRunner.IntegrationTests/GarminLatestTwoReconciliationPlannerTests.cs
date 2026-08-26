@@ -10,7 +10,7 @@ public sealed class GarminLatestTwoReconciliationPlannerTests
     DateTimeOffset start = DateTimeOffset.Parse("2026-08-26T18:13:10Z");
     GarminActivityMatchReference local = Local(start);
     GarminWatchActivityCandidate complete = Candidate("complete", start.AddSeconds(2), 1710, 2.67);
-    GarminWatchActivityCandidate partial = Candidate("partial", start.AddSeconds(165), 1548, 2.43);
+    GarminWatchActivityCandidate partial = Candidate("partial", start.AddSeconds(135), 1577, 3.04);
 
     bool accepted = GarminLatestTwoReconciliationPlanner.TryCreate(local, [partial, complete], out GarminLatestTwoReconciliationPlan? plan, out string error);
 
