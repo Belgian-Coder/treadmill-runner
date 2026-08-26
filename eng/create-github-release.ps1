@@ -421,14 +421,31 @@ try {
 
     Assert-VersionIsNewer -Version $Version -Repository $Repository
 
-    if (-not $SkipValidation) {
+    $acceptanceReceiptPath = Join-Path $projectRoot 'artifacts\validation\full-acceptance.json'
+    $freshAcceptanceReceipt = $false
+    if (-not $SkipValidation -and (Test-Path -LiteralPath $acceptanceReceiptPath -PathType Leaf)) {
+        try {
+            $acceptanceReceipt = Get-Content -LiteralPath $acceptanceReceiptPath -Raw | ConvertFrom-Json
+            $completedAt = [DateTimeOffset]::Parse([string]$acceptanceReceipt.completedAtUtc)
+            $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 1 -and
+                [string]$acceptanceReceipt.sourceRevision -eq $head -and
+                [string]$acceptanceReceipt.configuration -eq 'Release' -and
+                $completedAt -ge [DateTimeOffset]::UtcNow.Subtract([TimeSpan]::FromHours(8))
+        }
+        catch {
+            $freshAcceptanceReceipt = $false
+        }
+    }
+
+    if ($freshAcceptanceReceipt) {
+        Write-Host "Reusing full acceptance already completed for $head."
+    }
+    elseif (-not $SkipValidation) {
         $previousShowcaseMode = $env:TREADMILLRUNNER_UPDATE_SHOWCASE
         try {
             $env:TREADMILLRUNNER_UPDATE_SHOWCASE = '0'
-            & (Join-Path $PSScriptRoot 'validate.ps1') -Configuration Release
-            if ($LASTEXITCODE -ne 0) { throw 'Release validation failed.' }
-            & (Join-Path $PSScriptRoot 'playwright.ps1') -Configuration Release -TimeoutMinutes 7
-            if ($LASTEXITCODE -ne 0) { throw 'Browser validation failed.' }
+            & (Join-Path $PSScriptRoot 'verify-change.ps1') -Configuration Release -Full
+            if ($LASTEXITCODE -ne 0) { throw 'Full release acceptance failed.' }
         }
         finally {
             if ($null -eq $previousShowcaseMode) { Remove-Item Env:TREADMILLRUNNER_UPDATE_SHOWCASE -ErrorAction SilentlyContinue }

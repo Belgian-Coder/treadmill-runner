@@ -124,6 +124,10 @@ The local signer is deliberately non-exportable and must not be placed in GitHub
 
 The script requires a version newer than every published release and requires `main` to exactly match `origin/main`. It runs Release and browser validation locally, then rechecks that validation changed neither the commit nor any tracked or untracked file and that `origin/main` is still the validated commit. Only then does it publish and sign locally, create the end-user installer and checksum file, push an annotated `v<version>` tag, create a draft, upload and verify every expected asset, and publish it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
 
+When `eng/verify-change.ps1 -Full` has already passed on the same clean commit within eight hours, it writes an ignored local acceptance receipt. The release script reuses that exact commit-bound receipt instead of rerunning the full .NET and browser suites. A missing, stale, malformed, differently configured, or different-commit receipt falls back to one full acceptance run; it never bypasses validation.
+
+Normal .NET test runs explicitly disable native WebAssembly compilation. Browser validation and release publishing remain responsible for the optimized WebAssembly build, so ordinary integration-test builds no longer spend release-build time compiling the web client.
+
 Normal browser and release validation writes showcase candidates under ignored `output/playwright/showcase/`, never over the source-controlled public gallery. To intentionally refresh a committed PNG, run Playwright with `TREADMILLRUNNER_UPDATE_SHOWCASE=1`, review and commit the evidence, clear the opt-in, and rerun the release command. The release command never hides or discards a validation-produced worktree change.
 
 #### Interrupted release recovery

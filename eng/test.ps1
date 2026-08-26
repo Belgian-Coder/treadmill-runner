@@ -42,6 +42,7 @@ try {
         'test', $solution,
         '--configuration', $Configuration,
         '--no-restore',
+        '-p:WasmBuildNative=false',
         '--filter', $Filter,
         '--logger', 'console;verbosity=normal',
         '--logger', 'trx',

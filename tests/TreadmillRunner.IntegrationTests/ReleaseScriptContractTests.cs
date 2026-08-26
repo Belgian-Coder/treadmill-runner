@@ -58,6 +58,7 @@ public sealed class ReleaseScriptContractTests
     string package = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "package-update.ps1"));
     string installer = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "Install-TreadmillRunner.ps1"));
     string installerBundle = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "new-installer-bundle.ps1"));
+    string test = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "test.ps1"));
 
     Assert.Contains("belgian-coder/treadmill-runner", release, StringComparison.Ordinal);
     Assert.Contains("gh auth status", release, StringComparison.Ordinal);
@@ -79,7 +80,11 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("not found", release, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("SkipValidation is allowed only when resuming", release, StringComparison.Ordinal);
     Assert.Contains("TREADMILLRUNNER_UPDATE_SHOWCASE = '0'", release, StringComparison.Ordinal);
-    Assert.Contains("playwright.ps1') -Configuration Release -TimeoutMinutes 7", release, StringComparison.Ordinal);
+    Assert.Contains("full-acceptance.json", release, StringComparison.Ordinal);
+    Assert.Contains("sourceRevision -eq $head", release, StringComparison.Ordinal);
+    Assert.Contains("FromHours(8)", release, StringComparison.Ordinal);
+    Assert.Contains("verify-change.ps1') -Configuration Release -Full", release, StringComparison.Ordinal);
+    Assert.DoesNotContain("playwright.ps1') -Configuration Release -TimeoutMinutes 7", release, StringComparison.Ordinal);
     Assert.Contains("Release validation changed tracked or untracked files", release, StringComparison.Ordinal);
     Assert.Contains("origin/main changed during release validation", release, StringComparison.Ordinal);
     Assert.Contains("validated source changed while release assets were being prepared", release, StringComparison.OrdinalIgnoreCase);
@@ -109,6 +114,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("TreadmillRunner setup", installer, StringComparison.Ordinal);
     Assert.Contains("INSTALL.txt", installerBundle, StringComparison.Ordinal);
     Assert.Contains("docs/installation.md", installerBundle, StringComparison.Ordinal);
+    Assert.Contains("-p:WasmBuildNative=false", test, StringComparison.Ordinal);
   }
 
   [Fact]

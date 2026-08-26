@@ -32,6 +32,28 @@ try {
         & $validateScript -Configuration $Configuration -IncludeConnectIq:$IncludeConnectIq
         Write-Host 'Running final clean browser acceptance.'
         & $browserScript -Configuration $Configuration
+        $head = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
+            throw 'Final acceptance could not resolve the validated commit.'
+        }
+        if ([string]::IsNullOrWhiteSpace((& git status --porcelain))) {
+            $receiptPath = Join-Path $projectRoot 'artifacts\validation\full-acceptance.json'
+            New-Item -ItemType Directory -Path (Split-Path -Parent $receiptPath) -Force | Out-Null
+            [System.IO.File]::WriteAllText(
+                $receiptPath,
+                ([ordered]@{
+                    schemaVersion = 1
+                    sourceRevision = $head
+                    configuration = $Configuration
+                    includeConnectIq = [bool]$IncludeConnectIq
+                    completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+                } | ConvertTo-Json),
+                [System.Text.UTF8Encoding]::new($false))
+            Write-Host "Recorded reusable full-acceptance receipt for $head."
+        }
+        else {
+            Write-Host 'Full acceptance passed with uncommitted changes; no reusable release receipt was recorded.'
+        }
         Write-Host 'Complete final acceptance passed.'
         return
     }
