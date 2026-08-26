@@ -93,6 +93,7 @@ public static class GatewayServiceCollectionExtensions
     services.AddSingleton<IGarminStore, GarminStore>();
     services.AddSingleton<IGarminWatchBindingStore, GarminWatchBindingStore>();
     services.AddSingleton<IGarminActivityUploadStore, GarminActivityUploadStore>();
+    services.AddSingleton<GarminActivityBackupStore>();
     services.Configure<GarminActivityAdapterOptions>(configuration.GetSection(GarminActivityAdapterOptions.SectionName));
     services.AddSingleton<PythonGarminActivityAdapter>();
     services.AddSingleton<IGarminActivityAdapter>(static provider => provider.GetRequiredService<PythonGarminActivityAdapter>());

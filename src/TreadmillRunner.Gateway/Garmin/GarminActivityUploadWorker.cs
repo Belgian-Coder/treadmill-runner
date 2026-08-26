@@ -9,6 +9,7 @@ public sealed class GarminActivityUploadWorker(
   IServiceScopeFactory scopeFactory,
   IGarminActivityUploadStore store,
   IGarminActivityAdapter adapter,
+  GarminActivityBackupStore backups,
   GarminActivityConnectionService connections,
   TimeProvider timeProvider,
   IApplicationMaintenanceState maintenanceState,
@@ -130,8 +131,10 @@ public sealed class GarminActivityUploadWorker(
             return;
           }
           tokens = download.TokenStore;
+          await backups.BackupOriginalAsync(job.Id, candidate.RemoteId, watchFitPath, cancellationToken);
           byte[] merged = GarminFitActivityMerger.Merge(await File.ReadAllBytesAsync(watchFitPath, cancellationToken), session);
           await File.WriteAllBytesAsync(mergedFitPath, merged, cancellationToken);
+          await backups.BackupReplacementAsync(job.Id, candidate.RemoteId, mergedFitPath, cancellationToken);
           await store.MarkUploadStartedAsync(job.Id, "ReplacementUpload", timeProvider.GetUtcNow(), cancellationToken);
           mutationStarted = true;
           GarminAdapterMessage replacement = await adapter.UploadAsync(tokens, mergedFitPath, cancellationToken);
@@ -207,6 +210,11 @@ public sealed class GarminActivityUploadWorker(
     if (string.IsNullOrWhiteSpace(job.MatchedRemoteId) || string.IsNullOrWhiteSpace(job.ReplacementRemoteId))
     {
       await store.MarkUnknownAsync(job.Id, "Replacement state is incomplete; no Garmin activity was deleted.", timeProvider.GetUtcNow(), cancellationToken);
+      return;
+    }
+    if (!backups.HasOriginal(job.Id, job.MatchedRemoteId))
+    {
+      await store.MarkUnknownAsync(job.Id, "The merged replacement exists, but the original Garmin FIT is not backed up locally; no Garmin activity was deleted.", timeProvider.GetUtcNow(), cancellationToken);
       return;
     }
     await store.MarkUploadStartedAsync(job.Id, "DeleteOriginal", timeProvider.GetUtcNow(), cancellationToken);

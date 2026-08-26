@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Dynastream.Fit;
 using TreadmillRunner.Core.Sessions;
@@ -47,7 +48,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       .AddScoped<ISessionStore, SessionStore>()
       .BuildServiceProvider();
     var worker = new GarminActivityUploadWorker(
-      services.GetRequiredService<IServiceScopeFactory>(), store, adapter, connections,
+      services.GetRequiredService<IServiceScopeFactory>(), store, adapter, BackupStore(TimeProvider.System), connections,
       TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
     await worker.ProcessOneAsync(leased, default);
 
@@ -81,7 +82,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
     GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
     await using ServiceProvider services = new ServiceCollection().AddSingleton(factory).AddScoped<ISessionStore, SessionStore>().BuildServiceProvider();
-    var worker = new GarminActivityUploadWorker(services.GetRequiredService<IServiceScopeFactory>(), store, adapter, connections, clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
+    var worker = new GarminActivityUploadWorker(services.GetRequiredService<IServiceScopeFactory>(), store, adapter, BackupStore(clock), connections, clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
 
     await worker.ProcessOneAsync(leased, default);
     if (handling == GarminWatchActivityHandling.MergeAndReplace && replacementHasId)
@@ -90,6 +91,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       Assert.Equal("DeleteOriginal", deleteLease.OperationPhase);
       await worker.ProcessOneAsync(deleteLease, default);
       Assert.Equal(new[] { "search", "download", "upload", "delete" }, adapter.Calls);
+      Assert.Equal(2, Directory.GetFiles(Path.Combine(directory, "garmin-backups"), "*.fit").Length);
     }
 
     GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
@@ -120,7 +122,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
     GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
     await using ServiceProvider services = new ServiceCollection().AddSingleton(factory).AddScoped<ISessionStore, SessionStore>().BuildServiceProvider();
-    var worker = new GarminActivityUploadWorker(services.GetRequiredService<IServiceScopeFactory>(), store, adapter, connections, clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
+    var worker = new GarminActivityUploadWorker(services.GetRequiredService<IServiceScopeFactory>(), store, adapter, BackupStore(clock), connections, clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
 
     await worker.ProcessOneAsync(leased, default);
 
@@ -189,6 +191,13 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     context.WorkoutSessions.Add(session);
     await context.SaveChangesAsync();
   }
+
+  private GarminActivityBackupStore BackupStore(TimeProvider clock) => new(
+    new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+    {
+      ["GarminActivityUpload:BackupRoot"] = Path.Combine(directory, "garmin-backups"),
+    }).Build(),
+    clock);
 
   public enum AdapterMode { Confirmed, Duplicate, Ambiguous, Timeout, Unavailable }
 

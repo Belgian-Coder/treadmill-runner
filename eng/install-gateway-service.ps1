@@ -120,6 +120,7 @@ $serviceEnvironment = @(
     "Updates__InstallRoot=$resolvedInstallRoot",
     "Updates__DataRoot=$resolvedDataRoot",
     "Updates__BackupRoot=$backupRoot",
+    "GarminActivityUpload__BackupRoot=$(Join-Path $backupRoot 'garmin-source')",
     "Updates__PlanRoot=$planRoot",
     "Updates__FeedPath=$feedRoot",
     'Updates__FeedProvider=GitHubThenLocal',
