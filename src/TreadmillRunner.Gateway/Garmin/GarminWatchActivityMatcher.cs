@@ -74,8 +74,10 @@ public static class GarminWatchActivityMatcher
     if (Math.Abs(candidate.DurationSeconds - local.DurationSeconds) > maximumDurationDifference)
       return false;
 
-    double maximumDistanceDifference = Math.Max(0.25, local.DistanceKilometers * 0.10);
-    return Math.Abs(candidate.DistanceKilometers - local.DistanceKilometers) <= maximumDistanceDifference;
+    // Treadmill distance is authoritative. A late-start watch can estimate indoor
+    // distance very differently, so distance is evidence only and must not veto
+    // an otherwise unique time-window match.
+    return true;
   }
 
 }

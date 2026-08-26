@@ -114,6 +114,27 @@ public sealed class GarminWatchActivityMatcherTests
     Assert.Contains("Polar heart rate remains authoritative", result.Evidence, StringComparison.Ordinal);
   }
 
+  [Fact]
+  public void Late_watch_start_matches_even_when_indoor_watch_distance_deviates()
+  {
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-26T18:13:10Z");
+    GarminActivityMatchReference local = new(started, 1712, 2.6706, 124, 153, []);
+    GarminWatchActivityCandidate watch = Candidate(
+      "24127800106",
+      started.AddSeconds(144),
+      1576.743,
+      3.03929,
+      126,
+      153,
+      0);
+
+    GarminWatchActivityMatch result = GarminWatchActivityMatcher.Match(local, [watch]);
+
+    Assert.Equal(GarminWatchActivityMatchDisposition.Single, result.Disposition);
+    Assert.Equal(watch.RemoteId, result.Candidate?.RemoteId);
+    Assert.Contains("distance 0.37km", result.Evidence, StringComparison.Ordinal);
+  }
+
   private static GarminActivityMatchReference Reference(DateTimeOffset started) => new(
     started,
     2010,
