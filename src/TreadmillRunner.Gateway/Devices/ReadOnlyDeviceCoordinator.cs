@@ -186,7 +186,14 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     if (enrollmentId == Guid.Empty) return false;
     cancellationToken.ThrowIfCancellationRequested();
-    if (!await EnrollmentExistsAsync(enrollmentId, cancellationToken)) return false;
+    VersionedDeviceEnrollment? enrollment;
+    using (IServiceScope scope = scopeFactory.CreateScope())
+    {
+      enrollment = (await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>()
+          .ListActiveAsync(cancellationToken))
+        .SingleOrDefault(item => item.Enrollment.Id == enrollmentId);
+    }
+    if (enrollment is null) return false;
     DeviceWorker? worker = null;
     await _reconcileGate.WaitAsync(cancellationToken);
     try
@@ -214,6 +221,10 @@ public sealed class ReadOnlyDeviceCoordinator(
       _reconcileGate.Release();
     }
 
+    // An explicit Connect also performs the same bounded passive discovery as
+    // Auto scan. This refreshes the Windows BLE cache before the fresh GATT
+    // worker starts, so an awake Polar/Garmin does not require a separate scan.
+    await PassivelyRediscoverAsync(enrollment.Enrollment, cancellationToken);
     await ReconcileWorkersAsync(cancellationToken);
     return true;
   }
@@ -356,7 +367,9 @@ public sealed class ReadOnlyDeviceCoordinator(
           .Where(assignment => assignment.UserProfileId == runDemand.ProfileId)
           .ToArray();
         Guid[] automaticHeartRateIds = profileAssignments
-          .Where(assignment => assignment.AutoConnect || runDemand.RequiresHeartRate && assignment.IsPreferred)
+          // Keep every sensor assigned to this runner available during a run.
+          // The old HR-target/AutoConnect filter dropped even the preferred
+          // Polar on ordinary workouts and removed Garmin failover.
           .OrderBy(static assignment => assignment.Priority)
           .Select(static assignment => assignment.DeviceEnrollmentId)
           .Distinct()

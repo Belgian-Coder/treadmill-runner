@@ -79,7 +79,7 @@
             <div class="run-actions">
                 @if (session.Live.SessionState == SessionState.PausedWaitingForPhysicalResume)
                 {
-                    <button class="touch-action primary-action hold-start-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onpointerdown="BeginStartPointerHoldAsync" @onpointerup="CancelStartHold" @onpointerleave="CancelStartHold" @onpointercancel="CancelStartHold" @onkeydown="StartKeyDownAsync" @onkeyup="CancelStartHold" @onblur="CancelStartHold"><span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to resume")</span></button>
+                    <button class="touch-action primary-action media-control media-control--play" type="button" disabled="@(!CanStart)" @onclick="StartAsync"><span class="media-control__icon"><AppIcon Name="play" /></span><span>Resume</span></button>
                 }
                 else
                 {
@@ -185,25 +185,19 @@
                 <h2 id="start-title">Start at @(session.MinimumStartSpeedKph?.ToString("0.0") ?? "—") km/h</h2>
                 @if (session.CanStartRemotely)
                 {
-                    <p>Press and hold for three seconds. Releasing, moving away, or pressing Escape cancels before the command is sent.</p>
+                    <p>Press Start when you are ready. Start is sent once and is never replayed after a disconnect.</p>
                 }
                 else
                 {
                     <p>Remote Start is unavailable until this exact model and firmware pass the hardware gate. Start from the physical console.</p>
                 }
             </div>
-            <button class="touch-action primary-action hold-start-action media-control media-control--play"
+            <button class="touch-action primary-action media-control media-control--play"
                     type="button"
                     disabled="@(!CanStart)"
                     aria-describedby="start-hold-status"
-                    @onpointerdown="BeginStartPointerHoldAsync"
-                    @onpointerup="CancelStartHold"
-                    @onpointerleave="CancelStartHold"
-                    @onpointercancel="CancelStartHold"
-                    @onkeydown="StartKeyDownAsync"
-                    @onkeyup="CancelStartHold"
-                    @onblur="CancelStartHold">
-                <span class="media-control__icon"><AppIcon Name="play" /></span><span>@(startHoldSecondsRemaining is { } seconds ? $"Keep holding · {seconds}" : "Hold to start")</span>
+                    @onclick="StartAsync">
+                <span class="media-control__icon"><AppIcon Name="play" /></span><span>Start</span>
             </button>
             <button class="touch-action danger-action media-control media-control--stop" type="button" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
             <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
@@ -464,13 +458,12 @@
     <DetailSheet BackdropId="home-stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="home-stop-decision-title" OnDismiss="KeepSessionPausedAsync">
         <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync"><AppIcon Name="close" /></button></header>
         <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
-        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Reset progress</strong><span>Go back to the first step. Recording totals stay intact.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button></div>
+        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button></div>
     </DetailSheet>
 }
 
 @code {
     private const string SoundStorageKey = "treadmillrunner.sound-enabled";
-    private CancellationTokenSource? startHoldCancellation;
     private CancellationTokenSource? preflightRefreshCancellation;
     private CancellationTokenSource? profileSelectionCancellation;
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
@@ -533,7 +526,6 @@
     private bool CanConfirmProgramSchedule =>
         Enumerable.Range(0, 7).Count(bit => ((programScheduleWeekdayMask >> bit) & 1) == 1) == RequiredTrainingDays &&
         (programScheduleWeekdayMask & WeekdayFlag(programScheduleStartDate.DayOfWeek)) != 0;
-    private int? startHoldSecondsRemaining;
     private readonly BoundedLiveSeries<LiveChartPoint> liveChartPoints = new(43_200);
     private long renderedLiveChartVersion = -1;
     private IReadOnlyList<LiveChartPoint> renderedLiveChartPoints = [];
@@ -628,7 +620,7 @@
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
     private bool CanAdjustIncline => ClientReady && !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
-    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanStopRemotely == true &&
+    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
         session.Live.SessionState == SessionState.Running;
     private bool CanSetAutomation => ClientReady && !isManualCommandPending && lease is not null &&
         session?.Live.SessionState == SessionState.Running;
@@ -1438,67 +1430,12 @@
         }
     }
 
-    private Task BeginStartPointerHoldAsync(PointerEventArgs _) => BeginStartHoldAsync();
-
-    private Task StartKeyDownAsync(KeyboardEventArgs args)
-    {
-        if (string.Equals(args.Key, "Escape", StringComparison.Ordinal))
-        {
-            CancelStartHold();
-            return Task.CompletedTask;
-        }
-
-        return args.Key is "Enter" or " " ? BeginStartHoldAsync() : Task.CompletedTask;
-    }
-
-    private async Task BeginStartHoldAsync()
-    {
-        if (!CanStart || startHoldCancellation is not null) return;
-        startHoldCancellation = new CancellationTokenSource();
-        CancellationToken cancellationToken = startHoldCancellation.Token;
-        try
-        {
-            for (var remaining = 3; remaining > 0; remaining--)
-            {
-                startHoldSecondsRemaining = remaining;
-                actionStatus = $"Keep holding — Start in {remaining}.";
-                if (soundEnabled) await JS.InvokeVoidAsync("treadmillRunnerSound.playCue", cuePreferences.VolumePercent);
-                await InvokeAsync(StateHasChanged);
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-            }
-
-            startHoldSecondsRemaining = null;
-            await SendCommandAsync(TreadmillCommandKind.Start);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            actionStatus = "Remote Start canceled before sending.";
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            actionStatus = "Gateway connection was interrupted. Manual controls are disabled while reconnecting.";
-            await Gateway.RefreshAuthoritativeStateAsync();
-        }
-        finally
-        {
-            startHoldSecondsRemaining = null;
-            startHoldCancellation?.Dispose();
-            startHoldCancellation = null;
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    private void CancelStartHold()
-    {
-        startHoldCancellation?.Cancel();
-    }
-
+    private Task StartAsync() => SendCommandAsync(TreadmillCommandKind.Start);
     private Task StopAsync() => RequestStopAsync(openDecision: true);
-    private Task PauseAsync() => RequestStopAsync(openDecision: false);
+    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
 
     private Task RequestStopAsync(bool openDecision)
     {
-        CancelStartHold();
         if (isManualCommandPending)
         {
             stopRequestedDuringCommand = true;
@@ -1637,10 +1574,11 @@
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         stopDecisionModalReference = null;
         isStopDecisionOpen = false;
-        actionStatus = "Session paused. Hold Start when you are ready to resume.";
+        actionStatus = "Session paused. Press Resume when you are ready.";
     }
 
-    private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout progress reset. Hold Start when you are ready.", false);
+    private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout reset to the first step. Press Start when you are ready.", false);
+    private Task DiscardSessionAsync() => ApplySessionDecisionAsync("discard", "Session discarded.", true);
     private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", true);
 
     private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome)
@@ -1879,8 +1817,6 @@
     public async ValueTask DisposeAsync()
     {
         disposed = true;
-        startHoldCancellation?.Cancel();
-        startHoldCancellation?.Dispose();
         preflightRefreshCancellation?.Cancel();
         preflightRefreshCancellation?.Dispose();
         preflightRefreshCancellation = null;

@@ -237,7 +237,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
       long generation = coordinator.Current.Treadmill.ConnectionGeneration;
       int attempts = transport.ConnectionAttemptCount;
+      int scans = transport.PassiveScanCount;
       Assert.True(await coordinator.RetryConnectionAsync(treadmill.Id));
+      Assert.True(transport.PassiveScanCount > scans);
       using var retryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
       while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready ||
              coordinator.Current.Treadmill.ConnectionGeneration <= generation)

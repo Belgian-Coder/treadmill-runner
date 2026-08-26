@@ -120,6 +120,17 @@ else
                     <div><p class="eyebrow">Garmin reconciliation</p><h2 id="garmin-reconciliation-title">@(garmin.ReviewRequired ? "Possible match — review required" : garmin.Status)</h2></div>
                     <span>@garmin.OperationPhase</span>
                 </div>
+                @if (garmin.Status == "Unknown")
+                {
+                    <div class="controls-card garmin-acknowledgement" role="status">
+                        <p><strong>Found this activity in Garmin?</strong> Acknowledge it here to settle the local record and unlock local deletion. This does not change Garmin.</p>
+                        <button class="touch-action primary-action" type="button" disabled="@garminActionBusy" @onclick="AcknowledgeGarminFoundAsync">@(garminActionBusy ? "Acknowledging…" : "Acknowledge found in Garmin")</button>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(garminActionMessage))
+                {
+                    <p class="action-status" role="status" aria-live="polite">@garminActionMessage</p>
+                }
                 <dl class="device-facts">
                     <div><dt>Status</dt><dd>@garmin.Status</dd></div>
                     <div><dt>Failure phase</dt><dd>@(garmin.FailureKind ?? "None")</dd></div>
@@ -411,6 +422,8 @@ else
     private bool debriefBusy;
     private string? debriefMessage;
     private string? identifierCopyMessage;
+    private bool garminActionBusy;
+    private string garminActionMessage = string.Empty;
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
     private bool HasHeartRateSamples => session?.Samples.Any(static sample => sample.HeartRateBpm is not null) == true;
     private string HistoryGraphSampleSummary => session is null
@@ -663,6 +676,31 @@ else
     private Task CopyGarminRemoteIdAsync() => CopyIdentifierAsync(session!.Garmin!.RemoteId!, "Garmin activity ID");
     private Task CopyGarminMatchedIdAsync() => CopyIdentifierAsync(session!.Garmin!.MatchedRemoteId!, "Matched activity ID");
     private Task CopyGarminReplacementIdAsync() => CopyIdentifierAsync(session!.Garmin!.ReplacementRemoteId!, "Replacement activity ID");
+
+    private async Task AcknowledgeGarminFoundAsync()
+    {
+        if (session?.Garmin is not { Status: "Unknown" } garmin || garminActionBusy) return;
+        garminActionBusy = true;
+        garminActionMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/integrations/garmin/activity-upload/profiles/{session.Definition.UserProfileId}/jobs/{garmin.Id}/acknowledge-found",
+                new { operationId = Guid.NewGuid() });
+            if (!response.IsSuccessStatusCode)
+            {
+                garminActionMessage = "The Garmin record could not be acknowledged.";
+                return;
+            }
+            garminActionMessage = "Acknowledged as found in Garmin. Local deletion is now available.";
+            await LoadSessionAsync();
+        }
+        catch (HttpRequestException)
+        {
+            garminActionMessage = "The gateway is unavailable. Nothing was acknowledged.";
+        }
+        finally { garminActionBusy = false; }
+    }
 
     private async Task LoadDeletionPreviewAsync()
     {

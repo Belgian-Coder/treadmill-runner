@@ -804,7 +804,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
-  public async Task Stop_backed_pause_is_resumable_and_stop_offers_keep_end_or_reset()
+  public async Task Pause_is_resumable_and_stop_offers_keep_discard_end_or_restart()
   {
     await Page.SetViewportSizeAsync(440, 956);
     await ResetSimulatorAsync();
@@ -823,22 +823,17 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToHaveCountAsync(0);
-    await Expect(Page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume") })).ToBeVisibleAsync();
-
-    ILocator resume = Page.GetByRole(AriaRole.Button, new()
-    {
-      NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume"),
-    });
-    await resume.EvaluateAsync("button => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))");
-    await Expect(Page.GetByText("Keep holding · 3", new() { Exact = true })).ToBeVisibleAsync();
-    await Page.WaitForTimeoutAsync(3_200);
+    ILocator resume = Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true });
+    await Expect(resume).ToBeVisibleAsync();
+    await resume.ClickAsync();
     await SetPhysicalMotionAsync(6.0, 1.0);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
     ILocator dialog = Page.GetByRole(AriaRole.Dialog);
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Keep paused", Exact = false })).ToBeVisibleAsync();
-    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Reset progress", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Start from beginning", Exact = false })).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Discard session", Exact = false })).ToBeVisibleAsync();
     ILocator endAndSave = dialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false });
     await Expect(endAndSave).ToBeVisibleAsync();
     Assert.Equal("center", await endAndSave.EvaluateAsync<string>("element => getComputedStyle(element).textAlign"));
@@ -850,29 +845,26 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       FullPage = false,
     });
 
-    await dialog.GetByRole(AriaRole.Button, new() { Name = "Reset progress", Exact = false }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Start from beginning", Exact = false }).ClickAsync();
     await Expect(dialog).ToBeHiddenAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Workout progress time", new() { Exact = true })).ToContainTextAsync("0:00");
-    await Expect(Page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^Hold to resume") })).ToBeVisibleAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true })).ToBeVisibleAsync();
   }
 
   [Fact]
   [Trait("Category", "Browser")]
-  public async Task Stop_cancels_a_pending_start_hold_before_any_start_request_is_sent()
+  public async Task Start_uses_one_normal_click_without_a_hold_gesture()
   {
     await Page.SetViewportSizeAsync(440, 956);
     await ResetSimulatorAsync();
     SeededPlan plan = await SeedPlanAsync("start-stop-race");
     int startRequests = 0;
-    int stopRequests = 0;
     Page.Request += (_, request) =>
     {
       if (request.Method != "POST") return;
       if (request.Url.EndsWith("/api/live/sessions/start", StringComparison.Ordinal))
         Interlocked.Increment(ref startRequests);
-      if (request.Url.EndsWith("/api/live/sessions/stop", StringComparison.Ordinal))
-        Interlocked.Increment(ref stopRequests);
     };
 
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
@@ -883,18 +875,55 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
     ILocator start = Page.GetByRole(AriaRole.Button, new()
     {
-      NameRegex = new System.Text.RegularExpressions.Regex("^Hold to start"),
+      Name = "Start",
+      Exact = true,
     });
     await Expect(start).ToBeEnabledAsync();
-    await start.EvaluateAsync("button => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))");
-    await Expect(Page.GetByText("Keep holding — Start in 3.", new() { Exact = true })).ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
-    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/control$"));
-    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToBeVisibleAsync();
-    await Page.WaitForTimeoutAsync(3_200);
+    Assert.Equal("none", await start.EvaluateAsync<string>("button => getComputedStyle(button).userSelect"));
+    await start.ClickAsync();
+    Assert.Equal(1, Volatile.Read(ref startRequests));
+  }
 
-    Assert.Equal(0, Volatile.Read(ref startRequests));
-    Assert.Equal(1, Volatile.Read(ref stopRequests));
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Fullscreen_chart_uses_the_short_iPhone_landscape_viewport()
+  {
+    await Page.SetViewportSizeAsync(844, 390);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync("fullscreen-iphone-landscape");
+    await PrepareActiveControlAsync(plan);
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Chart", Exact = true }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Toggle full-screen dashboard", Exact = true }).ClickAsync();
+    await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
+      new System.Text.RegularExpressions.Regex("control-page--chart"));
+    Assert.True(await Page.Locator("#control-dashboard").EvaluateAsync<bool>(
+      "element => element.matches(':fullscreen') || element.classList.contains('control-page--immersive')"));
+
+    ILocator graph = Page.Locator(".control-live-chart--focused");
+    LocatorBoundingBoxResult? graphBox = await graph.BoundingBoxAsync();
+    Assert.NotNull(graphBox);
+    string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
+    Directory.CreateDirectory(screenshotDirectory);
+    await Page.ScreenshotAsync(new PageScreenshotOptions
+    {
+      Path = Path.Combine(screenshotDirectory, "fullscreen-chart-844x390.png"),
+      FullPage = false,
+    });
+    Assert.True(graphBox.Width >= 720 && graphBox.Height >= 350,
+      $"Fullscreen iPhone-landscape graph still wastes the viewport: {graphBox.Width:F1}x{graphBox.Height:F1}.");
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Toggle full-screen dashboard", Exact = true })).ToBeVisibleAsync();
+    ILocator pause = Page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true });
+    ILocator stop = Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true });
+    await Expect(pause).ToBeVisibleAsync();
+    await Expect(stop).ToBeVisibleAsync();
+    LocatorBoundingBoxResult? dockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+    Assert.NotNull(dockBox);
+    string layout = await graph.EvaluateAsync<string>(
+      "element => { const chart = getComputedStyle(element); const center = getComputedStyle(element.parentElement); const dock = getComputedStyle(element.parentElement.querySelector('.control-action-dock')); return `chart[position=${chart.position},column=${chart.gridColumn},width=${chart.width}] center[display=${center.display},columns=${center.gridTemplateColumns}] dock[position=${dock.position},column=${dock.gridColumn},width=${dock.width}]`; }");
+    Assert.True(graphBox.X + graphBox.Width <= dockBox.X + 1,
+      $"Pause/Stop overlapped the graph: graph right={graphBox.X + graphBox.Width:F1}, dock left={dockBox.X:F1}; {layout}.");
+
   }
 
   [Fact]
@@ -928,10 +957,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
     ILocator start = Page.GetByRole(AriaRole.Button, new()
     {
-      NameRegex = new System.Text.RegularExpressions.Regex("^Hold to start"),
+      Name = "Start",
+      Exact = true,
     });
 
-    await start.EvaluateAsync("button => button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))");
+    await start.ClickAsync();
     await startArrived.Task.WaitAsync(TimeSpan.FromSeconds(6));
     await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
     await Expect(Page.GetByText("Stop requested — finishing the in-flight command, then sending one current-state Stop.", new() { Exact = true })).ToBeVisibleAsync();

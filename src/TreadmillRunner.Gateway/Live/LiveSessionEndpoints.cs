@@ -94,6 +94,7 @@ public static class LiveSessionEndpoints
     live.MapPost("/sessions/start", StartAsync);
     live.MapPost("/sessions/stop", StopAsync);
     live.MapPost("/sessions/end", EndSessionAsync);
+    live.MapPost("/sessions/discard", DiscardSessionAsync);
     live.MapPost("/sessions/reset-progress", ResetWorkoutProgressAsync);
     live.MapPost("/sessions/heart-rate-automation", SetHeartRateAutomationAsync);
     live.MapPost("/sessions/resume-planned-controls", ResumePlannedControlsAsync);
@@ -500,6 +501,36 @@ public static class LiveSessionEndpoints
     {
       return Results.Ok(await coordinator.ResetWorkoutProgressAsync(
         request.OperationId, request.ExpectedSessionVersion, request.LeaseId, request.HolderId, cancellationToken));
+    }
+    catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
+  }
+
+  private static async Task<IResult> DiscardSessionAsync(
+    TreadmillCommandRequest request,
+    ILiveSessionCoordinator coordinator,
+    ISessionStore store,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      ActiveSessionSnapshot snapshot = await coordinator.EndSessionAsync(
+        request.OperationId, request.ExpectedSessionVersion, request.LeaseId, request.HolderId, cancellationToken);
+      HistoryDeletionPreview preview = await store.PreviewDeletionAsync(
+        snapshot.SessionId, snapshot.UserProfileId, cancellationToken)
+        ?? throw new InvalidOperationException("The stopped session could not be prepared for deletion.");
+      string fingerprint = PlanningOperationFingerprint.Compute(new
+      {
+        snapshot.UserProfileId,
+        snapshot.SessionId,
+        preview.Revision,
+        DiscardedFromStopDecision = true,
+      });
+      await store.DeleteAsync(new DeleteHistorySessionOperation(
+        request.OperationId, snapshot.SessionId, snapshot.UserProfileId, preview.Revision,
+        fingerprint, timeProvider.GetUtcNow()), cancellationToken);
+      return Results.Ok(snapshot);
     }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
     catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }

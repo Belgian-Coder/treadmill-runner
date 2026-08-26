@@ -437,14 +437,15 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Theory]
-  [InlineData("Pending", false)]
-  [InlineData("InFlight", false)]
-  [InlineData("Unknown", false)]
-  [InlineData("Confirmed", true)]
-  [InlineData("FoundInGarmin", true)]
-  [InlineData("Dismissed", true)]
-  [InlineData("Failed", true)]
-  public async Task System_test_deletion_obeys_every_Garmin_job_terminal_rule(string status, bool expectedCanDelete)
+  [InlineData("Pending", "Upload", false)]
+  [InlineData("Pending", "WatchSearch", true)]
+  [InlineData("InFlight", "WatchSearch", false)]
+  [InlineData("Unknown", "Upload", false)]
+  [InlineData("Confirmed", "Upload", true)]
+  [InlineData("FoundInGarmin", "Upload", true)]
+  [InlineData("Dismissed", "Upload", true)]
+  [InlineData("Failed", "Upload", true)]
+  public async Task System_test_deletion_obeys_every_Garmin_job_terminal_rule(string status, string operationPhase, bool expectedCanDelete)
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
     await MigrateAndSeedAsync(factory);
@@ -476,6 +477,7 @@ public sealed class SessionStoreTests : IAsyncLifetime
         WorkoutSessionId = sessionId,
         IdempotencyKey = new string('f', 64),
         Status = status,
+        OperationPhase = operationPhase,
         AvailableAtUtc = now,
         CreatedAtUtc = now,
         UpdatedAtUtc = now,

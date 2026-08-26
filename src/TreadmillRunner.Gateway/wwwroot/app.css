@@ -518,7 +518,7 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .control-action-dock { position: sticky; bottom: .5rem; z-index: 10; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: .8rem; padding: .7rem; border: 1px solid #d8f7ed24; border-radius: 1rem; background: #09222cf2; box-shadow: 0 .8rem 2.4rem #0009; }
 .control-action-dock .touch-action { min-height: 64px; font-size: 1rem; }
 .control-action-dock .stop-action { font-size: 1.08rem !important; }
-.media-control { display: inline-flex; align-items: center; justify-content: center; gap: .7rem; min-width: 0; min-height: 64px; }
+.media-control { display: inline-flex; align-items: center; justify-content: center; gap: .7rem; min-width: 0; min-height: 64px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .media-control__icon { display: grid; width: 2rem; height: 2rem; flex: 0 0 2rem; place-items: center; font: 900 1.35rem/1 "Cascadia Mono", Consolas, monospace; }
 .media-control--play .media-control__icon { transform: translateX(.08rem); }
 .schedule-dialog.stop-decision-dialog { width: min(620px, 100%); height: auto; max-height: calc(100dvh - 2rem); align-content: start; }
@@ -2663,4 +2663,77 @@ h1:focus-visible {
 .field-inline > input {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+/* In short iPhone landscape, immersive Chart is the graph—not a dashboard
+   with a graph squeezed between hidden rails and reserved control padding. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]),
+  .control-page--chart.control-page--immersive {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    padding: max(.2rem, env(safe-area-inset-top)) max(.35rem, env(safe-area-inset-right)) max(.2rem, env(safe-area-inset-bottom)) max(.35rem, env(safe-area-inset-left));
+    overflow: hidden;
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-page__header,
+  .control-page--chart.control-page--immersive .control-page__header {
+    position: absolute;
+    z-index: 2;
+    top: max(.2rem, env(safe-area-inset-top));
+    right: max(.35rem, env(safe-area-inset-right));
+    min-height: 44px;
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-title-block,
+  .control-page--chart.control-page--immersive .control-title-block,
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-live-chart--focused .chart-focus-action,
+  .control-page--chart.control-page--immersive .control-live-chart--focused .chart-focus-action { display: none; }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-header-actions > :not(.fullscreen-action),
+  .control-page--chart.control-page--immersive .control-header-actions > :not(.fullscreen-action),
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-rail,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-rail,
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-primary-metrics,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-primary-metrics { display: none; }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart,
+  .control-page--chart.control-page--immersive .control-console-grid--chart {
+    position: relative;
+    min-height: 0;
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-center,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-center {
+    min-height: 0;
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-rows: minmax(0, 1fr);
+    padding: 0;
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-live-chart,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-live-chart {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-live-chart,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-live-chart,
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-chart,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-chart {
+    height: 100%;
+    min-height: 0;
+  }
+  .control-page--chart:has(.fullscreen-action[aria-pressed="true"]) .control-console-grid--chart .control-action-dock,
+  .control-page--chart.control-page--immersive .control-console-grid--chart .control-action-dock {
+    position: static;
+    z-index: auto;
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    transform: none;
+    background: #09222c;
+    box-shadow: none;
+  }
 }

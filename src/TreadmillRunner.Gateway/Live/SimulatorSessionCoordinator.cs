@@ -779,9 +779,12 @@ public sealed class LiveSessionCoordinator(
       active.HeartRateController.ResetDwell();
       active.DesiredHeartRateAutomationMode = HeartRateAutomationMode.Disabled;
       active.HeartRateAutomationMode = HeartRateAutomationMode.Disabled;
-      active.HeartRateAutomationReason = "Workout progress was reset. Press Start when you are ready; automation remains disabled.";
-      active.CommandsSuspended = true;
-      active.CommandsSuspendedReason = "Workout progress was reset and awaits an explicit Start.";
+      active.HeartRateAutomationReason = "Workout progress was reset. Press Start when you are ready; step-zero speed and incline will be reconciled after fresh motion.";
+      // While stopped, no planned command can run. Re-arm reconciliation now
+      // so the explicit next Start plus fresh motion applies step-zero targets.
+      active.CommandsSuspended = false;
+      active.CommandsSuspendedReason = null;
+      active.CanResumePlannedControls = false;
       active.Machine.MarkConfigurationChanged();
       active.ProcessedOperationIds.Add(operationId);
 

@@ -809,7 +809,7 @@ public sealed class SessionStore(
         EventCount = candidate.Events.Count,
         Garmin = context.GarminActivityUploadJobs.AsNoTracking()
           .Where(job => job.WorkoutSessionId == candidate.Id)
-          .Select(job => new { job.Id, job.Status, job.UpdatedAtUtc })
+          .Select(job => new { job.Id, job.Status, job.OperationPhase, job.UpdatedAtUtc })
           .SingleOrDefault(),
       })
       .SingleOrDefaultAsync(cancellationToken);
@@ -820,12 +820,15 @@ public sealed class SessionStore(
     bool terminal = IsTerminal(state) && data.Session.StartedAtUtc is not null && data.Session.EndedAtUtc is not null;
     bool linked = data.Session.WorkoutProgramRunId is not null || data.Session.WorkoutProgramItemId is not null;
     string? garminStatus = data.Garmin?.Status;
-    bool garminSettled = garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed" or "ReviewRequired";
+    bool pendingReadOnlyWatchSearch = garminStatus == "Pending" && data.Garmin?.OperationPhase == "WatchSearch";
+    bool garminSettled = pendingReadOnlyWatchSearch || garminStatus is null or "Confirmed" or "FoundInGarmin" or "Dismissed" or "Failed" or "ReviewRequired";
     bool canDelete = terminal && garminSettled;
     string reason = !terminal
       ? "Only a terminal session can be permanently deleted."
       : !garminSettled
         ? "Wait for the Garmin upload to finish, or acknowledge its unknown outcome, before deleting it."
+        : pendingReadOnlyWatchSearch
+          ? "This local session can be deleted. Its pending read-only Garmin watch search will be canceled; no remote activity is deleted."
         : garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed" or "ReviewRequired"
           ? "This local session and its settled Garmin upload record can be deleted. The remote Garmin activity is not deleted."
           : linked
@@ -843,6 +846,7 @@ public sealed class SessionStore(
       data.Session.DistanceKilometers.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
       data.Garmin?.Id.ToString("D") ?? string.Empty,
       garminStatus ?? string.Empty,
+      data.Garmin?.OperationPhase ?? string.Empty,
       data.Garmin?.UpdatedAtUtc.ToString("O") ?? string.Empty);
     string revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(revisionMaterial)));
     bool remoteMayRemain = garminStatus is "Confirmed" or "FoundInGarmin" or "Dismissed" or "ReviewRequired";
