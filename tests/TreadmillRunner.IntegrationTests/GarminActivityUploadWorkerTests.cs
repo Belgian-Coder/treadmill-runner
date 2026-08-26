@@ -104,7 +104,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Possible_watch_match_without_local_heart_rate_stops_before_upload_for_review()
+  public async Task Unique_watch_match_without_local_heart_rate_uses_treadmill_shape()
   {
     string databasePath = Path.Combine(directory, $"review-{Guid.NewGuid():N}.db");
     IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
@@ -124,12 +124,12 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
 
     await worker.ProcessOneAsync(leased, default);
 
-    GarminActivityUploadJob review = Assert.Single(await store.ListJobsAsync(profileId));
-    Assert.Equal("ReviewRequired", review.Status);
-    Assert.Equal("Review", review.OperationPhase);
-    Assert.Equal("watch-123", review.MatchedRemoteId);
-    Assert.Equal("review-required", review.FailureKind);
-    Assert.Contains("heart-rate", review.MatchEvidence, StringComparison.OrdinalIgnoreCase);
+    GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("FoundInGarmin", completed.Status);
+    Assert.Equal("WatchSearch", completed.OperationPhase);
+    Assert.Equal("watch-123", completed.MatchedRemoteId);
+    Assert.Equal("watch-match", completed.FailureKind);
+    Assert.DoesNotContain("heart-rate", completed.MatchEvidence, StringComparison.OrdinalIgnoreCase);
     Assert.Equal(new[] { "search" }, adapter.Calls);
     Assert.False(adapter.SawReadableFit);
     Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));

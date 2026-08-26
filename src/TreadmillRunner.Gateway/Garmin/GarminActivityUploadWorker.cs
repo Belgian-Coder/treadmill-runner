@@ -112,7 +112,7 @@ public sealed class GarminActivityUploadWorker(
             match.Evidence,
             timeProvider.GetUtcNow(),
             cancellationToken);
-          logger.LogInformation("Garmin watch candidate for upload job {JobId} requires manual review because local heart-rate evidence is absent: {Evidence}", job.Id, match.Evidence);
+          logger.LogInformation("Garmin watch candidates for upload job {JobId} require manual review because the treadmill activity shape is ambiguous: {Evidence}", job.Id, match.Evidence);
           return;
         }
         if (match.Disposition == GarminWatchActivityMatchDisposition.Single && match.Candidate is { } candidate)
