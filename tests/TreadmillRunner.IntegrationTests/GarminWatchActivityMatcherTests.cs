@@ -5,7 +5,7 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class GarminWatchActivityMatcherTests
 {
   [Fact]
-  public void Selects_one_treadmill_activity_with_close_shape_and_heart_rate_curve()
+  public void Selects_one_treadmill_activity_with_close_shape()
   {
     DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
     GarminActivityMatchReference local = Reference(started);
@@ -22,7 +22,7 @@ public sealed class GarminWatchActivityMatcherTests
 
     Assert.Equal(GarminWatchActivityMatchDisposition.Single, result.Disposition);
     Assert.Equal(candidate.RemoteId, result.Candidate?.RemoteId);
-    Assert.Contains("heart-rate", result.Evidence, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("Polar heart rate remains authoritative", result.Evidence, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -55,7 +55,7 @@ public sealed class GarminWatchActivityMatcherTests
   }
 
   [Fact]
-  public void Requires_review_when_local_session_has_no_heart_rate_evidence()
+  public void Unique_treadmill_shape_matches_without_local_heart_rate()
   {
     DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
     GarminActivityMatchReference local = new(
@@ -69,13 +69,13 @@ public sealed class GarminWatchActivityMatcherTests
       local,
       [Candidate("review", started.AddMinutes(2), 2091, 3.10, 136, 161, 15)]);
 
-    Assert.Equal(GarminWatchActivityMatchDisposition.ReviewRequired, result.Disposition);
+    Assert.Equal(GarminWatchActivityMatchDisposition.Single, result.Disposition);
     Assert.Equal("review", result.Candidate?.RemoteId);
-    Assert.Contains("manual review", result.Evidence, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("treadmill shape", result.Evidence, StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]
-  public void Requires_review_when_watch_candidate_has_no_heart_rate_evidence()
+  public void Unique_treadmill_shape_matches_without_watch_heart_rate()
   {
     DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
     GarminWatchActivityCandidate candidate = new(
@@ -90,8 +90,28 @@ public sealed class GarminWatchActivityMatcherTests
 
     GarminWatchActivityMatch result = GarminWatchActivityMatcher.Match(Reference(started), [candidate]);
 
-    Assert.Equal(GarminWatchActivityMatchDisposition.ReviewRequired, result.Disposition);
+    Assert.Equal(GarminWatchActivityMatchDisposition.Single, result.Disposition);
     Assert.Equal("watch-no-hr", result.Candidate?.RemoteId);
+  }
+
+  [Fact]
+  public void Unique_treadmill_shape_matches_despite_large_watch_heart_rate_deviation()
+  {
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
+    GarminWatchActivityCandidate candidate = Candidate(
+      "watch-different-hr",
+      started.AddMinutes(3),
+      1830,
+      3.08,
+      95,
+      110,
+      0);
+
+    GarminWatchActivityMatch result = GarminWatchActivityMatcher.Match(Reference(started), [candidate]);
+
+    Assert.Equal(GarminWatchActivityMatchDisposition.Single, result.Disposition);
+    Assert.Equal(candidate.RemoteId, result.Candidate?.RemoteId);
+    Assert.Contains("Polar heart rate remains authoritative", result.Evidence, StringComparison.Ordinal);
   }
 
   private static GarminActivityMatchReference Reference(DateTimeOffset started) => new(

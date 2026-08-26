@@ -254,7 +254,7 @@ public sealed class GarminActivityUploadWorker(
     await store.MarkFailedAsync(job.Id, result.Message ?? fallbackMessage, authentication, now.Add(delay), now, cancellationToken);
   }
 
-  private static GarminActivityMatchReference ToMatchReference(StoredWorkoutSession session)
+  internal static GarminActivityMatchReference ToMatchReference(StoredWorkoutSession session)
   {
     SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(session.Samples);
     return new(

@@ -43,6 +43,7 @@ try {
         '--configuration', $Configuration,
         '--no-restore',
         '-p:WasmBuildNative=false',
+        '-p:InvariantGlobalization=false',
         '--filter', $Filter,
         '--logger', 'console;verbosity=normal',
         '--logger', 'trx',

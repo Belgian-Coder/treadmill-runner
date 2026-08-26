@@ -27,12 +27,23 @@ public static class GarminFitActivityMerger
     StoredWorkoutSession orderedSession = localSession with { Samples = samples };
     SessionFitMetrics fitMetrics = SessionFitMetricsCalculator.Calculate(orderedSession, elevation);
     float altitudeBaseline = firstRecord.GetEnhancedAltitude() ?? firstRecord.GetAltitude() ?? 0;
-    var replacementRecords = new Queue<RecordMesg>(records.Select(record => OverlayRecord(
-      record,
-      samples,
-      elevation.Points,
-      fitMetrics,
-      altitudeBaseline)));
+    RecordMesg[] replacementRecords = samples.Select(sample =>
+    {
+      RecordMesg? watchRecord = records
+        .Where(record => record.GetTimestamp() is not null)
+        .MinBy(record => Math.Abs(
+          new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp() -
+          record.GetTimestamp()!.GetTimeStamp()));
+      if (watchRecord?.GetTimestamp() is { } watchTimestamp && Math.Abs(
+            new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp() - watchTimestamp.GetTimeStamp()) > 5)
+        watchRecord = null;
+      return OverlayRecord(
+        watchRecord is null ? new RecordMesg() : new RecordMesg(watchRecord),
+        sample,
+        elevation.Points.Single(point => point.Sequence == sample.Sequence),
+        fitMetrics,
+        altitudeBaseline);
+    }).ToArray();
     SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
       samples,
       SessionCalorieCalculator.ReadWeightKilograms(localSession.Definition.ControllerConfigurationJson));
@@ -51,15 +62,27 @@ public static class GarminFitActivityMerger
         uint replacementSerial = watchSerial ^ BitConverter.ToUInt32(localSession.Definition.SessionId.ToByteArray(), 0) ^ 0x4D455247u;
         if (replacementSerial == watchSerial) replacementSerial ^= 1u;
         fileId.SetSerialNumber(replacementSerial);
+        fileId.SetTimeCreated(new Dynastream.Fit.DateTime(localSession.StartedAt.Value.UtcDateTime));
         messages[index] = fileId;
       }
-      else if (message.Num == MesgNum.Record)
-        messages[index] = replacementRecords.Dequeue();
       else if (message.Num == MesgNum.Lap && lapCount == 1)
         messages[index] = OverlaySummary(new LapMesg(message), localSession, statistics, fitMetrics, averageHeartRate, maximumHeartRate);
       else if (message.Num == MesgNum.Session && sessionCount == 1)
         messages[index] = OverlaySummary(new SessionMesg(message), localSession, statistics, fitMetrics, averageHeartRate, maximumHeartRate);
+      else if (message.Num == MesgNum.Activity)
+      {
+        var activity = new ActivityMesg(message);
+        activity.SetTimestamp(new Dynastream.Fit.DateTime(localSession.EndedAt.Value.UtcDateTime));
+        activity.SetTotalTimerTime((float)localSession.Duration.TotalSeconds);
+        messages[index] = activity;
+      }
     }
+
+    int firstRecordIndex = messages.FindIndex(message => message.Num == MesgNum.Record);
+    messages.RemoveAll(message => message.Num == MesgNum.Record);
+    if (firstRecordIndex < 0) firstRecordIndex = messages.FindIndex(message => message.Num is MesgNum.Lap or MesgNum.Session or MesgNum.Activity);
+    if (firstRecordIndex < 0) firstRecordIndex = messages.Count;
+    messages.InsertRange(firstRecordIndex, replacementRecords);
 
     using var output = new MemoryStream();
     var encoder = new Encode(ProtocolVersion.V20);
@@ -91,18 +114,12 @@ public static class GarminFitActivityMerger
 
   private static RecordMesg OverlayRecord(
     RecordMesg record,
-    IReadOnlyList<SessionSample> samples,
-    IReadOnlyList<SessionElevationPoint> elevationPoints,
+    SessionSample sample,
+    SessionElevationPoint elevation,
     SessionFitMetrics fitMetrics,
     float altitudeBaseline)
   {
-    Dynastream.Fit.DateTime? timestamp = record.GetTimestamp();
-    if (timestamp is null) return record;
-    long recordTimestamp = timestamp.GetTimeStamp();
-    SessionSample? sample = samples.MinBy(item => Math.Abs(
-      new Dynastream.Fit.DateTime(item.CapturedAt.UtcDateTime).GetTimeStamp() - recordTimestamp));
-    if (sample is null || Math.Abs(
-          new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp() - recordTimestamp) > 5) return record;
+    record.SetTimestamp(new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime));
     float speed = (float)(sample.MeasuredSpeedKph / 3.6);
     Field? compressedSpeedDistance = record.GetField("compressed_speed_distance");
     if (compressedSpeedDistance is not null) record.RemoveField(compressedSpeedDistance);
@@ -110,7 +127,6 @@ public static class GarminFitActivityMerger
     record.SetEnhancedSpeed(speed);
     record.SetDistance((float)(sample.DistanceKilometers * 1000));
     record.SetGrade((float)sample.MeasuredInclinePercent);
-    SessionElevationPoint elevation = elevationPoints.Single(point => point.Sequence == sample.Sequence);
     record.SetAltitude(altitudeBaseline + (float)elevation.ElevationMeters);
     record.SetEnhancedAltitude(altitudeBaseline + (float)elevation.ElevationMeters);
     if (fitMetrics.VerticalSpeedBySequence.TryGetValue(sample.Sequence, out float verticalSpeed))
@@ -122,6 +138,7 @@ public static class GarminFitActivityMerger
 
   private static LapMesg OverlaySummary(LapMesg message, StoredWorkoutSession session, SessionSampleStatistics statistics, SessionFitMetrics fitMetrics, double? averageHeartRate, ushort? maximumHeartRate)
   {
+    ApplyCanonicalTiming(message.SetTimestamp, message.SetStartTime, message.SetTotalElapsedTime, message.SetTotalTimerTime, session);
     ApplySummary(
       distance => message.SetTotalDistance(distance), calories => message.SetTotalCalories(calories),
       averageSpeed => { message.SetAvgSpeed(averageSpeed); message.SetEnhancedAvgSpeed(averageSpeed); },
@@ -152,6 +169,7 @@ public static class GarminFitActivityMerger
 
   private static SessionMesg OverlaySummary(SessionMesg message, StoredWorkoutSession session, SessionSampleStatistics statistics, SessionFitMetrics fitMetrics, double? averageHeartRate, ushort? maximumHeartRate)
   {
+    ApplyCanonicalTiming(message.SetTimestamp, message.SetStartTime, message.SetTotalElapsedTime, message.SetTotalTimerTime, session);
     ApplySummary(
       distance => message.SetTotalDistance(distance), calories => message.SetTotalCalories(calories),
       averageSpeed => { message.SetAvgSpeed(averageSpeed); message.SetEnhancedAvgSpeed(averageSpeed); },
@@ -178,6 +196,19 @@ public static class GarminFitActivityMerger
       statistics,
       fitMetrics);
     return message;
+  }
+
+  private static void ApplyCanonicalTiming(
+    Action<Dynastream.Fit.DateTime> setTimestamp,
+    Action<Dynastream.Fit.DateTime> setStartTime,
+    Action<float?> setElapsed,
+    Action<float?> setTimer,
+    StoredWorkoutSession session)
+  {
+    setTimestamp(new Dynastream.Fit.DateTime(session.EndedAt!.Value.UtcDateTime));
+    setStartTime(new Dynastream.Fit.DateTime(session.StartedAt!.Value.UtcDateTime));
+    setElapsed((float)session.Duration.TotalSeconds);
+    setTimer((float)session.Duration.TotalSeconds);
   }
 
   private static void ApplySummary(

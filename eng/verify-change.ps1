@@ -5,6 +5,7 @@ param(
     [string] $TestFilter,
     [string] $BrowserFilter,
     [switch] $Full,
+    [switch] $NoBrowser,
     [switch] $IncludeConnectIq
 )
 
@@ -21,6 +22,9 @@ if ($Full -and (-not [string]::IsNullOrWhiteSpace($TestFilter) -or -not [string]
 if ($IncludeConnectIq -and -not $Full) {
     throw '-IncludeConnectIq is available only with -Full.'
 }
+if ($NoBrowser -and -not $Full) {
+    throw '-NoBrowser is available only with -Full.'
+}
 if (-not $Full -and [string]::IsNullOrWhiteSpace($TestFilter) -and [string]::IsNullOrWhiteSpace($BrowserFilter)) {
     throw 'Focused verification requires -TestFilter, -BrowserFilter, or both. Use -Full only once at final acceptance.'
 }
@@ -30,8 +34,13 @@ try {
     if ($Full) {
         Write-Host 'Running final deterministic acceptance.'
         & $validateScript -Configuration $Configuration -IncludeConnectIq:$IncludeConnectIq
-        Write-Host 'Running final clean browser acceptance.'
-        & $browserScript -Configuration $Configuration
+        if ($NoBrowser) {
+            Write-Host 'Skipping browser acceptance because the release diff contains no browser-affecting files.'
+        }
+        else {
+            Write-Host 'Running final clean browser acceptance.'
+            & $browserScript -Configuration $Configuration
+        }
         $head = (& git rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($head)) {
             throw 'Final acceptance could not resolve the validated commit.'
@@ -42,10 +51,11 @@ try {
             [System.IO.File]::WriteAllText(
                 $receiptPath,
                 ([ordered]@{
-                    schemaVersion = 1
+                    schemaVersion = 2
                     sourceRevision = $head
                     configuration = $Configuration
                     includeConnectIq = [bool]$IncludeConnectIq
+                    browserAccepted = -not [bool]$NoBrowser
                     completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
                 } | ConvertTo-Json),
                 [System.Text.UTF8Encoding]::new($false))

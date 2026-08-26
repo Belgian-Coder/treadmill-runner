@@ -215,6 +215,36 @@ public sealed class SessionExporterTests
     Assert.Equal(new float?[] { 25, 75 }, laps.Select(static lap => lap.GetTotalDistance()).ToArray());
   }
 
+  [Fact]
+  public void Garmin_merge_rebuilds_the_complete_local_timeline_when_the_watch_started_late()
+  {
+    StoredWorkoutSession local = ElevationSession();
+    byte[] merged = GarminFitActivityMerger.Merge(WatchFit(local.StartedAt!.Value.AddMinutes(2)), local);
+    using var stream = new MemoryStream(merged);
+    var decoder = new Decode();
+    FileIdMesg? file = null;
+    SessionMesg? session = null;
+    var records = new List<RecordMesg>();
+    var broadcaster = new MesgBroadcaster();
+    broadcaster.FileIdMesgEvent += (_, args) => file = new FileIdMesg(args.mesg);
+    broadcaster.SessionMesgEvent += (_, args) => session = new SessionMesg(args.mesg);
+    broadcaster.RecordMesgEvent += (_, args) => records.Add(new RecordMesg(args.mesg));
+    decoder.MesgEvent += broadcaster.OnMesg;
+    decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+
+    Assert.True(decoder.Read(stream));
+    Assert.Equal(local.Samples.Count, records.Count);
+    Assert.Equal(local.StartedAt.Value.UtcDateTime, file?.GetTimeCreated()?.GetDateTime());
+    Assert.Equal(local.StartedAt.Value.UtcDateTime, session?.GetStartTime()?.GetDateTime());
+    Assert.Equal(local.EndedAt!.Value.UtcDateTime, session?.GetTimestamp()?.GetDateTime());
+    Assert.Equal((float)local.Duration.TotalSeconds, session?.GetTotalElapsedTime());
+    Assert.Equal((float)local.Duration.TotalSeconds, session?.GetTotalTimerTime());
+    Assert.Equal(local.Samples.Select(sample => (byte?)sample.HeartRateBpm).ToArray(), records.Select(record => record.GetHeartRate()).ToArray());
+    Assert.Equal(
+      local.Samples.Select(sample => sample.CapturedAt.UtcDateTime).ToArray(),
+      records.Select(record => record.GetTimestamp()!.GetDateTime()).ToArray());
+  }
+
   private static byte[] WatchFit(DateTimeOffset started, bool includeTwoLaps = false)
   {
     using var stream = new MemoryStream();

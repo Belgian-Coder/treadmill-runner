@@ -421,15 +421,26 @@ try {
 
     Assert-VersionIsNewer -Version $Version -Repository $Repository
 
+    $previousVersion = Get-MaxPublishedReleaseVersion -Repository $Repository
+    $browserAcceptanceRequired = $true
+    if ($null -ne $previousVersion) {
+        $changedPaths = @(& git diff --name-only "v$previousVersion..$head")
+        if ($LASTEXITCODE -ne 0) { throw 'Could not determine the browser acceptance scope.' }
+        $browserAcceptanceRequired = @($changedPaths | Where-Object {
+            $_ -match '^(src/TreadmillRunner\.Web(?:\.|/)|tests/TreadmillRunner\.E2ETests/|eng/playwright\.ps1$|Directory\.(?:Build|Packages)\.|.*\.(?:razor|css|js|html)$)'
+        }).Count -gt 0
+    }
+
     $acceptanceReceiptPath = Join-Path $projectRoot 'artifacts\validation\full-acceptance.json'
     $freshAcceptanceReceipt = $false
     if (-not $SkipValidation -and (Test-Path -LiteralPath $acceptanceReceiptPath -PathType Leaf)) {
         try {
             $acceptanceReceipt = Get-Content -LiteralPath $acceptanceReceiptPath -Raw | ConvertFrom-Json
             $completedAt = [DateTimeOffset]::Parse([string]$acceptanceReceipt.completedAtUtc)
-            $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 1 -and
+            $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 2 -and
                 [string]$acceptanceReceipt.sourceRevision -eq $head -and
                 [string]$acceptanceReceipt.configuration -eq 'Release' -and
+                (-not $browserAcceptanceRequired -or [bool]$acceptanceReceipt.browserAccepted) -and
                 $completedAt -ge [DateTimeOffset]::UtcNow.Subtract([TimeSpan]::FromHours(8))
         }
         catch {
@@ -444,7 +455,7 @@ try {
         $previousShowcaseMode = $env:TREADMILLRUNNER_UPDATE_SHOWCASE
         try {
             $env:TREADMILLRUNNER_UPDATE_SHOWCASE = '0'
-            & (Join-Path $PSScriptRoot 'verify-change.ps1') -Configuration Release -Full
+            & (Join-Path $PSScriptRoot 'verify-change.ps1') -Configuration Release -Full -NoBrowser:(-not $browserAcceptanceRequired)
             if ($LASTEXITCODE -ne 0) { throw 'Full release acceptance failed.' }
         }
         finally {

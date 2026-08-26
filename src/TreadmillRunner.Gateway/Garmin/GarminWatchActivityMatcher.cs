@@ -53,30 +53,11 @@ public static class GarminWatchActivityMatcher
       return new(GarminWatchActivityMatchDisposition.Multiple, null, $"{plausible.Length} Garmin treadmill activities are plausible; normal upload remains enabled.");
 
     GarminWatchActivityCandidate candidate = plausible[0];
-    bool localHasHeartRate = local.AverageHeartRate is not null ||
-      local.MaximumHeartRate is not null ||
-      local.HeartRateSamples.Count > 0;
-    bool candidateHasHeartRate = candidate.AverageHeartRate is not null ||
-      candidate.MaximumHeartRate is not null ||
-      candidate.HeartRateSamples.Count > 0;
-    if (!localHasHeartRate || !candidateHasHeartRate)
-    {
-      return new(
-        GarminWatchActivityMatchDisposition.ReviewRequired,
-        candidate,
-        !localHasHeartRate
-          ? "The local session has no heart-rate evidence; the shape match is retained for manual review and upload is paused."
-          : "The Garmin watch activity has no heart-rate evidence; the shape match is retained for manual review and upload is paused.");
-    }
-    HeartRateComparison comparison = CompareHeartRate(local, candidate);
-    if (!comparison.IsMatch)
-      return new(GarminWatchActivityMatchDisposition.None, null, comparison.Evidence);
-
     double startDelta = Math.Abs((candidate.StartedAtUtc - local.StartedAtUtc).TotalSeconds);
     double durationDelta = Math.Abs(candidate.DurationSeconds - local.DurationSeconds);
     double distanceDelta = Math.Abs(candidate.DistanceKilometers - local.DistanceKilometers);
     string evidence = FormattableString.Invariant(
-      $"One watch activity matched: start {startDelta:F0}s, duration {durationDelta:F0}s, distance {distanceDelta:F2}km; {comparison.Evidence}");
+      $"One watch activity matched by treadmill shape: start {startDelta:F0}s, duration {durationDelta:F0}s, distance {distanceDelta:F2}km; local Polar heart rate remains authoritative");
     return new(GarminWatchActivityMatchDisposition.Single, candidate, evidence);
   }
 
@@ -97,71 +78,4 @@ public static class GarminWatchActivityMatcher
     return Math.Abs(candidate.DistanceKilometers - local.DistanceKilometers) <= maximumDistanceDifference;
   }
 
-  private static HeartRateComparison CompareHeartRate(
-    GarminActivityMatchReference local,
-    GarminWatchActivityCandidate candidate)
-  {
-    bool averageClose = local.AverageHeartRate is { } localAverage && candidate.AverageHeartRate is { } remoteAverage &&
-      Math.Abs(localAverage - remoteAverage) <= 8;
-    bool maximumClose = local.MaximumHeartRate is { } localMaximum && candidate.MaximumHeartRate is { } remoteMaximum &&
-      Math.Abs(localMaximum - remoteMaximum) <= 15;
-
-    if (local.HeartRateSamples.Count < 12 || candidate.HeartRateSamples.Count < 12)
-    {
-      bool summaryMatch = averageClose && maximumClose;
-      return new(
-        summaryMatch,
-        summaryMatch
-          ? "heart-rate summaries corroborate the match"
-          : "heart-rate evidence is missing or the summaries differ too much");
-    }
-
-    CurveScore? best = Enumerable.Range(-30, 61)
-      .Select(lag => ScoreCurves(local.HeartRateSamples, candidate.HeartRateSamples, lag))
-      .Where(score => score.PairCount >= 12)
-      .OrderBy(score => score.MeanAbsoluteError)
-      .ThenByDescending(score => score.Correlation)
-      .FirstOrDefault();
-    if (best is null)
-      return new(false, "heart-rate curves do not contain enough aligned samples");
-    bool curveMatch = best.PairCount >= 12 && best.MeanAbsoluteError <= 10 && best.Correlation >= 0.70;
-    bool isMatch = curveMatch && averageClose && maximumClose;
-    return new(
-      isMatch,
-      FormattableString.Invariant(
-        $"heart-rate curve pairs {best.PairCount}, lag {best.LagSeconds}s, MAE {best.MeanAbsoluteError:F1} bpm, correlation {best.Correlation:F2}"));
-  }
-
-  private static CurveScore ScoreCurves(
-    IReadOnlyList<GarminWatchHeartRateSample> local,
-    IReadOnlyList<GarminWatchHeartRateSample> remote,
-    int lagSeconds)
-  {
-    GarminWatchHeartRateSample[] orderedLocal = local.OrderBy(sample => sample.ElapsedSeconds).ToArray();
-    var pairs = new List<(double Local, double Remote)>();
-    foreach (GarminWatchHeartRateSample remoteSample in remote)
-    {
-      double target = remoteSample.ElapsedSeconds + lagSeconds;
-      GarminWatchHeartRateSample? nearest = orderedLocal
-        .MinBy(sample => Math.Abs(sample.ElapsedSeconds - target));
-      if (nearest is null || Math.Abs(nearest.ElapsedSeconds - target) > 3)
-        continue;
-      pairs.Add((nearest.Bpm, remoteSample.Bpm));
-    }
-
-    if (pairs.Count == 0)
-      return new(lagSeconds, 0, double.PositiveInfinity, 0);
-    double meanAbsoluteError = pairs.Average(pair => Math.Abs(pair.Local - pair.Remote));
-    double localMean = pairs.Average(pair => pair.Local);
-    double remoteMean = pairs.Average(pair => pair.Remote);
-    double numerator = pairs.Sum(pair => (pair.Local - localMean) * (pair.Remote - remoteMean));
-    double localSquares = pairs.Sum(pair => Math.Pow(pair.Local - localMean, 2));
-    double remoteSquares = pairs.Sum(pair => Math.Pow(pair.Remote - remoteMean, 2));
-    double denominator = Math.Sqrt(localSquares * remoteSquares);
-    double correlation = denominator == 0 ? (meanAbsoluteError <= 5 ? 1 : 0) : numerator / denominator;
-    return new(lagSeconds, pairs.Count, meanAbsoluteError, correlation);
-  }
-
-  private sealed record HeartRateComparison(bool IsMatch, string Evidence);
-  private sealed record CurveScore(int LagSeconds, int PairCount, double MeanAbsoluteError, double Correlation);
 }

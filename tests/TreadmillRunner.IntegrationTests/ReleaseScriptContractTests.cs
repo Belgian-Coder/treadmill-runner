@@ -83,6 +83,9 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("full-acceptance.json", release, StringComparison.Ordinal);
     Assert.Contains("sourceRevision -eq $head", release, StringComparison.Ordinal);
     Assert.Contains("FromHours(8)", release, StringComparison.Ordinal);
+    Assert.Contains("browserAcceptanceRequired", release, StringComparison.Ordinal);
+    Assert.Contains("browserAccepted", release, StringComparison.Ordinal);
+    Assert.Contains("-NoBrowser:(-not $browserAcceptanceRequired)", release, StringComparison.Ordinal);
     Assert.Contains("verify-change.ps1') -Configuration Release -Full", release, StringComparison.Ordinal);
     Assert.DoesNotContain("playwright.ps1') -Configuration Release -TimeoutMinutes 7", release, StringComparison.Ordinal);
     Assert.Contains("Release validation changed tracked or untracked files", release, StringComparison.Ordinal);
@@ -115,6 +118,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("INSTALL.txt", installerBundle, StringComparison.Ordinal);
     Assert.Contains("docs/installation.md", installerBundle, StringComparison.Ordinal);
     Assert.Contains("-p:WasmBuildNative=false", test, StringComparison.Ordinal);
+    Assert.Contains("-p:InvariantGlobalization=false", test, StringComparison.Ordinal);
   }
 
   [Fact]
