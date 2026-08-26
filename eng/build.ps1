@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
-    [switch] $Restore
+    [switch] $Restore,
+    [switch] $SkipNativeWeb
 )
 
 Set-StrictMode -Version Latest
@@ -19,7 +20,9 @@ try {
 
     # The solution contains both the Blazor Web project and the Gateway that references it.
     # Serial project builds prevent both nodes from mutating static-web-assets output at once.
-    dotnet build $solution --configuration $Configuration --no-restore --disable-build-servers -m:1
+    $arguments = @('build', $solution, '--configuration', $Configuration, '--no-restore', '--disable-build-servers', '-m:1')
+    if ($SkipNativeWeb) { $arguments += @('-p:WasmBuildNative=false', '-p:InvariantGlobalization=false') }
+    & dotnet @arguments
     if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed.' }
 }
 finally {

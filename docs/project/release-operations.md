@@ -126,6 +126,8 @@ The script requires a version newer than every published release and requires `m
 
 When `eng/verify-change.ps1 -Full` has already passed on the same clean commit within eight hours, it writes an ignored local acceptance receipt. The release script reuses that exact commit-bound receipt instead of rerunning acceptance. Backend-only release diffs may use `-NoBrowser`; the release script independently permits that receipt only when no Web, E2E, Playwright, shared-build, or browser-asset path changed. A missing, stale, malformed, insufficiently scoped, differently configured, or different-commit receipt falls back to one acceptance run; it never bypasses required validation.
 
+Backend-only acceptance also disables native WebAssembly compilation. Signed release packaging still performs the optimized native WebAssembly build once, avoiding a duplicate native build without changing the shipped artifact.
+
 Normal .NET test runs explicitly disable native WebAssembly compilation. Browser validation and release publishing remain responsible for the optimized WebAssembly build, so ordinary integration-test builds no longer spend release-build time compiling the web client.
 
 Normal browser and release validation writes showcase candidates under ignored `output/playwright/showcase/`, never over the source-controlled public gallery. To intentionally refresh a committed PNG, run Playwright with `TREADMILLRUNNER_UPDATE_SHOWCASE=1`, review and commit the evidence, clear the opt-in, and rerun the release command. The release command never hides or discards a validation-produced worktree change.

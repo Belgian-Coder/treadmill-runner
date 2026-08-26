@@ -59,6 +59,7 @@ public sealed class ReleaseScriptContractTests
     string installer = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "Install-TreadmillRunner.ps1"));
     string installerBundle = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "new-installer-bundle.ps1"));
     string test = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "test.ps1"));
+    string build = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "build.ps1"));
 
     Assert.Contains("belgian-coder/treadmill-runner", release, StringComparison.Ordinal);
     Assert.Contains("gh auth status", release, StringComparison.Ordinal);
@@ -119,6 +120,9 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("docs/installation.md", installerBundle, StringComparison.Ordinal);
     Assert.Contains("-p:WasmBuildNative=false", test, StringComparison.Ordinal);
     Assert.Contains("-p:InvariantGlobalization=false", test, StringComparison.Ordinal);
+    Assert.Contains("SkipNativeWeb", build, StringComparison.Ordinal);
+    Assert.Contains("-p:WasmBuildNative=false", build, StringComparison.Ordinal);
+    Assert.Contains("-p:InvariantGlobalization=false", build, StringComparison.Ordinal);
   }
 
   [Fact]

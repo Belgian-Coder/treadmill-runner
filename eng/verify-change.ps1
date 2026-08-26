@@ -33,7 +33,7 @@ Push-Location $projectRoot
 try {
     if ($Full) {
         Write-Host 'Running final deterministic acceptance.'
-        & $validateScript -Configuration $Configuration -IncludeConnectIq:$IncludeConnectIq
+        & $validateScript -Configuration $Configuration -IncludeConnectIq:$IncludeConnectIq -SkipNativeWeb:$NoBrowser
         if ($NoBrowser) {
             Write-Host 'Skipping browser acceptance because the release diff contains no browser-affecting files.'
         }

@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
-    [switch] $IncludeConnectIq
+    [switch] $IncludeConnectIq,
+    [switch] $SkipNativeWeb
 )
 
 Set-StrictMode -Version Latest
@@ -28,7 +29,7 @@ try {
         Write-Host 'Connect IQ validation skipped; use -IncludeConnectIq only for companion-related changes.'
     }
     & (Join-Path $PSScriptRoot 'verify-ble-read-only.ps1')
-    & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
+    & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration -SkipNativeWeb:$SkipNativeWeb
     & (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration
 
     Write-Host 'TreadmillRunner deterministic validation passed.'
