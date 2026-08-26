@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace TreadmillRunner.Gateway.Garmin;
 
 public sealed class GarminActivityBackupStore(IConfiguration configuration, TimeProvider timeProvider)
@@ -21,6 +23,15 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
   {
     string path = OriginalPath(jobId, remoteId);
     return File.Exists(path) && new FileInfo(path).Length > 0;
+  }
+
+  public bool MatchesOriginal(Guid jobId, string originalRemoteId, string candidatePath)
+  {
+    string originalPath = OriginalPath(jobId, originalRemoteId);
+    if (!File.Exists(originalPath) || !File.Exists(candidatePath)) return false;
+    byte[] originalHash = SHA256.HashData(File.ReadAllBytes(originalPath));
+    byte[] candidateHash = SHA256.HashData(File.ReadAllBytes(candidatePath));
+    return CryptographicOperations.FixedTimeEquals(originalHash, candidateHash);
   }
 
   private async Task BackupAsync(string destinationPath, string sourcePath, CancellationToken cancellationToken)

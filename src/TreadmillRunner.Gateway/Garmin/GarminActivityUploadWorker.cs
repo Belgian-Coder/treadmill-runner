@@ -85,12 +85,17 @@ public sealed class GarminActivityUploadWorker(
     string localFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-local.fit");
     string watchFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-watch.fit");
     string mergedFitPath = Path.Combine(tempDirectory, $"{job.Id:N}-merged.fit");
-    bool mutationStarted = job.OperationPhase == "DeleteOriginal";
+    var mutation = new MutationState { Started = job.OperationPhase == "DeleteOriginal" };
     try
     {
       if (job.OperationPhase == "DeleteOriginal")
       {
         await DeleteMatchedOriginalAsync(job, tokens, cancellationToken);
+        return;
+      }
+      if (job.OperationPhase == "VerifyResync")
+      {
+        await VerifyResyncAsync(job, session, tokens, watchFitPath, mutation, cancellationToken);
         return;
       }
 
@@ -136,7 +141,7 @@ public sealed class GarminActivityUploadWorker(
           await File.WriteAllBytesAsync(mergedFitPath, merged, cancellationToken);
           await backups.BackupReplacementAsync(job.Id, candidate.RemoteId, mergedFitPath, cancellationToken);
           await store.MarkUploadStartedAsync(job.Id, "ReplacementUpload", timeProvider.GetUtcNow(), cancellationToken);
-          mutationStarted = true;
+          mutation.Started = true;
           GarminAdapterMessage replacement = await adapter.UploadAsync(tokens, mergedFitPath, cancellationToken);
           if (string.Equals(replacement.State, "confirmed", StringComparison.OrdinalIgnoreCase) &&
               !string.IsNullOrWhiteSpace(replacement.TokenStore) && !string.IsNullOrWhiteSpace(replacement.RemoteId))
@@ -161,21 +166,21 @@ public sealed class GarminActivityUploadWorker(
 
       await File.WriteAllBytesAsync(localFitPath, SessionFitActivityExporter.Export(session), cancellationToken);
       await store.MarkUploadStartedAsync(job.Id, "Upload", timeProvider.GetUtcNow(), cancellationToken);
-      mutationStarted = true;
+      mutation.Started = true;
       GarminAdapterMessage result = await adapter.UploadAsync(tokens, localFitPath, cancellationToken);
       await HandleMutationResultAsync(job, result,
         match?.Disposition == GarminWatchActivityMatchDisposition.Multiple
           ? "Multiple plausible watch activities were found, so the local activity was uploaded for manual cleanup."
           : "Garmin did not confirm the activity upload.", cancellationToken);
     }
-    catch (Exception exception) when (!mutationStarted && exception is InvalidDataException or Dynastream.Fit.FitException)
+    catch (Exception exception) when (!mutation.Started && exception is InvalidDataException or Dynastream.Fit.FitException)
     {
       await store.MarkRejectedAsync(job.Id, "merge-source", "The matched watch FIT could not be validated or merged; the original watch activity was retained.", timeProvider.GetUtcNow(), CancellationToken.None);
       logger.LogWarning(exception, "Garmin watch activity {JobId} could not be merged safely.", job.Id);
     }
     catch (TimeoutException exception)
     {
-      if (!mutationStarted)
+      if (!mutation.Started)
       {
         await store.MarkFailedAsync(job.Id, "The Garmin watch search timed out before any account mutation; it can be retried safely.", false, timeProvider.GetUtcNow().AddMinutes(2), timeProvider.GetUtcNow(), CancellationToken.None);
       }
@@ -192,7 +197,7 @@ public sealed class GarminActivityUploadWorker(
     }
     catch (GarminAdapterAmbiguousResultException exception)
     {
-      if (!mutationStarted)
+      if (!mutation.Started)
         await store.MarkFailedAsync(job.Id, "The Garmin watch search returned an invalid read response and can be retried safely.", false, timeProvider.GetUtcNow().AddMinutes(2), timeProvider.GetUtcNow(), CancellationToken.None);
       else
         await store.MarkUnknownAsync(job.Id, "The Garmin adapter returned no valid confirmation after an account mutation may have begun; no automatic retry will occur.", timeProvider.GetUtcNow(), CancellationToken.None);
@@ -220,9 +225,56 @@ public sealed class GarminActivityUploadWorker(
     await store.MarkUploadStartedAsync(job.Id, "DeleteOriginal", timeProvider.GetUtcNow(), cancellationToken);
     GarminAdapterMessage result = await adapter.DeleteAsync(tokens, job.MatchedRemoteId, cancellationToken);
     if (string.Equals(result.State, "confirmed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(result.TokenStore))
-      await store.MarkConfirmedAsync(job.Id, job.ReplacementRemoteId, connections.Protect(result.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+      await store.MarkOriginalDeletedAwaitingResyncAsync(job.Id, connections.Protect(result.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
     else
       await HandleMutationResultAsync(job, result, "The merged activity exists, but Garmin did not confirm removal of the original; review both activities manually.", cancellationToken);
+  }
+
+  private async Task VerifyResyncAsync(
+    GarminActivityUploadJob job,
+    StoredWorkoutSession session,
+    string tokens,
+    string watchFitPath,
+    MutationState mutation,
+    CancellationToken cancellationToken)
+  {
+    if (string.IsNullOrWhiteSpace(job.MatchedRemoteId) || string.IsNullOrWhiteSpace(job.ReplacementRemoteId))
+    {
+      await store.MarkUnknownAsync(job.Id, "Replacement state is incomplete; resync cleanup could not be verified.", timeProvider.GetUtcNow(), cancellationToken);
+      return;
+    }
+    GarminAdapterSearchMessage search = await adapter.SearchWatchActivitiesAsync(tokens, session.StartedAt!.Value, cancellationToken);
+    if (!string.Equals(search.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(search.TokenStore))
+    {
+      await HandleReadFailureAsync(job, search.Kind, search.Message, cancellationToken);
+      return;
+    }
+    tokens = search.TokenStore;
+    GarminActivityMatchReference local = ToMatchReference(session);
+    foreach (GarminWatchActivityCandidate candidate in (search.Candidates ?? [])
+      .Where(item => !string.Equals(item.RemoteId, job.ReplacementRemoteId, StringComparison.Ordinal) && GarminWatchActivityMatcher.IsPlausibleShape(local, item)))
+    {
+      GarminAdapterMessage download = await adapter.DownloadOriginalAsync(tokens, candidate.RemoteId, watchFitPath, cancellationToken);
+      if (!string.Equals(download.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(download.TokenStore))
+      {
+        await HandleReadFailureAsync(job, download.Kind, download.Message, cancellationToken);
+        return;
+      }
+      tokens = download.TokenStore;
+      if (!backups.MatchesOriginal(job.Id, job.MatchedRemoteId, watchFitPath)) continue;
+      await backups.BackupOriginalAsync(job.Id, candidate.RemoteId, watchFitPath, cancellationToken);
+      await store.MarkUploadStartedAsync(job.Id, "DeleteResyncedOriginal", timeProvider.GetUtcNow(), cancellationToken);
+      mutation.Started = true;
+      GarminAdapterMessage deletion = await adapter.DeleteAsync(tokens, candidate.RemoteId, cancellationToken);
+      if (!string.Equals(deletion.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(deletion.TokenStore))
+      {
+        await HandleMutationResultAsync(job, deletion, "Garmin did not confirm removal of a watch activity re-created after replacement.", cancellationToken);
+        return;
+      }
+      tokens = deletion.TokenStore;
+      mutation.Started = false;
+    }
+    await store.CompleteResyncCheckAsync(job.Id, connections.Protect(tokens), timeProvider.GetUtcNow(), cancellationToken);
   }
 
   private async Task HandleReadFailureAsync(GarminActivityUploadJob job, string? kind, string? message, CancellationToken cancellationToken)
@@ -273,5 +325,10 @@ public sealed class GarminActivityUploadWorker(
       statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm,
       session.Samples.Where(sample => sample.HeartRateBpm is not null)
         .Select(sample => new GarminWatchHeartRateSample(sample.Elapsed.TotalSeconds, sample.HeartRateBpm!.Value)).ToArray());
+  }
+
+  private sealed class MutationState
+  {
+    public bool Started { get; set; }
   }
 }

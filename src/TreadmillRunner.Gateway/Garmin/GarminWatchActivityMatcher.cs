@@ -61,7 +61,7 @@ public static class GarminWatchActivityMatcher
     return new(GarminWatchActivityMatchDisposition.Single, candidate, evidence);
   }
 
-  private static bool IsPlausibleShape(
+  internal static bool IsPlausibleShape(
     GarminActivityMatchReference local,
     GarminWatchActivityCandidate candidate)
   {

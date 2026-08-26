@@ -90,8 +90,14 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       GarminActivityUploadJob deleteLease = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddSeconds(1), TimeSpan.FromMinutes(2)));
       Assert.Equal("DeleteOriginal", deleteLease.OperationPhase);
       await worker.ProcessOneAsync(deleteLease, default);
-      Assert.Equal(new[] { "search", "download", "upload", "delete" }, adapter.Calls);
-      Assert.Equal(2, Directory.GetFiles(Path.Combine(directory, "garmin-backups"), "*.fit").Length);
+      for (var check = 0; check < 3; check++)
+      {
+        GarminActivityUploadJob verifyLease = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddDays(1), TimeSpan.FromMinutes(2)));
+        Assert.Equal("VerifyResync", verifyLease.OperationPhase);
+        await worker.ProcessOneAsync(verifyLease, default);
+      }
+      Assert.Equal(new[] { "search", "download", "upload", "delete", "search", "download", "delete", "search", "search" }, adapter.Calls);
+      Assert.Equal(3, Directory.GetFiles(Path.Combine(directory, "garmin-backups"), "*.fit").Length);
     }
 
     GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
@@ -206,14 +212,19 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     public bool SawReadableFit { get; private set; }
     public List<string> Calls { get; } = [];
     private DateTimeOffset searchedStart;
+    private readonly HashSet<string> deletedRemoteIds = [];
     public Task<IGarminAdapterConnectProcess> BeginConnectAsync(string email, string password, CancellationToken cancellationToken) => throw new NotSupportedException();
     public Task<GarminAdapterSearchMessage> SearchWatchActivitiesAsync(string tokenStore, DateTimeOffset startedAtUtc, CancellationToken cancellationToken)
     {
       Calls.Add("search");
       searchedStart = startedAtUtc;
-      IReadOnlyList<GarminWatchActivityCandidate> candidates = returnMatch
-        ? [new("watch-123", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, [])]
-        : [];
+      IReadOnlyList<GarminWatchActivityCandidate> candidates = !returnMatch
+        ? []
+        : !deletedRemoteIds.Contains("watch-123")
+          ? [new("watch-123", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, [])]
+          : !deletedRemoteIds.Contains("watch-resynced")
+            ? [new("replacement-456", "treadmill_running", startedAtUtc, 60, .1, 130, 140, []), new("watch-resynced", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, [])]
+            : [new("replacement-456", "treadmill_running", startedAtUtc, 60, .1, 130, 140, [])];
       return Task.FromResult(new GarminAdapterSearchMessage("confirmed", null, null, "searched-token-store", candidates));
     }
     public Task<GarminAdapterMessage> DownloadOriginalAsync(string tokenStore, string remoteId, string outputPath, CancellationToken cancellationToken)
@@ -246,6 +257,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     public Task<GarminAdapterMessage> DeleteAsync(string tokenStore, string remoteId, CancellationToken cancellationToken)
     {
       Calls.Add("delete");
+      deletedRemoteIds.Add(remoteId);
       return Task.FromResult(new GarminAdapterMessage("confirmed", null, null, null, "deleted-token-store", remoteId));
     }
   }
