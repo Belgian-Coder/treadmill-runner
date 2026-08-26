@@ -102,13 +102,14 @@ public static class GarminActivityUploadEndpoints
       GarminActivityMatchReference local = GarminActivityUploadWorker.ToMatchReference(session);
       if (GarminLatestTwoReconciliationPlanner.TryFindCanonicalOnly(local, search.Candidates ?? [], out GarminWatchActivityCandidate? alreadyKept))
       {
-        await uploads.MarkConfirmedAsync(job.Id, alreadyKept!.RemoteId, connections.Protect(search.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+        string evidence = $"The canonical activity {alreadyKept!.RemoteId} is already the only Garmin activity in the bounded session window.";
+        await uploads.RecordHistoricalReconciliationAsync(job.Id, alreadyKept.RemoteId, evidence, connections.Protect(search.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
         return TypedResults.Ok(new
         {
           sessionId,
           keptRemoteId = alreadyKept.RemoteId,
           deletedRemoteId = (string?)null,
-          evidence = $"The canonical activity {alreadyKept.RemoteId} is already the only Garmin activity in the bounded session window.",
+          evidence,
         });
       }
       if (!GarminLatestTwoReconciliationPlanner.TryCreate(local, search.Candidates ?? [], out GarminLatestTwoReconciliationPlan? plan, out string error))
@@ -117,7 +118,7 @@ public static class GarminActivityUploadEndpoints
       GarminAdapterMessage deletion = await adapter.DeleteAsync(search.TokenStore, plan!.Delete.RemoteId, cancellationToken);
       if (!string.Equals(deletion.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(deletion.TokenStore))
         return TypedResults.Conflict(new { error = "Garmin did not confirm removal of the late partial activity; the complete activity was left untouched." });
-      await uploads.MarkConfirmedAsync(job.Id, plan.Keep.RemoteId, connections.Protect(deletion.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+      await uploads.RecordHistoricalReconciliationAsync(job.Id, plan.Keep.RemoteId, plan.Evidence, connections.Protect(deletion.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
       return TypedResults.Ok(new
       {
         sessionId,
