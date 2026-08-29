@@ -352,6 +352,14 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("Start-Service -Name $ServiceName", script, StringComparison.Ordinal);
     Assert.Contains("recovery-complete", script, StringComparison.Ordinal);
     Assert.DoesNotContain("Stop-Service", script, StringComparison.Ordinal);
+
+    const string markerCheck = "Test-Path -LiteralPath $maintenanceMarker -PathType Leaf";
+    int stoppedServiceCheck = script.IndexOf("if ($service.State -ne 'Stopped')", StringComparison.Ordinal);
+    int secondMarkerCheck = script.IndexOf(markerCheck, stoppedServiceCheck, StringComparison.Ordinal);
+    int thirdMarkerCheck = script.IndexOf(markerCheck, secondMarkerCheck + markerCheck.Length, StringComparison.Ordinal);
+    int recoveryStart = script.IndexOf("Write-GuardianLog -EventName 'recovery-start'", StringComparison.Ordinal);
+    Assert.True(stoppedServiceCheck >= 0 && secondMarkerCheck > stoppedServiceCheck);
+    Assert.True(thirdMarkerCheck > secondMarkerCheck && thirdMarkerCheck < recoveryStart);
   }
 
   [Fact]

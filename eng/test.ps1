@@ -24,7 +24,7 @@ $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
     $TimeoutMinutes
 }
 elseif ([string]::Equals($Filter, 'Category!=Browser&Category!=Soak', [System.StringComparison]::OrdinalIgnoreCase)) {
-    2
+    3
 }
 else {
     1
