@@ -130,6 +130,101 @@ class ImportDispositionTests(unittest.TestCase):
         self.assertEqual("999", payload["candidates"][0]["remoteId"])
         self.assertEqual([(0, 20), (20, 20)], FakeGarmin.calls)
 
+    @patch("garmin_activity_adapter.emit")
+    def test_watch_search_returns_an_overflow_candidate_for_fail_closed_detection(self, emit) -> None:
+        class TokenClient:
+            def dumps(self):
+                return "x" * 128
+
+        class FakeGarmin:
+            def __init__(self, retry_attempts=0):
+                self.client = TokenClient()
+
+            def login(self, token_store):
+                self.token_store = token_store
+
+            def get_activities(self, start, limit):
+                return [{
+                    "activityId": index,
+                    "activityType": {"typeKey": "treadmill_running"},
+                    "startTimeGMT": "2026-08-05T08:00:20",
+                    "duration": 1200,
+                    "distance": 2500,
+                } for index in range(1, 8)]
+
+            def get_activity_details(self, activity_id, maxchart, maxpoly):
+                return {}
+
+        module = SimpleNamespace(Garmin=FakeGarmin, parse_activity_detail_metrics=lambda details: [])
+        with patch.dict(sys.modules, {"garminconnect": module}):
+            search({"tokenStore": "t" * 128, "startedAtUtc": "2026-08-05T08:00:00Z"})
+
+        payload = emit.call_args.args[0]
+        self.assertEqual(6, len(payload["candidates"]))
+
+    @patch("garmin_activity_adapter.emit")
+    def test_watch_search_fails_closed_for_a_malformed_activity_page(self, emit) -> None:
+        class TokenClient:
+            def dumps(self):
+                return "x" * 128
+
+        class FakeGarmin:
+            def __init__(self, retry_attempts=0):
+                self.client = TokenClient()
+
+            def login(self, token_store):
+                self.token_store = token_store
+
+            def get_activities(self, start, limit):
+                return {"activities": []}
+
+        module = SimpleNamespace(Garmin=FakeGarmin, parse_activity_detail_metrics=lambda details: [])
+        with patch.dict(sys.modules, {"garminconnect": module}):
+            search({"tokenStore": "t" * 128, "startedAtUtc": "2026-08-05T08:00:00Z"})
+
+        payload = emit.call_args.args[0]
+        self.assertEqual("failed", payload["state"])
+        self.assertEqual("response", payload["kind"])
+        self.assertNotIn("candidates", payload)
+        self.assertIn("no upload or deletion", payload["message"])
+
+    @patch("garmin_activity_adapter.emit")
+    def test_watch_search_fails_closed_when_the_bounded_page_window_is_exhausted(self, emit) -> None:
+        class TokenClient:
+            def dumps(self):
+                return "x" * 128
+
+        class FakeGarmin:
+            calls = []
+
+            def __init__(self, retry_attempts=0):
+                self.client = TokenClient()
+
+            def login(self, token_store):
+                self.token_store = token_store
+
+            def get_activities(self, start, limit):
+                self.calls.append((start, limit))
+                return [{
+                    "activityId": start + index,
+                    "activityType": {"typeKey": "cycling"},
+                    "startTimeGMT": "2026-08-05T08:00:20",
+                    "duration": 1200,
+                    "distance": 2500,
+                } for index in range(limit)]
+
+            def get_activity_details(self, activity_id, maxchart, maxpoly):
+                return {}
+
+        module = SimpleNamespace(Garmin=FakeGarmin, parse_activity_detail_metrics=lambda details: [])
+        with patch.dict(sys.modules, {"garminconnect": module}):
+            search({"tokenStore": "t" * 128, "startedAtUtc": "2026-08-05T08:00:00Z"})
+
+        payload = emit.call_args.args[0]
+        self.assertEqual("failed", payload["state"])
+        self.assertEqual("search-window-truncated", payload["kind"])
+        self.assertEqual([(page * 20, 20) for page in range(10)], FakeGarmin.calls)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,7 +65,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
   [Theory]
   [InlineData(GarminWatchActivityHandling.PreferWatch, "FoundInGarmin", true)]
   [InlineData(GarminWatchActivityHandling.MergeAndReplace, "Confirmed", true)]
-  [InlineData(GarminWatchActivityHandling.MergeAndReplace, "Unknown", false)]
+  [InlineData(GarminWatchActivityHandling.MergeAndReplace, "Pending", false)]
   public async Task Exact_watch_match_uses_the_selected_per_profile_flow(string handling, string expectedStatus, bool replacementHasId)
   {
     string databasePath = Path.Combine(directory, $"matching-{handling}-{Guid.NewGuid():N}.db");
@@ -96,7 +96,14 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
         Assert.Equal("VerifyResync", verifyLease.OperationPhase);
         await worker.ProcessOneAsync(verifyLease, default);
       }
-      Assert.Equal(new[] { "search", "download", "upload", "delete", "search", "download", "delete", "search", "search" }, adapter.Calls);
+      Assert.Equal(new[]
+      {
+        "search", "download", "upload",
+        "download", "download", "delete",
+        "search", "download", "download", "delete",
+        "search", "download",
+        "search", "download",
+      }, adapter.Calls);
       Assert.Equal(3, Directory.GetFiles(Path.Combine(directory, "garmin-backups"), "*.fit").Length);
     }
 
@@ -108,7 +115,10 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     else if (replacementHasId)
       Assert.Equal("replacement-456", completed.RemoteId);
     else
+    {
+      Assert.Equal("ResolveReplacement", completed.OperationPhase);
       Assert.Equal(new[] { "search", "download", "upload" }, adapter.Calls);
+    }
   }
 
   [Fact]
@@ -138,6 +148,48 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     Assert.Equal("watch-123", completed.MatchedRemoteId);
     Assert.Equal("watch-match", completed.FailureKind);
     Assert.DoesNotContain("heart-rate", completed.MatchEvidence, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(new[] { "search" }, adapter.Calls);
+    Assert.False(adapter.SawReadableFit);
+    Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
+  }
+
+  [Fact]
+  public async Task Multiple_plausible_watch_activities_require_review_without_uploading_a_third_copy()
+  {
+    string databasePath = Path.Combine(directory, $"multiple-review-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new OutcomeAdapter(AdapterMode.Confirmed, returnMatch: true, initialMatchCount: 2);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter, store, DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))), clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(), store, adapter, BackupStore(clock), connections,
+      clock, new ApplicationMaintenanceState(), NullLogger<GarminActivityUploadWorker>.Instance);
+
+    await worker.ProcessOneAsync(leased, default);
+
+    GarminActivityUploadJob review = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("ReviewRequired", review.Status);
+    Assert.Equal("Review", review.OperationPhase);
+    Assert.Contains("2 Garmin treadmill activities are plausible", Assert.IsType<string>(review.MatchEvidence));
     Assert.Equal(new[] { "search" }, adapter.Calls);
     Assert.False(adapter.SawReadableFit);
     Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
@@ -207,12 +259,17 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
 
   public enum AdapterMode { Confirmed, Duplicate, Ambiguous, Timeout, Unavailable }
 
-  private sealed class OutcomeAdapter(AdapterMode mode, bool returnMatch = false, bool replacementHasId = true) : IGarminActivityAdapter
+  private sealed class OutcomeAdapter(
+    AdapterMode mode,
+    bool returnMatch = false,
+    bool replacementHasId = true,
+    int initialMatchCount = 1) : IGarminActivityAdapter
   {
     public bool SawReadableFit { get; private set; }
     public List<string> Calls { get; } = [];
     private DateTimeOffset searchedStart;
     private readonly HashSet<string> deletedRemoteIds = [];
+    private byte[]? uploadedFit;
     public Task<IGarminAdapterConnectProcess> BeginConnectAsync(string email, string password, CancellationToken cancellationToken) => throw new NotSupportedException();
     public Task<GarminAdapterSearchMessage> SearchWatchActivitiesAsync(string tokenStore, DateTimeOffset startedAtUtc, CancellationToken cancellationToken)
     {
@@ -220,6 +277,11 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       searchedStart = startedAtUtc;
       IReadOnlyList<GarminWatchActivityCandidate> candidates = !returnMatch
         ? []
+        : initialMatchCount > 1
+          ? [
+            new("watch-123", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, []),
+            new("watch-456", "treadmill_running", startedAtUtc.AddSeconds(20), 60, .1, 131, 141, []),
+          ]
         : !deletedRemoteIds.Contains("watch-123")
           ? [new("watch-123", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, [])]
           : !deletedRemoteIds.Contains("watch-resynced")
@@ -230,6 +292,11 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     public Task<GarminAdapterMessage> DownloadOriginalAsync(string tokenStore, string remoteId, string outputPath, CancellationToken cancellationToken)
     {
       Calls.Add("download");
+      if (string.Equals(remoteId, "replacement-456", StringComparison.Ordinal) && uploadedFit is not null)
+      {
+        System.IO.File.WriteAllBytes(outputPath, uploadedFit);
+        return Task.FromResult(new GarminAdapterMessage("confirmed", null, null, null, "download-token-store", remoteId));
+      }
       using var stream = new MemoryStream();
       var encoder = new Encode(ProtocolVersion.V20);
       encoder.Open(stream);
@@ -243,6 +310,7 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     public Task<GarminAdapterMessage> UploadAsync(string tokenStore, string activityPath, CancellationToken cancellationToken)
     {
       SawReadableFit = System.IO.File.Exists(activityPath) && new FileInfo(activityPath).Length > 16;
+      uploadedFit = System.IO.File.ReadAllBytes(activityPath);
       Calls.Add("upload");
       return mode switch
       {
@@ -259,6 +327,391 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       Calls.Add("delete");
       deletedRemoteIds.Add(remoteId);
       return Task.FromResult(new GarminAdapterMessage("confirmed", null, null, null, "deleted-token-store", remoteId));
+    }
+  }
+
+  [Fact]
+  public async Task No_id_replacement_uses_read_only_resolution_and_never_uploads_again()
+  {
+    string databasePath = Path.Combine(directory, $"replacement-resolution-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new OutcomeAdapter(AdapterMode.Confirmed, returnMatch: true, replacementHasId: false);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter,
+      store,
+      DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))),
+      clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      store,
+      adapter,
+      BackupStore(clock),
+      connections,
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<GarminActivityUploadWorker>.Instance);
+
+    await worker.ProcessOneAsync(leased, default);
+
+    GarminActivityUploadJob awaitingResolution = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Pending", awaitingResolution.Status);
+    Assert.Equal("ResolveReplacement", awaitingResolution.OperationPhase);
+    Assert.Equal("watch-123", awaitingResolution.MatchedRemoteId);
+    Assert.Null(awaitingResolution.ReplacementRemoteId);
+    Assert.Equal(1, adapter.Calls.Count(call => call == "upload"));
+
+    // The resolver is read-only. Exhaust its durable checks so the user-facing retry path is exercised.
+    for (var check = 0; check < 3; check++)
+    {
+      GarminActivityUploadJob resolutionLease = Assert.IsType<GarminActivityUploadJob>(
+        await store.LeaseNextAsync(now.AddMinutes(20 + check), TimeSpan.FromMinutes(2)));
+      Assert.Equal("ResolveReplacement", resolutionLease.OperationPhase);
+      await worker.ProcessOneAsync(resolutionLease, default);
+    }
+
+    GarminActivityUploadJob unresolved = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Unknown", unresolved.Status);
+    Assert.Equal("ResolveReplacement", unresolved.OperationPhase);
+    Assert.Equal("watch-123", unresolved.MatchedRemoteId);
+    Assert.Null(unresolved.ReplacementRemoteId);
+    Assert.Equal(1, adapter.Calls.Count(call => call == "upload"));
+
+    GarminActivityUploadJob retry = await store.StartHistoricalRecoveryAsync(
+      unresolved.Id,
+      profileId,
+      "MergeIntoOne",
+      "watch-123",
+      Guid.NewGuid(),
+      new string('r', 64),
+      now.AddMinutes(30));
+    Assert.Equal("Pending", retry.Status);
+    Assert.Equal("ResolveReplacement", retry.OperationPhase);
+    Assert.Equal(0, retry.AttemptCount);
+
+    GarminActivityUploadJob retryLease = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddMinutes(30), TimeSpan.FromMinutes(2)));
+    await worker.ProcessOneAsync(retryLease, default);
+    Assert.Equal(1, adapter.Calls.Count(call => call == "upload"));
+  }
+
+  [Fact]
+  public async Task Replacement_resolution_keeps_one_corrected_copy_then_deletes_duplicate_and_original()
+  {
+    string databasePath = Path.Combine(directory, $"replacement-cleanup-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new ReplacementResolutionAdapter();
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter,
+      store,
+      DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))),
+      clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      store,
+      adapter,
+      BackupStore(clock),
+      connections,
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<GarminActivityUploadWorker>.Instance);
+
+    await worker.ProcessOneAsync(leased, default);
+    Assert.Equal("ResolveReplacement", (Assert.Single(await store.ListJobsAsync(profileId))).OperationPhase);
+
+    DateTimeOffset tick = now.AddMinutes(20);
+    for (var pass = 0; pass < 10; pass++)
+    {
+      GarminActivityUploadJob? next = await store.LeaseNextAsync(tick, TimeSpan.FromMinutes(2));
+      if (next is null) break;
+      await worker.ProcessOneAsync(next, default);
+      tick = tick.AddMinutes(30);
+    }
+
+    GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Confirmed", completed.Status);
+    Assert.Equal("watch-original", completed.MatchedRemoteId);
+    Assert.Equal("corrected-1", completed.ReplacementRemoteId);
+    Assert.Equal("corrected-1", completed.RemoteId);
+    Assert.Equal(new[] { "corrected-2", "watch-original" }, adapter.DeletedRemoteIds);
+    Assert.Equal(new[] { "corrected-1" }, adapter.ActiveRemoteIds);
+    Assert.Equal(1, adapter.Calls.Count(call => call == "upload"));
+  }
+
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public async Task Undo_merge_restores_exactly_one_watch_original_and_one_plain_local_source(bool localRestoreHasId)
+  {
+    string databasePath = Path.Combine(directory, $"replacement-undo-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new ReplacementResolutionAdapter(localRestoreHasId);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter,
+      store,
+      DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))),
+      clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      store,
+      adapter,
+      BackupStore(clock),
+      connections,
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<GarminActivityUploadWorker>.Instance);
+
+    DateTimeOffset tick = now;
+    for (var pass = 0; pass < 10; pass++)
+    {
+      GarminActivityUploadJob? next = await store.LeaseNextAsync(tick, TimeSpan.FromMinutes(2));
+      if (next is null) break;
+      await worker.ProcessOneAsync(next, default);
+      tick = tick.AddMinutes(30);
+    }
+    GarminActivityUploadJob merged = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Confirmed", merged.Status);
+    Assert.Equal("corrected-1", merged.RemoteId);
+
+    GarminActivityUploadJob undo = await store.StartHistoricalRecoveryAsync(
+      merged.Id,
+      profileId,
+      "UndoMerge",
+      "watch-original",
+      Guid.NewGuid(),
+      new string('u', 64),
+      tick);
+    Assert.Equal("Pending", undo.Status);
+    Assert.Equal("ResolveOriginal", undo.OperationPhase);
+
+    for (var pass = 0; pass < 10; pass++)
+    {
+      GarminActivityUploadJob? next = await store.LeaseNextAsync(tick, TimeSpan.FromMinutes(2));
+      if (next is null) break;
+      await worker.ProcessOneAsync(next, default);
+      tick = tick.AddMinutes(30);
+    }
+
+    GarminActivityUploadJob restored = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.True(restored.Status == "Confirmed", $"status={restored.Status} phase={restored.OperationPhase} err={restored.LastError} evidence={restored.MatchEvidence} remote={restored.RemoteId} matched={restored.MatchedRemoteId} calls={string.Join(',', adapter.Calls)} deleted={string.Join(',', adapter.DeletedRemoteIds)}");
+    Assert.Equal("UndoComplete", restored.OperationPhase);
+    Assert.Equal("local-1", restored.RemoteId);
+    Assert.Equal("restored-original", restored.MatchedRemoteId);
+    Assert.Null(restored.ReplacementRemoteId);
+    Assert.Equal(new[] { "corrected-2", "watch-original", "corrected-1" }, adapter.DeletedRemoteIds);
+    Assert.Equal(new[] { "local-1", "restored-original" }, adapter.ActiveRemoteIds);
+    Assert.Equal(3, adapter.Calls.Count(call => call == "upload"));
+
+    GarminActivityUploadJob redo = await store.StartHistoricalRecoveryAsync(
+      restored.Id,
+      profileId,
+      "MergeIntoOne",
+      "watch-original",
+      Guid.NewGuid(),
+      new string('m', 64),
+      tick);
+    Assert.Equal("Pending", redo.Status);
+    Assert.Equal("EnsureReplacement", redo.OperationPhase);
+    Assert.Equal("restored-original", redo.MatchedRemoteId);
+
+    for (var pass = 0; pass < 12; pass++)
+    {
+      GarminActivityUploadJob? next = await store.LeaseNextAsync(tick, TimeSpan.FromMinutes(2));
+      if (next is null) break;
+      await worker.ProcessOneAsync(next, default);
+      tick = tick.AddMinutes(30);
+    }
+
+    GarminActivityUploadJob remerged = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Confirmed", remerged.Status);
+    Assert.Equal("corrected-3", remerged.RemoteId);
+    Assert.Equal("corrected-3", remerged.ReplacementRemoteId);
+    Assert.Equal("restored-original", remerged.MatchedRemoteId);
+    Assert.Equal(new[] { "corrected-2", "watch-original", "corrected-1", "local-1", "restored-original" }, adapter.DeletedRemoteIds);
+    Assert.Equal(new[] { "corrected-3" }, adapter.ActiveRemoteIds);
+    Assert.Equal(4, adapter.Calls.Count(call => call == "upload"));
+  }
+
+  private sealed class ReplacementResolutionAdapter(bool localRestoreHasId = true) : IGarminActivityAdapter
+  {
+    private readonly HashSet<string> activeRemoteIds = ["watch-original"];
+    private DateTimeOffset searchedStart;
+    private byte[]? mergedFit;
+    private byte[]? localFit;
+    private bool replacementVisible;
+
+    public List<string> Calls { get; } = [];
+    public List<string> DeletedRemoteIds { get; } = [];
+    public IReadOnlyList<string> ActiveRemoteIds => activeRemoteIds.OrderBy(id => id).ToArray();
+
+    public Task<IGarminAdapterConnectProcess> BeginConnectAsync(string email, string password, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<GarminAdapterSearchMessage> SearchWatchActivitiesAsync(
+      string tokenStore,
+      DateTimeOffset startedAtUtc,
+      CancellationToken cancellationToken)
+    {
+      Calls.Add("search");
+      searchedStart = startedAtUtc;
+      var candidates = new List<GarminWatchActivityCandidate>();
+      if (activeRemoteIds.Contains("watch-original"))
+        candidates.Add(new("watch-original", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, []));
+      if (activeRemoteIds.Contains("restored-original"))
+        candidates.Add(new("restored-original", "treadmill_running", startedAtUtc.AddSeconds(15), 60, .1, 130, 140, []));
+      if (replacementVisible)
+      {
+        if (activeRemoteIds.Contains("corrected-1"))
+          candidates.Add(new("corrected-1", "treadmill_running", startedAtUtc, 60, .1, 130, 140, []));
+        if (activeRemoteIds.Contains("corrected-2"))
+          candidates.Add(new("corrected-2", "treadmill_running", startedAtUtc, 60, .1, 130, 140, []));
+        if (activeRemoteIds.Contains("corrected-3"))
+          candidates.Add(new("corrected-3", "treadmill_running", startedAtUtc, 60, .1, 130, 140, []));
+      }
+      if (activeRemoteIds.Contains("local-1"))
+        candidates.Add(new("local-1", "treadmill_running", startedAtUtc, 60, .1, 130, 140, []));
+      return Task.FromResult(new GarminAdapterSearchMessage(
+        "confirmed", null, null, "searched-token-store", candidates));
+    }
+
+    public Task<GarminAdapterMessage> DownloadOriginalAsync(
+      string tokenStore,
+      string remoteId,
+      string outputPath,
+      CancellationToken cancellationToken)
+    {
+      Calls.Add("download");
+      byte[] bytes = remoteId switch
+      {
+        "watch-original" or "restored-original" => CreateOriginalFit(searchedStart),
+        "corrected-1" or "corrected-2" or "corrected-3" when mergedFit is not null => mergedFit!,
+        "local-1" when localFit is not null => localFit!,
+        _ => throw new InvalidOperationException($"No FIT fixture exists for {remoteId}.")
+      };
+      System.IO.File.WriteAllBytes(outputPath, bytes);
+      return Task.FromResult(new GarminAdapterMessage(
+        "confirmed", null, null, null, "download-token-store", remoteId));
+    }
+
+    public Task<GarminAdapterMessage> UploadAsync(
+      string tokenStore,
+      string activityPath,
+      CancellationToken cancellationToken)
+    {
+      Calls.Add("upload");
+      byte[] uploaded = System.IO.File.ReadAllBytes(activityPath);
+      if (uploaded.AsSpan().SequenceEqual(CreateOriginalFit(searchedStart)))
+      {
+        activeRemoteIds.Add("restored-original");
+        return Task.FromResult(new GarminAdapterMessage(
+          "confirmed", null, null, null, "updated-token-store", "restored-original"));
+      }
+      if (mergedFit is null)
+      {
+        mergedFit = uploaded;
+        replacementVisible = true;
+        activeRemoteIds.Add("corrected-1");
+        activeRemoteIds.Add("corrected-2");
+        return Task.FromResult(new GarminAdapterMessage(
+          "confirmed", null, null, null, "updated-token-store", null));
+      }
+      if (uploaded.AsSpan().SequenceEqual(mergedFit))
+      {
+        replacementVisible = true;
+        activeRemoteIds.Add("corrected-3");
+        return Task.FromResult(new GarminAdapterMessage(
+          "confirmed", null, null, null, "updated-token-store", "corrected-3"));
+      }
+      localFit = uploaded;
+      activeRemoteIds.Add("local-1");
+      return Task.FromResult(new GarminAdapterMessage(
+        "confirmed", null, null, null, "updated-token-store", localRestoreHasId ? "local-1" : null));
+    }
+
+    public Task<GarminAdapterMessage> DeleteAsync(
+      string tokenStore,
+      string remoteId,
+      CancellationToken cancellationToken)
+    {
+      Calls.Add($"delete:{remoteId}");
+      DeletedRemoteIds.Add(remoteId);
+      activeRemoteIds.Remove(remoteId);
+      return Task.FromResult(new GarminAdapterMessage(
+        "confirmed", null, null, null, "deleted-token-store", remoteId));
+    }
+
+    private static byte[] CreateOriginalFit(DateTimeOffset startedAtUtc)
+    {
+      using var stream = new MemoryStream();
+      var encoder = new Encode(ProtocolVersion.V20);
+      encoder.Open(stream);
+      var file = new FileIdMesg();
+      file.SetType(Dynastream.Fit.File.Activity);
+      file.SetTimeCreated(new Dynastream.Fit.DateTime(startedAtUtc.UtcDateTime));
+      encoder.Write(file);
+      var record = new RecordMesg();
+      record.SetTimestamp(new Dynastream.Fit.DateTime(startedAtUtc.UtcDateTime));
+      record.SetHeartRate(130);
+      encoder.Write(record);
+      var session = new SessionMesg();
+      session.SetTimestamp(new Dynastream.Fit.DateTime(startedAtUtc.AddMinutes(1).UtcDateTime));
+      session.SetStartTime(new Dynastream.Fit.DateTime(startedAtUtc.UtcDateTime));
+      encoder.Write(session);
+      encoder.Close();
+      return stream.ToArray();
     }
   }
 

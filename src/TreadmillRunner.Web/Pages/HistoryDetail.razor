@@ -120,7 +120,43 @@ else
                     <div><p class="eyebrow">Garmin reconciliation</p><h2 id="garmin-reconciliation-title">@(garmin.ReviewRequired ? "Possible match — review required" : garmin.Status)</h2></div>
                     <span>@garmin.OperationPhase</span>
                 </div>
-                @if (garmin.Status == "Unknown")
+                @if (garminRecovery is { Busy: true } busyRecovery)
+                {
+                    <div class="controls-card garmin-acknowledgement" role="status">
+                        <p>@busyRecovery.Message</p>
+                        <button class="touch-action secondary-action" type="button" disabled="@loading" @onclick="LoadSessionAsync">Refresh Garmin recovery</button>
+                    </div>
+                }
+                else if (garminRecovery is { Available: true } recovery)
+                {
+                    <div class="controls-card garmin-acknowledgement">
+                        <p><strong>Recover this historical item</strong></p>
+                        <p>@recovery.Message</p>
+                        @if (string.IsNullOrWhiteSpace(garminRecoveryChoice))
+                        {
+                            <div class="form-actions">
+                                <button class="touch-action primary-action" type="button" disabled="@(garminActionBusy || !recovery.CanMergeIntoOne)" @onclick='() => SelectGarminRecovery("MergeIntoOne")'>Merge into one</button>
+                                <button class="touch-action secondary-action" type="button" disabled="@(garminActionBusy || !recovery.CanUndoMerge)" @onclick='() => SelectGarminRecovery("UndoMerge")'>Undo merge</button>
+                            </div>
+                            <small>Merge keeps one verified merged Garmin activity. Undo restores two separate source activities: the original Garmin watch activity and one FIT-verified TreadmillRunner activity. Your local History session is never deleted.</small>
+                        }
+                        else
+                        {
+                            <div class="inline-confirmation" role="alert">
+                                <p>@GarminRecoveryConfirmationText</p>
+                                <div class="form-actions">
+                                    <button class="touch-action primary-action" type="button" disabled="@garminActionBusy" @onclick="StartGarminRecoveryAsync">@(garminActionBusy ? "Starting…" : "Confirm")</button>
+                                    <button class="touch-action secondary-action" type="button" disabled="@garminActionBusy" @onclick="CancelGarminRecovery">Cancel</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (garminRecovery is { } unavailableRecovery)
+                {
+                    <p class="field-hint" role="status">@unavailableRecovery.Message</p>
+                }
+                @if (garmin.Status == "Unknown" && garminRecovery?.Available != true)
                 {
                     <div class="controls-card garmin-acknowledgement" role="status">
                         <p><strong>Found this activity in Garmin?</strong> Acknowledge it here to settle the local record and unlock local deletion. This does not change Garmin.</p>
@@ -424,6 +460,11 @@ else
     private string? identifierCopyMessage;
     private bool garminActionBusy;
     private string garminActionMessage = string.Empty;
+    private GarminHistoricalRecoveryView? garminRecovery;
+    private string garminRecoveryChoice = string.Empty;
+    private string GarminRecoveryConfirmationText => garminRecoveryChoice == "UndoMerge"
+        ? "Undo this merge? The app will restore exactly two separate Garmin activities—the backed-up watch original and one FIT-verified TreadmillRunner activity—and remove only proven merged or duplicate copies. Local History remains untouched."
+        : "Merge this historical item into one? The app will keep one FIT-verified merged Garmin activity and remove only the backed-up original plus proven generated duplicates.";
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
     private bool HasHeartRateSamples => session?.Samples.Any(static sample => sample.HeartRateBpm is not null) == true;
     private string HistoryGraphSampleSummary => session is null
@@ -483,6 +524,8 @@ else
         loading = true;
         loadError = null;
         session = null;
+        garminRecovery = null;
+        garminRecoveryChoice = string.Empty;
         recommendation = null;
         comparison = null;
         debriefPerceivedExertion = null;
@@ -515,7 +558,7 @@ else
 
         if (session is not null)
         {
-            await LoadLocalInsightsAsync();
+            await Task.WhenAll(LoadLocalInsightsAsync(), LoadGarminRecoveryAsync());
         }
     }
 
@@ -660,6 +703,14 @@ else
     private sealed record RecommendationValue(string Action, string Reason, string AlgorithmVersion);
     private sealed record RecommendationView(Guid Id, Guid ProfileId, Guid SessionId, RecommendationValue Recommendation, string Status, int Version, DateTimeOffset CreatedAtUtc, DateTimeOffset? DecidedAtUtc);
     private sealed record ComparisonView(Guid WorkoutRevisionId, int ComparisonCount, SessionSummary? Previous, string Explanation);
+    private sealed record GarminHistoricalRecoveryView(
+        bool Available,
+        bool Busy,
+        bool CanMergeIntoOne,
+        bool CanUndoMerge,
+        string State,
+        string Message);
+    private sealed record GarminRecoveryErrorView(string Error);
     private static string FormatDelta(TimeSpan value) =>
         $"{(value < TimeSpan.Zero ? "−" : value > TimeSpan.Zero ? "+" : string.Empty)}{value.Duration().ToString(@"hh\:mm\:ss")}";
 
@@ -676,6 +727,61 @@ else
     private Task CopyGarminRemoteIdAsync() => CopyIdentifierAsync(session!.Garmin!.RemoteId!, "Garmin activity ID");
     private Task CopyGarminMatchedIdAsync() => CopyIdentifierAsync(session!.Garmin!.MatchedRemoteId!, "Matched activity ID");
     private Task CopyGarminReplacementIdAsync() => CopyIdentifierAsync(session!.Garmin!.ReplacementRemoteId!, "Replacement activity ID");
+
+    private async Task LoadGarminRecoveryAsync()
+    {
+        if (session?.Garmin is null) { garminRecovery = null; return; }
+        try
+        {
+            garminRecovery = await Http.GetFromJsonAsync<GarminHistoricalRecoveryView>(
+                $"api/integrations/garmin/activity-upload/profiles/{session.Definition.UserProfileId}/sessions/{SessionId}/historical-recovery");
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            garminRecovery = null;
+        }
+    }
+
+    private void SelectGarminRecovery(string action)
+    {
+        if (action is "MergeIntoOne" or "UndoMerge") garminRecoveryChoice = action;
+    }
+
+    private void CancelGarminRecovery() => garminRecoveryChoice = string.Empty;
+
+    private async Task StartGarminRecoveryAsync()
+    {
+        if (session?.Garmin is null || garminRecovery is not { Available: true } ||
+            garminRecoveryChoice is not ("MergeIntoOne" or "UndoMerge") || garminActionBusy) return;
+        string action = garminRecoveryChoice;
+        string confirmation = action == "MergeIntoOne" ? "MERGE INTO ONE" : "UNDO GARMIN MERGE";
+        garminActionBusy = true;
+        garminActionMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync(
+                $"api/integrations/garmin/activity-upload/profiles/{session.Definition.UserProfileId}/sessions/{SessionId}/historical-recovery",
+                new { operationId = Guid.NewGuid(), action, confirmation });
+            if (!response.IsSuccessStatusCode)
+            {
+                GarminRecoveryErrorView? error = null;
+                try { error = await response.Content.ReadFromJsonAsync<GarminRecoveryErrorView>(); }
+                catch (System.Text.Json.JsonException) { }
+                garminActionMessage = error?.Error ?? "The historical Garmin recovery could not be started. Nothing was changed.";
+                return;
+            }
+            garminActionMessage = action == "MergeIntoOne"
+                ? "Merge into one started. The app will identify the existing uploads before deleting anything."
+                : "Undo merge started. Garmin will be restored to one watch original plus one TreadmillRunner activity from exact FIT evidence; local History remains unchanged.";
+            await Task.Delay(750);
+            await LoadSessionAsync();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            garminActionMessage = "The gateway is unavailable. No additional Garmin recovery request was sent.";
+        }
+        finally { garminActionBusy = false; }
+    }
 
     private async Task AcknowledgeGarminFoundAsync()
     {
