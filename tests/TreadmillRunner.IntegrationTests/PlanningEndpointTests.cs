@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Core.Calendar;
+using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Protocols.Imports;
 
@@ -477,6 +478,303 @@ public sealed class PlanningEndpointTests(PlanningGatewayFactory factory) : ICla
         new { operationId = selectionOperation, seriesId, workoutRevisionId = Guid.NewGuid() })).StatusCode);
     range = await client.GetFromJsonAsync<JsonElement>($"/api/planning/calendar/{profileId}?from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
     Assert.True(range.GetProperty("days")[0].GetProperty("options")[0].GetProperty("isSelected").GetBoolean());
+  }
+
+  [Fact]
+  public async Task Calendar_program_completion_marks_canonical_occurrence_and_preserves_repeat_identity()
+  {
+    using HttpClient client = factory.CreateClient();
+    using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
+    {
+      Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+    }
+
+    JsonElement profile = await CreateProfileAsync(client);
+    Guid profileId = profile.GetProperty("id").GetGuid();
+    JsonElement workout = await CreateSimpleWorkoutAsync(client);
+    using HttpResponseMessage createdProgramResponse = await client.PostAsJsonAsync(
+      "/api/planning/programs",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        name = $"Calendar completion program {Guid.NewGuid():N}",
+        description = "Completion DTO integration coverage",
+        category = "Integration",
+        items = new[]
+        {
+          new { workoutRevisionId = workout.GetProperty("revisionId").GetGuid() },
+          new { workoutRevisionId = workout.GetProperty("revisionId").GetGuid() },
+        },
+      });
+    Assert.Equal(HttpStatusCode.Created, createdProgramResponse.StatusCode);
+    JsonElement program = await ReadJsonAsync(createdProgramResponse);
+    Guid programId = program.GetProperty("id").GetGuid();
+    JsonElement firstItem = program.GetProperty("items")[0];
+    Guid programItemId = firstItem.GetProperty("id").GetGuid();
+    Guid canonicalRevisionId = firstItem.GetProperty("workoutRevisionId").GetGuid();
+
+    DateOnly firstDate = NextWeekday(DateOnly.FromDateTime(DateTime.Today), DayOfWeek.Monday);
+    using HttpResponseMessage startedResponse = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId}/start",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        expectedProgramRevisionId = program.GetProperty("revisionId").GetGuid(),
+        expectedActiveRunId = (Guid?)null,
+        expectedActiveRunVersion = (int?)null,
+        scheduledStartDate = firstDate,
+        scheduledWeekdayMask = 37,
+        scheduleTimeZoneId = "Europe/Brussels",
+      });
+    Assert.Equal(HttpStatusCode.OK, startedResponse.StatusCode);
+    Guid runId = (await ReadJsonAsync(startedResponse)).GetProperty("id").GetGuid();
+
+    string holderId = $"calendar-completion-{Guid.NewGuid():N}";
+    using HttpResponseMessage leaseResponse = await client.PostAsJsonAsync(
+      "/api/live/lease/acquire",
+      new { holderId });
+    Assert.Equal(HttpStatusCode.OK, leaseResponse.StatusCode);
+    Guid leaseId = (await ReadJsonAsync(leaseResponse)).GetProperty("id").GetGuid();
+    using HttpResponseMessage armResponse = await client.PostAsJsonAsync(
+      "/api/live/sessions/arm",
+      new
+      {
+        profileId,
+        workoutRevisionId = canonicalRevisionId,
+        holderId,
+        leaseId,
+        operationId = Guid.NewGuid(),
+        selectionSource = "Program",
+        programRunId = runId,
+        programItemId,
+      });
+    Assert.Equal(HttpStatusCode.Created, armResponse.StatusCode);
+    using HttpResponseMessage motionResponse = await client.PostAsJsonAsync(
+      "/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.0, measuredInclinePercent = 1.0 });
+    Assert.Equal(HttpStatusCode.NoContent, motionResponse.StatusCode);
+    using HttpResponseMessage completeResponse = await client.PostAsJsonAsync(
+      "/api/live/simulator/complete-physical-session",
+      new { });
+    Assert.Equal(HttpStatusCode.NoContent, completeResponse.StatusCode);
+
+    DateOnly repeatDate = firstDate.AddDays(1);
+    var repeatRequest = new
+    {
+      profileId,
+      programItemId,
+      action = "Repeat",
+      targetDate = (DateOnly?)repeatDate,
+      expectedRunVersion = (int?)null,
+    };
+    using HttpResponseMessage repeatPreviewResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/preview",
+      repeatRequest);
+    Assert.Equal(HttpStatusCode.OK, repeatPreviewResponse.StatusCode);
+    JsonElement repeatPreview = await ReadJsonAsync(repeatPreviewResponse);
+    Assert.True(repeatPreview.GetProperty("canApply").GetBoolean());
+    Assert.True(repeatPreview.GetProperty("impacts")[0].GetProperty("isRepeat").GetBoolean());
+    int repeatRunVersion = repeatPreview.GetProperty("runVersion").GetInt32();
+    using HttpResponseMessage repeatApplyResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/apply",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        programItemId,
+        action = "Repeat",
+        targetDate = repeatDate,
+        expectedRunVersion = repeatRunVersion,
+      });
+    Assert.Equal(HttpStatusCode.OK, repeatApplyResponse.StatusCode);
+
+    JsonElement calendar = await CalendarRangeAsync(client, profileId, firstDate, repeatDate);
+    JsonElement canonicalDay = Assert.Single(
+      calendar.GetProperty("days").EnumerateArray(),
+      day => day.GetProperty("date").GetString() == firstDate.ToString("yyyy-MM-dd"));
+    JsonElement repeatDay = Assert.Single(
+      calendar.GetProperty("days").EnumerateArray(),
+      day => day.GetProperty("date").GetString() == repeatDate.ToString("yyyy-MM-dd"));
+    JsonElement canonicalOption = Assert.Single(
+      canonicalDay.GetProperty("options").EnumerateArray(),
+      option => option.GetProperty("workoutRevisionId").GetGuid() == canonicalRevisionId &&
+        !option.GetProperty("isRepeat").GetBoolean());
+    Assert.True(canonicalOption.GetProperty("isCompleted").GetBoolean());
+    Assert.Equal(runId, canonicalOption.GetProperty("programRunId").GetGuid());
+    Assert.Equal(programItemId, canonicalOption.GetProperty("programItemId").GetGuid());
+    Assert.Equal(1, canonicalOption.GetProperty("programPosition").GetInt32());
+
+    JsonElement repeatOption = Assert.Single(
+      repeatDay.GetProperty("options").EnumerateArray(),
+      option => option.GetProperty("workoutRevisionId").GetGuid() == canonicalRevisionId);
+    Assert.False(repeatOption.GetProperty("isCompleted").GetBoolean());
+    Assert.True(repeatOption.GetProperty("isRepeat").GetBoolean());
+    Assert.Equal(runId, repeatOption.GetProperty("programRunId").GetGuid());
+    Assert.Equal(programItemId, repeatOption.GetProperty("programItemId").GetGuid());
+    Assert.NotEqual(Guid.Empty, repeatOption.GetProperty("extraOccurrenceId").GetGuid());
+    Assert.Equal(JsonValueKind.Null, repeatOption.GetProperty("originalDate").ValueKind);
+
+    using HttpResponseMessage finalReset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    Assert.Equal(HttpStatusCode.NoContent, finalReset.StatusCode);
+  }
+
+  [Fact]
+  public async Task Calendar_move_following_from_completed_actual_date_shifts_incomplete_plan_and_preserves_progress()
+  {
+    using HttpClient client = factory.CreateClient();
+    using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
+    {
+      Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+    }
+
+    JsonElement profile = await CreateProfileAsync(client);
+    Guid profileId = profile.GetProperty("id").GetGuid();
+    JsonElement workout = await CreateSimpleWorkoutAsync(client);
+    using HttpResponseMessage createdProgramResponse = await client.PostAsJsonAsync(
+      "/api/planning/programs",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        name = $"Calendar MoveFollowing program {Guid.NewGuid():N}",
+        description = "Completed-date schedule integration coverage",
+        category = "Integration",
+        items = new[]
+        {
+          new { workoutRevisionId = workout.GetProperty("revisionId").GetGuid() },
+          new { workoutRevisionId = workout.GetProperty("revisionId").GetGuid() },
+        },
+      });
+    Assert.Equal(HttpStatusCode.Created, createdProgramResponse.StatusCode);
+    JsonElement program = await ReadJsonAsync(createdProgramResponse);
+    Guid programId = program.GetProperty("id").GetGuid();
+    JsonElement firstItem = program.GetProperty("items")[0];
+    JsonElement secondItem = program.GetProperty("items")[1];
+    Guid firstItemId = firstItem.GetProperty("id").GetGuid();
+    Guid secondItemId = secondItem.GetProperty("id").GetGuid();
+    Guid canonicalRevisionId = firstItem.GetProperty("workoutRevisionId").GetGuid();
+
+    DateOnly firstDate = NextWeekday(DateOnly.FromDateTime(DateTime.Today), DayOfWeek.Monday);
+    using HttpResponseMessage startedResponse = await client.PostAsJsonAsync(
+      $"/api/planning/programs/{programId}/start",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        expectedProgramRevisionId = program.GetProperty("revisionId").GetGuid(),
+        expectedActiveRunId = (Guid?)null,
+        expectedActiveRunVersion = (int?)null,
+        scheduledStartDate = firstDate,
+        scheduledWeekdayMask = 37,
+        scheduleTimeZoneId = "Europe/Brussels",
+      });
+    Assert.Equal(HttpStatusCode.OK, startedResponse.StatusCode);
+    Guid runId = (await ReadJsonAsync(startedResponse)).GetProperty("id").GetGuid();
+
+    string holderId = $"calendar-move-following-{Guid.NewGuid():N}";
+    using HttpResponseMessage leaseResponse = await client.PostAsJsonAsync(
+      "/api/live/lease/acquire",
+      new { holderId });
+    Assert.Equal(HttpStatusCode.OK, leaseResponse.StatusCode);
+    Guid leaseId = (await ReadJsonAsync(leaseResponse)).GetProperty("id").GetGuid();
+    using HttpResponseMessage armResponse = await client.PostAsJsonAsync(
+      "/api/live/sessions/arm",
+      new
+      {
+        profileId,
+        workoutRevisionId = canonicalRevisionId,
+        holderId,
+        leaseId,
+        operationId = Guid.NewGuid(),
+        selectionSource = "Program",
+        programRunId = runId,
+        programItemId = firstItemId,
+      });
+    Assert.Equal(HttpStatusCode.Created, armResponse.StatusCode);
+    Guid sessionId = (await ReadJsonAsync(armResponse)).GetProperty("sessionId").GetGuid();
+    using HttpResponseMessage motionResponse = await client.PostAsJsonAsync(
+      "/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.0, measuredInclinePercent = 1.0 });
+    Assert.Equal(HttpStatusCode.NoContent, motionResponse.StatusCode);
+    using HttpResponseMessage completeResponse = await client.PostAsJsonAsync(
+      "/api/live/simulator/complete-physical-session",
+      new { });
+    Assert.Equal(HttpStatusCode.NoContent, completeResponse.StatusCode);
+
+    DateOnly targetDate = firstDate.AddDays(1);
+    Assert.Equal(DayOfWeek.Tuesday, targetDate.DayOfWeek);
+    using HttpResponseMessage movePreviewResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/preview",
+      new
+      {
+        profileId,
+        programItemId = firstItemId,
+        action = "MoveFollowing",
+        targetDate,
+        expectedRunVersion = (int?)null,
+      });
+    Assert.Equal(HttpStatusCode.OK, movePreviewResponse.StatusCode);
+    JsonElement movePreview = await ReadJsonAsync(movePreviewResponse);
+    Assert.True(movePreview.GetProperty("canApply").GetBoolean());
+    JsonElement[] impacts = movePreview.GetProperty("impacts").EnumerateArray().ToArray();
+    Assert.Equal(2, impacts.Length);
+    Assert.Equal(firstItemId, impacts[0].GetProperty("programItemId").GetGuid());
+    Assert.Equal(firstDate.ToString("yyyy-MM-dd"), impacts[0].GetProperty("currentDate").GetString());
+    Assert.Equal(targetDate.ToString("yyyy-MM-dd"), impacts[0].GetProperty("newDate").GetString());
+    Assert.Equal(secondItemId, impacts[1].GetProperty("programItemId").GetGuid());
+    Assert.Equal(firstDate.AddDays(2).ToString("yyyy-MM-dd"), impacts[1].GetProperty("currentDate").GetString());
+    Assert.Equal(firstDate.AddDays(3).ToString("yyyy-MM-dd"), impacts[1].GetProperty("newDate").GetString());
+    int runVersion = movePreview.GetProperty("runVersion").GetInt32();
+    using HttpResponseMessage moveApplyResponse = await client.PostAsJsonAsync(
+      $"/api/planning/calendar/program-runs/{runId}/schedule/apply",
+      new
+      {
+        operationId = Guid.NewGuid(),
+        profileId,
+        programItemId = firstItemId,
+        action = "MoveFollowing",
+        targetDate,
+        expectedRunVersion = runVersion,
+      });
+    Assert.Equal(HttpStatusCode.OK, moveApplyResponse.StatusCode);
+    Assert.Equal(runVersion + 1, (await ReadJsonAsync(moveApplyResponse)).GetProperty("runVersion").GetInt32());
+
+    JsonElement calendar = await CalendarRangeAsync(client, profileId, firstDate, firstDate.AddDays(3));
+    JsonElement[] days = calendar.GetProperty("days").EnumerateArray().ToArray();
+    Assert.Equal(
+      new[] { targetDate, firstDate.AddDays(3) }.Select(static date => date.ToString("yyyy-MM-dd")),
+      days.Select(day => day.GetProperty("date").GetString()));
+    JsonElement movedCompleted = Assert.Single(days[0].GetProperty("options").EnumerateArray());
+    Assert.Equal(canonicalRevisionId, movedCompleted.GetProperty("workoutRevisionId").GetGuid());
+    Assert.Equal(runId, movedCompleted.GetProperty("programRunId").GetGuid());
+    Assert.Equal(firstItemId, movedCompleted.GetProperty("programItemId").GetGuid());
+    Assert.False(movedCompleted.GetProperty("isRepeat").GetBoolean());
+    Assert.True(movedCompleted.GetProperty("isCompleted").GetBoolean());
+    Assert.Equal(firstDate.ToString("yyyy-MM-dd"), movedCompleted.GetProperty("originalDate").GetString());
+
+    JsonElement movedNext = Assert.Single(days[1].GetProperty("options").EnumerateArray());
+    Assert.Equal(canonicalRevisionId, movedNext.GetProperty("workoutRevisionId").GetGuid());
+    Assert.Equal(runId, movedNext.GetProperty("programRunId").GetGuid());
+    Assert.Equal(secondItemId, movedNext.GetProperty("programItemId").GetGuid());
+    Assert.False(movedNext.GetProperty("isRepeat").GetBoolean());
+    Assert.False(movedNext.GetProperty("isCompleted").GetBoolean());
+    Assert.Equal(firstDate.AddDays(2).ToString("yyyy-MM-dd"), movedNext.GetProperty("originalDate").GetString());
+
+    using JsonDocument history = JsonDocument.Parse(await client.GetStringAsync($"/api/history/{sessionId}"));
+    JsonElement selection = history.RootElement.GetProperty("definition").GetProperty("selection");
+    Assert.Equal((int)WorkoutSelectionSource.Program, selection.GetProperty("source").GetInt32());
+    Assert.Equal(runId, selection.GetProperty("programRunId").GetGuid());
+    Assert.Equal(firstItemId, selection.GetProperty("programItemId").GetGuid());
+
+    JsonElement summary = Assert.Single(
+      (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={profileId}"))!,
+      item => item.GetProperty("id").GetGuid() == programId);
+    Assert.Equal(1, summary.GetProperty("completedItemCount").GetInt32());
+    Assert.Equal(secondItemId, summary.GetProperty("nextItemId").GetGuid());
+    Assert.Equal("Active", summary.GetProperty("run").GetProperty("status").GetString());
+
+    using HttpResponseMessage finalReset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    Assert.Equal(HttpStatusCode.NoContent, finalReset.StatusCode);
   }
 
   [Fact]

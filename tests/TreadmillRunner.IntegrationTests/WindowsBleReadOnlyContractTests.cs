@@ -114,6 +114,13 @@ public sealed class WindowsBleReadOnlyContractTests
 
     await Assert.ThrowsAnyAsync<OperationCanceledException>(
       async () => await connection.DiscoverServicesAsync(cancellation.Token));
+
+    IBleTargetedServiceDiscoveryConnection targeted = Assert.IsAssignableFrom<
+      IBleTargetedServiceDiscoveryConnection>(connection);
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(
+      async () => await targeted.DiscoverServicesForUuidsAsync(
+        [Guid.NewGuid()],
+        cancellation.Token));
   }
 
   [Fact]

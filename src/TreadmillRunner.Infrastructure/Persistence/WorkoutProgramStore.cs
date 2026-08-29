@@ -952,12 +952,12 @@ public sealed class WorkoutProgramStore(
     DateOnly moveReferenceDate = current?.Date ?? originalItem.Date;
     if (targetDate is { } requestedDate && Math.Abs(requestedDate.DayNumber - moveReferenceDate.DayNumber) > 365)
       return Blocked("Choose a date within one year of the currently scheduled session.");
-    if (action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing or WorkoutProgramScheduleAction.Skip or WorkoutProgramScheduleAction.Restore)
+    if (action is WorkoutProgramScheduleAction.Skip or WorkoutProgramScheduleAction.Restore)
     {
-      if (selectedCompleted) return Blocked("Completed plan sessions cannot be moved, skipped, or restored. Use Repeat workout instead.");
-      if (action != WorkoutProgramScheduleAction.Restore && current is null && action != WorkoutProgramScheduleAction.Skip)
-        return Blocked("This session is currently skipped. Restore it before moving it.");
+      if (selectedCompleted) return Blocked("Completed plan sessions cannot be skipped or restored. Move the completed session to its actual date, with or without shifting the later incomplete plan, or use Repeat workout for another attempt.");
     }
+    if ((action is WorkoutProgramScheduleAction.MoveOne or WorkoutProgramScheduleAction.MoveFollowing) && current is null)
+      return Blocked("This session is currently skipped. Restore it before moving it.");
     if (action is WorkoutProgramScheduleAction.Repeat or WorkoutProgramScheduleAction.RepeatAndShift && !selectedCompleted)
       return Blocked("An incomplete session should be rescheduled, not repeated.");
 
@@ -973,7 +973,8 @@ public sealed class WorkoutProgramStore(
           int offset = targetDate!.Value.DayNumber - current.Date.DayNumber;
           foreach (ScheduledWorkoutProgramItem occurrence in effective.Where(item => !item.IsRepeat && item.Item.Position >= selectedItem.Position))
           {
-            if (completed.Contains(occurrence.Item.Id)) return Blocked("A completed later session prevents shifting this part of the plan.");
+            if (occurrence.Item.Id != selectedItem.Id && completed.Contains(occurrence.Item.Id))
+              return Blocked("A completed later session prevents shifting this part of the plan.");
             impacts.Add(new(occurrence.Item.Id, occurrence.Item.Position, occurrence.Date, occurrence.Date.AddDays(offset)));
           }
           break;

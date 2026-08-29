@@ -67,6 +67,37 @@ public sealed class DeviceEnrollmentStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Product_specific_rename_promotes_generic_heart_rate_metadata_without_downgrading_known_identity()
+  {
+    var store = new DeviceEnrollmentStore(_factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-29T12:00:00Z");
+    VersionedDeviceEnrollment generic = await store.EnrollAsync(
+      HeartRate("102030405060", "Household HR"),
+      now,
+      Op("device.enroll.generic", now));
+    Assert.Equal(HeartRateDeviceKind.Sensor, generic.Enrollment.HeartRateDeviceKind);
+    Assert.Equal(HeartRateDeviceFamily.Other, generic.Enrollment.HeartRateDeviceFamily);
+
+    VersionedDeviceEnrollment promoted = await store.RenameAsync(
+      generic.Enrollment.Id,
+      "Marc Polar H10",
+      generic.Version,
+      now.AddSeconds(1),
+      Op("device.rename.promote", now.AddSeconds(1)));
+    Assert.Equal(HeartRateDeviceKind.ChestStrap, promoted.Enrollment.HeartRateDeviceKind);
+    Assert.Equal(HeartRateDeviceFamily.Polar, promoted.Enrollment.HeartRateDeviceFamily);
+
+    VersionedDeviceEnrollment friendly = await store.RenameAsync(
+      promoted.Enrollment.Id,
+      "Marc's training sensor",
+      promoted.Version,
+      now.AddSeconds(2),
+      Op("device.rename.friendly", now.AddSeconds(2)));
+    Assert.Equal(HeartRateDeviceKind.ChestStrap, friendly.Enrollment.HeartRateDeviceKind);
+    Assert.Equal(HeartRateDeviceFamily.Polar, friendly.Enrollment.HeartRateDeviceFamily);
+  }
+
+  [Fact]
   public async Task Assignments_are_profile_specific_and_preferred_selection_moves_atomically()
   {
     var profiles = new ProfileStore(_factory);

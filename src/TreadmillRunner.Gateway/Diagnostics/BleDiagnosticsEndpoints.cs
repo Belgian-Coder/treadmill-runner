@@ -1,4 +1,5 @@
 using TreadmillRunner.Core.Bluetooth;
+using TreadmillRunner.Gateway.Devices;
 
 namespace TreadmillRunner.Gateway.Diagnostics;
 
@@ -50,13 +51,16 @@ public static class BleDiagnosticsEndpoints
             advertisement);
       }
     }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !httpContext.RequestAborted.IsCancellationRequested)
+    catch (OperationCanceledException) when (
+      timeout.IsCancellationRequested &&
+      !cancellationToken.IsCancellationRequested &&
+      !httpContext.RequestAborted.IsCancellationRequested)
     {
       // A bounded scan ends when its configured duration elapses.
     }
     catch (Exception exception)
     {
-      loggerFactory.CreateLogger("BleDiagnostics").LogWarning(exception, "Passive BLE scan was unavailable.");
+      loggerFactory.CreateLogger("BleDiagnostics").LogWarning(exception, "Active read-only BLE scan was unavailable.");
       return TypedResults.Problem("The Windows BLE adapter is unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
@@ -89,7 +93,11 @@ public static class BleDiagnosticsEndpoints
     try
     {
       await using var connection = await transport.ConnectAsync(deviceId, timeout.Token);
-      var services = await connection.DiscoverServicesAsync(timeout.Token);
+      IReadOnlyList<BleService> services = await ReadOnlyDeviceCoordinator.AwaitGattOperationAsync(
+        operationCancellation => connection.DiscoverServicesAsync(operationCancellation).AsTask(),
+        GattEnumerationTimeout,
+        TimeProvider.System,
+        timeout.Token);
 
       httpContext.Response.Headers.CacheControl = "no-store";
       return TypedResults.Ok(new BleGattDiagnosticsResponse(
@@ -98,7 +106,10 @@ public static class BleDiagnosticsEndpoints
                     .OrderBy(static service => service.Uuid)
                     .Select(ToDiagnosticService)]));
     }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !httpContext.RequestAborted.IsCancellationRequested)
+    catch (Exception exception) when (
+      (exception is TimeoutException or OperationCanceledException) &&
+      !cancellationToken.IsCancellationRequested &&
+      !httpContext.RequestAborted.IsCancellationRequested)
     {
       return TypedResults.Problem("GATT enumeration exceeded its 15-second diagnostic limit.", statusCode: StatusCodes.Status504GatewayTimeout);
     }

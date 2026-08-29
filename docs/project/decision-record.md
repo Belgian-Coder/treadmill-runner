@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-23
+updated: 2026-08-29
 ---
 
 # TreadmillRunner decision record
@@ -24,6 +24,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Trusted private-LAN HTTPS enables install prompts, standalone launch shortcuts, native outbound file sharing, and exactly one cached offline safety document. It does not create an offline app: app shell, data, APIs, live state, credentials, and commands remain network-only, and the worker never forces takeover of an active client.
 - The gateway continues an active workout if a browser disappears.
 - Heart-rate source and health are profile-scoped. Contact state, source, quality, observation time, and freshness are retained; stale, invalid, unsupported, or no-contact readings become unavailable and suspend automation. A source from another profile is never selected silently.
+- A demanded heart-rate source is rediscovered through a bounded active read-only scan before connection and after relevant failures. Its saved address is a locator, not durable identity: only an exact current address or unique standard-HRS name/family match may supply an ephemeral locator. Ambiguous, truncated, or stale enrollment identity data fails closed; treadmill identity never rebinds.
 - Physical console Start is the current fallback and remains available. A future enrolled adapter may expose a hold-to-start UI only when its exact model/firmware has passed TR-006B; FTMS advertisement alone never enables it.
 - A remote Start intent is single-use, short-lived, lease- and connection-generation-bound, never retried/replayed, and never restored after reconnect, reload, restart, update, or rollback. Running begins only after measured belt movement.
 - Each serialized FTMS exchange accepts only a response indication for the opcode it just wrote. A late acknowledgement for an earlier operation is ignored until the same bounded response deadline; it never changes the current command result, and confirmation still requires fresh measured telemetry.
@@ -43,7 +44,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Stop/End first sends Stop, then presents explicit keep-paused, reset-progress, or end-and-save decisions. Reset changes only the workout cursor and progress timer; recorded time, distance, telemetry, and events remain append-only. End is the only terminal action and is accepted only after confirmed stop.
 - Explicit deletion may remove any terminal local session, including a plan-linked run or one with a settled Garmin upload record. Plan progress is derived again from remaining history, remote Garmin activities are never deleted, and pending/in-flight/unknown upload outcomes remain protected.
 - History detail is a bounded display contract: it returns at most 240 representative samples with exact first/last coverage and the full persisted count. Stored data, analytics, event history, CSV, and FIT remain full-resolution so UI responsiveness never changes the authoritative record.
-- Calendar is a view-and-manage surface. Workout creation, recurring workout scheduling, premade-template installation, and training-plan start/restart scheduling belong to Plan. Installing an already-installed template version is idempotent; the product does not offer duplicate copies as an ordinary action. Calendar mutations fail closed on occupied target dates, including one-session moves, following-session shifts, restores, and training-day changes; clearing upcoming work is available per selected plan and never alters completed history.
+- Calendar is a view-and-manage surface. Workout creation, recurring workout scheduling, premade-template installation, and training-plan start/restart scheduling belong to Plan. Installing an already-installed template version is idempotent; the product does not offer duplicate copies as an ordinary action. A completed-late session may move to its actual date and shift every later incomplete session by the same offset without changing linked History or progression. Calendar mutations fail closed on occupied target dates, including one-session moves, following-session shifts, restores, and training-day changes; clearing upcoming work is available per selected plan and never alters completed history.
 
 ## Engineering decisions
 
@@ -58,6 +59,7 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Trusted private HTTPS with HTTP/2 is the production browser transport baseline. Plain loopback HTTP remains for local health and update recovery. HTTP/3 may be added by a managed edge but is not required, and no deployment may label a self-signed or otherwise untrusted certificate as household-ready.
 - The iPhone Home Screen contract serves one complete opaque 180×180 Apple touch icon from the canonical app artwork. Re-adding an existing Home Screen shortcut may be required after an asset refresh; no physical Safari installation claim is made by source validation.
 - Core/Protocols contain no WinRT. Infrastructure owns Windows BLE and SQLite.
+- Windows BLE scan-response discovery, public/random address typing, targeted standard-service GATT enumeration, and native timeout cancellation remain Infrastructure concerns. Notification teardown disposes its service/device handles and never starts an unbounded detached CCCD cleanup operation.
 - SQLite enforces one active session through a filtered unique active-slot index. Startup/migration reconciles pre-existing conflicts before the constraint is enabled, while recovery and Garmin lease queries select only the chosen candidate/available lease with indexed ordering.
 - Treadmill support is adapter-based: portable `ITreadmillProtocol`
   implementations provide identity matching, reported features/ranges, and separately hardware-verified capability declarations, and

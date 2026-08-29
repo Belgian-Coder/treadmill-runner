@@ -75,6 +75,49 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
   }
 
   [Fact]
+  public async Task Scan_merges_split_name_and_heart_rate_service_packets_for_enrollment()
+  {
+    var transport = new AdvertisementOnlyTransport(
+    [
+      new BleAdvertisement("split-watch", null, -55, [HeartRate]),
+      new BleAdvertisement("split-watch", "Garmin Forerunner 965", -35, []),
+    ]);
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IBleCentralTransport>();
+        services.AddSingleton<IBleCentralTransport>(transport);
+      }));
+    using HttpClient client = application.CreateClient();
+
+    JsonElement result = await client.GetFromJsonAsync<JsonElement>("/api/devices/scan?durationSeconds=1");
+
+    JsonElement candidate = Assert.Single(result.EnumerateArray());
+    Assert.Equal("split-watch", candidate.GetProperty("deviceId").GetString());
+    Assert.Equal("Garmin Forerunner 965", candidate.GetProperty("name").GetString());
+    Assert.Equal("Watch", candidate.GetProperty("heartRateDeviceKind").GetString());
+    Assert.Contains(
+      candidate.GetProperty("supportedRoles").EnumerateArray(),
+      role => role.GetString() == "HeartRate");
+  }
+
+  [Fact]
+  public async Task Scan_returns_service_unavailable_when_the_bounded_observation_is_truncated()
+  {
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IBleCentralTransport>();
+        services.AddSingleton<IBleCentralTransport>(new FailingAdvertisementTransport());
+      }));
+    using HttpClient client = application.CreateClient();
+
+    using HttpResponseMessage response = await client.GetAsync("/api/devices/scan?durationSeconds=1");
+
+    Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+  }
+
+  [Fact]
   public async Task Enrolls_one_device_per_role_replays_and_forgets_by_version()
   {
     using HttpClient client = factory.CreateClient();
@@ -287,6 +330,23 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
         cancellationToken.ThrowIfCancellationRequested();
         yield return advertisement;
       }
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default) =>
+      throw new InvalidOperationException("The scan test must not connect to a device.");
+  }
+
+  private sealed class FailingAdvertisementTransport : IBleCentralTransport
+  {
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      cancellationToken.ThrowIfCancellationRequested();
+      yield return new BleAdvertisement("partial", "Polar H10", -45, [HeartRate]);
+      throw new InvalidOperationException("Simulated truncated enrollment scan.");
     }
 
     public ValueTask<IBleConnection> ConnectAsync(

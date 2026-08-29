@@ -1335,6 +1335,9 @@ body.immersive-view { overflow: hidden; }
 .program-training-days button:focus-visible { outline: 3px solid #f6c453; outline-offset: 2px; }
 .program-schedule-copy { color: #8ee3c4; font-size: .74rem; font-weight: 700; }
 .calendar-option-shell--program .calendar-option { border-color: #74e0bd80; background: #123b37; }
+.calendar-option--completed { box-shadow: inset .25rem 0 0 #f5c768; }
+.calendar-completion-status { display: inline-flex; width: fit-content; align-items: center; gap: .28rem; padding: .14rem .42rem; border-radius: 999px; background: #f5c76824; color: #ffe69f; font-size: .68rem; letter-spacing: .03em; text-transform: uppercase; }
+.calendar-completion-status > span { color: #f5c768; font-size: .82rem; line-height: 1; }
 .schedule-impact-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; margin: 0; }
 .schedule-impact-summary > div { display: grid; gap: .2rem; padding: .65rem; border-radius: .7rem; background: #081e27; }
 .schedule-impact-summary dt { color: #9ab6b2; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
@@ -2229,6 +2232,11 @@ h1:focus-visible {
   background: #74e0bd;
 }
 
+.calendar-date-markers i.calendar-date-marker--completed {
+  background: #f5c768;
+  box-shadow: 0 0 0 2px #f5c7682e;
+}
+
 .calendar-date-markers small {
   color: #a9c4c1;
   font: 750 .62rem "Cascadia Mono", Consolas, monospace;
@@ -2260,6 +2268,7 @@ h1:focus-visible {
 .calendar-marker-key span { display: inline-flex; align-items: center; gap: .3rem; }
 .calendar-marker-key i { width: .45rem; height: .45rem; border-radius: 50%; background: #6ec7ff; }
 .calendar-marker-key i.calendar-date-marker--program { background: #74e0bd; }
+.calendar-marker-key i.calendar-date-marker--completed { background: #f5c768; }
 .calendar-marker-key small { color: #91abaa; font-size: inherit; }
 
 .calendar-selected-day {

@@ -294,6 +294,26 @@ public sealed class DeviceEnrollmentStore(
     if (entity.Version != expectedVersion)
       throw new DbUpdateConcurrencyException($"Expected enrollment version {expectedVersion}, but stored version is {entity.Version}.");
     entity.DisplayName = normalized;
+    if (string.Equals(entity.Role, nameof(DeviceRole.HeartRate), StringComparison.Ordinal))
+    {
+      HeartRateDeviceKind storedKind = entity.HeartRateDeviceKind is null
+        ? HeartRateDeviceKind.Sensor
+        : Enum.Parse<HeartRateDeviceKind>(entity.HeartRateDeviceKind);
+      HeartRateDeviceKind classifiedKind = HeartRateDeviceClassifier.Classify(normalized);
+      if (storedKind == HeartRateDeviceKind.Sensor && classifiedKind != HeartRateDeviceKind.Sensor)
+      {
+        entity.HeartRateDeviceKind = classifiedKind.ToString();
+      }
+
+      HeartRateDeviceFamily storedFamily = entity.HeartRateDeviceFamily is null
+        ? HeartRateDeviceFamily.Other
+        : Enum.Parse<HeartRateDeviceFamily>(entity.HeartRateDeviceFamily);
+      HeartRateDeviceFamily classifiedFamily = HeartRateDeviceClassifier.Family(normalized);
+      if (storedFamily == HeartRateDeviceFamily.Other && classifiedFamily != HeartRateDeviceFamily.Other)
+      {
+        entity.HeartRateDeviceFamily = classifiedFamily.ToString();
+      }
+    }
     entity.UpdatedAtUtc = nowUtc;
     entity.Version++;
     await PersistenceReceipts.SaveAsync(context, contextFactory, operation, cancellationToken);

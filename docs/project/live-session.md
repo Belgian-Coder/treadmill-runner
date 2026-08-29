@@ -4,12 +4,12 @@ type: feature-guide
 status: implemented-with-pending-hardware-evidence
 owner: project
 audience: agent-and-developer
-updated: 2026-08-23
+updated: 2026-08-29
 ---
 
 # Authoritative live session
 
-TR-004 provides the authoritative simulator-backed daily running flow. TR-005 adds an explicitly selected read-only Omega Z telemetry source and simultaneous Polar H10 source through the same gateway-owned session coordinator. The gateway—not the browser—owns session state, workout progression, lease, sample cadence, events, and completion. Offline tests do not prove Windows Service BLE or real treadmill control.
+TR-004 provides the authoritative simulator-backed daily running flow. TR-005 adds an explicitly selected read-only Omega Z telemetry source, and later household-HR work allows profile-assigned Polar and Garmin HRS sources through the same gateway-owned session coordinator. The gateway—not the browser—owns session state, workout progression, lease, sample cadence, events, and completion. Offline tests do not prove Windows Service BLE or real treadmill control.
 
 [![Simulated live session diagram](diagrams/live-session-simulated-live-session.svg)](diagrams/live-session-simulated-live-session.svg)
 
@@ -49,7 +49,7 @@ Source: [Mermaid](diagrams/live-session-command-flow.mmd)
 - The Development simulator reports a fixed HR value. An enrolled profile-scoped HR source supplies real HR when contact and freshness are valid; unavailable readings suspend HR automation. The HR controller supports Shadow, Decrease only, Full, and Off, with configurable steps/cooldowns. Browser lease loss removes manual authority but does not suspend gateway-owned control; stale telemetry, unsafe reconnect, write uncertainty, pause, protocol fault, or manual speed override still suspends it.
 - FTMS Start/Resume, Stop, Pause, speed, and incline software paths exist, but each stays blocked unless persisted exact-model evidence is `HardwareVerified` for that capability. The daily Pause interaction uses only the raw Pause opcode and remains unavailable on the Omega Z until that separate capability is hardware-verified; Stop is never presented as Pause.
 - Accelerated four-hour cadence and bounded chart-memory tests pass. An explicit soak persists and reads 14,400 one-second SQLite samples. In-process controller acceptance stays below 100 ms p95 and loopback browser telemetry stays below 500 ms p95. Formal household-Wi-Fi p95 measurement is not a deployment acceptance check; retained timestamps are diagnostic evidence if normal use feels delayed.
-- Active BLE reconnect uses 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. A matching advertisement and manual Retry bypass the delay. Reliability evidence is priority-preserved while disposable status churn may be coalesced. Readiness/integrity results are cached and full integrity/backup work is deferred away from ordinary startup.
+- Active BLE reconnect uses 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. A freshly resolved advertisement and the UI's manual **Connect** action can bypass the current delay; **Connect** creates a two-minute read-only demand window and reruns bounded active discovery. Reliability evidence is priority-preserved while disposable status churn may be coalesced. Readiness/integrity results are cached and full integrity/backup work is deferred away from ordinary startup.
 - Signed update check/stage/activate and helper rollback are implemented and deterministically tested. Real A→B activation and broken-C rollback on the Windows VM remain deployment evidence; publishing the Playwright host is not update evidence.
 - Screen Wake Lock is not promised over the selected private-LAN HTTP deployment. Configure device Auto-Lock if a continuously visible display is required.
 

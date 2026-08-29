@@ -257,7 +257,7 @@
 
     <section class="panel-card device-discovery" aria-labelledby="discovery-title">
         <div class="section-heading">
-            <div><p class="eyebrow">Bounded passive scan</p><h2 id="discovery-title">Nearby supported devices</h2></div>
+            <div><p class="eyebrow">Bounded active read-only scan</p><h2 id="discovery-title">Nearby supported devices</h2></div>
             <button class="primary-action" type="button" @onclick="ScanAsync" disabled="@isScanning">
                 @(isScanning ? "Scanning…" : "Scan for 5 seconds")
             </button>

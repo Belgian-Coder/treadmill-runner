@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using TreadmillRunner.Core.Bluetooth;
 using Windows.Devices.Bluetooth;
@@ -9,13 +10,23 @@ using Windows.Storage.Streams;
 
 namespace TreadmillRunner.Infrastructure.Bluetooth;
 
-internal sealed class WindowsBleReadOnlyConnection : IBleConnection
+internal sealed class WindowsBleReadOnlyConnection :
+  IBleConnection,
+  IBleTargetedServiceDiscoveryConnection
 {
   private readonly ulong _bluetoothAddress;
+  private readonly BluetoothAddressType? _bluetoothAddressType;
   private readonly CancellationTokenSource _disposeCancellation = new();
   private int _disposed;
 
   public WindowsBleReadOnlyConnection(string deviceId)
+    : this(deviceId, null)
+  {
+  }
+
+  internal WindowsBleReadOnlyConnection(
+    string deviceId,
+    BluetoothAddressType? bluetoothAddressType)
   {
     if (deviceId is null ||
         deviceId.Length != 12 ||
@@ -31,6 +42,7 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
     }
 
     DeviceId = deviceId.ToUpperInvariant();
+    _bluetoothAddressType = WindowsBleAddressTypePolicy.SelectForConnection(bluetoothAddressType);
   }
 
   public string DeviceId { get; }
@@ -50,14 +62,14 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
       .GetGattServicesAsync(BluetoothCacheMode.Uncached)
       .AsTask(operationCancellation)
       .ConfigureAwait(false);
-    WindowsBleStatus.ThrowIfFailed(
-      servicesResult.Status,
-      servicesResult.ProtocolError,
-      "service discovery");
-
     var nativeServices = servicesResult.Services;
     try
     {
+      WindowsBleStatus.ThrowIfFailed(
+        servicesResult.Status,
+        servicesResult.ProtocolError,
+        "service discovery");
+
       var services = new List<BleService>(nativeServices.Count);
       foreach (GattDeviceService nativeService in nativeServices)
       {
@@ -90,6 +102,92 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
         nativeService.Dispose();
       }
     }
+  }
+
+  public async ValueTask<IReadOnlyList<BleService>> DiscoverServicesForUuidsAsync(
+    IReadOnlyCollection<Guid> serviceUuids,
+    CancellationToken cancellationToken = default)
+  {
+    ThrowIfDisposed();
+    ArgumentNullException.ThrowIfNull(serviceUuids);
+    cancellationToken.ThrowIfCancellationRequested();
+    using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+      cancellationToken,
+      _disposeCancellation.Token);
+    CancellationToken operationCancellation = linkedCancellation.Token;
+
+    using BluetoothLEDevice device = await OpenDeviceAsync(operationCancellation);
+    var services = new List<BleService>();
+    foreach (Guid serviceUuid in serviceUuids.Distinct())
+    {
+      operationCancellation.ThrowIfCancellationRequested();
+      GattDeviceServicesResult nativeResult;
+      try
+      {
+        nativeResult = await device
+          .GetGattServicesForUuidAsync(serviceUuid, BluetoothCacheMode.Uncached)
+          .AsTask(operationCancellation)
+          .ConfigureAwait(false);
+      }
+      catch (Exception exception) when (
+        !operationCancellation.IsCancellationRequested &&
+        IsSafeOptionalDiscoveryFailure(exception))
+      {
+        // Optional/protected vendor-adjacent services must not prevent the
+        // standard HRS path from discovering its independently accessible
+        // services. The coordinator still requires 180D/2A37 before Ready.
+        continue;
+      }
+
+      var nativeServices = nativeResult.Services;
+      try
+      {
+        try
+        {
+          operationCancellation.ThrowIfCancellationRequested();
+          WindowsBleStatus.ThrowIfFailed(
+            nativeResult.Status,
+            nativeResult.ProtocolError,
+            $"service discovery for {serviceUuid:D}");
+        }
+        catch (Exception exception) when (
+          !operationCancellation.IsCancellationRequested &&
+          IsSafeOptionalDiscoveryFailure(exception))
+        {
+          // Even an unsuccessful result can carry service objects. The
+          // finally block below disposes every one before moving on.
+          continue;
+        }
+
+        foreach (GattDeviceService nativeService in nativeServices)
+        {
+          operationCancellation.ThrowIfCancellationRequested();
+          try
+          {
+            BleService? mapped = await TryMapServiceAsync(
+              nativeService,
+              operationCancellation).ConfigureAwait(false);
+            if (mapped is not null) services.Add(mapped);
+          }
+          catch (Exception exception) when (
+            !operationCancellation.IsCancellationRequested &&
+            IsSafeOptionalDiscoveryFailure(exception))
+          {
+            // Keep other requested standard services independently usable.
+          }
+        }
+      }
+      finally
+      {
+        foreach (GattDeviceService nativeService in nativeServices)
+        {
+          nativeService.Dispose();
+        }
+      }
+    }
+
+    ThrowIfDisposed();
+    return services;
   }
 
   public async ValueTask<ReadOnlyMemory<byte>> ReadAsync(
@@ -206,16 +304,6 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
       handle.Characteristic.ValueChanged -= handler;
       handle.Device.ConnectionStatusChanged -= connectionHandler;
       channel.Writer.TryComplete();
-      try
-      {
-        await handle.Characteristic
-          .WriteClientCharacteristicConfigurationDescriptorAsync(
-            GattClientCharacteristicConfigurationDescriptorValue.None);
-      }
-      catch
-      {
-        // Connection disposal remains the final subscription cleanup boundary.
-      }
     }
   }
 
@@ -232,10 +320,24 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
 
   private async Task<BluetoothLEDevice> OpenDeviceAsync(CancellationToken cancellationToken)
   {
-    BluetoothLEDevice? device = await BluetoothLEDevice
-      .FromBluetoothAddressAsync(_bluetoothAddress)
-      .AsTask(cancellationToken)
-      .ConfigureAwait(false);
+    BluetoothLEDevice? device;
+    if (_bluetoothAddressType is { } addressType)
+    {
+      device = await BluetoothLEDevice
+        .FromBluetoothAddressAsync(_bluetoothAddress, addressType)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false);
+    }
+    else
+    {
+      // Preserve the one-argument API for unknown/unspecified observations;
+      // Windows can infer the address type from its own device cache.
+      device = await BluetoothLEDevice
+        .FromBluetoothAddressAsync(_bluetoothAddress)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false);
+    }
+
     cancellationToken.ThrowIfCancellationRequested();
 
     return device ?? throw new WindowsBleDeviceUnavailableException();
@@ -310,6 +412,45 @@ internal sealed class WindowsBleReadOnlyConnection : IBleConnection
       throw;
     }
   }
+
+  private static async Task<BleService?> TryMapServiceAsync(
+    GattDeviceService nativeService,
+    CancellationToken cancellationToken)
+  {
+    GattOpenStatus openStatus = await nativeService
+      .OpenAsync(GattSharingMode.SharedReadAndWrite)
+      .AsTask(cancellationToken)
+      .ConfigureAwait(false);
+    if (openStatus is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
+    {
+      throw new WindowsBleException(
+        $"Windows BLE could not open service {nativeService.Uuid:D} for shared telemetry access: {openStatus}.");
+    }
+
+    // Match OpenCharacteristicAsync: yielding after OpenAsync avoids starting
+    // WinRT characteristic discovery in the same completion turn.
+    await Task.Yield();
+    GattCharacteristicsResult characteristicsResult = await nativeService
+      .GetCharacteristicsAsync(BluetoothCacheMode.Uncached)
+      .AsTask(cancellationToken)
+      .ConfigureAwait(false);
+    WindowsBleStatus.ThrowIfFailed(
+      characteristicsResult.Status,
+      characteristicsResult.ProtocolError,
+      $"characteristic discovery for service {nativeService.Uuid:D}");
+    BleCharacteristic[] characteristics = characteristicsResult.Characteristics
+      .Select(characteristic => WindowsBleContractMapper.MapCharacteristic(
+        nativeService.Uuid,
+        characteristic.Uuid,
+        characteristic.CharacteristicProperties))
+      .ToArray();
+    return new BleService(nativeService.Uuid, characteristics);
+  }
+
+  private static bool IsSafeOptionalDiscoveryFailure(Exception exception) =>
+    exception is WindowsBleException or
+      COMException or
+      UnauthorizedAccessException;
 
   private static byte[] ReadBuffer(IBuffer buffer)
   {

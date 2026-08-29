@@ -460,7 +460,8 @@ public static class CalendarPlanningEndpoints
             IsRepeat: programItem.Scheduled.IsRepeat,
             ExtraOccurrenceId: programItem.Scheduled.ExtraOccurrenceId,
             OriginalDate: programItem.Scheduled.OriginalDate,
-            IsCompleted: programItem.Program.CompletedItemIds?.Contains(item.Id) == true,
+            IsCompleted: !programItem.Scheduled.IsRepeat &&
+              programItem.Program.CompletedItemIds?.Contains(item.Id) == true,
             ProgramWeekdayMask: (int?)run.Schedule?.Weekdays));
         }
       }

@@ -6,7 +6,7 @@ using TreadmillRunner.Core.Bluetooth;
 namespace TreadmillRunner.Infrastructure.Bluetooth;
 
 /// <summary>
-/// Fans out one passive adapter scan to all current callers. A subscriber owns
+/// Fans out one bounded active read-only adapter scan to all current callers. A subscriber owns
 /// only its bounded channel; cancelling one subscriber never stops another.
 /// </summary>
 public sealed class BleAdvertisementBroker(
@@ -95,7 +95,7 @@ public sealed class BleAdvertisementBroker(
             {
               SingleReader = true,
               SingleWriter = false,
-              FullMode = BoundedChannelFullMode.DropOldest,
+              FullMode = BoundedChannelFullMode.Wait,
             });
           long subscriberId = ++_nextSubscriberId;
           _subscribers.Add(subscriberId, channel);
@@ -180,7 +180,11 @@ public sealed class BleAdvertisementBroker(
 
         foreach (Channel<BleAdvertisement> channel in channels)
         {
-          channel.Writer.TryWrite(advertisement);
+          if (!channel.Writer.TryWrite(advertisement))
+          {
+            channel.Writer.TryComplete(new InvalidOperationException(
+              "The BLE advertisement subscriber exceeded its bounded buffer."));
+          }
         }
       }
     }
@@ -190,7 +194,7 @@ public sealed class BleAdvertisementBroker(
     catch (Exception exception)
     {
       completionException = exception;
-      logger.LogWarning(exception, "The shared passive BLE advertisement scan failed.");
+      logger.LogWarning(exception, "The shared active read-only BLE advertisement scan failed.");
     }
     finally
     {

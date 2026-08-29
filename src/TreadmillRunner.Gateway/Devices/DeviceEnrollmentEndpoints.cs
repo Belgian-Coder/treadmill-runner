@@ -316,6 +316,7 @@ public static class DeviceEnrollmentEndpoints
     int durationSeconds,
     IBleAdvertisementBroker advertisementBroker,
     TreadmillProtocolRegistry protocols,
+    ILoggerFactory loggerFactory,
     CancellationToken cancellationToken)
   {
     if (durationSeconds is < 1 or > 30)
@@ -331,16 +332,22 @@ public static class DeviceEnrollmentEndpoints
     {
       await foreach (BleAdvertisement advertisement in advertisementBroker.ScanAsync(timeout.Token))
       {
-        if (!advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current) ||
-            advertisement.SignalStrength > current.SignalStrength)
-        {
-          advertisements[advertisement.DeviceId] = advertisement;
-        }
+        advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current);
+        advertisements[advertisement.DeviceId] = MergeAdvertisement(current, advertisement);
       }
     }
     catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
     {
       // The bounded scan completed normally.
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+    {
+      loggerFactory.CreateLogger("DeviceEnrollmentScan").LogWarning(
+        exception,
+        "BLE enrollment discovery ended before a complete bounded scan was observed.");
+      return TypedResults.Problem(
+        "BLE device discovery was unavailable. Try the scan again.",
+        statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     object[] result = advertisements.Values
@@ -380,6 +387,29 @@ public static class DeviceEnrollmentEndpoints
       .Cast<object>()
       .ToArray();
     return TypedResults.Ok(result);
+  }
+
+  private static BleAdvertisement MergeAdvertisement(
+    BleAdvertisement? current,
+    BleAdvertisement incoming)
+  {
+    if (current is null)
+    {
+      return incoming with
+      {
+        ServiceUuids = [.. incoming.ServiceUuids.Distinct().OrderBy(static uuid => uuid)],
+      };
+    }
+
+    bool useIncoming = incoming.SignalStrength is not null &&
+      (current.SignalStrength is null || incoming.SignalStrength > current.SignalStrength);
+    BleAdvertisement strongest = useIncoming ? incoming : current;
+    string? name = strongest.Name ?? (useIncoming ? current.Name : incoming.Name);
+    return strongest with
+    {
+      Name = name,
+      ServiceUuids = [.. current.ServiceUuids.Concat(incoming.ServiceUuids).Distinct().OrderBy(static uuid => uuid)],
+    };
   }
 
   private static string[] SupportedRoles(
@@ -510,7 +540,8 @@ public static class DeviceEnrollmentEndpoints
       VersionedDeviceEnrollment enrollment = (await store.ListActiveAsync(cancellationToken))
         .SingleOrDefault(item => item.Enrollment.Id == id)
         ?? throw new KeyNotFoundException($"Enrollment {id} was not found.");
-      bool polar = enrollment.Enrollment.HeartRateDeviceFamily == HeartRateDeviceFamily.Polar;
+      bool polar = HeartRateReconnectResolver.EffectiveFamily(enrollment.Enrollment) ==
+        HeartRateDeviceFamily.Polar;
       HeartRateAssignmentPreference[] assignments = CreateAssignmentPreferences(
         request.OwnerProfileIds,
         polar ? 0 : request.Priority,
@@ -750,8 +781,12 @@ public static class DeviceEnrollmentEndpoints
     value.Enrollment.Evidence.ToString(),
     value.Enrollment.LastVerifiedAtUtc,
     value.Version,
-    value.Enrollment.HeartRateDeviceKind?.ToString(),
-    value.Enrollment.HeartRateDeviceFamily?.ToString(),
+    value.Enrollment.Role == DeviceRole.HeartRate
+      ? HeartRateReconnectResolver.EffectiveKind(value.Enrollment).ToString()
+      : null,
+    value.Enrollment.Role == DeviceRole.HeartRate
+      ? HeartRateReconnectResolver.EffectiveFamily(value.Enrollment).ToString()
+      : null,
     assignments.Where(item => item.DeviceEnrollmentId == value.Enrollment.Id).Select(ToAssignmentDto).ToArray());
 
   private static HeartRateAssignmentDto ToAssignmentDto(HeartRateDeviceAssignment value) => new(

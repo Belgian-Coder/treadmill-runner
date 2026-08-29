@@ -88,6 +88,7 @@
                 <div class="calendar-marker-key" aria-label="Month calendar key">
                     <span><i class="calendar-date-marker--program"></i>Plan</span>
                     <span><i></i>Scheduled workout</span>
+                    <span><i class="calendar-date-marker--completed"></i>Completed</span>
                     <small>The number shows scheduled sessions.</small>
                 </div>
             }
@@ -117,8 +118,12 @@
                                                 @foreach (CalendarOptionView option in agendaDay.Day.Options)
                                                 {
                                                     <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(agendaDay.Day, option)" aria-haspopup="dialog" aria-label="View details for @option.WorkoutName on @agendaDay.Date.ToString("d MMMM")">
+                                                        <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null) @(option.IsCompleted ? "calendar-option--completed" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(agendaDay.Day, option)" aria-haspopup="dialog" aria-label="@CalendarOptionAriaLabel(agendaDay.Date, option)">
                                                             <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
+                                                            @if (option.IsCompleted)
+                                                            {
+                                                                <strong class="calendar-completion-status"><span aria-hidden="true">✓</span>Completed</strong>
+                                                            }
                                                         </button>
                                                         @if (!option.IsRepeat)
                                                         {
@@ -170,6 +175,10 @@
                                                         {
                                                             <span class="calendar-date-markers" aria-hidden="true">
                                                                 <small class="calendar-date-count">@day.Options.Count</small>
+                                                                @if (day.Options.Any(static option => option.IsCompleted))
+                                                                {
+                                                                    <i class="calendar-date-marker--completed"></i>
+                                                                }
                                                                 @foreach (CalendarOptionView option in day.Options
                                                                     .GroupBy(static option => option.Source == "Program")
                                                                     .Select(static group => group.First())
@@ -199,8 +208,12 @@
                                     @foreach (CalendarOptionView option in selectedDay.Options)
                                     {
                                         <div class="calendar-option-shell @(option.Source == "Program" ? "calendar-option-shell--program" : null)">
-                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(selectedDay, option)" aria-haspopup="dialog" aria-label="View details for @option.WorkoutName on @selectedMonthDate.ToString("d MMMM")">
+                                            <button class="calendar-option @(option.IsSelected ? "calendar-option--selected" : null) @(option.IsCompleted ? "calendar-option--completed" : null)" type="button" @onclick="() => OpenCalendarDetailsAsync(selectedDay, option)" aria-haspopup="dialog" aria-label="@CalendarOptionAriaLabel(selectedMonthDate, option)">
                                                 <span>@option.WorkoutName</span><small>@(option.IsRepeat ? "Extra attempt · " : string.Empty)@CalendarOptionContext(option)</small>
+                                                @if (option.IsCompleted)
+                                                {
+                                                    <strong class="calendar-completion-status"><span aria-hidden="true">✓</span>Completed</strong>
+                                                }
                                             </button>
                                             @if (!option.IsRepeat)
                                             {
@@ -349,6 +362,10 @@
                 <button class="secondary-action icon-action" type="button" @onclick="CloseProgramManagerAsync" aria-label="Close plan session manager" title="Close" autofocus><AppIcon Name="close" /></button>
             </div>
             <p class="schedule-dialog__summary">Currently planned for <strong>@managedProgramSession.CurrentDate.ToString("dddd d MMMM")</strong>.</p>
+            @if (!string.IsNullOrWhiteSpace(programActionError))
+            {
+                <p class="field-error" role="alert">@programActionError</p>
+            }
             @if (changingProgramDays)
             {
                 <div id="program-schedule-dialog-stage" class="schedule-dialog-stage default-days-stage" aria-live="polite" tabindex="-1">
@@ -435,7 +452,9 @@
                         <div class="schedule-choice-grid">
                             @if (managedProgramSession.IsCompleted)
                             {
-                                <p class="field-hint schedule-choice-grid__hint">This plan step is completed. Add another attempt without changing its completed status.</p>
+                                <p class="field-hint schedule-choice-grid__hint">This plan step is completed. Correct its calendar date or add another attempt without changing completed history.</p>
+                                <button class="schedule-choice" type="button" @onclick='() => StartProgramMove("MoveOne")' disabled="@programActionBusy"><strong>Move only this session</strong><span>Correct the completed step to an exact date. Its completed run stays unchanged.</span></button>
+                                <button class="schedule-choice" type="button" @onclick='() => StartProgramMove("MoveFollowing")' disabled="@programActionBusy"><strong>Move this and all following</strong><span>Use the actual completion date, then shift every later incomplete session by the same number of days.</span></button>
                                 <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("Repeat")' disabled="@programActionBusy"><strong>Repeat · keep later dates</strong><span>Add an extra attempt without rewinding completed progress.</span></button>
                                 <button class="schedule-choice" type="button" @onclick='() => PreviewProgramChangeAsync("RepeatAndShift")' disabled="@programActionBusy"><strong>Repeat · shift the rest</strong><span>Insert an extra attempt and move the remaining incomplete plan forward.</span></button>
                             }
@@ -501,7 +520,7 @@
             <div><dt>Revision</dt><dd>@selectedCalendarDetail.Option.RevisionNumber</dd></div>
             <div><dt>Schedule</dt><dd>@selectedCalendarDetail.Option.ScheduleName</dd></div>
             <div><dt>Day choice</dt><dd>@(selectedCalendarDetail.Option.IsSelected ? "Selected" : "Alternative")</dd></div>
-            <div><dt>Recorded data</dt><dd>Not run yet</dd></div>
+            <div><dt>Recorded data</dt><dd>@(selectedCalendarDetail.Option.IsCompleted ? "Completed plan step" : "Not run yet")</dd></div>
         </dl>
         @if (calendarDetailsLoading)
         {
@@ -573,6 +592,7 @@
     private CancellationTokenSource? calendarDetailsCancellation;
     private WorkoutProgramScheduleChangePreviewView? programPreview;
     private string? programMoveAction;
+    private string? programActionError;
     private WorkoutProgramDefaultDaysPreviewView? defaultDaysPreview;
     private bool changingProgramDays;
     private int programWeekdayMask;
@@ -1043,6 +1063,7 @@
         clearUpcomingProfileId = null;
         programPreview = null;
         programMoveAction = null;
+        programActionError = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
         managerStep = ManagerSteps.Actions;
@@ -1074,6 +1095,9 @@
         string week = option.WeekNumber is { } weekNumber ? $" · week {weekNumber}" : string.Empty;
         return $"{option.ScheduleName} · workout {option.ProgramPosition} of {option.ProgramTotal} · {phase}{week}";
     }
+
+    private static string CalendarOptionAriaLabel(DateOnly date, CalendarOptionView option) =>
+        $"View details for {option.WorkoutName} on {date:d MMMM}{(option.IsCompleted ? ", completed" : string.Empty)}";
 
     private async Task ReloadCalendarAsync()
     {
@@ -1270,6 +1294,7 @@
         programTargetDate = date.AddDays(1);
         programPreview = null;
         programMoveAction = null;
+        programActionError = null;
         openModalPending = true;
     }
 
@@ -1315,6 +1340,7 @@
         managedProgramSession = null;
         programPreview = null;
         programMoveAction = null;
+        programActionError = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
     }
@@ -1336,6 +1362,7 @@
         calendarDetailsLoading = false;
         programPreview = null;
         programMoveAction = null;
+        programActionError = null;
         defaultDaysPreview = null;
         changingProgramDays = false;
         managerStep = ManagerSteps.Actions;
@@ -1346,6 +1373,7 @@
     private async Task PreviewProgramChangeAsync(string action)
     {
         if (managedProgramSession is null || activeProfileId is null) return;
+        programActionError = null;
         programActionBusy = true;
         try
         {
@@ -1358,11 +1386,17 @@
                     null, activeProfileId.Value, managedProgramSession.ProgramItemId, action, target));
             if (!response.IsSuccessStatusCode)
             {
-                message = "The schedule preview could not be loaded.";
+                programActionError = await ReadScheduleActionErrorAsync(
+                    response,
+                    "The schedule preview could not be loaded.");
                 return;
             }
             programPreview = await response.Content.ReadFromJsonAsync<WorkoutProgramScheduleChangePreviewView>();
             focusModalStagePending = true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            programActionError = "The schedule preview could not reach the local gateway. Try again.";
         }
         finally { programActionBusy = false; }
     }
@@ -1370,14 +1404,15 @@
     private void StartProgramMove(string action)
     {
         if (managedProgramSession is null || action is not ("MoveOne" or "MoveFollowing")) return;
+        programActionError = null;
         programMoveAction = action;
-        programTargetDate = managedProgramSession.CurrentDate;
         focusModalStagePending = true;
     }
 
     private void CancelProgramMove()
     {
         programMoveAction = null;
+        programActionError = null;
         if (managedProgramSession is not null) programTargetDate = managedProgramSession.CurrentDate.AddDays(1);
         focusModalStagePending = true;
     }
@@ -1390,6 +1425,7 @@
     private async Task ApplyProgramChangeAsync()
     {
         if (managedProgramSession is null || activeProfileId is null || programPreview is not { CanApply: true }) return;
+        programActionError = null;
         programActionBusy = true;
         try
         {
@@ -1402,11 +1438,13 @@
                     programPreview.RunVersion));
             if (!response.IsSuccessStatusCode)
             {
-                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
-                    ? "The plan changed after the preview. The calendar was reloaded; open the session and review it again."
+                string fallback = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "The plan changed after the preview. The latest calendar was loaded; close this manager and review the session again."
                     : "The plan schedule could not be changed.";
-                await DismissProgramManagerAsync();
+                programActionError = await ReadScheduleActionErrorAsync(response, fallback);
+                programPreview = null;
                 await ReloadCalendarAsync();
+                focusModalStagePending = true;
                 return;
             }
             WorkoutProgramScheduleChangePreviewView? saved = await response.Content.ReadFromJsonAsync<WorkoutProgramScheduleChangePreviewView>();
@@ -1414,18 +1452,68 @@
             await DismissProgramManagerAsync();
             await ReloadCalendarAsync();
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            programActionError = "The plan schedule could not reach the local gateway. Nothing was changed; try again.";
+        }
         finally { programActionBusy = false; }
     }
 
     private void ClearProgramPreview()
     {
         programPreview = null;
+        programActionError = null;
         focusModalStagePending = true;
+    }
+
+    private static async Task<string> ReadScheduleActionErrorAsync(
+        HttpResponseMessage response,
+        string fallback)
+    {
+        try
+        {
+            string payload = await response.Content.ReadAsStringAsync();
+            using System.Text.Json.JsonDocument problem = System.Text.Json.JsonDocument.Parse(payload);
+            System.Text.Json.JsonElement root = problem.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                root.TryGetProperty("errors", out System.Text.Json.JsonElement errors) &&
+                errors.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (System.Text.Json.JsonProperty error in errors.EnumerateObject())
+                {
+                    if (error.Value.ValueKind == System.Text.Json.JsonValueKind.Array &&
+                        error.Value.GetArrayLength() > 0 &&
+                        error.Value[0].ValueKind == System.Text.Json.JsonValueKind.String &&
+                        error.Value[0].GetString() is { Length: > 0 } validationMessage)
+                    {
+                        return validationMessage;
+                    }
+                }
+            }
+
+            foreach (string propertyName in new[] { "detail", "message", "title" })
+            {
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                    root.TryGetProperty(propertyName, out System.Text.Json.JsonElement value) &&
+                    value.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    value.GetString() is { Length: > 0 } problemMessage)
+                {
+                    return problemMessage;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // The local gateway may return an empty/non-JSON error response.
+        }
+
+        return fallback;
     }
 
     private void StartDefaultDaysChange()
     {
         if (managedProgramSession is null) return;
+        programActionError = null;
         changingProgramDays = true;
         programWeekdayMask = managedProgramSession.WeekdayMask;
         programEffectiveDate = DateOnly.FromDateTime(DateTime.Today);
@@ -1435,6 +1523,7 @@
 
     private void CancelDefaultDaysChange()
     {
+        programActionError = null;
         changingProgramDays = false;
         defaultDaysPreview = null;
         focusModalStagePending = true;
@@ -1451,6 +1540,7 @@
     private async Task PreviewDefaultDaysChangeAsync()
     {
         if (managedProgramSession is null || activeProfileId is null || !CanPreviewDefaultDays) return;
+        programActionError = null;
         programActionBusy = true;
         try
         {
@@ -1467,11 +1557,17 @@
                 });
             if (!response.IsSuccessStatusCode)
             {
-                message = "The training-day preview could not be loaded.";
+                programActionError = await ReadScheduleActionErrorAsync(
+                    response,
+                    "The training-day preview could not be loaded.");
                 return;
             }
             defaultDaysPreview = await response.Content.ReadFromJsonAsync<WorkoutProgramDefaultDaysPreviewView>();
             focusModalStagePending = true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            programActionError = "The training-day preview could not reach the local gateway. Try again.";
         }
         finally { programActionBusy = false; }
     }
@@ -1479,6 +1575,7 @@
     private async Task ApplyDefaultDaysChangeAsync()
     {
         if (managedProgramSession is null || activeProfileId is null || defaultDaysPreview is not { CanApply: true } preview) return;
+        programActionError = null;
         programActionBusy = true;
         try
         {
@@ -1495,11 +1592,13 @@
                 });
             if (!response.IsSuccessStatusCode)
             {
-                message = response.StatusCode == System.Net.HttpStatusCode.Conflict
+                string fallback = response.StatusCode == System.Net.HttpStatusCode.Conflict
                     ? "The plan changed after the preview. Review the new training days again."
                     : "The future plan could not be rescheduled.";
+                programActionError = await ReadScheduleActionErrorAsync(response, fallback);
                 defaultDaysPreview = null;
                 await ReloadCalendarAsync();
+                focusModalStagePending = true;
                 return;
             }
             WorkoutProgramDefaultDaysPreviewView? saved = await response.Content.ReadFromJsonAsync<WorkoutProgramDefaultDaysPreviewView>();
@@ -1507,11 +1606,16 @@
             await DismissProgramManagerAsync();
             await ReloadCalendarAsync();
         }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            programActionError = "The future plan could not reach the local gateway. Nothing was changed; try again.";
+        }
         finally { programActionBusy = false; }
     }
 
     private void ClearDefaultDaysPreview()
     {
+        programActionError = null;
         defaultDaysPreview = null;
         focusModalStagePending = true;
     }
@@ -1870,6 +1974,7 @@
     private string CalendarDateLabel(DateOnly date, CalendarDayView? day)
     {
         int count = day?.Options.Count ?? 0;
+        int completedCount = day?.Options.Count(static option => option.IsCompleted) ?? 0;
         string monthContext = date.Month == visibleMonth.Month && date.Year == visibleMonth.Year
             ? string.Empty
             : ", outside the selected month";
@@ -1879,7 +1984,13 @@
             1 => "1 workout scheduled",
             _ => $"{count} workouts scheduled",
         };
-        return $"{date:dddd d MMMM}{monthContext}. {schedule}.";
+        string completion = completedCount switch
+        {
+            0 => string.Empty,
+            1 => " 1 completed plan step.",
+            _ => $" {completedCount} completed plan steps.",
+        };
+        return $"{date:dddd d MMMM}{monthContext}. {schedule}.{completion}";
     }
 
     private void SelectCalendarView(CalendarViewMode view) => calendarView = view;
