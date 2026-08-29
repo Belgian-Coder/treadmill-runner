@@ -16,8 +16,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'path-helpers.ps1')
 $solution = Join-Path $projectRoot 'TreadmillRunner.slnx'
-$resolvedResults = [System.IO.Path]::GetFullPath($ResultsDirectory, $projectRoot)
+$resolvedResults = Resolve-FullPath -Path $ResultsDirectory -BasePath $projectRoot
 $resolvedRoot = [System.IO.Path]::GetFullPath($projectRoot)
 $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
     $TimeoutMinutes
@@ -28,7 +29,7 @@ elseif ([string]::Equals($Filter, 'Category!=Browser&Category!=Soak', [System.St
 else {
     1
 }
-if (-not $resolvedResults.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+if (-not (Test-PathWithinRoot -Path $resolvedResults -Root $resolvedRoot)) {
     throw "Test results must remain inside the repository: $resolvedResults"
 }
 New-Item -ItemType Directory -Force -Path $resolvedResults | Out-Null
@@ -38,6 +39,14 @@ $standardError = Join-Path $resolvedResults "tests-$runStamp.stderr.log"
 
 Push-Location $projectRoot
 try {
+    if ($Build) {
+        # A fresh worktree has no generated NuGet imports, so `dotnet test
+        # --no-restore` can otherwise treat test projects as ordinary libraries
+        # and exit successfully without discovering tests.
+        & dotnet restore $solution --locked-mode
+        if ($LASTEXITCODE -ne 0) { throw 'Locked restore before the focused test build failed.' }
+    }
+
     $arguments = @(
         'test', $solution,
         '--configuration', $Configuration,
@@ -46,7 +55,7 @@ try {
         '-p:InvariantGlobalization=false',
         '--filter', $Filter,
         '--logger', 'console;verbosity=normal',
-        '--logger', 'trx',
+        '--logger', "trx;LogFilePrefix=$runStamp",
         '--results-directory', $resolvedResults
     )
     if (-not $Build) { $arguments += '--no-build' }
@@ -57,7 +66,7 @@ try {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in $arguments) { $startInfo.ArgumentList.Add($argument) }
+    Set-NativeProcessArguments -StartInfo $startInfo -Arguments $arguments
     $process = [System.Diagnostics.Process]::Start($startInfo)
     if ($null -eq $process) { throw 'The dotnet test process could not be started.' }
 
@@ -106,7 +115,7 @@ try {
                     $terminationReason = "produced no progress output for $StallTimeoutSeconds seconds"
                 }
                 if ($null -ne $terminationReason) {
-                    try { $process.Kill($true) } catch { }
+                    try { Stop-NativeProcessTree -Process $process } catch { }
                     $process.WaitForExit()
                 }
             }
@@ -127,6 +136,17 @@ try {
         throw "dotnet test $terminationReason; its exact process tree was stopped. Inspect $standardOutput and $standardError."
     }
     if ($process.ExitCode -ne 0) { throw "dotnet test failed with exit code $($process.ExitCode). Inspect $standardOutput and $standardError." }
+
+    $executedTests = 0
+    $resultFiles = @(Get-ChildItem -LiteralPath $resolvedResults -Filter "$runStamp*.trx" -File)
+    foreach ($resultFile in $resultFiles) {
+        [xml] $result = Get-Content -LiteralPath $resultFile.FullName -Raw
+        $executedTests += @($result.SelectNodes("//*[local-name()='UnitTestResult']")).Count
+    }
+    if ($executedTests -eq 0) {
+        throw "dotnet test exited successfully but the filter executed zero tests. Inspect $standardOutput and $standardError."
+    }
+    Write-Host "Focused test evidence: $executedTests test result(s) across $($resultFiles.Count) TRX file(s)."
 }
 finally {
     Pop-Location

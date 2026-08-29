@@ -165,6 +165,36 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
+  public void Playwright_restores_the_gateway_graph_after_cleaning_publish_state()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "playwright.ps1"));
+    int cleanup = script.IndexOf("& $wasmCleaner -Configuration $Configuration", StringComparison.Ordinal);
+    int restore = script.IndexOf("dotnet restore $gatewayProject --locked-mode", StringComparison.Ordinal);
+    int publish = script.IndexOf("dotnet publish $gatewayProject", StringComparison.Ordinal);
+
+    Assert.True(cleanup >= 0, "The focused browser build must clean stale WebAssembly publish state.");
+    Assert.True(restore > cleanup, "The Gateway graph must be restored after WebAssembly cleanup.");
+    Assert.True(publish > restore, "The no-restore Gateway publish must follow the post-clean restore.");
+  }
+
+  [Fact]
+  public void Focused_test_runner_restores_fresh_worktrees_and_rejects_zero_matches()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "test.ps1"));
+
+    Assert.Contains("if ($Build)", script, StringComparison.Ordinal);
+    Assert.Contains("dotnet restore $solution --locked-mode", script, StringComparison.Ordinal);
+    Assert.Contains("LogFilePrefix=$runStamp", script, StringComparison.Ordinal);
+    Assert.Contains("the filter executed zero tests", script, StringComparison.Ordinal);
+    Assert.Contains("UnitTestResult", script, StringComparison.Ordinal);
+    Assert.Contains("Set-NativeProcessArguments", script, StringComparison.Ordinal);
+
+    string browser = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "playwright.ps1"));
+    Assert.Contains("Set-NativeProcessArguments", browser, StringComparison.Ordinal);
+    Assert.DoesNotContain(".ArgumentList.Add", browser, StringComparison.Ordinal);
+  }
+
+  [Fact]
   public void Stable_feed_installer_verifies_trust_hash_signature_and_required_executables()
   {
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-stable-update-feed.ps1"));

@@ -549,12 +549,17 @@
         try
         {
             using HttpResponseMessage response = await Http.PostAsJsonAsync("api/operations/database/check", new { });
-            databaseStatus = await response.Content.ReadFromJsonAsync<DatabaseIntegrityStatusModel>() ?? databaseStatus;
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                databaseStatus = await response.Content.ReadFromJsonAsync<DatabaseIntegrityStatusModel>() ?? databaseStatus;
+            }
             message = response.IsSuccessStatusCode
                 ? "Database validation and safe maintenance completed."
-                : "Database checking is waiting until the application is idle.";
+                : response.StatusCode == System.Net.HttpStatusCode.Conflict
+                    ? "Database checking is waiting until the application is idle."
+                    : "Database health could not be checked while another maintenance action or access gate was active.";
         }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
             message = "Database health could not be checked.";
         }

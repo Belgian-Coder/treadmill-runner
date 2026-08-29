@@ -1107,6 +1107,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       Assert.Contains("Speed", firstAnnouncement, StringComparison.Ordinal);
       await surface.PressAsync("ArrowRight");
       await Expect(tooltip).ToBeVisibleAsync();
+      await Page.Locator(".primary-nav--mobile .nav-more summary").FocusAsync();
+      await Expect(tooltip).ToBeHiddenAsync();
+      await surface.FocusAsync();
+      await surface.PressAsync("End");
+      await Expect(tooltip).ToBeVisibleAsync();
       await surface.PressAsync("Escape");
       await Expect(tooltip).ToBeHiddenAsync();
 

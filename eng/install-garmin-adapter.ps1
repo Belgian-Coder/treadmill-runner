@@ -7,10 +7,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'path-helpers.ps1')
 if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
     $TargetDirectory = Join-Path $projectRoot 'artifacts/garmin-python'
 }
-$resolvedTarget = [System.IO.Path]::GetFullPath($TargetDirectory, $projectRoot)
+$resolvedTarget = Resolve-FullPath -Path $TargetDirectory -BasePath $projectRoot
 New-Item -ItemType Directory -Path $resolvedTarget -Force | Out-Null
 & $Python -m pip install --disable-pip-version-check --no-input --target $resolvedTarget `
     --require-hashes --only-binary=:all: `

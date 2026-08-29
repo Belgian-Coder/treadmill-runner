@@ -124,9 +124,9 @@ public sealed class NativeWorkoutJsonImporter : IWorkoutImporter
 
       WarnUnknownProperties(element, ["kind", "goal", "speed", "incline", "cue", "notes"], "step", warnings);
       blocks.Add(new WorkoutStep(
-          ParseCanonicalGoal(GetRequired(element, "goal")),
-          ParseCanonicalSpeed(GetRequired(element, "speed")),
-          ParseCanonicalIncline(GetRequired(element, "incline")),
+          ParseCanonicalGoal(GetRequired(element, "goal"), warnings),
+          ParseCanonicalSpeed(GetRequired(element, "speed"), warnings),
+          ParseCanonicalIncline(GetRequired(element, "incline"), warnings),
           GetOptionalString(element, "cue"),
           GetOptionalString(element, "notes")));
     }
@@ -134,21 +134,41 @@ public sealed class NativeWorkoutJsonImporter : IWorkoutImporter
     return blocks;
   }
 
-  private static StepGoal ParseCanonicalGoal(JsonElement element)
+  private static StepGoal ParseCanonicalGoal(
+      JsonElement element,
+      List<WorkoutImportWarning> warnings)
   {
     RequireKind(element, JsonValueKind.Object, "Native workout goal must be an object.");
-    return GetRequiredString(element, "kind") switch
+    string kind = GetRequiredString(element, "kind");
+    IReadOnlyCollection<string> known = kind switch
     {
-      "time" => new TimeGoal(TimeSpan.FromTicks(GetRequiredLong(element, "durationTicks"))),
-      "distance" => new DistanceGoal(GetRequiredDouble(element, "kilometers")),
-      var kind => throw new WorkoutImportException($"Unsupported native workout goal kind '{kind}'."),
+      "time" => ["kind", "durationTicks"],
+      "distance" => ["kind", "kilometers"],
+      _ => throw new WorkoutImportException($"Unsupported native workout goal kind '{kind}'."),
     };
+    WarnUnknownProperties(element, known, "goal", warnings);
+    return kind == "time"
+      ? new TimeGoal(TimeSpan.FromTicks(GetRequiredLong(element, "durationTicks")))
+      : new DistanceGoal(GetRequiredDouble(element, "kilometers"));
   }
 
-  private static SpeedDirective ParseCanonicalSpeed(JsonElement element)
+  private static SpeedDirective ParseCanonicalSpeed(
+      JsonElement element,
+      List<WorkoutImportWarning> warnings)
   {
     RequireKind(element, JsonValueKind.Object, "Native workout speed must be an object.");
-    return GetRequiredString(element, "kind") switch
+    string kind = GetRequiredString(element, "kind");
+    IReadOnlyCollection<string> known = kind switch
+    {
+      "open" => ["kind"],
+      "fixed" => ["kind", "kilometersPerHour"],
+      "ramp" => ["kind", "startKilometersPerHour", "endKilometersPerHour"],
+      "heartRate" => ["kind", "minimumBpm", "maximumBpm", "initialKilometersPerHour", "minimumKilometersPerHour", "maximumKilometersPerHour"],
+      "heartRateZone" => ["kind", "zoneNumber", "initialKilometersPerHour", "minimumKilometersPerHour", "maximumKilometersPerHour"],
+      _ => throw new WorkoutImportException($"Unsupported native workout speed kind '{kind}'."),
+    };
+    WarnUnknownProperties(element, known, "speed", warnings);
+    return kind switch
     {
       "open" => new OpenSpeed(),
       "fixed" => new FixedSpeed(GetRequiredDouble(element, "kilometersPerHour")),
@@ -166,20 +186,30 @@ public sealed class NativeWorkoutJsonImporter : IWorkoutImporter
           GetRequiredDouble(element, "initialKilometersPerHour"),
           GetRequiredDouble(element, "minimumKilometersPerHour"),
           GetRequiredDouble(element, "maximumKilometersPerHour")),
-      var kind => throw new WorkoutImportException($"Unsupported native workout speed kind '{kind}'."),
+      _ => throw new WorkoutImportException($"Unsupported native workout speed kind '{kind}'."),
     };
   }
 
-  private static InclineDirective ParseCanonicalIncline(JsonElement element)
+  private static InclineDirective ParseCanonicalIncline(
+      JsonElement element,
+      List<WorkoutImportWarning> warnings)
   {
     RequireKind(element, JsonValueKind.Object, "Native workout incline must be an object.");
-    return GetRequiredString(element, "kind") switch
+    string kind = GetRequiredString(element, "kind");
+    IReadOnlyCollection<string> known = kind switch
+    {
+      "fixed" => ["kind", "percent"],
+      "ramp" => ["kind", "startPercent", "endPercent"],
+      _ => throw new WorkoutImportException($"Unsupported native workout incline kind '{kind}'."),
+    };
+    WarnUnknownProperties(element, known, "incline", warnings);
+    return kind switch
     {
       "fixed" => new FixedIncline(GetRequiredDouble(element, "percent")),
       "ramp" => new InclineRamp(
           GetRequiredDouble(element, "startPercent"),
           GetRequiredDouble(element, "endPercent")),
-      var kind => throw new WorkoutImportException($"Unsupported native workout incline kind '{kind}'."),
+      _ => throw new WorkoutImportException($"Unsupported native workout incline kind '{kind}'."),
     };
   }
 

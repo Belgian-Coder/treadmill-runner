@@ -107,18 +107,34 @@ public sealed class OmegaFrameReassembler
 
     if (_expectedLength is not null && _buffer.Count == _expectedLength)
     {
+      bool retainHeader = false;
+      bool retainHeaderStart = false;
       if (_buffer[^2] != 0x0D || _buffer[^1] != 0x0A)
       {
         _diagnostics.Add(new OmegaFrameDiagnostic(
           OmegaFrameDiagnosticCode.InvalidTerminator,
           _expectedLength,
           _buffer.Count));
+        // A corrupt declared length can make the next frame's header occupy
+        // the expected terminator bytes. Preserve that unambiguous suffix so
+        // the following frame is not discarded while resynchronizing.
+        retainHeader = _buffer[^2] == 0x55 && _buffer[^1] == 0xAA;
+        retainHeaderStart = !retainHeader && _buffer[^1] == 0x55;
       }
       else
       {
         frames.Add(_buffer.ToArray());
       }
       ClearCandidate();
+      if (retainHeader)
+      {
+        _buffer.Add(0x55);
+        _buffer.Add(0xAA);
+      }
+      else if (retainHeaderStart)
+      {
+        _buffer.Add(0x55);
+      }
     }
   }
 

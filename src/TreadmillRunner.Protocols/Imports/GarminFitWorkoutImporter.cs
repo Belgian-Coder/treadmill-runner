@@ -30,12 +30,12 @@ public sealed class GarminFitWorkoutImporter : IWorkoutImporter
         }
       }
 
-      FileIdMesg? fileId = null;
-      WorkoutMesg? workout = null;
+      List<FileIdMesg> fileIds = [];
+      List<WorkoutMesg> workouts = [];
       List<WorkoutStepMesg> steps = [];
       MesgBroadcaster broadcaster = new();
-      broadcaster.FileIdMesgEvent += (_, args) => fileId = new FileIdMesg(args.mesg);
-      broadcaster.WorkoutMesgEvent += (_, args) => workout = new WorkoutMesg(args.mesg);
+      broadcaster.FileIdMesgEvent += (_, args) => fileIds.Add(new FileIdMesg(args.mesg));
+      broadcaster.WorkoutMesgEvent += (_, args) => workouts.Add(new WorkoutMesg(args.mesg));
       broadcaster.WorkoutStepMesgEvent += (_, args) => steps.Add(new WorkoutStepMesg(args.mesg));
       decoder.MesgEvent += broadcaster.OnMesg;
       decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
@@ -48,15 +48,16 @@ public sealed class GarminFitWorkoutImporter : IWorkoutImporter
         }
       }
 
-      if (fileId?.GetType() != Dynastream.Fit.File.Workout)
+      if (fileIds.Count != 1 || fileIds[0].GetType() != Dynastream.Fit.File.Workout)
       {
-        throw new WorkoutImportException("The FIT file is not a Workout file.");
+        throw new WorkoutImportException("The FIT file must contain exactly one Workout File Id message.");
       }
 
-      if (workout is null || steps.Count == 0)
+      if (workouts.Count != 1 || steps.Count == 0)
       {
-        throw new WorkoutImportException("The FIT Workout and Workout Step messages are required.");
+        throw new WorkoutImportException("Exactly one FIT Workout message and at least one Workout Step message are required.");
       }
+      WorkoutMesg workout = workouts[0];
 
       List<WorkoutImportWarning> warnings = [];
       Sport? sport = workout.GetSport();

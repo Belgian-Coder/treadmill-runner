@@ -1,5 +1,6 @@
 @inject TreadmillRunner.Web.Runtime.OperatorSessionState Session
 @inject TreadmillRunner.Web.Runtime.OperatorAccessClient Access
+@implements IDisposable
 
 <section class="panel-card" aria-labelledby="operator-access-title" aria-busy="@loading">
     <div class="panel-heading">
@@ -46,8 +47,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Session.Changed += SessionChanged;
         await LoadStatusAsync();
         loading = false;
+    }
+
+    private void SessionChanged()
+    {
+        if (Session.HasSession || status?.Enabled != true) return;
+        status = status with { Authenticated = false, ExpiresAtUtc = null };
+        passphrase = string.Empty;
+        if (!busy) message = "Operator access expired or was rejected. Unlock changes before trying again.";
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadStatusAsync()
@@ -97,18 +108,25 @@
     private async Task LockAsync()
     {
         busy = true;
+        message = null;
         try
         {
             await Access.LogoutAsync();
-            await Session.ClearAsync();
-            await LoadStatusAsync();
             message = "Changes are locked.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            message = "Changes are locked in this browser. The gateway could not confirm logout, so its session will expire automatically.";
         }
         finally
         {
+            await Session.ClearAsync();
+            if (status is not null) status = status with { Authenticated = false, ExpiresAtUtc = null };
             busy = false;
         }
     }
 
     private static string FormatTimestamp(DateTimeOffset? value) => value?.ToLocalTime().ToString("g") ?? "the session expires";
+
+    public void Dispose() => Session.Changed -= SessionChanged;
 }

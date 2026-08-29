@@ -72,6 +72,7 @@ public sealed class GarminStore(IDbContextFactory<TreadmillRunnerDbContext> cont
   {
     ArgumentNullException.ThrowIfNull(state);
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
     bool profileExists = await context.UserProfiles.AsNoTracking()
       .AnyAsync(profile => profile.Id == state.UserProfileId && !profile.IsArchived, cancellationToken);
     if (!profileExists)
@@ -94,6 +95,7 @@ public sealed class GarminStore(IDbContextFactory<TreadmillRunnerDbContext> cont
       ExpiresAtUtc = state.ExpiresAtUtc,
     });
     await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
   }
 
   public async Task<GarminOAuthStateRecord?> ConsumeOAuthStateAsync(
@@ -250,7 +252,7 @@ public sealed class GarminStore(IDbContextFactory<TreadmillRunnerDbContext> cont
         .ToHashSetAsync(cancellationToken);
       foreach ((GarminSyncDocument document, string key) in documents.Zip(keys))
       {
-        if (existing.Contains(key)) continue;
+        if (!existing.Add(key)) continue;
         context.GarminSyncItems.Add(new GarminSyncItemEntity
         {
           Id = Guid.NewGuid(),

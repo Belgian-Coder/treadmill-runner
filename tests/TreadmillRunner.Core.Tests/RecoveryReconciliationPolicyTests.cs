@@ -47,6 +47,16 @@ public sealed class RecoveryReconciliationPolicyTests
   }
 
   [Fact]
+  public void Non_finite_telemetry_never_resumes_planned_controls()
+  {
+    RecoveryReconciliationDecision decision = RecoveryReconciliationPolicy.Evaluate(
+      Input() with { MeasuredSpeedKph = double.NaN });
+
+    Assert.Equal(RecoveryReconciliationAction.Blocked, decision.Action);
+    Assert.Contains("Finite treadmill telemetry", decision.Reason, StringComparison.Ordinal);
+  }
+
+  [Fact]
   public void Console_change_and_gateway_restart_require_explicit_resume()
   {
     RecoveryReconciliationDecision console = RecoveryReconciliationPolicy.Evaluate(

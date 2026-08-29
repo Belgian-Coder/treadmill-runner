@@ -245,13 +245,47 @@ public sealed class SessionExporterTests
       records.Select(record => record.GetTimestamp()!.GetDateTime()).ToArray());
   }
 
-  private static byte[] WatchFit(DateTimeOffset started, bool includeTwoLaps = false)
+  [Fact]
+  public void Garmin_merge_preserves_a_watch_record_slightly_later_than_the_local_sample()
+  {
+    StoredWorkoutSession local = ElevationSession();
+
+    byte[] merged = GarminFitActivityMerger.Merge(WatchFit(local.StartedAt!.Value.AddSeconds(1)), local);
+    using var stream = new MemoryStream(merged);
+    var decoder = new Decode();
+    var records = new List<RecordMesg>();
+    var broadcaster = new MesgBroadcaster();
+    broadcaster.RecordMesgEvent += (_, args) => records.Add(new RecordMesg(args.mesg));
+    decoder.MesgEvent += broadcaster.OnMesg;
+    decoder.MesgDefinitionEvent += broadcaster.OnMesgDefinition;
+
+    Assert.True(decoder.Read(stream));
+    Assert.Equal(local.Samples.Count, records.Count);
+    Assert.All(records, record => Assert.Equal((byte)88, record.GetCadence()));
+  }
+
+  [Fact]
+  public void Garmin_merge_rejects_a_non_activity_fit_file()
+  {
+    StoredWorkoutSession local = ElevationSession();
+    byte[] workout = WatchFit(local.StartedAt!.Value, fileType: Dynastream.Fit.File.Workout);
+
+    InvalidDataException error = Assert.Throws<InvalidDataException>(() =>
+      GarminFitActivityMerger.Merge(workout, local));
+
+    Assert.Contains("Activity File Id", error.Message, StringComparison.Ordinal);
+  }
+
+  private static byte[] WatchFit(
+    DateTimeOffset started,
+    bool includeTwoLaps = false,
+    Dynastream.Fit.File fileType = Dynastream.Fit.File.Activity)
   {
     using var stream = new MemoryStream();
     var encoder = new Encode(ProtocolVersion.V20);
     encoder.Open(stream);
     var file = new FileIdMesg();
-    file.SetType(Dynastream.Fit.File.Activity);
+    file.SetType(fileType);
     file.SetManufacturer(Manufacturer.Garmin);
     file.SetProduct(4242);
     file.SetSerialNumber(123456);

@@ -126,6 +126,28 @@ public sealed class NativeWorkoutJsonImporterTests
         WorkoutDefinitionCanonicalizer.ComputeSha256(result.Definition));
   }
 
+  [Fact]
+  public async Task Canonical_json_warns_when_nested_fields_are_ignored()
+  {
+    const string json = """
+        {"schemaVersion":1,"title":"Future fields","description":null,"blocks":[
+          {"kind":"step",
+           "goal":{"kind":"time","durationTicks":600000000,"futureGoal":1},
+           "speed":{"kind":"fixed","kilometersPerHour":8.0,"futureSpeed":2},
+           "incline":{"kind":"fixed","percent":1.0,"futureIncline":3},
+           "cue":null,"notes":null}
+        ]}
+        """;
+
+    WorkoutImportResult result = await ImportAsync(json);
+
+    Assert.Collection(
+        result.Warnings.Where(warning => warning.Code == "native.unknown-field"),
+        warning => Assert.Contains("futureGoal", warning.Message, StringComparison.Ordinal),
+        warning => Assert.Contains("futureSpeed", warning.Message, StringComparison.Ordinal),
+        warning => Assert.Contains("futureIncline", warning.Message, StringComparison.Ordinal));
+  }
+
   private async Task<WorkoutImportResult> ImportAsync(string text)
   {
     await using MemoryStream stream = new(Encoding.UTF8.GetBytes(text));

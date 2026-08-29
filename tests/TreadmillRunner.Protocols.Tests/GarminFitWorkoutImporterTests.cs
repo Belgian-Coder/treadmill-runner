@@ -141,6 +141,26 @@ public sealed class GarminFitWorkoutImporterTests
     Assert.Contains("CRC", error.Message, StringComparison.OrdinalIgnoreCase);
   }
 
+  [Fact]
+  public async Task Rejects_ambiguous_duplicate_workout_messages()
+  {
+    byte[] fit = EncodeWorkout(
+        "Ambiguous",
+        Sport.Running,
+        true,
+        step =>
+        {
+          step.SetMessageIndex(0);
+          step.SetDurationType(WktStepDuration.Time);
+          step.SetDurationTime(60);
+          step.SetTargetType(WktStepTarget.Open);
+        });
+
+    WorkoutImportException error = await Assert.ThrowsAsync<WorkoutImportException>(() => ImportAsync(fit));
+
+    Assert.Contains("Exactly one FIT Workout", error.Message, StringComparison.Ordinal);
+  }
+
   private async Task<WorkoutImportResult> ImportAsync(byte[] bytes)
   {
     await using MemoryStream stream = new(bytes, writable: false);
@@ -150,6 +170,13 @@ public sealed class GarminFitWorkoutImporterTests
   private static byte[] EncodeWorkout(
       string title,
       Sport sport,
+      params Action<WorkoutStepMesg>[] configureSteps) =>
+    EncodeWorkout(title, sport, false, configureSteps);
+
+  private static byte[] EncodeWorkout(
+      string title,
+      Sport sport,
+      bool includeDuplicateWorkout,
       params Action<WorkoutStepMesg>[] configureSteps)
   {
     using MemoryStream stream = new();
@@ -167,6 +194,14 @@ public sealed class GarminFitWorkoutImporterTests
     workout.SetSport(sport);
     workout.SetNumValidSteps((ushort)configureSteps.Length);
     encoder.Write(workout);
+    if (includeDuplicateWorkout)
+    {
+      WorkoutMesg duplicate = new();
+      duplicate.SetWktName("Different workout");
+      duplicate.SetSport(sport);
+      duplicate.SetNumValidSteps((ushort)configureSteps.Length);
+      encoder.Write(duplicate);
+    }
 
     foreach (Action<WorkoutStepMesg> configure in configureSteps)
     {

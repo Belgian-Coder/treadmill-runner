@@ -541,32 +541,46 @@
 
     private async Task SaveAsync(EditContext _)
     {
+        if (saving) return;
         saving = true;
-        var request = new WorkoutSaveRequest(
-            pendingOperationId,
-            form.Name,
-            form.Description,
-            form.Blocks.Select(ToInput).ToArray(),
-            ReturnToPlan && WorkoutId is null ? "PlanInternal" : "Structured");
-        HttpResponseMessage response = WorkoutId is null
-            ? await Http.PostAsJsonAsync("api/planning/workouts", request)
-            : await Http.PostAsJsonAsync($"api/planning/workouts/{WorkoutId}/revisions", request);
-        if (response.IsSuccessStatusCode)
+        try
         {
-            if (draftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", draftKey);
-            pendingOperationId = Guid.NewGuid();
-            WorkoutSaveResponse? saved = await response.Content.ReadFromJsonAsync<WorkoutSaveResponse>();
-            message = $"Saved immutable revision {saved?.RevisionNumber ?? 1}.";
-            Navigation.NavigateTo(ReturnToPlan && saved is not null
-                ? $"/workouts?mode=programs&addRevisionId={saved.RevisionId:D}{(EditPlanId is { } planId ? $"&editPlanId={planId:D}" : string.Empty)}"
-                : "/workouts");
+            var request = new WorkoutSaveRequest(
+                pendingOperationId,
+                form.Name,
+                form.Description,
+                form.Blocks.Select(ToInput).ToArray(),
+                ReturnToPlan && WorkoutId is null ? "PlanInternal" : "Structured");
+            using HttpResponseMessage response = WorkoutId is null
+                ? await Http.PostAsJsonAsync("api/planning/workouts", request)
+                : await Http.PostAsJsonAsync($"api/planning/workouts/{WorkoutId}/revisions", request);
+            if (response.IsSuccessStatusCode)
+            {
+                WorkoutSaveResponse? saved = await response.Content.ReadFromJsonAsync<WorkoutSaveResponse>();
+                if (draftKey is not null) await JS.InvokeVoidAsync("treadmillRunnerDrafts.remove", draftKey);
+                pendingOperationId = Guid.NewGuid();
+                message = $"Saved immutable revision {saved?.RevisionNumber ?? 1}.";
+                Navigation.NavigateTo(ReturnToPlan && saved is not null
+                    ? $"/workouts?mode=programs&addRevisionId={saved.RevisionId:D}{(EditPlanId is { } planId ? $"&editPlanId={planId:D}" : string.Empty)}"
+                    : "/workouts");
+            }
+            else
+            {
+                message = "The workout could not be saved. Check every block and retry; the same operation ID will be reused safely.";
+            }
         }
-        else
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
-            message = "The workout could not be saved. Check every block and retry; the same operation ID will be reused safely.";
+            message = "The workout could not reach the local gateway. Retry when the connection returns; the same operation ID will be reused safely.";
         }
-
-        saving = false;
+        catch (System.Text.Json.JsonException)
+        {
+            message = "The gateway returned an unreadable save result. Retry safely; the same operation ID will be reused.";
+        }
+        finally
+        {
+            saving = false;
+        }
     }
 
     private static WorkoutBlockInput ToInput(BlockForm block) => block.Kind == "repeat"

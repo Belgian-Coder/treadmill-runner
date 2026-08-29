@@ -91,6 +91,22 @@ public sealed class OmegaFrameReassemblerTests
     Assert.Equal(OmegaFrameDiagnosticCode.InvalidTerminator, Assert.Single(sut.Diagnostics).Code);
   }
 
+  [Fact]
+  public void Recovers_when_the_next_frame_header_replaces_a_corrupt_terminator()
+  {
+    var corrupt = CreateFrame(2);
+    corrupt[^2] = 0x55;
+    corrupt[^1] = 0xAA;
+    var replacement = CreateFrame(3);
+    byte[] stream = corrupt.Concat(replacement.Skip(2)).ToArray();
+    var sut = new OmegaFrameReassembler();
+
+    IReadOnlyList<byte[]> output = sut.Append(stream);
+
+    Assert.Equal(replacement, Assert.Single(output));
+    Assert.Equal(OmegaFrameDiagnosticCode.InvalidTerminator, Assert.Single(sut.Diagnostics).Code);
+  }
+
   private static byte[] CreateFrame(int payloadLength)
   {
     var frame = new byte[payloadLength + 10];

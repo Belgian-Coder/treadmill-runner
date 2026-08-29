@@ -113,6 +113,40 @@ public sealed class HeartRateSpeedControllerTests
     Assert.Contains("cooldown", stillCoolingDown.Reason, StringComparison.OrdinalIgnoreCase);
   }
 
+  [Fact]
+  public void Invalid_heart_rate_never_authorizes_a_speed_increase()
+  {
+    var controller = new HeartRateSpeedController(HeartRateControllerSettings.Default);
+
+    Assert.Equal(HeartRateSpeedDecisionKind.None,
+      controller.Evaluate(Input(Start, 0, HeartRateAutomationMode.Full)).Kind);
+    HeartRateSpeedDecision decision = controller.Evaluate(
+      Input(Start.AddSeconds(20), 0, HeartRateAutomationMode.Full));
+
+    Assert.Equal(HeartRateSpeedDecisionKind.None, decision.Kind);
+    Assert.False(decision.ShouldExecute);
+  }
+
+  [Theory]
+  [InlineData(true)]
+  [InlineData(false)]
+  public void Negative_telemetry_age_never_authorizes_automation(bool heartRateAgeIsNegative)
+  {
+    var controller = new HeartRateSpeedController(HeartRateControllerSettings.Default);
+    HeartRateSpeedControllerInput first = Input(Start, 120, HeartRateAutomationMode.Full) with
+    {
+      HeartRateAge = heartRateAgeIsNegative ? TimeSpan.FromSeconds(-1) : TimeSpan.Zero,
+      TreadmillAge = heartRateAgeIsNegative ? TimeSpan.Zero : TimeSpan.FromSeconds(-1),
+    };
+    HeartRateSpeedControllerInput afterDwell = first with { Now = Start.AddSeconds(20) };
+
+    Assert.Equal(HeartRateSpeedDecisionKind.None, controller.Evaluate(first).Kind);
+    HeartRateSpeedDecision decision = controller.Evaluate(afterDwell);
+
+    Assert.Equal(HeartRateSpeedDecisionKind.None, decision.Kind);
+    Assert.False(decision.ShouldExecute);
+  }
+
   [Theory]
   [InlineData(0.09, 30, 0.5, 15)]
   [InlineData(0.2, 14, 0.5, 15)]

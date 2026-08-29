@@ -64,7 +64,7 @@
       "beginner": {
         "budget_tokens": 5500,
         "files": [
-          "README.md",
+          "project-context.md",
           "docs/start-here.md"
         ]
       }
@@ -86,7 +86,7 @@
           "AGENTS.md",
           ".agents/routing.md",
           "automations/routing.md",
-          "README.md",
+          "project-context.md",
           "docs/start-here.md",
           "automations/navigation/artifacts/maps/HANDOFF.md",
           "automations/navigation/artifacts/maps/NAVIGATION.md",

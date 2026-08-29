@@ -727,6 +727,57 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Runner_selection_remains_usable_when_profile_storage_is_blocked()
+  {
+    string profileName = $"Memory-only runner {Guid.NewGuid():N}";
+    await CreateProfileAsync(profileName);
+    await Page.AddInitScriptAsync("""
+      const local = window.localStorage;
+      for (const method of ['getItem', 'setItem', 'removeItem']) {
+        const original = Storage.prototype[method];
+        Storage.prototype[method] = function(key, ...args) {
+          if (this === local) throw new DOMException('Local storage blocked', 'SecurityError');
+          return original.call(this, key, ...args);
+        };
+      }
+      """);
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator profileRow = Page.Locator(".profile-row").Filter(new() { HasText = profileName });
+    await profileRow.GetByRole(AriaRole.Button, new() { Name = $"Use {profileName} as active profile", Exact = true }).ClickAsync();
+
+    await Expect(profileRow.GetByText("Active in this browser", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(profileName);
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Workout_save_network_failure_reenables_save_for_retry()
+  {
+    await Page.RouteAsync("**/api/planning/workouts", async route =>
+    {
+      if (string.Equals(route.Request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+      {
+        await route.AbortAsync();
+        return;
+      }
+
+      await route.ContinueAsync();
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts/new").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByLabel("Workout name", new() { Exact = true }).FillAsync($"Retry workout {Guid.NewGuid():N}");
+    ILocator save = Page.GetByRole(AriaRole.Button, new() { Name = "Create workout", Exact = true });
+    await save.ClickAsync();
+
+    await Expect(Page.GetByText("The workout could not reach the local gateway.", new() { Exact = false })).ToBeVisibleAsync();
+    await Expect(save).ToBeEnabledAsync();
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Calendar_load_failure_is_retryable_without_freezing_the_page()
   {
     Page.PageError += (_, exception) => output.WriteLine("Browser page error: {0}", exception);

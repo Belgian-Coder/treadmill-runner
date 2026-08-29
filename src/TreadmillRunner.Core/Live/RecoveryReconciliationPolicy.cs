@@ -41,6 +41,13 @@ public static class RecoveryReconciliationPolicy
       return Blocked("An unknown command outcome blocks automatic recovery.");
     if (input.SessionState != SessionState.Running)
       return Blocked("Only a running session can reconcile planned controls.");
+    if (!double.IsFinite(input.MeasuredSpeedKph) ||
+        !double.IsFinite(input.MeasuredInclinePercent) ||
+        !double.IsFinite(input.PreGapSpeedKph) ||
+        !double.IsFinite(input.PreGapInclinePercent) ||
+        !double.IsFinite(input.SpeedIncrementKph) ||
+        !double.IsFinite(input.InclineIncrementPercent))
+      return Blocked("Finite treadmill telemetry and operating increments are required before recovery.");
     if (input.MeasuredSpeedKph <= SessionStateMachine.PhysicalStartThresholdKph)
       return Blocked("The belt is not moving; recovery will never issue Start.");
 

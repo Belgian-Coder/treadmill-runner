@@ -50,6 +50,36 @@ public sealed class WorkoutCompletionStopPolicyTests
     Assert.Equal(WorkoutCompletionAction.Finalize, WorkoutCompletionStopPolicy.Evaluate(context));
   }
 
+  [Theory]
+  [InlineData(double.NegativeInfinity)]
+  [InlineData(-0.1)]
+  public void Invalid_speed_is_not_accepted_as_physical_stop_evidence(double measuredSpeedKph)
+  {
+    WorkoutCompletionStopContext context = HardwareContext() with
+    {
+      IsMoving = false,
+      MeasuredSpeedKph = measuredSpeedKph,
+      StopAttempted = true,
+    };
+
+    Assert.Equal(
+      WorkoutCompletionAction.AwaitPhysicalStop,
+      WorkoutCompletionStopPolicy.Evaluate(context));
+  }
+
+  [Fact]
+  public void Non_finite_moving_speed_does_not_trigger_a_stop_request()
+  {
+    WorkoutCompletionStopContext context = HardwareContext() with
+    {
+      MeasuredSpeedKph = double.PositiveInfinity,
+    };
+
+    Assert.Equal(
+      WorkoutCompletionAction.AwaitPhysicalStop,
+      WorkoutCompletionStopPolicy.Evaluate(context));
+  }
+
   [Fact]
   public void Simulator_completion_remains_immediate()
   {

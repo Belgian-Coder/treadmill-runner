@@ -99,11 +99,20 @@ public sealed class GatewayConnectionSupervisor(
       if (initialized) return;
       await assemblyLoader.LoadAssembliesAsync(LiveAssemblies);
       initialized = true;
-      holderId = await js.InvokeAsync<string?>("localStorage.getItem", cancellationToken, HolderStorageKey) ?? string.Empty;
-      if (string.IsNullOrWhiteSpace(holderId))
+      try
       {
+        holderId = await js.InvokeAsync<string?>("localStorage.getItem", cancellationToken, HolderStorageKey) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(holderId))
+        {
+          holderId = Guid.NewGuid().ToString("N");
+          await js.InvokeVoidAsync("localStorage.setItem", cancellationToken, HolderStorageKey, holderId);
+        }
+      }
+      catch (JSException)
+      {
+        // Privacy modes may disable local storage. A page-lifetime holder still
+        // provides stable lease identity without weakening server ownership checks.
         holderId = Guid.NewGuid().ToString("N");
-        await js.InvokeVoidAsync("localStorage.setItem", cancellationToken, HolderStorageKey, holderId);
       }
 
       hubConnection = CreateLiveHubClient(navigation.ToAbsoluteUri("/hubs/live"));

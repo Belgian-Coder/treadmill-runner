@@ -10,6 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'path-helpers.ps1')
 $designProject = Join-Path $projectRoot 'src/TreadmillRunner.Infrastructure/Design/TreadmillRunner.Infrastructure.Design.csproj'
 
 function Invoke-DotNet {
@@ -66,7 +67,7 @@ try {
                 $OutputPath = Join-Path $projectRoot 'artifacts/database/treadmillrunner.sql'
             }
 
-            $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath, $projectRoot)
+            $resolvedOutput = Resolve-FullPath -Path $OutputPath -BasePath $projectRoot
             $outputDirectory = Split-Path -Parent $resolvedOutput
             New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
             Invoke-DotNet @efArguments migrations script --output $resolvedOutput
@@ -77,7 +78,7 @@ try {
                 throw '-DatabasePath is required for the Update action.'
             }
 
-            $resolvedDatabase = [System.IO.Path]::GetFullPath($DatabasePath, $projectRoot)
+            $resolvedDatabase = Resolve-FullPath -Path $DatabasePath -BasePath $projectRoot
             $databaseDirectory = Split-Path -Parent $resolvedDatabase
             New-Item -ItemType Directory -Path $databaseDirectory -Force | Out-Null
             $connectionString = "Data Source=$resolvedDatabase;Foreign Keys=True;Default Timeout=5"

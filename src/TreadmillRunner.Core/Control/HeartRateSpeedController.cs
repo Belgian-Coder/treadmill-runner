@@ -66,11 +66,11 @@ public sealed class HeartRateSpeedController(HeartRateControllerSettings setting
     }
 
     if (!input.SafetyReady ||
-        input.HeartRateBpm is null ||
+        input.HeartRateBpm is not (>= 30 and <= 250) ||
         input.TargetMinimumBpm is null ||
         input.TargetMaximumBpm is null ||
-        input.HeartRateAge is null || input.HeartRateAge > FreshnessLimit ||
-        input.TreadmillAge is null || input.TreadmillAge > FreshnessLimit)
+        input.HeartRateAge is null || input.HeartRateAge < TimeSpan.Zero || input.HeartRateAge > FreshnessLimit ||
+        input.TreadmillAge is null || input.TreadmillAge < TimeSpan.Zero || input.TreadmillAge > FreshnessLimit)
     {
       ResetDwell();
       return HeartRateSpeedDecision.None("Fresh heart-rate and treadmill telemetry plus a safe command context are required.");
