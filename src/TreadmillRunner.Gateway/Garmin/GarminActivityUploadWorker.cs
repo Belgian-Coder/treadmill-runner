@@ -322,7 +322,8 @@ public sealed class GarminActivityUploadWorker(
     CancellationToken cancellationToken)
   {
     if (string.IsNullOrWhiteSpace(job.MatchedRemoteId) ||
-        !backups.TryFindRecoveryOriginalRemoteId(job.Id, out _))
+        !backups.TryFindRecoveryOriginalRemoteId(job.Id, out string? recoveryOriginalRemoteId) ||
+        string.IsNullOrWhiteSpace(recoveryOriginalRemoteId))
     {
       await store.MarkUnknownAsync(job.Id, "The accepted merged activity cannot be resolved because its original and replacement backups are incomplete.", timeProvider.GetUtcNow(), cancellationToken, expectedLeaseExpiresAtUtc: RequiredLease(job));
       return;
@@ -354,23 +355,48 @@ public sealed class GarminActivityUploadWorker(
         return;
       }
       tokens = download.TokenStore;
+      bool matchesMergedBackup = backups.MatchesReplacement(job.Id, job.MatchedRemoteId, candidateFitPath);
+      bool matchesOriginalBackup = backups.MatchesRecoveryOriginal(job.Id, candidateFitPath);
+      bool matchesLocalExport = backups.HasLocal(job.Id)
+        ? backups.MatchesLocal(job.Id, candidateFitPath)
+        : FilesMatch(localFitPath, candidateFitPath);
       evidence.Add(new(
         candidate,
-        backups.MatchesReplacement(job.Id, job.MatchedRemoteId, candidateFitPath),
-        backups.MatchesRecoveryOriginal(job.Id, candidateFitPath),
-        backups.HasLocal(job.Id)
-          ? backups.MatchesLocal(job.Id, candidateFitPath)
-          : FilesMatch(localFitPath, candidateFitPath)));
+        matchesMergedBackup,
+        matchesOriginalBackup,
+        matchesLocalExport,
+        backups.MatchesReplacementExactly(job.Id, job.MatchedRemoteId, candidateFitPath)));
     }
 
-    ReplacementCandidateEvidence? kept = evidence.FirstOrDefault(item => item.MatchesMergedBackup);
+    // A durable replacement ID or exact retained bytes are authoritative.
+    // Without either, a semantic replacement match is usable as the keeper
+    // only when it maps to that one retained category. Other multi-category
+    // candidates are still safe generated copies once the keeper is proven.
+    ReplacementCandidateEvidence? kept = evidence.FirstOrDefault(item =>
+        string.Equals(item.Candidate.RemoteId, job.ReplacementRemoteId, StringComparison.Ordinal) &&
+        item.MatchesMergedBackup)
+      ?? evidence.FirstOrDefault(item => item.MatchesMergedBackupExactly)
+      ?? evidence.FirstOrDefault(item => item.MatchesMergedBackup && item.MatchCategoryCount == 1);
+    if (kept is null && evidence.Any(item => item.MatchesMergedBackup))
+    {
+      ReplacementCandidateEvidence ambiguous = evidence.First(item => item.MatchesMergedBackup);
+      await store.MarkReviewRequiredAsync(
+        job.Id,
+        ambiguous.Candidate.RemoteId,
+        $"Garmin activity {ambiguous.Candidate.RemoteId} matches multiple retained FIT categories by strict semantic content without a durable or exact merged-replacement proof. No activity was deleted and no upload was sent.",
+        timeProvider.GetUtcNow(),
+        cancellationToken,
+        expectedLeaseExpiresAtUtc: RequiredLease(job));
+      return;
+    }
+
     if (evidence.Any(item =>
       (kept is null || item.Candidate.RemoteId != kept.Candidate.RemoteId) && !item.IsProvenCopy))
     {
       await store.MarkReviewRequiredAsync(
         job.Id,
         null,
-        $"{canonical.Length} canonical Garmin activities exist, but at least one does not match retained source FIT evidence. No activity was deleted and no upload was sent.",
+        $"{canonical.Length} canonical Garmin activities exist, but at least one lacks strict FIT content proof against the retained source files. No activity was deleted and no upload was sent.",
         timeProvider.GetUtcNow(),
         cancellationToken,
         expectedLeaseExpiresAtUtc: RequiredLease(job));
@@ -423,7 +449,7 @@ public sealed class GarminActivityUploadWorker(
       return;
     }
 
-    string resolutionEvidence = $"Resolved accepted merged activity {kept.Candidate.RemoteId} from {canonical.Length} canonical candidate(s) using the retained FIT evidence; no second upload was sent.";
+    string resolutionEvidence = $"Resolved accepted merged activity {kept.Candidate.RemoteId} from {canonical.Length} canonical candidate(s) using strict FIT content proof; no second upload was sent.";
     await store.MarkReplacementResolvedAsync(
       job.Id,
       job.MatchedRemoteId,
@@ -581,7 +607,7 @@ public sealed class GarminActivityUploadWorker(
     tokens = search.TokenStore;
     GarminActivityMatchReference local = ToMatchReference(session);
     bool hasDurableLocal = !string.IsNullOrWhiteSpace(job.RemoteId);
-    var localMatches = new List<GarminWatchActivityCandidate>();
+    var localMatches = new List<(GarminWatchActivityCandidate Candidate, bool Exact)>();
     foreach (GarminWatchActivityCandidate candidate in (search.Candidates ?? [])
       .Where(candidate => !string.Equals(candidate.RemoteId, job.MatchedRemoteId, StringComparison.Ordinal) &&
         (string.Equals(candidate.RemoteId, job.RemoteId, StringComparison.Ordinal) ||
@@ -599,7 +625,7 @@ public sealed class GarminActivityUploadWorker(
       bool matchesOriginal = backups.MatchesRecoveryOriginal(job.Id, candidateFitPath);
       bool matchesReplacement = backups.MatchesRecoveryReplacement(job.Id, candidateFitPath);
       if (matchesLocal)
-        localMatches.Add(candidate);
+        localMatches.Add((candidate, backups.MatchesLocalExactly(job.Id, candidateFitPath)));
       else if (!matchesOriginal && !matchesReplacement)
       {
         await store.MarkReviewRequiredAsync(
@@ -613,13 +639,16 @@ public sealed class GarminActivityUploadWorker(
       }
     }
 
-    GarminWatchActivityCandidate? kept = localMatches.FirstOrDefault();
+    GarminWatchActivityCandidate? kept = localMatches
+      .FirstOrDefault(item => string.Equals(item.Candidate.RemoteId, job.RemoteId, StringComparison.Ordinal)).Candidate
+      ?? localMatches.FirstOrDefault(item => item.Exact).Candidate
+      ?? localMatches.FirstOrDefault().Candidate;
     if (kept is not null)
     {
       await store.MarkLocalResolvedAsync(
         job.Id,
         kept.RemoteId,
-        $"Undo merge identified retained plain local Garmin activity {kept.RemoteId} by exact deterministic FIT evidence.",
+        $"Undo merge identified retained plain local Garmin activity {kept.RemoteId} by strict FIT content evidence.",
         connections.Protect(tokens),
         timeProvider.GetUtcNow(),
         cancellationToken,
@@ -699,7 +728,7 @@ public sealed class GarminActivityUploadWorker(
     }
     tokens = search.TokenStore;
     GarminActivityMatchReference local = ToMatchReference(session);
-    var originals = new List<GarminWatchActivityCandidate>();
+    var originals = new List<(GarminWatchActivityCandidate Candidate, bool Exact)>();
     foreach (GarminWatchActivityCandidate candidate in (search.Candidates ?? [])
       .Where(candidate => string.Equals(candidate.RemoteId, job.MatchedRemoteId, StringComparison.Ordinal) ||
         GarminWatchActivityMatcher.IsPlausibleShape(local, candidate))
@@ -712,16 +741,20 @@ public sealed class GarminActivityUploadWorker(
         return;
       }
       tokens = download.TokenStore;
-      if (backups.MatchesRecoveryOriginal(job.Id, candidateFitPath)) originals.Add(candidate);
+      if (backups.MatchesRecoveryOriginal(job.Id, candidateFitPath))
+        originals.Add((candidate, backups.MatchesRecoveryOriginalExactly(job.Id, candidateFitPath)));
     }
 
-    GarminWatchActivityCandidate? kept = originals.FirstOrDefault(candidate => candidate.RemoteId == job.MatchedRemoteId) ?? originals.FirstOrDefault();
+    GarminWatchActivityCandidate? kept = originals
+      .FirstOrDefault(item => string.Equals(item.Candidate.RemoteId, job.MatchedRemoteId, StringComparison.Ordinal)).Candidate
+      ?? originals.FirstOrDefault(item => item.Exact).Candidate
+      ?? originals.FirstOrDefault().Candidate;
     if (kept is not null)
     {
       await store.MarkOriginalResolvedAsync(
         job.Id,
         kept.RemoteId,
-        $"Undo merge identified retained original Garmin activity {kept.RemoteId} by exact FIT evidence.",
+        $"Undo merge identified retained original Garmin activity {kept.RemoteId} by strict FIT content evidence.",
         connections.Protect(tokens),
         timeProvider.GetUtcNow(),
         cancellationToken,
@@ -893,7 +926,7 @@ public sealed class GarminActivityUploadWorker(
 
     await store.CompleteUndoAsync(
       job.Id,
-      $"Undo complete: watch-original {job.MatchedRemoteId} and plain local {job.RemoteId} are retained; only exact original, merged-replacement, and local duplicates were removed. The local TreadmillRunner session was unchanged.",
+      $"Undo complete: watch-original {job.MatchedRemoteId} and plain local {job.RemoteId} are retained; only FIT-content-proven original, merged-replacement, and local duplicates were removed. The local TreadmillRunner session was unchanged.",
       connections.Protect(tokens),
       timeProvider.GetUtcNow(),
       cancellationToken,
@@ -903,9 +936,13 @@ public sealed class GarminActivityUploadWorker(
   private static bool FilesMatch(string expectedPath, string candidatePath)
   {
     if (!File.Exists(expectedPath) || !File.Exists(candidatePath)) return false;
-    byte[] expected = SHA256.HashData(File.ReadAllBytes(expectedPath));
-    byte[] candidate = SHA256.HashData(File.ReadAllBytes(candidatePath));
-    return CryptographicOperations.FixedTimeEquals(expected, candidate);
+    byte[] expectedBytes = File.ReadAllBytes(expectedPath);
+    byte[] candidateBytes = File.ReadAllBytes(candidatePath);
+    if (CryptographicOperations.FixedTimeEquals(SHA256.HashData(expectedBytes), SHA256.HashData(candidateBytes)))
+      return true;
+    try { return GarminFitActivitySemantics.AreEquivalent(expectedBytes, candidateBytes); }
+    catch (InvalidDataException) { return false; }
+    catch (Dynastream.Fit.FitException) { return false; }
   }
 
   private async Task DeleteMatchedOriginalAsync(
@@ -1027,7 +1064,7 @@ public sealed class GarminActivityUploadWorker(
       await store.MarkReviewRequiredAsync(
         job.Id,
         retainedReplacement.RemoteId,
-        "The retained merged Garmin activity failed exact FIT verification. No other activity was deleted.",
+        "The retained merged Garmin activity failed strict FIT content verification. No other activity was deleted.",
         timeProvider.GetUtcNow(),
         cancellationToken,
         expectedLeaseExpiresAtUtc: RequiredLease(job));
@@ -1125,8 +1162,13 @@ public sealed class GarminActivityUploadWorker(
     GarminWatchActivityCandidate Candidate,
     bool MatchesMergedBackup,
     bool MatchesOriginalBackup,
-    bool MatchesLocalExport)
+    bool MatchesLocalExport,
+    bool MatchesMergedBackupExactly)
   {
     public bool IsProvenCopy => MatchesMergedBackup || MatchesOriginalBackup || MatchesLocalExport;
+    public int MatchCategoryCount =>
+      (MatchesMergedBackup ? 1 : 0) +
+      (MatchesOriginalBackup ? 1 : 0) +
+      (MatchesLocalExport ? 1 : 0);
   }
 }

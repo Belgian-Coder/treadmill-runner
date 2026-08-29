@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using TreadmillRunner.Protocols.Exports;
 
 namespace TreadmillRunner.Gateway.Garmin;
 
@@ -42,19 +43,38 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
     return FilesMatch(originalPath, candidatePath);
   }
 
+  /// <summary>
+  /// Returns true only when the retained and candidate FIT files have the
+  /// same bytes.  Recovery uses this to make an exact match authoritative
+  /// when a candidate also has strict semantic matches in another category.
+  /// </summary>
+  public bool MatchesOriginalExactly(Guid jobId, string originalRemoteId, string candidatePath) =>
+    FilesMatchExactly(OriginalPath(jobId, originalRemoteId), candidatePath);
+
   public bool MatchesReplacement(Guid jobId, string originalRemoteId, string candidatePath)
   {
     string replacementPath = ReplacementPath(jobId, originalRemoteId);
     return FilesMatch(replacementPath, candidatePath);
   }
 
+  public bool MatchesReplacementExactly(Guid jobId, string originalRemoteId, string candidatePath) =>
+    FilesMatchExactly(ReplacementPath(jobId, originalRemoteId), candidatePath);
+
   public bool MatchesLocal(Guid jobId, string candidatePath) =>
     FilesMatch(LocalPath(jobId), candidatePath);
+
+  public bool MatchesLocalExactly(Guid jobId, string candidatePath) =>
+    FilesMatchExactly(LocalPath(jobId), candidatePath);
 
   public bool MatchesRecoveryOriginal(Guid jobId, string candidatePath) =>
     TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
     !string.IsNullOrWhiteSpace(backupRemoteId) &&
     MatchesOriginal(jobId, backupRemoteId, candidatePath);
+
+  public bool MatchesRecoveryOriginalExactly(Guid jobId, string candidatePath) =>
+    TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+    !string.IsNullOrWhiteSpace(backupRemoteId) &&
+    MatchesOriginalExactly(jobId, backupRemoteId, candidatePath);
 
   public bool MatchesRecoveryReplacement(Guid jobId, string candidatePath) =>
     TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
@@ -160,6 +180,22 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
     Path.Combine(root, $"{jobId:N}_local.fit");
 
   private static bool FilesMatch(string expectedPath, string candidatePath)
+  {
+    if (!File.Exists(expectedPath) || !File.Exists(candidatePath)) return false;
+    byte[] expected = File.ReadAllBytes(expectedPath);
+    byte[] candidate = File.ReadAllBytes(candidatePath);
+    if (CryptographicOperations.FixedTimeEquals(SHA256.HashData(expected), SHA256.HashData(candidate)))
+      return true;
+
+    // Garmin may rewrite FileId/DeviceInfo metadata while retaining the same
+    // activity records.  The strict FIT semantic comparer deliberately ignores
+    // only those non-identity fields; malformed files remain non-matches.
+    try { return GarminFitActivitySemantics.AreEquivalent(expected, candidate); }
+    catch (InvalidDataException) { return false; }
+    catch (Dynastream.Fit.FitException) { return false; }
+  }
+
+  private static bool FilesMatchExactly(string expectedPath, string candidatePath)
   {
     if (!File.Exists(expectedPath) || !File.Exists(candidatePath)) return false;
     byte[] expectedHash = SHA256.HashData(File.ReadAllBytes(expectedPath));

@@ -475,6 +475,120 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     Assert.Equal(1, adapter.Calls.Count(call => call == "upload"));
   }
 
+  [Fact]
+  public async Task Replacement_resolution_accepts_metadata_rewritten_fit_and_deletes_semantic_duplicate()
+  {
+    string databasePath = Path.Combine(directory, $"replacement-semantic-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    await using TreadmillRunnerDbContext seedContext = await factory.CreateDbContextAsync();
+    Guid sessionId = await seedContext.WorkoutSessions.AsNoTracking().Select(session => session.Id).SingleAsync();
+    StoredWorkoutSession seededSession = Assert.IsType<StoredWorkoutSession>(
+      await new SessionStore(factory).FindAsync(sessionId));
+    byte[] localDuplicateFit = TreadmillRunner.Protocols.Exports.SessionFitActivityExporter.Export(seededSession);
+    var adapter = new ReplacementResolutionAdapter(
+      localDuplicateFit: localDuplicateFit,
+      rewriteLocalDuplicateMetadata: true);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter,
+      store,
+      DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))),
+      clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      store,
+      adapter,
+      BackupStore(clock),
+      connections,
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<GarminActivityUploadWorker>.Instance);
+
+    DateTimeOffset tick = now;
+    for (var pass = 0; pass < 10; pass++)
+    {
+      GarminActivityUploadJob? next = await store.LeaseNextAsync(tick, TimeSpan.FromMinutes(2));
+      if (next is null) break;
+      await worker.ProcessOneAsync(next, default);
+      tick = tick.AddMinutes(30);
+    }
+
+    GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.True(completed.Status == "Confirmed", $"status={completed.Status} phase={completed.OperationPhase} evidence={completed.MatchEvidence} error={completed.LastError} calls={string.Join(',', adapter.Calls)} deleted={string.Join(',', adapter.DeletedRemoteIds)}");
+    Assert.Equal("corrected-1", completed.ReplacementRemoteId);
+    Assert.Equal(new[] { "corrected-2", "watch-original" }, adapter.DeletedRemoteIds);
+    Assert.Equal(new[] { "corrected-1" }, adapter.ActiveRemoteIds);
+    Assert.Contains("FIT content", completed.MatchEvidence, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public async Task Replacement_resolution_rejects_core_mutation_without_deleting_any_candidate()
+  {
+    string databasePath = Path.Combine(directory, $"replacement-semantic-review-{Guid.NewGuid():N}.db");
+    IDbContextFactory<TreadmillRunnerDbContext> factory = TreadmillRunnerDatabase.CreateFactory(databasePath);
+    Guid profileId = Guid.NewGuid();
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z"), started = now.AddHours(-1);
+    await SeedCompletedSessionAsync(factory, profileId, started);
+    var store = new GarminActivityUploadStore(factory);
+    var adapter = new ReplacementResolutionAdapter(mutateReplacementCore: true);
+    var clock = new FixedTimeProvider(now);
+    await using var connections = new GarminActivityConnectionService(
+      adapter,
+      store,
+      DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(directory, $"keys-{Guid.NewGuid():N}"))),
+      clock);
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      connections.Protect("original-token-store"),
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    await using ServiceProvider services = new ServiceCollection()
+      .AddSingleton(factory)
+      .AddScoped<ISessionStore, SessionStore>()
+      .BuildServiceProvider();
+    var worker = new GarminActivityUploadWorker(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      store,
+      adapter,
+      BackupStore(clock),
+      connections,
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<GarminActivityUploadWorker>.Instance);
+
+    GarminActivityUploadJob initial = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    await worker.ProcessOneAsync(initial, default);
+    GarminActivityUploadJob resolve = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddMinutes(20), TimeSpan.FromMinutes(2)));
+    Assert.Equal("ResolveReplacement", resolve.OperationPhase);
+    await worker.ProcessOneAsync(resolve, default);
+
+    GarminActivityUploadJob review = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("ReviewRequired", review.Status);
+    Assert.Equal("Review", review.OperationPhase);
+    Assert.Contains("strict FIT content", review.MatchEvidence, StringComparison.OrdinalIgnoreCase);
+    Assert.Empty(adapter.DeletedRemoteIds);
+    Assert.DoesNotContain(adapter.Calls, call => call.StartsWith("delete", StringComparison.Ordinal));
+  }
+
   [Theory]
   [InlineData(true)]
   [InlineData(false)]
@@ -586,8 +700,15 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
     Assert.Equal(4, adapter.Calls.Count(call => call == "upload"));
   }
 
-  private sealed class ReplacementResolutionAdapter(bool localRestoreHasId = true) : IGarminActivityAdapter
+  private sealed class ReplacementResolutionAdapter(
+    bool localRestoreHasId = true,
+    byte[]? localDuplicateFit = null,
+    bool rewriteLocalDuplicateMetadata = false,
+    bool mutateReplacementCore = false) : IGarminActivityAdapter
   {
+    private readonly byte[]? localDuplicateFit = localDuplicateFit;
+    private readonly bool rewriteLocalDuplicateMetadata = rewriteLocalDuplicateMetadata;
+    private readonly bool mutateReplacementCore = mutateReplacementCore;
     private readonly HashSet<string> activeRemoteIds = ["watch-original"];
     private DateTimeOffset searchedStart;
     private byte[]? mergedFit;
@@ -637,10 +758,18 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       byte[] bytes = remoteId switch
       {
         "watch-original" or "restored-original" => CreateOriginalFit(searchedStart),
+        "corrected-2" when localDuplicateFit is not null => localDuplicateFit,
         "corrected-1" or "corrected-2" or "corrected-3" when mergedFit is not null => mergedFit!,
         "local-1" when localFit is not null => localFit!,
         _ => throw new InvalidOperationException($"No FIT fixture exists for {remoteId}.")
       };
+      if (mergedFit is not null && remoteId is "corrected-1" or "corrected-2" or "corrected-3")
+      {
+        if (rewriteLocalDuplicateMetadata && remoteId == "corrected-2")
+          bytes = RewriteFitMetadata(bytes);
+        if (mutateReplacementCore && remoteId == "corrected-2")
+          bytes = MutateFitCore(bytes);
+      }
       System.IO.File.WriteAllBytes(outputPath, bytes);
       return Task.FromResult(new GarminAdapterMessage(
         "confirmed", null, null, null, "download-token-store", remoteId));
@@ -710,9 +839,105 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       session.SetTimestamp(new Dynastream.Fit.DateTime(startedAtUtc.AddMinutes(1).UtcDateTime));
       session.SetStartTime(new Dynastream.Fit.DateTime(startedAtUtc.UtcDateTime));
       encoder.Write(session);
+      var activity = new ActivityMesg();
+      activity.SetTimestamp(new Dynastream.Fit.DateTime(startedAtUtc.AddMinutes(1).UtcDateTime));
+      activity.SetTotalTimerTime(60);
+      activity.SetNumSessions(1);
+      encoder.Write(activity);
       encoder.Close();
       return stream.ToArray();
     }
+
+    private static byte[] RewriteFitMetadata(byte[] source)
+    {
+      // Preserve the merged activity's decoded core bytes exactly.  Appending
+      // a valid DeviceInfo message (encoded independently, then its data
+      // records spliced into the original FIT) models Garmin's metadata
+      // rewrite without allowing the SDK to expand array-valued record fields.
+      byte[] metadata = EncodeDeviceInfo();
+      int sourceHeaderSize = source[0];
+      int sourceDataSize = BitConverter.ToInt32(source, 4);
+      int metadataHeaderSize = metadata[0];
+      int metadataDataSize = BitConverter.ToInt32(metadata, 4);
+      byte[] rewritten = new byte[sourceHeaderSize + sourceDataSize + metadataDataSize + 2];
+      Buffer.BlockCopy(source, 0, rewritten, 0, sourceHeaderSize + sourceDataSize);
+      Buffer.BlockCopy(metadata, metadataHeaderSize, rewritten, sourceHeaderSize + sourceDataSize, metadataDataSize);
+      BitConverter.GetBytes(sourceDataSize + metadataDataSize).CopyTo(rewritten, 4);
+      ushort dataCrc = Dynastream.Fit.CRC.Calc16(rewritten.AsSpan(sourceHeaderSize, sourceDataSize + metadataDataSize).ToArray(), sourceDataSize + metadataDataSize);
+      BitConverter.GetBytes(dataCrc).CopyTo(rewritten, sourceHeaderSize + sourceDataSize + metadataDataSize);
+      ushort headerCrc = Dynastream.Fit.CRC.Calc16(rewritten.AsSpan(0, sourceHeaderSize - 2).ToArray(), sourceHeaderSize - 2);
+      BitConverter.GetBytes(headerCrc).CopyTo(rewritten, sourceHeaderSize - 2);
+      using (var validation = new MemoryStream(rewritten, writable: false))
+      {
+        var decoder = new Decode();
+        Assert.True(decoder.IsFIT(validation));
+        validation.Position = 0;
+        Assert.True(decoder.CheckIntegrity(validation), "metadata splice CRC invalid");
+      }
+      Assert.True(TreadmillRunner.Protocols.Exports.GarminFitActivitySemantics.AreEquivalent(source, rewritten));
+      return rewritten;
+    }
+
+    private static byte[] EncodeDeviceInfo()
+    {
+      using var output = new MemoryStream();
+      var encoder = new Encode(ProtocolVersion.V20);
+      encoder.Open(output);
+      var device = new DeviceInfoMesg();
+      device.SetTimestamp(new Dynastream.Fit.DateTime(System.DateTime.UnixEpoch));
+      device.SetDeviceIndex(0);
+      device.SetDeviceType(1);
+      device.SetManufacturer(999);
+      device.SetProduct(999);
+      device.SetSerialNumber(987654321);
+      device.SetSoftwareVersion(99.0f);
+      encoder.Write(device);
+      encoder.Close();
+      return output.ToArray();
+    }
+
+    private static byte[] MutateFitCore(byte[] source) => ReencodeFit(source);
+
+    private static byte[] ReencodeFit(byte[] source)
+    {
+      using var input = new MemoryStream(source, writable: false);
+      var decoder = new Decode();
+      Assert.True(decoder.IsFIT(input));
+      input.Position = 0;
+      var messages = new List<Mesg>();
+      decoder.MesgEvent += (_, args) => messages.Add(CloneMesg(args.mesg));
+      Assert.True(decoder.Read(input));
+
+      using var output = new MemoryStream();
+      var encoder = new Encode(ProtocolVersion.V10);
+      encoder.Open(output);
+      bool recordMutated = false;
+      foreach (Mesg message in messages)
+      {
+        Mesg rewritten = CloneMesg(message);
+        if (message.Num == (ushort)MesgNum.Record)
+        {
+          if (!recordMutated)
+          {
+            rewritten.SetFieldValue(3, (byte)131);
+            recordMutated = true;
+          }
+        }
+        encoder.Write(rewritten);
+      }
+      encoder.Close();
+      return output.ToArray();
+    }
+
+    private static Mesg CloneMesg(Mesg source)
+    {
+      var clone = new Mesg(source.Name, source.Num);
+      foreach (Field field in source.Fields)
+        for (var index = 0; index < field.GetNumValues(); index++)
+          clone.SetFieldValue(field.Num, index, field.GetValue(index));
+      return clone;
+    }
+
   }
 
   private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
