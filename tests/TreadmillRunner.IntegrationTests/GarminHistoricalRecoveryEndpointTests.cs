@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Gateway.Garmin;
 using TreadmillRunner.Infrastructure.Persistence;
@@ -212,7 +213,6 @@ public sealed class GarminHistoricalRecoveryEndpointTests(GarminHistoricalRecove
         AllowAutoRedirect = false,
         BaseAddress = new Uri("https://localhost"),
       });
-      await factory.Services.GetRequiredService<GarminActivityUploadWorker>().StopAsync(CancellationToken.None);
       await factory.SeedSessionAsync(profileId, sessionId, now);
 
       IGarminActivityUploadStore uploads = factory.Services.GetRequiredService<IGarminActivityUploadStore>();
@@ -315,6 +315,19 @@ public sealed class GarminHistoricalRecoveryGatewayFactory : WebApplicationFacto
         ["Persistence:DatabasePath"] = DatabasePath,
         ["Persistence:DataProtectionKeyPath"] = Path.Combine(directory, "keys"),
       }));
+    builder.ConfigureServices(services =>
+    {
+      // Endpoint tests drive this durable queue explicitly. Keep the worker's
+      // concrete singleton available for Wake(), but do not run its queue loop.
+      ServiceDescriptor[] workerRegistrations = services
+        .Where(static descriptor =>
+          descriptor.ServiceType == typeof(IHostedService) &&
+          descriptor.ImplementationFactory?.Method.ReturnType == typeof(GarminActivityUploadWorker))
+        .ToArray();
+      if (workerRegistrations.Length != 1)
+        throw new InvalidOperationException("The Garmin activity hosted-worker registration could not be isolated.");
+      services.Remove(workerRegistrations[0]);
+    });
   }
 
   public async Task SeedSessionAsync(Guid profileId, Guid sessionId, DateTimeOffset now)
