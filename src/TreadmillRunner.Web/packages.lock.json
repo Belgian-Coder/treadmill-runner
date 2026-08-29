@@ -31,7 +31,7 @@
         "type": "Direct",
         "requested": "[10.0.10, )",
         "resolved": "10.0.10",
-        "contentHash": "gvkxv3MsFo+okExR2N8eo1asV/xnfSSvp8duAGyQARar/V+OStp4QfkFI1Ek6SkT3k7U3+3XLj2nqDFJaEL8Cg=="
+        "contentHash": "MLMHGePFHjRNjiA58lJo8dvEyU762yJohOWNBIs1AjHOgP9jL/MxZ5oHebEvXhfbknbyJUz/rT05bCY4PdqDLw=="
       },
       "Microsoft.AspNetCore.Authorization": {
         "type": "Transitive",
