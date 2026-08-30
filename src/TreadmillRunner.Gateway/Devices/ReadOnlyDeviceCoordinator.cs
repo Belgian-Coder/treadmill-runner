@@ -588,7 +588,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             enrollment,
             connectionDeviceId,
             excludeCurrentDevice: enrollment.Role == DeviceRole.HeartRate &&
-              exception is not WindowsBleDeviceUnavailableException,
+              exception is not (WindowsBleDeviceUnavailableException or WindowsBleDisconnectedException),
             cancellationToken);
           if (cancellationToken.IsCancellationRequested) break;
         }

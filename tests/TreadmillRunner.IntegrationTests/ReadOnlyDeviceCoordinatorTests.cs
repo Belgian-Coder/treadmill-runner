@@ -513,6 +513,52 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Immediately_retries_a_freshly_advertising_heart_rate_source_after_native_disconnect()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("102030405060", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new RotatingHeartRateBleTransport(
+      heartRate.DeviceId,
+      currentDeviceId: heartRate.DeviceId,
+      advertiseStoredAddressFirst: true,
+      keepScanOpenAfterAdvertisement: true,
+      disconnectFirstCurrentConnection: true);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+      while (transport.ConnectionDeviceIds.Count < 2)
+      {
+        await Task.Delay(25, timeout.Token);
+      }
+
+      Assert.Equal(2, transport.ConnectionDeviceIds.Count(id =>
+        string.Equals(id, heartRate.DeviceId, StringComparison.OrdinalIgnoreCase)));
+      Assert.True(transport.ActiveScanCount >= 2);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Marks_heart_rate_contact_loss_unavailable_without_publishing_a_pulse()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1082,12 +1128,15 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     string storedDeviceId,
     string currentDeviceId,
     bool advertiseStoredAddressFirst,
-    bool throwAfterAdvertisement = false) : IBleCentralTransport
+    bool throwAfterAdvertisement = false,
+    bool keepScanOpenAfterAdvertisement = false,
+    bool disconnectFirstCurrentConnection = false) : IBleCentralTransport
   {
     private static readonly Guid HeartRateService = Expand(0x180D);
     private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
     private int _scanCount;
     private int _targetedDiscoveryCount;
+    private int _currentConnectionCount;
 
     public int ActiveScanCount => Volatile.Read(ref _scanCount);
 
@@ -1113,6 +1162,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       {
         throw new InvalidOperationException("Simulated truncated active scan.");
       }
+      if (keepScanOpenAfterAdvertisement)
+      {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
     }
 
     public ValueTask<IBleConnection> ConnectAsync(
@@ -1120,9 +1173,15 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       CancellationToken cancellationToken = default)
     {
       ConnectionDeviceIds.Enqueue(deviceId);
+      int currentConnection = string.Equals(deviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase)
+        ? Interlocked.Increment(ref _currentConnectionCount)
+        : 0;
       return ValueTask.FromResult<IBleConnection>(
-        string.Equals(deviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase)
-          ? new WorkingHeartRateConnection(deviceId, this)
+        currentConnection > 0
+          ? new WorkingHeartRateConnection(
+            deviceId,
+            this,
+            disconnectFirstCurrentConnection && currentConnection == 1)
           : new GenericGattFailureConnection(deviceId, this));
     }
 
@@ -1162,7 +1221,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     private sealed class WorkingHeartRateConnection(
       string deviceId,
-      RotatingHeartRateBleTransport owner) :
+      RotatingHeartRateBleTransport owner,
+      bool disconnectAfterNotification) :
       IBleConnection,
       IBleTargetedServiceDiscoveryConnection
     {
@@ -1209,6 +1269,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           characteristicUuid,
           new byte[] { 0x00, 142 },
           DateTimeOffset.UtcNow);
+        if (disconnectAfterNotification)
+        {
+          throw new WindowsBleDisconnectedException();
+        }
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
       }
     }
