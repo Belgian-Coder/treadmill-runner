@@ -341,6 +341,51 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
   }
 
   [Fact]
+  public async Task Disconnecting_profile_devices_closes_only_its_treadmill_and_assigned_heart_rate_connections()
+  {
+    Guid profileId = Guid.NewGuid();
+    Guid otherProfileId = Guid.NewGuid();
+    Guid treadmillId = Guid.NewGuid();
+    Guid polarId = Guid.NewGuid();
+    Guid fenixId = Guid.NewGuid();
+    Guid otherHeartRateId = Guid.NewGuid();
+    var coordinator = new DisconnectingCoordinator();
+    var commands = new RecordingCommandCoordinator();
+    var store = new ProfileDeviceStore(
+      [
+        Enrollment(treadmillId, DeviceRole.Treadmill, "JFTM Omega Z"),
+        Enrollment(polarId, DeviceRole.HeartRate, "Polar H10"),
+        Enrollment(fenixId, DeviceRole.HeartRate, "Garmin fēnix 8"),
+        Enrollment(otherHeartRateId, DeviceRole.HeartRate, "Other runner sensor"),
+      ],
+      [
+        Assignment(profileId, polarId, 0, preferred: true),
+        Assignment(profileId, fenixId, 1, preferred: false),
+        Assignment(otherProfileId, otherHeartRateId, 0, preferred: true),
+      ]);
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IReadOnlyDeviceCoordinator>();
+        services.AddSingleton<IReadOnlyDeviceCoordinator>(coordinator);
+        services.RemoveAll<ITreadmillCommandCoordinator>();
+        services.AddSingleton<ITreadmillCommandCoordinator>(commands);
+        services.RemoveAll<IDeviceEnrollmentStore>();
+        services.AddSingleton<IDeviceEnrollmentStore>(store);
+      }));
+    using HttpClient client = application.CreateClient();
+
+    using HttpResponseMessage response = await client.PostAsync(
+      $"/api/devices/profiles/{profileId}/disconnect",
+      content: null);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(new[] { treadmillId, polarId, fenixId }.Order(), coordinator.DisconnectedIds.Order());
+    Assert.Equal(1, commands.ReleaseCount);
+    Assert.DoesNotContain(otherHeartRateId, coordinator.DisconnectedIds);
+  }
+
+  [Fact]
   public async Task Reliability_report_is_bounded_and_does_not_expose_ble_device_identifiers()
   {
     using HttpClient client = factory.CreateClient();
@@ -532,6 +577,16 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
 
   private sealed class DisconnectingCoordinator : IReadOnlyDeviceCoordinator
   {
+    private readonly List<Guid> _disconnectedIds = [];
+
+    public IReadOnlyList<Guid> DisconnectedIds
+    {
+      get
+      {
+        lock (_disconnectedIds) return _disconnectedIds.ToArray();
+      }
+    }
+
     public DeviceTelemetrySnapshot Current { get; } = new(
       DateTimeOffset.UtcNow,
       Disconnected(DeviceRole.Treadmill),
@@ -541,12 +596,59 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
       null,
       null);
 
-    public Task<bool> DisconnectAsync(Guid enrollmentId, CancellationToken cancellationToken = default) =>
-      Task.FromResult(true);
+    public Task<bool> DisconnectAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
+    {
+      lock (_disconnectedIds) _disconnectedIds.Add(enrollmentId);
+      return Task.FromResult(true);
+    }
 
     private static DeviceConnectionSnapshot Disconnected(DeviceRole role) => new(
       role, DeviceConnectionState.Disconnected, 0, null, null, null, null, null);
   }
+
+  private sealed class ProfileDeviceStore(
+    IReadOnlyList<VersionedDeviceEnrollment> enrollments,
+    IReadOnlyList<HeartRateDeviceAssignment> assignments) : IDeviceEnrollmentStore
+  {
+    public Task<IReadOnlyList<VersionedDeviceEnrollment>> ListActiveAsync(CancellationToken cancellationToken = default) =>
+      Task.FromResult(enrollments);
+
+    public Task<IReadOnlyList<HeartRateDeviceAssignment>> ListHeartRateAssignmentsAsync(CancellationToken cancellationToken = default) =>
+      Task.FromResult(assignments);
+
+    public Task<VersionedDeviceEnrollment?> FindActiveAsync(DeviceRole role, CancellationToken cancellationToken = default) =>
+      Task.FromResult(enrollments.SingleOrDefault(item => item.Enrollment.Role == role));
+
+    public Task<VersionedDeviceEnrollment> EnrollAsync(DeviceEnrollment enrollment, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default) =>
+      Task.FromException<VersionedDeviceEnrollment>(new NotSupportedException());
+
+    public Task<bool> ForgetAsync(DeviceRole role, int expectedVersion, DateTimeOffset nowUtc, PersistenceWriteOperation operation, CancellationToken cancellationToken = default) =>
+      Task.FromException<bool>(new NotSupportedException());
+
+    public Task<VersionedDeviceEnrollment> UpdateEvidenceAsync(Guid id, int expectedVersion, string? modelNumber, string? firmwareRevision, TreadmillCapabilities? capabilities, TreadmillCapabilityEvidence evidence, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default) =>
+      Task.FromException<VersionedDeviceEnrollment>(new NotSupportedException());
+  }
+
+  private static VersionedDeviceEnrollment Enrollment(Guid id, DeviceRole role, string name) => new(
+    new DeviceEnrollment(
+      id,
+      role,
+      $"device-{id:N}",
+      role == DeviceRole.Treadmill ? "horizon-omega-z" : "bluetooth-heart-rate",
+      new string('a', 64),
+      name,
+      null,
+      null,
+      role == DeviceRole.Treadmill ? TreadmillTelemetryMode.Ftms : null,
+      role == DeviceRole.Treadmill ? new TreadmillCapabilities() : null,
+      TreadmillCapabilityEvidence.Unknown,
+      null),
+    1,
+    false,
+    null);
+
+  private static HeartRateDeviceAssignment Assignment(Guid profileId, Guid enrollmentId, int priority, bool preferred) =>
+    new(Guid.NewGuid(), profileId, enrollmentId, priority, true, preferred, 1);
 
   private sealed class RecordingCommandCoordinator : ITreadmillCommandCoordinator
   {

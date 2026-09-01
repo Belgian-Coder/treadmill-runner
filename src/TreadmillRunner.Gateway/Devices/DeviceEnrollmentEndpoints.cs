@@ -95,6 +95,7 @@ public static class DeviceEnrollmentEndpoints
     devices.MapGet("/status", static (Guid? profileId, IReadOnlyDeviceCoordinator coordinator) =>
       TypedResults.Ok(coordinator.CurrentForProfile(profileId)));
     devices.MapGet("/reliability", ReliabilityAsync);
+    devices.MapPost("/profiles/{profileId:guid}/disconnect", DisconnectProfileAsync);
     RouteGroupBuilder group = devices.MapGroup("/enrollments");
     group.MapGet("/", ListAsync);
     group.MapPost("/", EnrollAsync);
@@ -144,6 +145,53 @@ public static class DeviceEnrollmentEndpoints
       return TypedResults.Ok(new
       {
         message = "The local Bluetooth connection was closed. No treadmill command was sent.",
+      });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+  }
+
+  private static async Task<IResult> DisconnectProfileAsync(
+    Guid profileId,
+    IReadOnlyDeviceCoordinator coordinator,
+    ITreadmillCommandCoordinator commandCoordinator,
+    IDeviceEnrollmentStore enrollmentStore,
+    ILiveSessionCoordinator sessions,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      EnsureConnectionCanDisconnect(sessions);
+      IReadOnlyList<VersionedDeviceEnrollment> active = await enrollmentStore.ListActiveAsync(cancellationToken);
+      HashSet<Guid> assignedHeartRateIds = (await enrollmentStore.ListHeartRateAssignmentsAsync(cancellationToken))
+        .Where(assignment => assignment.UserProfileId == profileId)
+        .Select(static assignment => assignment.DeviceEnrollmentId)
+        .ToHashSet();
+      DeviceEnrollment[] targets = active
+        .Select(static item => item.Enrollment)
+        .Where(enrollment => enrollment.Role == DeviceRole.Treadmill ||
+          enrollment.Role == DeviceRole.HeartRate && assignedHeartRateIds.Contains(enrollment.Id))
+        .OrderBy(static enrollment => enrollment.Role)
+        .ThenBy(static enrollment => enrollment.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+      var disconnected = new List<Guid>(targets.Length);
+      foreach (DeviceEnrollment enrollment in targets)
+      {
+        if (!await coordinator.DisconnectAsync(enrollment.Id, cancellationToken)) continue;
+        disconnected.Add(enrollment.Id);
+        if (enrollment.Role == DeviceRole.Treadmill)
+          await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+      }
+
+      return TypedResults.Ok(new
+      {
+        message = disconnected.Count == 0
+          ? "No connected devices were found for this runner. No treadmill command was sent."
+          : $"Closed {disconnected.Count} local Bluetooth connection(s) for this runner. No treadmill command was sent.",
+        disconnectedCount = disconnected.Count,
       });
     }
     catch (InvalidOperationException exception)

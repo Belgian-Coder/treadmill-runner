@@ -1028,6 +1028,10 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.SetViewportSizeAsync(440, 956);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
+    int monthOffset = (DateTime.Today.Year - 2026) * 12 + DateTime.Today.Month - 8;
+    string calendarDirection = monthOffset >= 0 ? "Previous month" : "Next month";
+    for (int index = 0; index < Math.Abs(monthOffset); index++)
+      await Page.GetByRole(AriaRole.Button, new() { Name = calendarDirection, Exact = true }).ClickAsync();
     await Expect(Page.Locator(".profile-context-picker")).ToHaveCountAsync(0);
     await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Marc");
     ILocator agendaWeek = Page.Locator(".calendar-agenda-week").Filter(new() { HasText = "10 Aug" });
@@ -1575,6 +1579,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
       releasePreflight.TrySetResult(true);
       await Expect(Page.GetByText("Connecting the devices needed for this run…", new() { Exact = true })).ToBeVisibleAsync();
+      await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Connect devices for this run", Exact = true })).ToBeEnabledAsync();
     }
     finally
     {

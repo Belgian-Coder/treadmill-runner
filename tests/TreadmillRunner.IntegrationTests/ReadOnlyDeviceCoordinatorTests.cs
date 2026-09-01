@@ -78,10 +78,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     DeviceEnrollment polar = HeartRate("POLAR", "Polar H10");
     DeviceEnrollment garmin = HeartRate("GARMIN", "Garmin fēnix 8");
     await store.EnrollWithAssignmentsAsync(polar,
-      [new HeartRateAssignmentPreference(marc.Id, 0, true, true), new HeartRateAssignmentPreference(wife.Id, 0, true, true)],
+      [new HeartRateAssignmentPreference(marc.Id, 5, true, true), new HeartRateAssignmentPreference(wife.Id, 0, true, true)],
       now, Op("device.enroll", now));
     await store.EnrollWithAssignmentsAsync(garmin,
-      [new HeartRateAssignmentPreference(marc.Id, 1, true, false)],
+      [new HeartRateAssignmentPreference(marc.Id, 0, true, false)],
       now, Op("device.enroll", now));
     var services = new ServiceCollection();
     services.AddSingleton(_factory);
@@ -131,10 +131,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     DeviceEnrollment polar = HeartRate("POLAR-FAIL", "Polar H10");
     DeviceEnrollment garmin = HeartRate("GARMIN-FALLBACK", "Garmin fēnix 8");
     await store.EnrollWithAssignmentsAsync(polar,
-      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      [new HeartRateAssignmentPreference(runner.Id, 5, true, true)],
       now, Op("device.enroll", now));
     await store.EnrollWithAssignmentsAsync(garmin,
-      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, false)],
       now, Op("device.enroll", now));
     var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
     await using ServiceProvider provider = services.BuildServiceProvider();

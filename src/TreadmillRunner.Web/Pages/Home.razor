@@ -402,7 +402,14 @@
                 </dl>
                 <div class="preflight-actions">
                     <p>Only one screen can control the treadmill at a time.</p>
-                    <button class="primary-action touch-action" type="button" @onclick="PrepareSelectedRunAsync" disabled="@(!CanTakeControl)">Prepare run</button>
+                    @if (preflight?.IsReady == true)
+                    {
+                        <button class="primary-action touch-action" type="button" @onclick="PrepareSelectedRunAsync" disabled="@(!CanTakeControl)">Prepare run</button>
+                    }
+                    else
+                    {
+                        <button class="primary-action touch-action" type="button" @onclick="ConnectRunDevicesAsync" disabled="@(!CanConnectRunDevices)">Connect devices for this run</button>
+                    }
                     <span role="status" class="action-status">@actionStatus</span>
                 </div>
             </article>
@@ -422,8 +429,21 @@
                     </div>
                     <p class="field-hint">These checks never start the treadmill or send a motion command. Physical controls remain authoritative.</p>
                 }
-                <ul class="readiness-list">
-                    @foreach (PreflightCheck check in preflight?.Checks ?? Array.Empty<PreflightCheck>())
+                @if (preflight is { } deviceReadiness)
+                {
+                    <section class="profile-device-status" aria-label="Devices for @deviceReadiness.UserProfileName">
+                        <h3>Devices for @deviceReadiness.UserProfileName</h3>
+                        <p class="field-hint">Only the preferred heart-rate sensor connects first. The next configured priority remains on standby until needed.</p>
+                        <ul class="readiness-list">
+                            @foreach (PreflightCheck check in deviceReadiness.Checks.Where(IsProfileDeviceCheck))
+                            {
+                                <li class="@CheckClass(check.Status)"><strong>@check.Label</strong><span>@check.Detail</span></li>
+                            }
+                        </ul>
+                    </section>
+                }
+                <ul class="readiness-list" aria-label="Other pre-run checks">
+                    @foreach (PreflightCheck check in (preflight?.Checks ?? Array.Empty<PreflightCheck>()).Where(check => !IsProfileDeviceCheck(check)))
                     {
                         <li class="@CheckClass(check.Status)"><strong>@check.Label</strong><span>@check.Detail</span></li>
                     }
@@ -458,7 +478,7 @@
     <DetailSheet BackdropId="home-stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="home-stop-decision-title" OnDismiss="KeepSessionPausedAsync">
         <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync"><AppIcon Name="close" /></button></header>
         <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
-        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button></div>
+        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session, keep it in History, and leave manually connected devices online.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAndDisconnectAsync"><strong>End, save and disconnect devices</strong><span>Finish this session, keep it in History, then disconnect this runner’s treadmill and heart-rate sensors.</span></button></div>
     </DetailSheet>
 }
 
@@ -605,6 +625,7 @@
     private string ExpectedDuration => preflight?.ExpectedDuration?.ToString(@"hh\:mm\:ss") ?? "—";
     private bool ClientReady => Runtime.IsConnected && !Runtime.UpdateRequired && liveStateConnected && Gateway.Current.ControlsBlockedReason is null;
     private bool CanTakeControl => Runtime.IsConnected && !Runtime.UpdateRequired && preflight?.IsReady == true;
+    private bool CanConnectRunDevices => Runtime.IsConnected && !Runtime.UpdateRequired && selectedProfileId is not null && selectedRevisionId is not null && !profileSelectionLoading;
     private static bool CanRecord(PreflightSnapshot value) => value.UserProfileId != Guid.Empty && value.WorkoutRevisionId != Guid.Empty;
     private static bool CanUseManualControl(PreflightSnapshot value) => value.IsReady && value.CanStopRemotely && (value.CanSetSpeedRemotely || value.CanSetInclineRemotely);
     private static bool CanUsePlannedAutomation(PreflightSnapshot value) => value.IsReady && value.CanSetSpeedRemotely && value.CanSetInclineRemotely && value.TargetEvaluations.All(static target => target.Disposition != WorkoutTargetDisposition.Rejected);
@@ -1367,6 +1388,14 @@
         await ArmAsync();
     }
 
+    private async Task ConnectRunDevicesAsync()
+    {
+        if (!CanConnectRunDevices) return;
+        actionStatus = $"Connecting the devices assigned to {SelectedProfileName}…";
+        await InvokeAsync(StateHasChanged);
+        await RefreshPreflightAsync();
+    }
+
     private async Task AdjustInclineAsync(double adjustmentPercent)
     {
         if (!CanAdjustIncline || session is null || lease is null) return;
@@ -1580,17 +1609,29 @@
     private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout reset to the first step. Press Start when you are ready.", false);
     private Task DiscardSessionAsync() => ApplySessionDecisionAsync("discard", "Session discarded.", true);
     private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", true);
+    private Task EndSessionAndDisconnectAsync() => ApplySessionDecisionAsync("end", "Session ended, saved, and devices disconnected.", true, disconnectDevices: true);
 
-    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome)
+    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome, bool disconnectDevices = false)
     {
         if (sessionActionBusy || session is null || lease is null) return;
         sessionActionBusy = true;
         try
         {
+            Guid profileId = session.UserProfileId;
             using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new { operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version });
             if (!response.IsSuccessStatusCode) { actionStatus = "The session action was rejected."; return; }
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
             Guid completedSessionId = session?.SessionId ?? Guid.Empty;
+            if (disconnectDevices)
+            {
+                using HttpResponseMessage disconnect = await Http.PostAsync($"api/devices/profiles/{profileId:D}/disconnect", content: null);
+                if (!disconnect.IsSuccessStatusCode)
+                {
+                    await KeepSessionPausedAsync();
+                    actionStatus = "Session saved, but the devices could not be disconnected. Use Devices to disconnect them.";
+                    return;
+                }
+            }
             await KeepSessionPausedAsync();
             actionStatus = successMessage;
             if (navigateHome)
@@ -1602,6 +1643,9 @@
         }
         finally { sessionActionBusy = false; }
     }
+
+    private static bool IsProfileDeviceCheck(PreflightCheck check) =>
+        check.Id == "treadmill" || check.Id.StartsWith("heart-rate-device-", StringComparison.Ordinal);
 
     [JSInvokable]
     public async Task<bool> CloseScheduleManagerFromJs()

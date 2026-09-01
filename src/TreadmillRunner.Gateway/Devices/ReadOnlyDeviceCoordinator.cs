@@ -365,7 +365,8 @@ public sealed class ReadOnlyDeviceCoordinator(
           .Where(assignment => assignment.UserProfileId == runDemand.ProfileId)
           .ToArray();
         Guid[] orderedHeartRateIds = profileAssignments
-          .OrderBy(static assignment => assignment.Priority)
+          .OrderByDescending(static assignment => assignment.IsPreferred)
+          .ThenBy(static assignment => assignment.Priority)
           .Select(static assignment => assignment.DeviceEnrollmentId)
           .Distinct()
           .Take(MaximumHeartRateWorkers)
