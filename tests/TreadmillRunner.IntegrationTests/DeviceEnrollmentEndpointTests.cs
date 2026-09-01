@@ -7,8 +7,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TreadmillRunner.Core.Bluetooth;
+using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Devices;
 using TreadmillRunner.Gateway.Devices;
+using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -266,6 +268,79 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
   }
 
   [Fact]
+  public async Task Disconnecting_heart_rate_does_not_release_the_treadmill_command_connection()
+  {
+    var coordinator = new DisconnectingCoordinator();
+    var commands = new RecordingCommandCoordinator();
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IReadOnlyDeviceCoordinator>();
+        services.AddSingleton<IReadOnlyDeviceCoordinator>(coordinator);
+        services.RemoveAll<ITreadmillCommandCoordinator>();
+        services.AddSingleton<ITreadmillCommandCoordinator>(commands);
+      }));
+    using HttpClient client = application.CreateClient();
+    using HttpResponseMessage enrolled = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "HeartRate",
+      deviceId = $"DISCONNECT-HR-{Guid.NewGuid():N}",
+      displayName = "Disconnect isolation sensor",
+      serviceUuids = new[] { HeartRate },
+      telemetryMode = (string?)null,
+      ownerProfileIds = Array.Empty<Guid>(),
+      autoConnect = false,
+    });
+    enrolled.EnsureSuccessStatusCode();
+    Guid enrollmentId = (await enrolled.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+    using HttpResponseMessage response = await client.PostAsync(
+      $"/api/devices/enrollments/{enrollmentId}/disconnect",
+      content: null);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(0, commands.ReleaseCount);
+  }
+
+  [Fact]
+  public async Task Disconnecting_treadmill_still_releases_its_command_connection()
+  {
+    var coordinator = new DisconnectingCoordinator();
+    var commands = new RecordingCommandCoordinator();
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IReadOnlyDeviceCoordinator>();
+        services.AddSingleton<IReadOnlyDeviceCoordinator>(coordinator);
+        services.RemoveAll<ITreadmillCommandCoordinator>();
+        services.AddSingleton<ITreadmillCommandCoordinator>(commands);
+      }));
+    using HttpClient client = application.CreateClient();
+    using HttpResponseMessage enrolled = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "Treadmill",
+      deviceId = $"DISCONNECT-TREADMILL-{Guid.NewGuid():N}",
+      displayName = "JFTMOmega Z",
+      advertisedName = "JFTMOmega Z",
+      serviceUuids = new[] { Ftms },
+      modelNumber = "Omega Z",
+      firmwareRevision = (string?)null,
+      telemetryMode = "Ftms",
+    });
+    enrolled.EnsureSuccessStatusCode();
+    Guid enrollmentId = (await enrolled.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+    using HttpResponseMessage response = await client.PostAsync(
+      $"/api/devices/enrollments/{enrollmentId}/disconnect",
+      content: null);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(1, commands.ReleaseCount);
+  }
+
+  [Fact]
   public async Task Reliability_report_is_bounded_and_does_not_expose_ble_device_identifiers()
   {
     using HttpClient client = factory.CreateClient();
@@ -310,12 +385,61 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
     JsonElement enrollment = await enrolled.Content.ReadFromJsonAsync<JsonElement>();
     Guid enrollmentId = enrollment.GetProperty("id").GetGuid();
     coordinator.SetFailureCount(enrollmentId, 7);
+    coordinator.SetState(enrollmentId, DeviceConnectionState.Reconnecting);
 
     JsonElement report = await client.GetFromJsonAsync<JsonElement>("/api/devices/reliability?days=7");
     JsonElement device = Assert.Single(
       report.GetProperty("devices").EnumerateArray(),
       item => item.GetProperty("enrollmentId").GetGuid() == enrollmentId);
     Assert.Equal(7, device.GetProperty("currentFailedAttemptCount").GetInt32());
+  }
+
+  [Fact]
+  public async Task Reliability_report_keeps_history_but_hides_a_current_outage_after_intentional_disconnect()
+  {
+    var coordinator = new ReliabilityCountCoordinator();
+    using WebApplicationFactory<TreadmillRunner.Gateway.Program> application = factory.WithWebHostBuilder(
+      builder => builder.ConfigureServices(services =>
+      {
+        services.RemoveAll<IReadOnlyDeviceCoordinator>();
+        services.AddSingleton<IReadOnlyDeviceCoordinator>(coordinator);
+      }));
+    using HttpClient client = application.CreateClient();
+    using HttpResponseMessage enrolled = await client.PostAsJsonAsync("/api/devices/enrollments", new
+    {
+      operationId = Guid.NewGuid(),
+      role = "HeartRate",
+      deviceId = $"DISCONNECTED-RELIABILITY-{Guid.NewGuid():N}",
+      displayName = "Disconnected reliability sensor",
+      serviceUuids = new[] { HeartRate },
+      telemetryMode = (string?)null,
+      ownerProfileIds = Array.Empty<Guid>(),
+      autoConnect = false,
+    });
+    enrolled.EnsureSuccessStatusCode();
+    JsonElement enrollment = await enrolled.Content.ReadFromJsonAsync<JsonElement>();
+    Guid enrollmentId = enrollment.GetProperty("id").GetGuid();
+    using (IServiceScope scope = application.Services.CreateScope())
+    {
+      await scope.ServiceProvider.GetRequiredService<IBleReliabilityStore>().BeginOrContinueIncidentAsync(
+        enrollmentId,
+        DeviceRole.HeartRate,
+        "Disconnected reliability sensor",
+        connectionGeneration: 3,
+        BleReliabilityFailureKind.NativeDisconnected,
+        "The BLE device disconnected.",
+        TimeSpan.FromSeconds(2),
+        DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+    coordinator.SetFailureCount(enrollmentId, 4);
+
+    JsonElement report = await client.GetFromJsonAsync<JsonElement>("/api/devices/reliability?days=7");
+    JsonElement device = Assert.Single(
+      report.GetProperty("devices").EnumerateArray(),
+      item => item.GetProperty("enrollmentId").GetGuid() == enrollmentId);
+    Assert.Equal(1, device.GetProperty("incidentCount").GetInt32());
+    Assert.Equal(JsonValueKind.Null, device.GetProperty("currentOutageStartedAtUtc").ValueKind);
+    Assert.Equal(0, device.GetProperty("currentFailedAttemptCount").GetInt32());
   }
 
   private sealed class AdvertisementOnlyTransport(IReadOnlyList<BleAdvertisement> advertisements) :
@@ -358,21 +482,42 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
   private sealed class ReliabilityCountCoordinator : IReadOnlyDeviceCoordinator
   {
     private readonly Dictionary<Guid, int> _failureCounts = [];
+    private readonly Dictionary<Guid, DeviceConnectionState> _states = [];
 
-    public DeviceTelemetrySnapshot Current { get; } = new(
-      DateTimeOffset.UtcNow,
-      Disconnected(DeviceRole.Treadmill),
-      Disconnected(DeviceRole.HeartRate),
-      null,
-      null,
-      null,
-      null);
+    public DeviceTelemetrySnapshot Current
+    {
+      get
+      {
+        HeartRateSourceSnapshot[] sources = _states.Select(item => new HeartRateSourceSnapshot(
+          item.Key,
+          "Reliability sensor",
+          HeartRateDeviceKind.ChestStrap,
+          HeartRateDeviceFamily.Polar,
+          item.Value,
+          3,
+          null,
+          null,
+          null)).ToArray();
+        return new DeviceTelemetrySnapshot(
+          DateTimeOffset.UtcNow,
+          Disconnected(DeviceRole.Treadmill),
+          Disconnected(DeviceRole.HeartRate),
+          null,
+          null,
+          null,
+          null,
+          sources);
+      }
+    }
 
     public int ActiveReliabilityFailureCount(Guid enrollmentId) =>
       _failureCounts.GetValueOrDefault(enrollmentId);
 
     public void SetFailureCount(Guid enrollmentId, int count) =>
       _failureCounts[enrollmentId] = count;
+
+    public void SetState(Guid enrollmentId, DeviceConnectionState state) =>
+      _states[enrollmentId] = state;
 
     private static DeviceConnectionSnapshot Disconnected(DeviceRole role) => new(
       role,
@@ -383,5 +528,42 @@ public sealed class DeviceEnrollmentEndpointTests(PlanningGatewayFactory factory
       null,
       null,
       null);
+  }
+
+  private sealed class DisconnectingCoordinator : IReadOnlyDeviceCoordinator
+  {
+    public DeviceTelemetrySnapshot Current { get; } = new(
+      DateTimeOffset.UtcNow,
+      Disconnected(DeviceRole.Treadmill),
+      Disconnected(DeviceRole.HeartRate),
+      null,
+      null,
+      null,
+      null);
+
+    public Task<bool> DisconnectAsync(Guid enrollmentId, CancellationToken cancellationToken = default) =>
+      Task.FromResult(true);
+
+    private static DeviceConnectionSnapshot Disconnected(DeviceRole role) => new(
+      role, DeviceConnectionState.Disconnected, 0, null, null, null, null, null);
+  }
+
+  private sealed class RecordingCommandCoordinator : ITreadmillCommandCoordinator
+  {
+    private int _releaseCount;
+    public int ReleaseCount => Volatile.Read(ref _releaseCount);
+    public TreadmillCommandResult? LastResult => null;
+
+    public Task<TreadmillCommandResult> ExecuteAsync(
+      TreadmillCommandIntent intent,
+      ITreadmillCommandContextValidator contextValidator,
+      CancellationToken cancellationToken = default) =>
+      Task.FromException<TreadmillCommandResult>(new NotSupportedException());
+
+    public Task ReleaseConnectionAsync(CancellationToken cancellationToken = default)
+    {
+      Interlocked.Increment(ref _releaseCount);
+      return Task.CompletedTask;
+    }
   }
 }

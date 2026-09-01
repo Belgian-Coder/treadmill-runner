@@ -117,7 +117,7 @@ public static class DeviceEnrollmentEndpoints
     return found
       ? TypedResults.Accepted($"/api/devices/enrollments/{id}/retry", new
       {
-        message = "Connection requested for up to two minutes. Wait for fresh telemetry before treating the device as connected.",
+        message = "Connection requested until Disconnect or gateway restart. Wait for fresh telemetry before treating the device as connected.",
       })
       : TypedResults.NotFound();
   }
@@ -126,15 +126,21 @@ public static class DeviceEnrollmentEndpoints
     Guid id,
     IReadOnlyDeviceCoordinator coordinator,
     ITreadmillCommandCoordinator commandCoordinator,
+    IDeviceEnrollmentStore enrollmentStore,
     ILiveSessionCoordinator sessions,
     CancellationToken cancellationToken)
   {
     try
     {
       EnsureConnectionCanDisconnect(sessions);
+      DeviceEnrollment? enrollment = (await enrollmentStore.ListActiveAsync(cancellationToken))
+        .Select(static item => item.Enrollment)
+        .SingleOrDefault(item => item.Id == id);
+      if (enrollment is null) return TypedResults.NotFound();
       bool found = await coordinator.DisconnectAsync(id, cancellationToken);
       if (!found) return TypedResults.NotFound();
-      await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+      if (enrollment.Role == DeviceRole.Treadmill)
+        await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
       return TypedResults.Ok(new
       {
         message = "The local Bluetooth connection was closed. No treadmill command was sent.",
@@ -273,7 +279,6 @@ public static class DeviceEnrollmentEndpoints
         .Where(incident => incident.DeviceEnrollmentId == device.Id)
         .OrderByDescending(incident => incident.StartedAtUtc)
         .ToArray();
-      BleReliabilityIncident? currentOutage = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is null);
       BleReliabilityIncident? lastRecovered = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is not null);
       double? longestRecovery = deviceIncidents
         .Where(incident => incident.RecoveryDuration is not null)
@@ -287,8 +292,14 @@ public static class DeviceEnrollmentEndpoints
         : heartRate is null
           ? new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Disconnected, 0, device.DisplayName, device.ProtocolId, null, null, null)
           : new DeviceConnectionSnapshot(DeviceRole.HeartRate, heartRate.State, heartRate.ConnectionGeneration, heartRate.DisplayName, device.ProtocolId, null, heartRate.ObservedAt, heartRate.Fault);
+      bool canHaveCurrentOutage = connection.State is not (DeviceConnectionState.Disconnected or DeviceConnectionState.Ready);
+      BleReliabilityIncident? currentOutage = canHaveCurrentOutage
+        ? deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is null)
+        : null;
       BleReliabilityIncident? latest = deviceIncidents.FirstOrDefault();
-      int activeFailureCount = coordinator.ActiveReliabilityFailureCount(device.Id);
+      int activeFailureCount = canHaveCurrentOutage
+        ? coordinator.ActiveReliabilityFailureCount(device.Id)
+        : 0;
       return new BleDeviceReliabilityDto(
         device.Id,
         device.DisplayName,

@@ -66,7 +66,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Connects_multiple_sensors_and_selects_only_the_active_runners_preferred_source()
+  public async Task Connects_only_the_active_runners_healthy_preferred_source()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
     var profiles = new ProfileStore(_factory);
@@ -100,8 +100,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     {
       await coordinator.PrepareForRunAsync(marc.Id, requiresHeartRate: false);
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-      while (coordinator.CurrentForProfile(marc.Id) is not
-        { HeartRateSources.Count: 2, SelectedHeartRateEnrollmentId: not null })
+      while (coordinator.CurrentForProfile(marc.Id).SelectedHeartRateEnrollmentId is null)
       {
         await Task.Delay(25, timeout.Token);
       }
@@ -111,6 +110,137 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       Assert.Equal(polar.Id, marcStatus.SelectedHeartRateEnrollmentId);
       Assert.Equal(polar.Id, wifeStatus.SelectedHeartRateEnrollmentId);
       Assert.Equal(HeartRateDeviceFamily.Polar, marcStatus.SelectedHeartRateDeviceFamily);
+      Assert.Contains(polar.DeviceId, transport.ConnectionDeviceIds);
+      Assert.DoesNotContain(garmin.DeviceId, transport.ConnectionDeviceIds);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Activates_the_next_assigned_source_after_the_preferred_source_fails()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment polar = HeartRate("POLAR-FAIL", "Polar H10");
+    DeviceEnrollment garmin = HeartRate("GARMIN-FALLBACK", "Garmin fēnix 8");
+    await store.EnrollWithAssignmentsAsync(polar,
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      now, Op("device.enroll", now));
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    transport.UnavailableDeviceIds.TryAdd(polar.DeviceId, 0);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(runner.Id, requiresHeartRate: true);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != garmin.Id)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Contains(polar.DeviceId, transport.ConnectionDeviceIds);
+      Assert.Contains(garmin.DeviceId, transport.ConnectionDeviceIds);
+      Assert.Equal((ushort)142, coordinator.CurrentForProfile(runner.Id).HeartRateBpm);
+
+      Assert.True(transport.UnavailableDeviceIds.TryRemove(polar.DeviceId, out _));
+      using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+      while (true)
+      {
+        DeviceTelemetrySnapshot current = coordinator.CurrentForProfile(runner.Id);
+        if (current.SelectedHeartRateEnrollmentId == polar.Id &&
+            current.HeartRateSources?.Single(source => source.EnrollmentId == garmin.Id).State ==
+              DeviceConnectionState.Disconnected)
+          break;
+        await Task.Delay(25, recoveryTimeout.Token);
+      }
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Publishes_heart_rate_before_optional_device_information_reads_finish()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-BLOCKED-INFO", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { BlockHeartRateDeviceInformationReads = true };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready ||
+             !transport.DeviceInformationReadStarted.Task.IsCompleted)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Equal((ushort)142, coordinator.Current.HeartRateBpm);
+      Assert.True(transport.DeviceInformationReadStarted.Task.IsCompleted);
+      Assert.False(transport.DeviceInformationReadCompleted.Task.IsCompleted);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Resubscribes_after_native_disconnect_without_waiting_for_optional_reads()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-RECONNECT-INFO", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      BlockHeartRateDeviceInformationReads = true,
+      DisconnectFirstHeartRateSubscription = true,
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+      while (transport.HeartRateSubscriptionCount < 2 ||
+             coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Equal((ushort)142, coordinator.Current.HeartRateBpm);
+      Assert.True(transport.ConnectionDeviceIds.Count >= 2);
     }
     finally
     {
@@ -280,6 +410,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       int scans = transport.ActiveScanCount;
       Assert.True(await coordinator.RetryConnectionAsync(treadmill.Id));
       Assert.True(coordinator.HasActiveConnectionDemand(treadmill.Id, DateTimeOffset.UtcNow));
+      Assert.True(coordinator.HasActiveConnectionDemand(treadmill.Id, DateTimeOffset.UtcNow.AddDays(1)));
+      await coordinator.ReleaseRunConnectionsAsync();
+      Assert.True(coordinator.HasActiveConnectionDemand(treadmill.Id, DateTimeOffset.UtcNow.AddDays(1)));
       Assert.True(transport.ActiveScanCount > scans);
       using var retryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
       while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready ||
@@ -945,6 +1078,14 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     public DateTimeOffset? FirstHeartRateNotificationAt { get; private set; }
     public DateTimeOffset? FirstBatterySubscriptionAt { get; private set; }
+    public ConcurrentQueue<string> ConnectionDeviceIds { get; } = [];
+    public ConcurrentDictionary<string, byte> UnavailableDeviceIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool BlockHeartRateDeviceInformationReads { get; set; }
+    public bool DisconnectFirstHeartRateSubscription { get; set; }
+    private int _heartRateSubscriptionCount;
+    public int HeartRateSubscriptionCount => Volatile.Read(ref _heartRateSubscriptionCount);
+    public TaskCompletionSource DeviceInformationReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource DeviceInformationReadCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public bool DisconnectAfterFirstTreadmillNotification { get; set; }
     public byte[] HeartRateNotificationValue { get; set; } = [0x00, 142];
     public DateTimeOffset? HeartRateObservedAt { get; set; }
@@ -964,8 +1105,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     public ValueTask<IBleConnection> ConnectAsync(
       string deviceId,
-      CancellationToken cancellationToken = default) =>
-      ValueTask.FromResult<IBleConnection>(new Connection(deviceId, this));
+      CancellationToken cancellationToken = default)
+    {
+      ConnectionDeviceIds.Enqueue(deviceId);
+      return ValueTask.FromResult<IBleConnection>(new Connection(deviceId, this));
+    }
 
     private sealed class Connection(string deviceId, ScriptedBleTransport owner) : IBleConnection
     {
@@ -976,6 +1120,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
         CancellationToken cancellationToken = default)
       {
+        if (owner.UnavailableDeviceIds.ContainsKey(DeviceId))
+          return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleDeviceUnavailableException());
         IReadOnlyList<BleService> result = DeviceId.StartsWith('A')
           ? [new BleService(Ftms,
           [
@@ -996,15 +1142,31 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
               [new BleCharacteristic(HeartRateService, HeartRateMeasurement, false, false, true)]),
             new BleService(BatteryService,
               [new BleCharacteristic(BatteryService, BatteryLevel, true, false, true)]),
+            ..(owner.BlockHeartRateDeviceInformationReads
+              ? new BleService[]
+              {
+                new(DeviceInformationService,
+                [
+                  new BleCharacteristic(DeviceInformationService, ModelNumber, true, false, false),
+                  new BleCharacteristic(DeviceInformationService, FirmwareRevision, true, false, false),
+                ]),
+              }
+              : []),
           ];
         return ValueTask.FromResult(result);
       }
 
-      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+      public async ValueTask<ReadOnlyMemory<byte>> ReadAsync(
         Guid serviceUuid,
         Guid characteristicUuid,
         CancellationToken cancellationToken = default)
       {
+        if (owner.BlockHeartRateDeviceInformationReads && serviceUuid == DeviceInformationService)
+        {
+          owner.DeviceInformationReadStarted.TrySetResult();
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          owner.DeviceInformationReadCompleted.TrySetResult();
+        }
         byte[] value = characteristicUuid == BatteryLevel
           ? [87]
           : characteristicUuid == ModelNumber
@@ -1016,7 +1178,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           : characteristicUuid == SpeedRange
             ? [0, 0, 0xD0, 0x07, 10, 0]
             : [0, 0, 0xC8, 0, 1, 0];
-        return ValueTask.FromResult<ReadOnlyMemory<byte>>(value);
+        return value;
       }
 
       public async IAsyncEnumerable<BleNotification> SubscribeAsync(
@@ -1026,7 +1188,19 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       {
         await Task.Yield();
         if (characteristicUuid == HeartRateMeasurement)
+        {
           owner.FirstHeartRateNotificationAt ??= DateTimeOffset.UtcNow;
+          int subscription = Interlocked.Increment(ref owner._heartRateSubscriptionCount);
+          yield return new BleNotification(
+            serviceUuid,
+            characteristicUuid,
+            owner.HeartRateNotificationValue,
+            owner.HeartRateObservedAt ?? DateTimeOffset.UtcNow);
+          if (owner.DisconnectFirstHeartRateSubscription && subscription == 1)
+            throw new WindowsBleDisconnectedException();
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          yield break;
+        }
         if (characteristicUuid == BatteryLevel)
           owner.FirstBatterySubscriptionAt ??= DateTimeOffset.UtcNow;
         if (characteristicUuid == TreadmillData)
@@ -1048,10 +1222,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           yield break;
         }
 
-        byte[] value = characteristicUuid == BatteryLevel ? [86] : owner.HeartRateNotificationValue;
-        DateTimeOffset observedAt = characteristicUuid == HeartRateMeasurement
-          ? owner.HeartRateObservedAt ?? DateTimeOffset.UtcNow
-          : DateTimeOffset.UtcNow;
+        byte[] value = [86];
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         yield return new BleNotification(serviceUuid, characteristicUuid, value, observedAt);
         if (characteristicUuid == TreadmillData && owner.DisconnectAfterFirstTreadmillNotification)
         {
