@@ -17,6 +17,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'path-helpers.ps1')
 $checker = Join-Path $projectRoot '.agents\skills\playwright-integration\scripts\check_playwright_readiness.py'
 $evidenceDir = Join-Path $projectRoot 'validation\playwright'
 $report = Join-Path $evidenceDir 'readiness.json'
@@ -27,7 +28,7 @@ $publishStamp = Join-Path $publishedHost '.publish-complete'
 $wasmCleaner = Join-Path $PSScriptRoot 'clean-wasm-publish.ps1'
 $databaseScript = Join-Path $PSScriptRoot 'database.ps1'
 $databaseTemplate = Join-Path $projectRoot 'artifacts\e2e-template\e2e-template.db'
-$resolvedResults = [System.IO.Path]::GetFullPath($ResultsDirectory, $projectRoot)
+$resolvedResults = Resolve-FullPath -Path $ResultsDirectory -BasePath $projectRoot
 $resolvedRoot = [System.IO.Path]::GetFullPath($projectRoot)
 $runStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $runBaseName = "browser-$runStamp"
@@ -36,7 +37,7 @@ $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
 }
 
 elseif ([string]::Equals($Filter, 'Category=Browser', [System.StringComparison]::OrdinalIgnoreCase)) {
-    8
+    10
 }
 else {
     2
@@ -59,7 +60,7 @@ function Remove-GeneratedDirectory {
     }
 }
 
-if (-not $resolvedResults.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+if (-not (Test-PathWithinRoot -Path $resolvedResults -Root $resolvedRoot)) {
     throw "Browser results must remain inside the repository: $resolvedResults"
 }
 
@@ -81,7 +82,7 @@ function Invoke-BrowserTests {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.Environment['TreadmillRunner__E2ETemplateDatabasePath'] = $TemplateDatabasePath
-    foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
+    Set-NativeProcessArguments -StartInfo $startInfo -Arguments $Arguments
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
     if ($null -eq $process) { throw 'The Playwright test process could not be started.' }
@@ -142,7 +143,7 @@ function Invoke-BrowserTests {
                     $terminationReason = 'reported a test failure (fail-fast)'
                 }
                 if ($null -ne $terminationReason) {
-                    try { $process.Kill($true) } catch { }
+                    try { Stop-NativeProcessTree -Process $process } catch { }
                     $process.WaitForExit()
                 }
             }
@@ -201,7 +202,7 @@ else {
 Push-Location $projectRoot
 try {
     $resolvedArtifacts = [System.IO.Path]::GetFullPath($publishedHost)
-    if (-not $resolvedArtifacts.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (-not (Test-PathWithinRoot -Path $resolvedArtifacts -Root $resolvedRoot)) {
         throw "Refusing to replace E2E host outside the repository: $resolvedArtifacts"
     }
 
@@ -214,6 +215,13 @@ try {
 
         & $wasmCleaner -Configuration $Configuration
         if ($LASTEXITCODE -ne 0) { throw 'Generated WebAssembly publish-state cleanup failed.' }
+
+        # The E2E project does not reference the Gateway. In a fresh worktree its
+        # restore therefore leaves the Gateway graph without assets, while the
+        # cleanup above deliberately removes the Web assets. Restore the publish
+        # graph after cleanup before using --no-restore below.
+        & dotnet restore $gatewayProject --locked-mode
+        if ($LASTEXITCODE -ne 0) { throw 'Published E2E gateway restore failed.' }
 
         if (Test-Path -LiteralPath $resolvedArtifacts) {
             Remove-GeneratedDirectory -Path $resolvedArtifacts

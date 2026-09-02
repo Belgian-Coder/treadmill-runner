@@ -4,7 +4,7 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-23
+updated: 2026-08-29
 ---
 
 # Project context
@@ -37,7 +37,7 @@ Commands are project-owned under `eng/`: `bootstrap.ps1`, `build.ps1`, `test.ps1
 - Household profiles and browser-local active-profile selection are supported.
 - Reusable workouts are immutable revisions with canonical definition JSON and a content hash. Editing appends a revision; calendar selections retain their exact revision.
 - Native JSON, QDomyos XML, and Garmin FIT workout files are bounded, previewed in memory, and confirmed by revalidating the original bytes. Secure QDomyos parsing accepts Metric values only and never gives `forcespeed` any device-control meaning. Completed sessions expose Metric TCX Activity/native JSON/FIT Activity exports, and immutable revisions expose FIT Workout exports.
-- The calendar expands weekly recurrence in `Europe/Brussels`, supports alternatives and skip/add/replace exceptions, and persists a chosen alternative by profile and local date. A move, following-session shift, restore, or default training-day change is rejected if any resulting date is already occupied, so one plan never silently double-books a day. Removing upcoming sessions is explicitly scoped to the selected plan and leaves completed history intact.
+- The calendar expands weekly recurrence in `Europe/Brussels`, supports alternatives and skip/add/replace exceptions, and persists a chosen alternative by profile and local date. Completed canonical steps are marked, and a completed-late step can move to its actual date while shifting every later incomplete step by the same offset without rewriting History or progression. A move, following-session shift, restore, or default training-day change is rejected if any resulting date is already occupied, so one plan never silently double-books a day. Removing upcoming sessions is explicitly scoped to the selected plan and leaves completed history intact.
 - The file-backed SQLite proof migrates, backs up online, restores to an isolated database, and compares semantic data. Live-database replacement and full disaster recovery remain TR-007.
 
 Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-release.ps1` always runs `eng/clean-wasm-publish.ps1 -Configuration Release` before its locked restore because `dotnet clean` can retain stale WebCIL assets; the release fails closed instead of silently shipping an untrimmed WebAssembly client.
@@ -45,6 +45,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 ## Simulated runner experience (TR-004)
 
 - The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery. Natural hardware completion is two-phase: reaching the final workout step requests one exact-device verified Stop, and the session remains live and absent from completed History until fresh stopped telemetry is confirmed. Rejected or unknown completion Stop outcomes are never retried and require the physical Stop control. BLE treadmill and heart-rate sources publish Ready only with their first valid telemetry snapshot.
+- A demanded Polar/Garmin standard-HRS worker performs bounded fresh active discovery before connect and after relevant failures. It may use a unique exact-name or family/kind match as an ephemeral current BLE locator, but ambiguous or truncated scans fail closed, the persisted enrollment is not rewritten, and treadmill identity/command authority never rebinds. Heart-rate GATT enumeration is limited to the standard services the app consumes; native operations share the caller's timeout/cancellation, and subscription disposal does not launch detached CCCD cleanup.
 - A single controller lease renews every five seconds and expires after fifteen seconds; observers remain read-only. Browser reload can reclaim manual control without owning the workout timer.
 - History includes data-derived planned/requested/measured and heart-rate charts with a shared nearest-point inspector, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note. Detail responses bound the interactive graph to representative samples and expose the full persisted-sample count; analytics and CSV/FIT exports remain full-resolution.
 - Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.
@@ -82,7 +83,7 @@ Source: [Mermaid](diagrams/project-context-structure.mmd)
 
 - Windows sees the passed-through RZ616 and nearby devices.
 - TR-002 programmatic Windows BLE scanning and uncached GATT enumeration passed interactively; Windows Service Session 0 remains a pending hardware/platform gate outside TR-003.
-- TR-005 read-only enrollment and telemetry are implemented. Physical Omega Stage 1/2 evidence is captured; simultaneous Polar operation for a bounded 5–10 minute observation and one successful power-cycle/reconnect check remain owner-present checks. No physical acceptance run may exceed 10 minutes.
+- TR-005 read-only enrollment and telemetry are implemented. Deterministic coverage includes changed-address and generic-GATT-failure recovery for Polar/Garmin HRS sources, but physical Omega Stage 1/2 is the only captured hardware evidence. Simultaneous Polar operation, one power-cycle/reconnect, a real multi-day HR absence/reconnect, and Windows Service Session 0 remain owner-present checks. No physical acceptance run may exceed 10 minutes.
 - Stage 3 on S3.02/V10.23.17 verifies Start at 0.8 km/h, Stop, speed 1.2/1.5/1.0, incline 1.0/0.5, and final fresh speed/incline 0.0. Pause, production-browser planned transitions, and the representative HR workout remain owner-present checks.
 - The Windows gateway service, signed update helper, and SYSTEM-owned local service guardian are installed. The guardian checks once per minute and at startup, restarts an unexpectedly stopped gateway, writes only bounded local lifecycle evidence, and honors the protected installer/update maintenance marker so it cannot race a migration or promotion. TR-007A proved a UI-driven good promotion and a deliberately broken rollback; TR-007C separates daily stable publishing from acceptance fixtures; TR-015 keeps local feed support while adding fixed-repository GitHub discovery and signed offline upload.
 - TR-009 adds capability-aware target preflight, immutable session hardware snapshots, Polar-first source policy, system-level simulated HR automation, screen wake lock, `/health/ble`, and maintenance-locked semantic restore verification.

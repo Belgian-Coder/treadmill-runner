@@ -95,6 +95,7 @@ public static class DeviceEnrollmentEndpoints
     devices.MapGet("/status", static (Guid? profileId, IReadOnlyDeviceCoordinator coordinator) =>
       TypedResults.Ok(coordinator.CurrentForProfile(profileId)));
     devices.MapGet("/reliability", ReliabilityAsync);
+    devices.MapPost("/profiles/{profileId:guid}/disconnect", DisconnectProfileAsync);
     RouteGroupBuilder group = devices.MapGroup("/enrollments");
     group.MapGet("/", ListAsync);
     group.MapPost("/", EnrollAsync);
@@ -117,7 +118,7 @@ public static class DeviceEnrollmentEndpoints
     return found
       ? TypedResults.Accepted($"/api/devices/enrollments/{id}/retry", new
       {
-        message = "Connection requested for up to two minutes. Wait for fresh telemetry before treating the device as connected.",
+        message = "Connection requested until Disconnect or gateway restart. Wait for fresh telemetry before treating the device as connected.",
       })
       : TypedResults.NotFound();
   }
@@ -126,18 +127,71 @@ public static class DeviceEnrollmentEndpoints
     Guid id,
     IReadOnlyDeviceCoordinator coordinator,
     ITreadmillCommandCoordinator commandCoordinator,
+    IDeviceEnrollmentStore enrollmentStore,
     ILiveSessionCoordinator sessions,
     CancellationToken cancellationToken)
   {
     try
     {
       EnsureConnectionCanDisconnect(sessions);
+      DeviceEnrollment? enrollment = (await enrollmentStore.ListActiveAsync(cancellationToken))
+        .Select(static item => item.Enrollment)
+        .SingleOrDefault(item => item.Id == id);
+      if (enrollment is null) return TypedResults.NotFound();
       bool found = await coordinator.DisconnectAsync(id, cancellationToken);
       if (!found) return TypedResults.NotFound();
-      await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+      if (enrollment.Role == DeviceRole.Treadmill)
+        await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
       return TypedResults.Ok(new
       {
         message = "The local Bluetooth connection was closed. No treadmill command was sent.",
+      });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return TypedResults.Conflict(new { message = exception.Message });
+    }
+  }
+
+  private static async Task<IResult> DisconnectProfileAsync(
+    Guid profileId,
+    IReadOnlyDeviceCoordinator coordinator,
+    ITreadmillCommandCoordinator commandCoordinator,
+    IDeviceEnrollmentStore enrollmentStore,
+    ILiveSessionCoordinator sessions,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      EnsureConnectionCanDisconnect(sessions);
+      IReadOnlyList<VersionedDeviceEnrollment> active = await enrollmentStore.ListActiveAsync(cancellationToken);
+      HashSet<Guid> assignedHeartRateIds = (await enrollmentStore.ListHeartRateAssignmentsAsync(cancellationToken))
+        .Where(assignment => assignment.UserProfileId == profileId)
+        .Select(static assignment => assignment.DeviceEnrollmentId)
+        .ToHashSet();
+      DeviceEnrollment[] targets = active
+        .Select(static item => item.Enrollment)
+        .Where(enrollment => enrollment.Role == DeviceRole.Treadmill ||
+          enrollment.Role == DeviceRole.HeartRate && assignedHeartRateIds.Contains(enrollment.Id))
+        .OrderBy(static enrollment => enrollment.Role)
+        .ThenBy(static enrollment => enrollment.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+      var disconnected = new List<Guid>(targets.Length);
+      foreach (DeviceEnrollment enrollment in targets)
+      {
+        if (!await coordinator.DisconnectAsync(enrollment.Id, cancellationToken)) continue;
+        disconnected.Add(enrollment.Id);
+        if (enrollment.Role == DeviceRole.Treadmill)
+          await commandCoordinator.ReleaseConnectionAsync(cancellationToken);
+      }
+
+      return TypedResults.Ok(new
+      {
+        message = disconnected.Count == 0
+          ? "No connected devices were found for this runner. No treadmill command was sent."
+          : $"Closed {disconnected.Count} local Bluetooth connection(s) for this runner. No treadmill command was sent.",
+        disconnectedCount = disconnected.Count,
       });
     }
     catch (InvalidOperationException exception)
@@ -273,7 +327,6 @@ public static class DeviceEnrollmentEndpoints
         .Where(incident => incident.DeviceEnrollmentId == device.Id)
         .OrderByDescending(incident => incident.StartedAtUtc)
         .ToArray();
-      BleReliabilityIncident? currentOutage = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is null);
       BleReliabilityIncident? lastRecovered = deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is not null);
       double? longestRecovery = deviceIncidents
         .Where(incident => incident.RecoveryDuration is not null)
@@ -287,8 +340,14 @@ public static class DeviceEnrollmentEndpoints
         : heartRate is null
           ? new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Disconnected, 0, device.DisplayName, device.ProtocolId, null, null, null)
           : new DeviceConnectionSnapshot(DeviceRole.HeartRate, heartRate.State, heartRate.ConnectionGeneration, heartRate.DisplayName, device.ProtocolId, null, heartRate.ObservedAt, heartRate.Fault);
+      bool canHaveCurrentOutage = connection.State is not (DeviceConnectionState.Disconnected or DeviceConnectionState.Ready);
+      BleReliabilityIncident? currentOutage = canHaveCurrentOutage
+        ? deviceIncidents.FirstOrDefault(incident => incident.RecoveredAtUtc is null)
+        : null;
       BleReliabilityIncident? latest = deviceIncidents.FirstOrDefault();
-      int activeFailureCount = coordinator.ActiveReliabilityFailureCount(device.Id);
+      int activeFailureCount = canHaveCurrentOutage
+        ? coordinator.ActiveReliabilityFailureCount(device.Id)
+        : 0;
       return new BleDeviceReliabilityDto(
         device.Id,
         device.DisplayName,
@@ -316,6 +375,7 @@ public static class DeviceEnrollmentEndpoints
     int durationSeconds,
     IBleAdvertisementBroker advertisementBroker,
     TreadmillProtocolRegistry protocols,
+    ILoggerFactory loggerFactory,
     CancellationToken cancellationToken)
   {
     if (durationSeconds is < 1 or > 30)
@@ -331,16 +391,22 @@ public static class DeviceEnrollmentEndpoints
     {
       await foreach (BleAdvertisement advertisement in advertisementBroker.ScanAsync(timeout.Token))
       {
-        if (!advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current) ||
-            advertisement.SignalStrength > current.SignalStrength)
-        {
-          advertisements[advertisement.DeviceId] = advertisement;
-        }
+        advertisements.TryGetValue(advertisement.DeviceId, out BleAdvertisement? current);
+        advertisements[advertisement.DeviceId] = MergeAdvertisement(current, advertisement);
       }
     }
     catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
     {
       // The bounded scan completed normally.
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+    {
+      loggerFactory.CreateLogger("DeviceEnrollmentScan").LogWarning(
+        exception,
+        "BLE enrollment discovery ended before a complete bounded scan was observed.");
+      return TypedResults.Problem(
+        "BLE device discovery was unavailable. Try the scan again.",
+        statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     object[] result = advertisements.Values
@@ -380,6 +446,29 @@ public static class DeviceEnrollmentEndpoints
       .Cast<object>()
       .ToArray();
     return TypedResults.Ok(result);
+  }
+
+  private static BleAdvertisement MergeAdvertisement(
+    BleAdvertisement? current,
+    BleAdvertisement incoming)
+  {
+    if (current is null)
+    {
+      return incoming with
+      {
+        ServiceUuids = [.. incoming.ServiceUuids.Distinct().OrderBy(static uuid => uuid)],
+      };
+    }
+
+    bool useIncoming = incoming.SignalStrength is not null &&
+      (current.SignalStrength is null || incoming.SignalStrength > current.SignalStrength);
+    BleAdvertisement strongest = useIncoming ? incoming : current;
+    string? name = strongest.Name ?? (useIncoming ? current.Name : incoming.Name);
+    return strongest with
+    {
+      Name = name,
+      ServiceUuids = [.. current.ServiceUuids.Concat(incoming.ServiceUuids).Distinct().OrderBy(static uuid => uuid)],
+    };
   }
 
   private static string[] SupportedRoles(
@@ -510,7 +599,8 @@ public static class DeviceEnrollmentEndpoints
       VersionedDeviceEnrollment enrollment = (await store.ListActiveAsync(cancellationToken))
         .SingleOrDefault(item => item.Enrollment.Id == id)
         ?? throw new KeyNotFoundException($"Enrollment {id} was not found.");
-      bool polar = enrollment.Enrollment.HeartRateDeviceFamily == HeartRateDeviceFamily.Polar;
+      bool polar = HeartRateReconnectResolver.EffectiveFamily(enrollment.Enrollment) ==
+        HeartRateDeviceFamily.Polar;
       HeartRateAssignmentPreference[] assignments = CreateAssignmentPreferences(
         request.OwnerProfileIds,
         polar ? 0 : request.Priority,
@@ -750,8 +840,12 @@ public static class DeviceEnrollmentEndpoints
     value.Enrollment.Evidence.ToString(),
     value.Enrollment.LastVerifiedAtUtc,
     value.Version,
-    value.Enrollment.HeartRateDeviceKind?.ToString(),
-    value.Enrollment.HeartRateDeviceFamily?.ToString(),
+    value.Enrollment.Role == DeviceRole.HeartRate
+      ? HeartRateReconnectResolver.EffectiveKind(value.Enrollment).ToString()
+      : null,
+    value.Enrollment.Role == DeviceRole.HeartRate
+      ? HeartRateReconnectResolver.EffectiveFamily(value.Enrollment).ToString()
+      : null,
     assignments.Where(item => item.DeviceEnrollmentId == value.Enrollment.Id).Select(ToAssignmentDto).ToArray());
 
   private static HeartRateAssignmentDto ToAssignmentDto(HeartRateDeviceAssignment value) => new(

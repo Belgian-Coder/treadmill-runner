@@ -118,7 +118,10 @@ function attach(state) {
       if (!state.visible && state.points.length > 0) render(state, state.points[state.points.length - 1], true);
     },
     blur(event) {
-      if (!state.pinned && !state.root.contains(event.relatedTarget)) hide(state);
+      if (!state.root.contains(event.relatedTarget)) {
+        state.pinned = false;
+        hide(state);
+      }
     },
     keyDown(event) {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return;

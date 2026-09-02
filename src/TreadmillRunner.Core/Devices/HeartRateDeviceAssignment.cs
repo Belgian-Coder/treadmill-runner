@@ -93,11 +93,18 @@ public static class HeartRateSourceSelector
           .Select(source => (source, (HeartRateDeviceAssignment?)null));
     }
 
-    return eligible
-      .Where(item => item.Source.IsFresh(now, freshnessLimit))
-      .OrderBy(item => FamilyTier(item.Source))
-      .ThenByDescending(item => item.Assignment?.IsPreferred == true)
-      .ThenBy(item => item.Assignment?.Priority ?? 99)
+    IEnumerable<(HeartRateSourceSnapshot Source, HeartRateDeviceAssignment? Assignment)> fresh =
+      eligible.Where(item => item.Source.IsFresh(now, freshnessLimit));
+    IOrderedEnumerable<(HeartRateSourceSnapshot Source, HeartRateDeviceAssignment? Assignment)> ordered = profileId is null
+      ? fresh
+        .OrderBy(item => FamilyTier(item.Source))
+        .ThenByDescending(item => item.Assignment?.IsPreferred == true)
+        .ThenBy(item => item.Assignment?.Priority ?? 99)
+      : fresh
+        .OrderByDescending(item => item.Assignment?.IsPreferred == true)
+        .ThenBy(item => item.Assignment?.Priority ?? 99)
+        .ThenBy(item => FamilyTier(item.Source));
+    return ordered
       .ThenBy(item => item.Source.EnrollmentId)
       .Select(item => item.Source)
       .FirstOrDefault();

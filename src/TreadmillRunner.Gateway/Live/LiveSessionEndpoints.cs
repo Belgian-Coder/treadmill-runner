@@ -194,9 +194,16 @@ public static class LiveSessionEndpoints
     AcquireLeaseRequest request,
     IControlLeaseCoordinator coordinator)
   {
-    return coordinator.TryAcquire(request.HolderId) is { } lease
-      ? Results.Ok(lease)
-      : Results.Conflict(new { error = "Another browser currently holds the controller lease." });
+    try
+    {
+      return coordinator.TryAcquire(request.HolderId) is { } lease
+        ? Results.Ok(lease)
+        : Results.Conflict(new { error = "Another browser currently holds the controller lease." });
+    }
+    catch (ArgumentException exception)
+    {
+      return Results.BadRequest(new { error = exception.Message });
+    }
   }
 
   private static async Task<IResult> ResumePlannedControlsAsync(
@@ -254,10 +261,19 @@ public static class LiveSessionEndpoints
 
   private static IResult HeartbeatLease(
     ControlLease request,
-    IControlLeaseCoordinator coordinator) =>
-    coordinator.Heartbeat(request.Id, request.HolderId) is { } lease
-      ? Results.Ok(lease)
-      : Results.Conflict(new { error = "The controller lease expired or belongs to another browser." });
+    IControlLeaseCoordinator coordinator)
+  {
+    try
+    {
+      return coordinator.Heartbeat(request.Id, request.HolderId) is { } lease
+        ? Results.Ok(lease)
+        : Results.Conflict(new { error = "The controller lease expired or belongs to another browser." });
+    }
+    catch (ArgumentException exception)
+    {
+      return Results.BadRequest(new { error = exception.Message });
+    }
+  }
 
   private static async Task<IResult> ArmAsync(
     ArmSessionRequest request,

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Infrastructure.Bluetooth;
@@ -80,6 +81,30 @@ public sealed class BleAdvertisementBrokerTests
     Assert.Equal(2, transport.ScanCount);
   }
 
+  [Fact]
+  public async Task Slow_subscriber_gets_an_overflow_failure_instead_of_a_partial_scan()
+  {
+    var transport = new BurstScanTransport();
+    await using var broker = new BleAdvertisementBroker(
+      transport,
+      NullLogger<BleAdvertisementBroker>.Instance);
+    await using IAsyncEnumerator<BleAdvertisement> scan = broker
+      .ScanAsync()
+      .GetAsyncEnumerator();
+
+    Assert.True(await scan.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+    await transport.Completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+    InvalidOperationException overflow = await Assert.ThrowsAsync<InvalidOperationException>(
+      async () =>
+      {
+        while (await scan.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)))
+        {
+        }
+      });
+    Assert.Contains("bounded buffer", overflow.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
   private sealed class CoordinatedScanTransport : IBleCentralTransport
   {
     public TaskCompletionSource<bool> ScanStarted { get; } =
@@ -136,6 +161,34 @@ public sealed class BleAdvertisementBrokerTests
       cancellationToken.ThrowIfCancellationRequested();
       yield return new BleAdvertisement("A1B2C3D4E5F7", "Restarted", -42, []);
       await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromException<IBleConnection>(new NotSupportedException());
+  }
+
+  private sealed class BurstScanTransport : IBleCentralTransport
+  {
+    public TaskCompletionSource Completed { get; } =
+      new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      for (int index = 0; index < 400; index++)
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        yield return new BleAdvertisement(
+          index.ToString("X12", CultureInfo.InvariantCulture),
+          $"Burst {index}",
+          -50,
+          []);
+      }
+
+      Completed.TrySetResult();
     }
 
     public ValueTask<IBleConnection> ConnectAsync(

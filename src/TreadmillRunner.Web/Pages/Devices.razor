@@ -257,7 +257,7 @@
 
     <section class="panel-card device-discovery" aria-labelledby="discovery-title">
         <div class="section-heading">
-            <div><p class="eyebrow">Bounded passive scan</p><h2 id="discovery-title">Nearby supported devices</h2></div>
+            <div><p class="eyebrow">Bounded active read-only scan</p><h2 id="discovery-title">Nearby supported devices</h2></div>
             <button class="primary-action" type="button" @onclick="ScanAsync" disabled="@isScanning">
                 @(isScanning ? "Scanning…" : "Scan for 5 seconds")
             </button>
@@ -513,7 +513,7 @@
     private async Task RetryConnectionAsync(DeviceEnrollmentView enrollment)
     {
         if (!retryingConnections.Add(enrollment.Id)) return;
-        connectionActionStatus = $"Connecting {enrollment.DisplayName} for up to two minutes. This never sends a treadmill command.";
+        connectionActionStatus = $"Connecting {enrollment.DisplayName} until you choose Disconnect or the gateway restarts. This never sends a treadmill command.";
         try
         {
             using HttpResponseMessage response = await Http.PostAsync($"api/devices/enrollments/{enrollment.Id}/retry", null);
@@ -539,8 +539,8 @@
             }
 
             connectionActionStatus = enrollment.Role == "HeartRate"
-                ? $"{enrollment.DisplayName} is still connecting. Make sure the strap is awake or Garmin HR Broadcast remains on; this request expires automatically."
-                : $"{enrollment.DisplayName} is still connecting. Make sure it is powered and nearby; this request expires automatically.";
+                ? $"{enrollment.DisplayName} is still connecting. Make sure the strap is awake or Garmin HR Broadcast remains on; Disconnect cancels this request."
+                : $"{enrollment.DisplayName} is still connecting. Make sure it is powered and nearby; Disconnect cancels this request.";
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {

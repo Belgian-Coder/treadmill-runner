@@ -4,7 +4,7 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-08-23
+updated: 2026-08-29
 ---
 
 # Architecture
@@ -50,9 +50,11 @@ Dependencies point inward: Protocols depends on Core; Infrastructure implements 
 
 ## Runtime ownership
 
-- One singleton passive-scan broker owns the adapter watcher and fans bounded
-  advertisement streams out to enrollment, diagnostics, and reconnect callers;
-  one caller cancelling cannot stop the others.
+- One singleton active read-only scan broker owns the adapter watcher, requests
+  scan-response metadata, and fans bounded advertisement streams out to
+  enrollment, diagnostics, and reconnect callers; one caller cancelling cannot
+  stop the others. Buffer overflow is surfaced as scan failure so identity
+  fallback cannot resolve from an incomplete candidate set.
 - One serialized treadmill command coordinator owns all characteristic-value writes through a separate command-only BLE connection. Discovery, enrollment, diagnostics, and telemetry receive only read/subscribe contracts.
 - Notification handlers copy bytes into bounded channels and return immediately.
 - First telemetry evidence is queued to a bounded lifecycle writer rather than

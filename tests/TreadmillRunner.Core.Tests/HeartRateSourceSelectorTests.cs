@@ -5,7 +5,7 @@ namespace TreadmillRunner.Core.Tests;
 public sealed class HeartRateSourceSelectorTests
 {
   [Fact]
-  public void Fresh_polar_outranks_a_preferred_garmin_watch()
+  public void Explicit_profile_preference_outranks_device_family()
   {
     DateTimeOffset now = new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);
     Guid polarId = Guid.NewGuid();
@@ -22,7 +22,7 @@ public sealed class HeartRateSourceSelectorTests
     HeartRateSourceSnapshot? selected = HeartRateSourceSelector.Select(
       [garmin, polar], assignments, profileId, now, TimeSpan.FromSeconds(5));
 
-    Assert.Same(polar, selected);
+    Assert.Same(garmin, selected);
   }
   private static readonly DateTimeOffset Now = new(2026, 8, 4, 10, 0, 0, TimeSpan.Zero);
   private static readonly Guid Marc = Guid.Parse("10000000-0000-0000-0000-000000000001");

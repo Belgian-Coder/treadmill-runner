@@ -35,20 +35,20 @@ public sealed record DeviceTelemetrySnapshot(
 {
   public TimeSpan? TreadmillAge => TreadmillTelemetry is null
     ? null
-    : NonNegative(CapturedAt - TreadmillTelemetry.ObservedAt);
+    : AgeOrNull(CapturedAt - TreadmillTelemetry.ObservedAt);
 
   public TimeSpan? TreadmillSpeedAge => TreadmillTelemetry is { SpeedObservedAt: { } observedAt }
-    ? NonNegative(CapturedAt - observedAt)
+    ? AgeOrNull(CapturedAt - observedAt)
     : null;
 
   public TimeSpan? TreadmillInclineAge => TreadmillTelemetry is { InclineObservedAt: { } observedAt }
-    ? NonNegative(CapturedAt - observedAt)
+    ? AgeOrNull(CapturedAt - observedAt)
     : null;
 
   public TimeSpan? HeartRateAge => HeartRateObservedAt is null
     ? null
-    : NonNegative(CapturedAt - HeartRateObservedAt.Value);
+    : AgeOrNull(CapturedAt - HeartRateObservedAt.Value);
 
-  private static TimeSpan NonNegative(TimeSpan value) =>
-    value < TimeSpan.Zero ? TimeSpan.Zero : value;
+  private static TimeSpan? AgeOrNull(TimeSpan value) =>
+    value < TimeSpan.Zero ? null : value;
 }

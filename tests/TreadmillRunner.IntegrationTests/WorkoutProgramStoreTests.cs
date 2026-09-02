@@ -405,6 +405,14 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
       WorkoutProgramScheduleProjector.ProjectAll(
         revision, progress.Run!, progress.ScheduleOverrides, progress.ExtraOccurrences),
       item => item.Item.Id == revision.Items[0].Id);
+    WorkoutProgramScheduleChangePreview skippedMoveFollowing = await store.PreviewScheduleChangeAsync(
+      runner.Id,
+      run.Id,
+      revision.Items[0].Id,
+      WorkoutProgramScheduleAction.MoveFollowing,
+      new DateOnly(2026, 8, 12));
+    Assert.False(skippedMoveFollowing.CanApply);
+    Assert.Contains("skipped", skippedMoveFollowing.Message, StringComparison.OrdinalIgnoreCase);
   }
 
   [Fact]
@@ -510,6 +518,157 @@ public sealed class WorkoutProgramStoreTests : IAsyncLifetime
     Assert.Equal(3, shiftPreview.Impacts.Count);
     Assert.Single(shiftPreview.Impacts, static impact => impact.IsRepeat);
     Assert.Equal(repeated.RunVersion, shiftPreview.RunVersion);
+  }
+
+  [Fact]
+  public async Task Completed_session_can_move_to_an_exact_off_rhythm_date_without_rewinding_progress()
+  {
+    UserProfile runner = await CreateProfileAsync("Completed move runner");
+    StoredWorkoutRevision first = await CreateWorkoutAsync("Completed first", 6);
+    StoredWorkoutRevision second = await CreateWorkoutAsync("Upcoming second", 7);
+    StoredWorkoutRevision third = await CreateWorkoutAsync("Upcoming third", 8);
+    WorkoutProgramRevision revision = ProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1, first.Id, second.Id, third.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"),
+      Now, Op("program.start"));
+    await SaveTerminalSessionAsync(
+      runner,
+      first,
+      SessionState.Completed,
+      new WorkoutSessionSelection(WorkoutSelectionSource.Program, run.Id, revision.Items[0].Id));
+
+    var targetDate = new DateOnly(2026, 8, 11); // Tuesday is outside the plan's rhythm.
+    WorkoutProgramScheduleChangePreview preview = await store.PreviewScheduleChangeAsync(
+      runner.Id,
+      run.Id,
+      revision.Items[0].Id,
+      WorkoutProgramScheduleAction.MoveOne,
+      targetDate);
+
+    Assert.True(preview.CanApply);
+    WorkoutProgramScheduleImpact impact = Assert.Single(preview.Impacts);
+    Assert.Equal(new DateOnly(2026, 8, 10), impact.CurrentDate);
+    Assert.Equal(targetDate, impact.NewDate);
+    foreach (WorkoutProgramScheduleAction blockedAction in new[]
+      {
+        WorkoutProgramScheduleAction.Skip,
+        WorkoutProgramScheduleAction.Restore,
+      })
+    {
+      WorkoutProgramScheduleChangePreview blocked = await store.PreviewScheduleChangeAsync(
+        runner.Id,
+        run.Id,
+        revision.Items[0].Id,
+        blockedAction,
+        null);
+      Assert.False(blocked.CanApply);
+      Assert.Contains("Completed", blocked.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    WorkoutProgramScheduleChangePreview moved = await store.ApplyScheduleChangeAsync(
+      runner.Id,
+      run.Id,
+      revision.Items[0].Id,
+      WorkoutProgramScheduleAction.MoveOne,
+      targetDate,
+      preview.RunVersion,
+      Op("program.schedule.move.completed"));
+
+    Assert.True(moved.CanApply);
+    StoredWorkoutProgramProgress progress = Assert.Single(await store.ListAsync(runner.Id));
+    Assert.Equal(1, progress.Progress?.CompletedItemCount);
+    Assert.Equal(revision.Items[1].Id, progress.Progress?.NextItem?.Id);
+    ScheduledWorkoutProgramItem completed = Assert.Single(
+      WorkoutProgramScheduleProjector.ProjectAll(
+        revision, progress.Run!, progress.ScheduleOverrides, progress.ExtraOccurrences),
+      occurrence => occurrence.Item.Id == revision.Items[0].Id && !occurrence.IsRepeat);
+    Assert.Equal(targetDate, completed.Date);
+
+    await using TreadmillRunnerDbContext context = await _factory.CreateDbContextAsync();
+    WorkoutSessionEntity linkedSession = Assert.Single(await context.WorkoutSessions.AsNoTracking()
+      .Where(session => session.WorkoutProgramRunId == run.Id &&
+        session.WorkoutProgramItemId == revision.Items[0].Id)
+      .ToListAsync());
+    Assert.Equal(nameof(SessionState.Completed), linkedSession.State);
+    Assert.Equal(Now.AddHours(1).AddSeconds(1), linkedSession.StartedAtUtc);
+    Assert.Equal(Now.AddHours(1).AddSeconds(1).AddMinutes(10), linkedSession.EndedAtUtc);
+  }
+
+  [Fact]
+  public async Task Completed_late_session_can_shift_itself_and_all_later_incomplete_sessions_without_rewriting_history()
+  {
+    UserProfile runner = await CreateProfileAsync("Late completion runner");
+    StoredWorkoutRevision first = await CreateWorkoutAsync("Completed late", 6);
+    StoredWorkoutRevision second = await CreateWorkoutAsync("Upcoming second", 7);
+    StoredWorkoutRevision third = await CreateWorkoutAsync("Upcoming third", 8);
+    WorkoutProgramRevision revision = ProgramRevision(
+      Guid.NewGuid(), Guid.NewGuid(), 1, first.Id, second.Id, third.Id);
+    var store = new WorkoutProgramStore(_factory);
+    await store.CreateAsync(revision, Now, Op("program.create"));
+    WorkoutProgramRun run = await store.StartAsync(
+      Guid.NewGuid(), runner.Id, revision.RevisionId, null, null,
+      new WorkoutProgramSchedule(
+        new DateOnly(2026, 8, 10),
+        WeekdayFlags.Monday | WeekdayFlags.Wednesday | WeekdayFlags.Saturday,
+        "Europe/Brussels"),
+      Now, Op("program.start"));
+    await SaveTerminalSessionAsync(
+      runner,
+      first,
+      SessionState.Completed,
+      new WorkoutSessionSelection(WorkoutSelectionSource.Program, run.Id, revision.Items[0].Id));
+
+    var actualCompletionDate = new DateOnly(2026, 8, 12);
+    WorkoutProgramScheduleChangePreview preview = await store.PreviewScheduleChangeAsync(
+      runner.Id,
+      run.Id,
+      revision.Items[0].Id,
+      WorkoutProgramScheduleAction.MoveFollowing,
+      actualCompletionDate);
+
+    Assert.True(preview.CanApply);
+    Assert.Equal(3, preview.Impacts.Count);
+    Assert.Equal(
+      [new DateOnly(2026, 8, 12), new DateOnly(2026, 8, 14), new DateOnly(2026, 8, 17)],
+      preview.Impacts.Select(static impact => impact.NewDate));
+
+    WorkoutProgramScheduleChangePreview shifted = await store.ApplyScheduleChangeAsync(
+      runner.Id,
+      run.Id,
+      revision.Items[0].Id,
+      WorkoutProgramScheduleAction.MoveFollowing,
+      actualCompletionDate,
+      preview.RunVersion,
+      Op("program.schedule.shift.completed-late"));
+
+    Assert.True(shifted.CanApply);
+    StoredWorkoutProgramProgress progress = Assert.Single(await store.ListAsync(runner.Id));
+    Assert.Equal(1, progress.Progress?.CompletedItemCount);
+    Assert.Equal(revision.Items[1].Id, progress.Progress?.NextItem?.Id);
+    ScheduledWorkoutProgramItem[] canonical = WorkoutProgramScheduleProjector.ProjectAll(
+        revision, progress.Run!, progress.ScheduleOverrides, progress.ExtraOccurrences)
+      .Where(static occurrence => !occurrence.IsRepeat)
+      .OrderBy(static occurrence => occurrence.Item.Position)
+      .ToArray();
+    Assert.Equal(
+      [new DateOnly(2026, 8, 12), new DateOnly(2026, 8, 14), new DateOnly(2026, 8, 17)],
+      canonical.Select(static occurrence => occurrence.Date));
+
+    await using TreadmillRunnerDbContext context = await _factory.CreateDbContextAsync();
+    WorkoutSessionEntity linkedSession = Assert.Single(await context.WorkoutSessions.AsNoTracking()
+      .Where(session => session.WorkoutProgramRunId == run.Id &&
+        session.WorkoutProgramItemId == revision.Items[0].Id)
+      .ToListAsync());
+    Assert.Equal(nameof(SessionState.Completed), linkedSession.State);
+    Assert.Equal(Now.AddHours(1).AddSeconds(1), linkedSession.StartedAtUtc);
+    Assert.Equal(Now.AddHours(1).AddSeconds(1).AddMinutes(10), linkedSession.EndedAtUtc);
   }
 
   [Fact]

@@ -27,7 +27,8 @@ public static class HeartRateDeviceClassifier
 
   private static readonly string[] WatchTerms =
   [
-    "watch", "garmin", "forerunner", "fenix", "epix", "vivoactive",
+    "watch", "garmin watch", "forerunner", "fenix", "fēnix", "epix", "vivoactive", "vívoactive", "venu",
+    "instinct", "enduro", "tactix", "quatix", "marq", "lily", "descent", "approach",
     "apple", "pixel", "galaxy", "coros", "suunto",
   ];
 
@@ -72,10 +73,21 @@ public static class HeartRateDeviceClassifier
     }
 
     return normalized.Contains("garmin", StringComparison.Ordinal) ||
+      normalized.Contains("forerunner", StringComparison.Ordinal) ||
       normalized.Contains("fenix", StringComparison.Ordinal) ||
       normalized.Contains("fēnix", StringComparison.Ordinal) ||
+      normalized.Contains("epix", StringComparison.Ordinal) ||
       normalized.Contains("vivoactive", StringComparison.Ordinal) ||
-      normalized.Contains("vívoactive", StringComparison.Ordinal)
+      normalized.Contains("vívoactive", StringComparison.Ordinal) ||
+      normalized.Contains("venu", StringComparison.Ordinal) ||
+      normalized.Contains("instinct", StringComparison.Ordinal) ||
+      normalized.Contains("enduro", StringComparison.Ordinal) ||
+      normalized.Contains("tactix", StringComparison.Ordinal) ||
+      normalized.Contains("quatix", StringComparison.Ordinal) ||
+      normalized.Contains("marq", StringComparison.Ordinal) ||
+      normalized.Contains("lily", StringComparison.Ordinal) ||
+      normalized.Contains("descent", StringComparison.Ordinal) ||
+      normalized.Contains("approach", StringComparison.Ordinal)
         ? HeartRateDeviceFamily.Garmin
         : HeartRateDeviceFamily.Other;
   }

@@ -308,8 +308,8 @@
         }
     }
     private static bool CanConfirmAbsent(GarminActivityJobView job) =>
-        job.Status == "Unknown" && job.RemoteId is null && job.ReplacementRemoteId is null &&
-        job.OperationPhase is "Upload" or "ReplacementUpload";
+        job.Status == "Unknown" && job.RemoteId is null && job.MatchedRemoteId is null &&
+        job.ReplacementRemoteId is null && job.OperationPhase == "Upload";
     private async Task ConfirmAbsentAndRetryAsync(Guid jobId)
     {
         if (confirmAbsentJobId != jobId) return;

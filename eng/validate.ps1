@@ -19,6 +19,7 @@ try {
     dotnet format $solution --verify-no-changes --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Formatting or analyzer verification failed.' }
 
+    & (Join-Path $PSScriptRoot 'test-path-helpers.ps1')
     python -B (Join-Path $projectRoot 'tools/garmin/test_adapter_contract.py')
     if ($LASTEXITCODE -ne 0) { throw 'Garmin adapter contract fixtures failed.' }
     & (Join-Path $PSScriptRoot 'validate-public-evidence.ps1')

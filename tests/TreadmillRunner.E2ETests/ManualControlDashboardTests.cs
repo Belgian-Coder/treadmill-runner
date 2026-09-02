@@ -806,6 +806,13 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   [Trait("Category", "Browser")]
   public async Task Pause_is_resumable_and_stop_offers_keep_discard_end_or_restart()
   {
+    var profileDisconnectRequests = 0;
+    Page.Request += (_, request) =>
+    {
+      if (request.Method == "POST" && request.Url.Contains("/api/devices/profiles/", StringComparison.Ordinal) &&
+          request.Url.EndsWith("/disconnect", StringComparison.Ordinal))
+        Interlocked.Increment(ref profileDisconnectRequests);
+    };
     await Page.SetViewportSizeAsync(440, 956);
     await ResetSimulatorAsync();
     SeededPlan plan = await SeedPlanAsync("pause-end-reset");
@@ -836,6 +843,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Discard session", Exact = false })).ToBeVisibleAsync();
     ILocator endAndSave = dialog.GetByRole(AriaRole.Button, new() { Name = "End and save", Exact = false });
     await Expect(endAndSave).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "End, save and disconnect devices", Exact = false })).ToBeVisibleAsync();
     Assert.Equal("center", await endAndSave.EvaluateAsync<string>("element => getComputedStyle(element).textAlign"));
     string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "validation", "playwright", "accepted");
     Directory.CreateDirectory(screenshotDirectory);
@@ -850,6 +858,14 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByLabel("Workout progress time", new() { Exact = true })).ToContainTextAsync("0:00");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true })).ToBeVisibleAsync();
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true }).ClickAsync();
+    await SetPhysicalMotionAsync(6.0, 1.0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "End, save and disconnect devices", Exact = false }).ClickAsync();
+    await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/history/[0-9a-f-]+$"));
+    Assert.Equal(1, Volatile.Read(ref profileDisconnectRequests));
   }
 
   [Fact]
@@ -1106,6 +1122,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       string firstAnnouncement = await inspector.Locator("[data-chart-announcement]").TextContentAsync() ?? string.Empty;
       Assert.Contains("Speed", firstAnnouncement, StringComparison.Ordinal);
       await surface.PressAsync("ArrowRight");
+      await Expect(tooltip).ToBeVisibleAsync();
+      await Page.Locator(".primary-nav--mobile .nav-more summary").FocusAsync();
+      await Expect(tooltip).ToBeHiddenAsync();
+      await surface.FocusAsync();
+      await surface.PressAsync("End");
       await Expect(tooltip).ToBeVisibleAsync();
       await surface.PressAsync("Escape");
       await Expect(tooltip).ToBeHiddenAsync();

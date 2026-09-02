@@ -31,7 +31,7 @@ public interface IBleCentralTransport
 }
 
 /// <summary>
-/// Multiplexes passive BLE advertisements so concurrent callers share one
+/// Multiplexes bounded active read-only BLE advertisements so concurrent callers share one
 /// underlying adapter scan.
 /// </summary>
 public interface IBleAdvertisementBroker
@@ -63,6 +63,17 @@ public interface IBleConnection : IAsyncDisposable
       Guid characteristicUuid,
       CancellationToken cancellationToken = default);
 
+}
+
+/// <summary>
+/// Optional capability for peripherals that expose many or protected GATT
+/// services. Callers can enumerate only the standard services they consume.
+/// </summary>
+public interface IBleTargetedServiceDiscoveryConnection
+{
+  ValueTask<IReadOnlyList<BleService>> DiscoverServicesForUuidsAsync(
+    IReadOnlyCollection<Guid> serviceUuids,
+    CancellationToken cancellationToken = default);
 }
 
 /// <summary>

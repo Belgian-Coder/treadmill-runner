@@ -80,4 +80,12 @@ public static class GarminWatchActivityMatcher
     return true;
   }
 
+  internal static bool IsCanonicalLocalCopy(
+    GarminActivityMatchReference local,
+    GarminWatchActivityCandidate candidate) =>
+    string.Equals(candidate.ActivityType, "treadmill_running", StringComparison.OrdinalIgnoreCase) &&
+    Math.Abs((candidate.StartedAtUtc - local.StartedAtUtc).TotalSeconds) <= 45 &&
+    Math.Abs(candidate.DurationSeconds - local.DurationSeconds) <= 45 &&
+    Math.Abs(candidate.DistanceKilometers - local.DistanceKilometers) <= 0.08;
+
 }

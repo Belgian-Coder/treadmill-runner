@@ -4,7 +4,7 @@ type: runbook
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-23
+updated: 2026-08-29
 ---
 
 # Local reliability, access, and generated workout sets
@@ -35,7 +35,7 @@ The importer accepts manifest format 2, a v4 tool version, compatibility `treadm
 
 ## Bluetooth reliability and battery
 
-Enabled devices reconnect automatically during an active session with 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. A matching advertisement and manual **Retry** bypass the delay. A native disconnect, failed notification stream, GATT timeout, or 30 seconds without valid telemetry opens one outage incident; further failed attempts increment it. Valid telemetry closes the incident. A stable 30-second stream resets the backoff. Reconnect always moves to a new generation and never replays a treadmill command. Critical reliability evidence is non-dropping; disposable status churn is coalesced separately.
+Enabled devices reconnect automatically during an active session with 1, 2, 4, 8, then 10 second delays; idle demand backs off to five minutes. Manual **Connect** creates the same capped active retry cadence until the owner chooses **Disconnect** or the gateway restarts. A demanded heart-rate worker performs a fresh bounded active scan before connecting and after relevant failures, asking Windows for scan-response name/service metadata so a uniquely identified Polar/Garmin source can use its current address after a long absence; ambiguous sources remain disconnected. A native disconnect, failed notification stream, GATT timeout, or 30 seconds without valid telemetry opens one outage incident; further failed attempts increment it. Valid telemetry closes the incident. A stable 30-second stream resets the backoff. Reconnect always moves to a new generation and never replays a treadmill command. Critical reliability evidence is non-dropping; disposable status churn is coalesced separately.
 
 Open **Devices → Bluetooth reliability report** for sanitized 1, 7, 30, or 90-day results. Reports contain the enrollment label, state, outage/recovery timing, attempt count, failure category, and sanitized fault—not the raw Windows BLE identifier or identity fingerprint. Recovered incidents older than 90 days are pruned. The same seven-day summary is included in the bounded diagnostic ZIP.
 

@@ -727,6 +727,57 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Runner_selection_remains_usable_when_profile_storage_is_blocked()
+  {
+    string profileName = $"Memory-only runner {Guid.NewGuid():N}";
+    await CreateProfileAsync(profileName);
+    await Page.AddInitScriptAsync("""
+      const local = window.localStorage;
+      for (const method of ['getItem', 'setItem', 'removeItem']) {
+        const original = Storage.prototype[method];
+        Storage.prototype[method] = function(key, ...args) {
+          if (this === local) throw new DOMException('Local storage blocked', 'SecurityError');
+          return original.call(this, key, ...args);
+        };
+      }
+      """);
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator profileRow = Page.Locator(".profile-row").Filter(new() { HasText = profileName });
+    await profileRow.GetByRole(AriaRole.Button, new() { Name = $"Use {profileName} as active profile", Exact = true }).ClickAsync();
+
+    await Expect(profileRow.GetByText("Active in this browser", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync(profileName);
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Workout_save_network_failure_reenables_save_for_retry()
+  {
+    await Page.RouteAsync("**/api/planning/workouts", async route =>
+    {
+      if (string.Equals(route.Request.Method, "POST", StringComparison.OrdinalIgnoreCase))
+      {
+        await route.AbortAsync();
+        return;
+      }
+
+      await route.ContinueAsync();
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts/new").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.GetByLabel("Workout name", new() { Exact = true }).FillAsync($"Retry workout {Guid.NewGuid():N}");
+    ILocator save = Page.GetByRole(AriaRole.Button, new() { Name = "Create workout", Exact = true });
+    await save.ClickAsync();
+
+    await Expect(Page.GetByText("The workout could not reach the local gateway.", new() { Exact = false })).ToBeVisibleAsync();
+    await Expect(save).ToBeEnabledAsync();
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Calendar_load_failure_is_retryable_without_freezing_the_page()
   {
     Page.PageError += (_, exception) => output.WriteLine("Browser page error: {0}", exception);
@@ -795,10 +846,16 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     DateOnly plannedDate = new(2026, 8, 10);
     Guid runId = Guid.NewGuid();
     Guid itemId = Guid.NewGuid();
+    Guid completedItemId = Guid.NewGuid();
     Guid revisionId = Guid.NewGuid();
     int applyRequests = 0;
+    int defaultDaysPreviewRequests = 0;
     int defaultDaysApplyRequests = 0;
     DateOnly? previewTargetDate = null;
+    Guid? previewProgramItemId = null;
+    string? previewProgramAction = null;
+    DateOnly? applyTargetDate = null;
+    string? applyProgramAction = null;
     await Page.RouteAsync("**/api/planning/calendar/series?*", route => route.FulfillAsync(new()
     {
       Status = 200,
@@ -809,6 +866,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     {
       using JsonDocument request = JsonDocument.Parse(route.Request.PostData!);
       previewTargetDate = DateOnly.Parse(request.RootElement.GetProperty("targetDate").GetString()!, CultureInfo.InvariantCulture);
+      previewProgramItemId = request.RootElement.GetProperty("programItemId").GetGuid();
+      previewProgramAction = request.RootElement.GetProperty("action").GetString();
       await route.FulfillAsync(new()
       {
         Status = 200,
@@ -816,12 +875,12 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         Body = JsonSerializer.Serialize(new
         {
           runId,
-          programItemId = itemId,
-          action = "MoveOne",
+          programItemId = previewProgramItemId,
+          action = previewProgramAction,
           runVersion = 4,
           canApply = true,
           message = "Only this session will move; later sessions keep their dates.",
-          impacts = new[] { new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = previewTargetDate, isRepeat = false } },
+          impacts = new[] { new { programItemId = previewProgramItemId, position = 2, currentDate = plannedDate, newDate = previewTargetDate, isRepeat = false } },
           collisionDates = Array.Empty<DateOnly>(),
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
       });
@@ -829,6 +888,20 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.RouteAsync("**/api/planning/calendar/program-runs/*/schedule/apply", async route =>
     {
       Interlocked.Increment(ref applyRequests);
+      using JsonDocument request = JsonDocument.Parse(route.Request.PostData!);
+      Guid requestedItemId = request.RootElement.GetProperty("programItemId").GetGuid();
+      applyTargetDate = DateOnly.Parse(request.RootElement.GetProperty("targetDate").GetString()!, CultureInfo.InvariantCulture);
+      applyProgramAction = request.RootElement.GetProperty("action").GetString();
+      if (requestedItemId == completedItemId)
+      {
+        await route.FulfillAsync(new()
+        {
+          Status = 400,
+          ContentType = "application/problem+json",
+          Body = "{\"errors\":{\"request\":[\"The completed session date could not be saved. Choose another date.\"]}}",
+        });
+        return;
+      }
       await route.FulfillAsync(new()
       {
         Status = 200,
@@ -846,29 +919,43 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
       });
     });
-    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/default-days/preview", route => route.FulfillAsync(new()
+    await Page.RouteAsync("**/api/planning/calendar/program-runs/*/default-days/preview", async route =>
     {
-      Status = 200,
-      ContentType = "application/json",
-      Body = JsonSerializer.Serialize(new
+      if (Interlocked.Increment(ref defaultDaysPreviewRequests) == 1)
       {
-        runId,
-        runVersion = 4,
-        currentWeekdayMask = 37,
-        newWeekdayMask = 42,
-        effectiveDate = plannedDate,
-        canApply = false,
-        message = "The new training days would place two sessions on 13 Aug 2026. Choose different days or move the existing session first.",
-        revision = "preview-revision",
-        impacts = new[]
+        await route.FulfillAsync(new()
         {
-          new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1) },
-          new { programItemId = Guid.NewGuid(), position = 3, currentDate = plannedDate.AddDays(2), newDate = plannedDate.AddDays(3) },
-        },
-        collisionDates = new[] { plannedDate.AddDays(3) },
-        preservedExceptionCount = 2,
-      }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-    }));
+          Status = 400,
+          ContentType = "application/problem+json",
+          Body = "{\"errors\":{\"request\":[\"The selected training days could not be previewed.\"]}}",
+        });
+        return;
+      }
+
+      await route.FulfillAsync(new()
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = JsonSerializer.Serialize(new
+        {
+          runId,
+          runVersion = 4,
+          currentWeekdayMask = 37,
+          newWeekdayMask = 42,
+          effectiveDate = plannedDate,
+          canApply = false,
+          message = "The new training days would place two sessions on 13 Aug 2026. Choose different days or move the existing session first.",
+          revision = "preview-revision",
+          impacts = new[]
+          {
+            new { programItemId = itemId, position = 2, currentDate = plannedDate, newDate = plannedDate.AddDays(1) },
+            new { programItemId = Guid.NewGuid(), position = 3, currentDate = plannedDate.AddDays(2), newDate = plannedDate.AddDays(3) },
+          },
+          collisionDates = new[] { plannedDate.AddDays(3) },
+          preservedExceptionCount = 2,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+      });
+    });
     await Page.RouteAsync("**/api/planning/calendar/program-runs/*/default-days/apply", async route =>
     {
       Interlocked.Increment(ref defaultDaysApplyRequests);
@@ -928,7 +1015,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
                 {
                   seriesId = runId, scheduleGroupId = runId, scheduleName = "First 5K", workoutRevisionId = revisionId,
                   workoutName = "Earlier foundation", revisionNumber = 1, displayOrder = 1, isSelected = false,
-                  source = "Program", programRunId = runId, programItemId = Guid.NewGuid(), programPosition = 1, programTotal = 18,
+                  source = "Program", programRunId = runId, programItemId = completedItemId, programPosition = 1, programTotal = 18,
                   weekNumber = 1, phase = "Foundation", programRunVersion = 4, isRepeat = false, originalDate = plannedDate,
                   isCompleted = true, programWeekdayMask = 37,
                 },
@@ -941,11 +1028,25 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
     await Page.SetViewportSizeAsync(440, 956);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
+    int monthOffset = (DateTime.Today.Year - 2026) * 12 + DateTime.Today.Month - 8;
+    string calendarDirection = monthOffset >= 0 ? "Previous month" : "Next month";
+    for (int index = 0; index < Math.Abs(monthOffset); index++)
+      await Page.GetByRole(AriaRole.Button, new() { Name = calendarDirection, Exact = true }).ClickAsync();
     await Expect(Page.Locator(".profile-context-picker")).ToHaveCountAsync(0);
     await Expect(Page.Locator(".active-runner-picker summary")).ToContainTextAsync("Marc");
     ILocator agendaWeek = Page.Locator(".calendar-agenda-week").Filter(new() { HasText = "10 Aug" });
     if (!await agendaWeek.EvaluateAsync<bool>("element => element.open"))
       await agendaWeek.Locator("summary").ClickAsync();
+    ILocator completedOption = Page.GetByRole(AriaRole.Button, new()
+    {
+      Name = "View details for Earlier foundation on 10 August, completed",
+      Exact = true,
+    });
+    await Expect(completedOption).ToContainTextAsync("Completed");
+    await completedOption.ClickAsync();
+    ILocator completedDetails = Page.GetByRole(AriaRole.Dialog);
+    await Expect(completedDetails).ToContainTextAsync("Completed plan step");
+    await completedDetails.GetByRole(AriaRole.Button, new() { Name = "Close", Exact = true }).ClickAsync();
     ILocator manageButton = Page.Locator(".calendar-agenda .calendar-option-manage").First;
     await Expect(manageButton).ToBeVisibleAsync();
     await manageButton.ClickAsync();
@@ -957,6 +1058,9 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Change training days", Exact = true })).ToBeVisibleAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Mon", Exact = true }).ClickAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Tue", Exact = true }).ClickAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Alert)).ToContainTextAsync("The selected training days could not be previewed.");
+    await Expect(dialog).ToBeVisibleAsync();
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview new schedule", Exact = true }).ClickAsync();
     await Expect(dialog).ToContainTextAsync("Sessions moving");
     await Expect(dialog).ToContainTextAsync("Date unavailable");
@@ -980,8 +1084,8 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false }).ClickAsync();
     await Expect(dialog.GetByRole(AriaRole.Heading, new() { Name = "Choose the new date", Exact = true })).ToBeVisibleAsync();
     ILocator moveDate = dialog.GetByLabel("Move to date", new() { Exact = true });
-    await Expect(moveDate).ToHaveValueAsync("2026-08-10");
-    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Preview move", Exact = true })).ToBeDisabledAsync();
+    await Expect(moveDate).ToHaveValueAsync("2026-08-11");
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Preview move", Exact = true })).ToBeEnabledAsync();
     await moveDate.FillAsync("2026-08-15");
     await Page.ScreenshotAsync(new PageScreenshotOptions
     {
@@ -1015,7 +1119,20 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(dialog).ToContainTextAsync("step 1 of 18");
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · keep later dates", Exact = false })).ToBeVisibleAsync();
     await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Repeat · shift the rest", Exact = false })).ToBeVisibleAsync();
-    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Move only this session", Exact = false })).ToHaveCountAsync(0);
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Move this and all following", Exact = false })).ToBeVisibleAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Move this and all following", Exact = false }).ClickAsync();
+    await Expect(dialog.GetByLabel("Move to date", new() { Exact = true })).ToHaveValueAsync("2026-08-11");
+    await dialog.GetByLabel("Move to date", new() { Exact = true }).FillAsync("2026-08-11");
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Preview move", Exact = true }).ClickAsync();
+    await Expect(dialog).ToContainTextAsync("10 Aug → 11 Aug");
+    Assert.Equal(completedItemId, previewProgramItemId);
+    Assert.Equal(new DateOnly(2026, 8, 11), previewTargetDate);
+    Assert.Equal("MoveFollowing", previewProgramAction);
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Confirm change", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Alert)).ToContainTextAsync("The completed session date could not be saved. Choose another date.");
+    await Expect(dialog).ToBeVisibleAsync();
+    Assert.Equal(new DateOnly(2026, 8, 11), applyTargetDate);
+    Assert.Equal("MoveFollowing", applyProgramAction);
   }
 
   [Fact]
@@ -1462,6 +1579,7 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
 
       releasePreflight.TrySetResult(true);
       await Expect(Page.GetByText("Connecting the devices needed for this run…", new() { Exact = true })).ToBeVisibleAsync();
+      await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Connect devices for this run", Exact = true })).ToBeEnabledAsync();
     }
     finally
     {

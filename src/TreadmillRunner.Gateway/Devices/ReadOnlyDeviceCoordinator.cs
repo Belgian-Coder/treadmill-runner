@@ -47,6 +47,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   private static readonly TimeSpan GattOperationTimeout = TimeSpan.FromSeconds(15);
   private static readonly TimeSpan InitialNotificationTimeout = TimeSpan.FromSeconds(15);
   private static readonly TimeSpan TelemetrySilenceTimeout = TimeSpan.FromSeconds(30);
+  private static readonly TimeSpan SubscriptionDisposeTimeout = TimeSpan.FromSeconds(1);
   private static readonly TimeSpan ReconnectDiscoveryTimeout = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan ReliabilityRetention = TimeSpan.FromDays(90);
   private static readonly TimeSpan ReliabilityPruneInterval = TimeSpan.FromHours(1);
@@ -54,7 +55,6 @@ public sealed class ReadOnlyDeviceCoordinator(
   private static readonly TimeSpan ReliabilityLogThrottle = TimeSpan.FromMinutes(1);
   private static readonly TimeSpan HeartRateFreshnessLimit = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan PreparationDemandDuration = TimeSpan.FromMinutes(2);
-  private static readonly TimeSpan ManualConnectionDemandDuration = TimeSpan.FromMinutes(2);
   private const int MaximumHeartRateWorkers = 8;
   private readonly object _sync = new();
   private readonly SemaphoreSlim _reconcileGate = new(1, 1);
@@ -62,7 +62,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   private readonly Dictionary<Guid, HeartRateRuntime> _heartRateSources = [];
   private readonly Dictionary<Guid, SelectionRuntime> _profileSelections = [];
   private readonly Dictionary<Guid, ReliabilityIncidentRuntime> _reliabilityIncidents = [];
-  private readonly Dictionary<Guid, DateTimeOffset> _manualConnectionDemandExpirations = [];
+  private readonly HashSet<Guid> _manualConnectionDemandIds = [];
   private readonly HashSet<Guid> _explicitlyDisconnectedEnrollmentIds = [];
   private readonly BleReconnectPolicy _reconnectPolicy = new();
   private readonly Channel<ReliabilityWriteEnvelope> _reliabilityWrites = Channel.CreateUnbounded<ReliabilityWriteEnvelope>(
@@ -174,7 +174,6 @@ public sealed class ReadOnlyDeviceCoordinator(
     lock (_sync)
     {
       _runConnectionDemand = null;
-      _manualConnectionDemandExpirations.Clear();
       _explicitlyDisconnectedEnrollmentIds.Clear();
     }
     await ReconcileWorkersAsync(cancellationToken);
@@ -200,8 +199,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     {
       lock (_sync)
       {
-        _manualConnectionDemandExpirations[enrollmentId] =
-          timeProvider.GetUtcNow() + ManualConnectionDemandDuration;
+        _manualConnectionDemandIds.Add(enrollmentId);
         _explicitlyDisconnectedEnrollmentIds.Remove(enrollmentId);
         if (_workers.Remove(enrollmentId, out DeviceWorker? existing))
         {
@@ -215,16 +213,23 @@ public sealed class ReadOnlyDeviceCoordinator(
         await worker.Task;
         worker.Cancellation.Dispose();
       }
+
+      // Keep treadmill cache priming inside the serialized reconcile boundary
+      // so a background reconciliation cannot start a stale worker during the
+      // scan. Heart-rate workers own their fresh scan and can adopt its result.
+      if (enrollment.Enrollment.Role == DeviceRole.Treadmill)
+      {
+        await ResolveCurrentDeviceAsync(
+          enrollment.Enrollment,
+          enrollment.Enrollment.DeviceId,
+          excludeCurrentDevice: false,
+          cancellationToken);
+      }
     }
     finally
     {
       _reconcileGate.Release();
     }
-
-    // An explicit Connect also performs the same bounded passive discovery as
-    // Auto scan. This refreshes the Windows BLE cache before the fresh GATT
-    // worker starts, so an awake Polar/Garmin does not require a separate scan.
-    await PassivelyRediscoverAsync(enrollment.Enrollment, cancellationToken);
     await ReconcileWorkersAsync(cancellationToken);
     return true;
   }
@@ -242,7 +247,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     {
       lock (_sync)
       {
-        _manualConnectionDemandExpirations.Remove(enrollmentId);
+        _manualConnectionDemandIds.Remove(enrollmentId);
         _explicitlyDisconnectedEnrollmentIds.Add(enrollmentId);
         if (_workers.Remove(enrollmentId, out DeviceWorker? existing))
         {
@@ -345,15 +350,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       {
         if (_runConnectionDemand?.ExpiresAtUtc is { } expiresAt && expiresAt <= now)
           _runConnectionDemand = null;
-        foreach (Guid expired in _manualConnectionDemandExpirations
-          .Where(item => item.Value <= now)
-          .Select(static item => item.Key)
-          .ToArray())
-        {
-          _manualConnectionDemandExpirations.Remove(expired);
-        }
         runDemand = _runConnectionDemand;
-        manuallyDemandedIds = _manualConnectionDemandExpirations.Keys.ToHashSet();
+        manuallyDemandedIds = _manualConnectionDemandIds.ToHashSet();
         explicitlyDisconnectedIds = _explicitlyDisconnectedEnrollmentIds.ToHashSet();
       }
 
@@ -366,18 +364,19 @@ public sealed class ReadOnlyDeviceCoordinator(
         HeartRateDeviceAssignment[] profileAssignments = assignments
           .Where(assignment => assignment.UserProfileId == runDemand.ProfileId)
           .ToArray();
-        Guid[] automaticHeartRateIds = profileAssignments
-          // Keep every sensor assigned to this runner available during a run.
-          // The old HR-target/AutoConnect filter dropped even the preferred
-          // Polar on ordinary workouts and removed Garmin failover.
-          .OrderBy(static assignment => assignment.Priority)
+        Guid[] orderedHeartRateIds = profileAssignments
+          .OrderByDescending(static assignment => assignment.IsPreferred)
+          .ThenBy(static assignment => assignment.Priority)
           .Select(static assignment => assignment.DeviceEnrollmentId)
           .Distinct()
           .Take(MaximumHeartRateWorkers)
           .ToArray();
-        if (automaticHeartRateIds.Length > 0)
+        if (orderedHeartRateIds.Length > 0)
         {
-          desiredIds.UnionWith(automaticHeartRateIds);
+          lock (_sync)
+          {
+            desiredIds.UnionWith(SelectProgressiveHeartRateDemandLocked(orderedHeartRateIds, now));
+          }
         }
         else if (profileAssignments.Length == 0)
         {
@@ -467,7 +466,9 @@ public sealed class ReadOnlyDeviceCoordinator(
     CancellationToken cancellationToken)
   {
     DeviceEnrollment enrollment = stored.Enrollment;
+    string connectionDeviceId = enrollment.DeviceId;
     var consecutiveFailureCount = 0;
+    var firstAttempt = true;
     while (!cancellationToken.IsCancellationRequested)
     {
       long generation = Interlocked.Increment(ref _nextGeneration);
@@ -475,13 +476,39 @@ public sealed class ReadOnlyDeviceCoordinator(
       try
       {
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
+        if (firstAttempt && enrollment.Role == DeviceRole.HeartRate)
+        {
+          HeartRateReconnectResolution? initialResolution = await ResolveCurrentDeviceAsync(
+            enrollment,
+            connectionDeviceId,
+            excludeCurrentDevice: false,
+            cancellationToken);
+          cancellationToken.ThrowIfCancellationRequested();
+          if (initialResolution is not null)
+          {
+            connectionDeviceId = initialResolution.DeviceId;
+          }
+        }
+        firstAttempt = false;
         await using IBleConnection connection = await transport.ConnectAsync(
-          enrollment.DeviceId,
+          connectionDeviceId,
           cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.DiscoveringServices, generation, fault: null);
-        IReadOnlyList<BleService> services = await connection.DiscoverServicesAsync(cancellationToken)
-          .AsTask()
-          .WaitAsync(GattOperationTimeout, timeProvider, cancellationToken);
+        IReadOnlyList<BleService> services = await AwaitGattOperationAsync(
+          operationCancellation =>
+            (enrollment.Role == DeviceRole.HeartRate &&
+             connection is IBleTargetedServiceDiscoveryConnection targetedConnection
+              ? targetedConnection.DiscoverServicesForUuidsAsync(
+                [
+                  Uuids.HeartRateService,
+                  Uuids.BatteryService,
+                  Uuids.DeviceInformationService,
+                ],
+                operationCancellation)
+              : connection.DiscoverServicesAsync(operationCancellation)).AsTask(),
+          GattOperationTimeout,
+          timeProvider,
+          cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.Subscribing, generation, fault: null);
 
         if (enrollment.Role == DeviceRole.Treadmill)
@@ -521,7 +548,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           consecutiveFailureCount = 0;
         }
         consecutiveFailureCount++;
-        bool activeDemand = HasActiveRunDemand(failedAt);
+        bool activeDemand = HasActiveConnectionDemand(enrollment.Id, failedAt);
         TimeSpan reconnectDelay = _reconnectPolicy.GetDelay(
           enrollment.Id,
           consecutiveFailureCount,
@@ -544,9 +571,26 @@ public sealed class ReadOnlyDeviceCoordinator(
           reconnectDelay,
           failedAt);
         UpdateConnection(enrollment, DeviceConnectionState.Reconnecting, generation, fault: null);
-        if (exception is WindowsBleDeviceUnavailableException &&
-            await PassivelyRediscoverAsync(enrollment, cancellationToken))
+        HeartRateReconnectResolution? resolution = null;
+        if (enrollment.Role == DeviceRole.HeartRate ||
+            exception is WindowsBleDeviceUnavailableException)
         {
+          resolution = await ResolveCurrentDeviceAsync(
+            enrollment,
+            connectionDeviceId,
+            excludeCurrentDevice: enrollment.Role == DeviceRole.HeartRate &&
+              exception is not (WindowsBleDeviceUnavailableException or WindowsBleDisconnectedException),
+            cancellationToken);
+          if (cancellationToken.IsCancellationRequested) break;
+        }
+        if (resolution is not null &&
+            (exception is WindowsBleDeviceUnavailableException ||
+             !string.Equals(
+               connectionDeviceId,
+               resolution.DeviceId,
+               StringComparison.OrdinalIgnoreCase)))
+        {
+          connectionDeviceId = resolution.DeviceId;
           continue;
         }
         try
@@ -563,10 +607,13 @@ public sealed class ReadOnlyDeviceCoordinator(
     SetDisconnected(enrollment.Id, enrollment.Role);
   }
 
-  private async Task<bool> PassivelyRediscoverAsync(
+  private async Task<HeartRateReconnectResolution?> ResolveCurrentDeviceAsync(
     DeviceEnrollment enrollment,
+    string currentDeviceId,
+    bool excludeCurrentDevice,
     CancellationToken cancellationToken)
   {
+    var resolver = new HeartRateReconnectResolver();
     using var discovery = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     discovery.CancelAfter(ReconnectDiscoveryTimeout);
     try
@@ -575,32 +622,57 @@ public sealed class ReadOnlyDeviceCoordinator(
         .ScanAsync(discovery.Token)
         .WithCancellation(discovery.Token))
       {
-        if (string.Equals(
-          advertisement.DeviceId,
-          enrollment.DeviceId,
-          StringComparison.OrdinalIgnoreCase))
+        resolver.Observe(advertisement);
+        if (!excludeCurrentDevice && resolver.ContainsDeviceId(currentDeviceId))
         {
           logger.LogInformation(
-            "Passively rediscovered the enrolled {DeviceRole}; retrying its read-only connection.",
+            "Freshly rediscovered the enrolled {DeviceRole}; retrying its read-only connection.",
             enrollment.Role);
-          return true;
+          return new HeartRateReconnectResolution(
+            currentDeviceId,
+            HeartRateReconnectMatch.ExactDeviceId);
         }
       }
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      return null;
     }
     catch (OperationCanceledException) when (
       !cancellationToken.IsCancellationRequested && discovery.IsCancellationRequested)
     {
-      // The peripheral is still absent. The normal reconnect delay remains authoritative.
+      // Resolve the bounded set collected before the timeout below.
     }
-    catch (Exception exception) when (exception is not OperationCanceledException)
+    catch (Exception exception)
     {
       logger.LogWarning(
         exception,
-        "Passive {DeviceRole} rediscovery was unavailable; retaining bounded reconnect backoff.",
+        "Fresh {DeviceRole} rediscovery was unavailable; retaining bounded reconnect backoff.",
         enrollment.Role);
+      // Name/family fallback is safe only when the complete bounded scan was
+      // observed. Adapter or subscriber overflow must fail closed rather than
+      // turn a genuinely ambiguous household into an apparently unique match.
+      return null;
     }
 
-    return false;
+    if (enrollment.Role != DeviceRole.HeartRate) return null;
+
+    (bool allowNameFallback, bool allowFamilyFallback)? fallbackPolicy =
+      await GetHeartRateFallbackPolicyAsync(enrollment, cancellationToken);
+    if (fallbackPolicy is not { } policy) return null;
+    HeartRateReconnectResolution? resolution = resolver.Resolve(
+      enrollment,
+      currentDeviceId,
+      policy.allowNameFallback,
+      policy.allowFamilyFallback,
+      excludeCurrentDevice ? currentDeviceId : null);
+    if (resolution is not null)
+    {
+      logger.LogInformation(
+        "Freshly resolved the enrolled heart-rate source using {Match}; retrying its read-only connection.",
+        resolution.Match);
+    }
+    return resolution;
   }
 
   private static bool RequiresWorkerRestart(DeviceEnrollment current, DeviceEnrollment desired) =>
@@ -608,15 +680,88 @@ public sealed class ReadOnlyDeviceCoordinator(
     !string.Equals(current.DeviceId, desired.DeviceId, StringComparison.Ordinal) ||
     !string.Equals(current.ProtocolId, desired.ProtocolId, StringComparison.Ordinal) ||
     !string.Equals(current.IdentityFingerprint, desired.IdentityFingerprint, StringComparison.Ordinal) ||
-    current.TelemetryMode != desired.TelemetryMode;
+    current.TelemetryMode != desired.TelemetryMode ||
+    (current.Role == DeviceRole.HeartRate &&
+      (!string.Equals(current.DisplayName, desired.DisplayName, StringComparison.OrdinalIgnoreCase) ||
+       current.HeartRateDeviceKind != desired.HeartRateDeviceKind ||
+       current.HeartRateDeviceFamily != desired.HeartRateDeviceFamily));
 
-  private bool HasActiveRunDemand(DateTimeOffset now)
+  private async Task<(bool allowNameFallback, bool allowFamilyFallback)?>
+    GetHeartRateFallbackPolicyAsync(
+      DeviceEnrollment enrollment,
+      CancellationToken cancellationToken)
+  {
+    DeviceEnrollment[] peers;
+    try
+    {
+      using IServiceScope scope = scopeFactory.CreateScope();
+      IDeviceEnrollmentStore store = scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>();
+      peers = (await store.ListActiveAsync(cancellationToken))
+        .Select(static source => source.Enrollment)
+        .Where(candidate => candidate.Role == DeviceRole.HeartRate && candidate.Id != enrollment.Id)
+        .ToArray();
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (Exception exception)
+    {
+      logger.LogWarning(
+        exception,
+        "Heart-rate enrollment identities could not be refreshed; rediscovery fallback is disabled for this attempt.");
+      return null;
+    }
+
+    bool nameIsUnique = peers.All(candidate => !string.Equals(
+      candidate.DisplayName,
+      enrollment.DisplayName,
+      StringComparison.OrdinalIgnoreCase));
+    HeartRateDeviceFamily family = HeartRateReconnectResolver.EffectiveFamily(enrollment);
+    HeartRateDeviceKind kind = HeartRateReconnectResolver.EffectiveKind(enrollment);
+    bool familyAndKindAreUnique = family != HeartRateDeviceFamily.Other &&
+      peers.All(candidate =>
+        HeartRateReconnectResolver.EffectiveFamily(candidate) != family ||
+        HeartRateReconnectResolver.EffectiveKind(candidate) != kind);
+    return (nameIsUnique, familyAndKindAreUnique);
+  }
+
+  internal bool HasActiveConnectionDemand(Guid enrollmentId, DateTimeOffset now)
   {
     lock (_sync)
     {
-      return _runConnectionDemand is { } demand &&
+      bool runDemandIsActive = _runConnectionDemand is { } demand &&
         (demand.ExpiresAtUtc is null || demand.ExpiresAtUtc > now);
+      bool manualDemandIsActive = _manualConnectionDemandIds.Contains(enrollmentId);
+      return runDemandIsActive || manualDemandIsActive;
     }
+  }
+
+  private IReadOnlyList<Guid> SelectProgressiveHeartRateDemandLocked(
+    IReadOnlyList<Guid> orderedEnrollmentIds,
+    DateTimeOffset now)
+  {
+    var desired = new List<Guid>(orderedEnrollmentIds.Count);
+    foreach (Guid enrollmentId in orderedEnrollmentIds)
+    {
+      desired.Add(enrollmentId);
+      if (!ShouldActivateHeartRateFallbackLocked(enrollmentId, now)) break;
+    }
+    return desired;
+  }
+
+  private bool ShouldActivateHeartRateFallbackLocked(Guid enrollmentId, DateTimeOffset now)
+  {
+    if (_reliabilityIncidents.ContainsKey(enrollmentId)) return true;
+    if (!_heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime)) return false;
+    if (runtime.Connection.State is DeviceConnectionState.Faulted or DeviceConnectionState.Reconnecting)
+      return true;
+    if (runtime.Connection.State != DeviceConnectionState.Ready) return false;
+    return runtime.Quality != HeartRateSignalQuality.Valid ||
+      runtime.BeatsPerMinute is not (>= 30 and <= 250) ||
+      runtime.ObservedAt is not { } observedAt ||
+      now - observedAt < TimeSpan.Zero ||
+      now - observedAt > HeartRateFreshnessLimit;
   }
 
   private void RefreshEnrollmentMetadata(DeviceEnrollment enrollment)
@@ -772,11 +917,9 @@ public sealed class ReadOnlyDeviceCoordinator(
     CancellationToken cancellationToken)
   {
     RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
-    (string? model, string? firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
-    var evidencePersisted = false;
     var readyPublished = false;
-    using var batteryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-    Task? batteryTask = null;
+    using var detailsCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    Task? detailsTask = null;
     try
     {
       await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
@@ -814,42 +957,64 @@ public sealed class ReadOnlyDeviceCoordinator(
         }
         if (quality != HeartRateSignalQuality.Valid) continue;
         primaryTelemetryObserved(notification.ObservedAt);
-        if (!evidencePersisted && TryEnqueueEvidencePersistence(
-          enrollment,
-          enrollmentVersion,
-          model,
-          firmware,
-          capabilities: null,
-          generation,
-          notification.ObservedAt))
+        if (detailsTask is null)
         {
-          evidencePersisted = true;
-        }
-        if (batteryTask is null)
-        {
-          batteryTask = RunOptionalBatteryAsync(
+          detailsTask = RunOptionalHeartRateDetailsAsync(
             connection,
             enrollment,
+            enrollmentVersion,
             services,
             generation,
-            batteryCancellation.Token);
+            notification.ObservedAt,
+            detailsCancellation.Token);
         }
       }
     }
     finally
     {
-      batteryCancellation.Cancel();
-      if (batteryTask is not null)
+      detailsCancellation.Cancel();
+      if (detailsTask is not null)
       {
         try
         {
-          await batteryTask;
+          await detailsTask;
         }
-        catch (OperationCanceledException) when (batteryCancellation.IsCancellationRequested)
+        catch (OperationCanceledException) when (detailsCancellation.IsCancellationRequested)
         {
         }
       }
     }
+  }
+
+  private async Task RunOptionalHeartRateDetailsAsync(
+    IBleConnection connection,
+    DeviceEnrollment enrollment,
+    int enrollmentVersion,
+    IReadOnlyList<BleService> services,
+    long generation,
+    DateTimeOffset observedAt,
+    CancellationToken cancellationToken)
+  {
+    string? model = null;
+    string? firmware = null;
+    try
+    {
+      (model, firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+      logger.LogDebug(exception, "Optional heart-rate device information was unavailable.");
+    }
+    cancellationToken.ThrowIfCancellationRequested();
+    TryEnqueueEvidencePersistence(
+      enrollment,
+      enrollmentVersion,
+      model ?? enrollment.ModelNumber,
+      firmware ?? enrollment.FirmwareRevision,
+      capabilities: null,
+      generation,
+      observedAt);
+    await RunOptionalBatteryAsync(connection, enrollment, services, generation, cancellationToken);
   }
 
   private async Task RunOptionalBatteryAsync(
@@ -885,7 +1050,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     if (!battery.CanNotify || cancellationToken.IsCancellationRequested) return;
     try
     {
-      await foreach (BleNotification notification in connection.SubscribeAsync(
+      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+        connection,
         Uuids.BatteryService,
         Uuids.BatteryLevel,
         cancellationToken))
@@ -987,13 +1153,10 @@ public sealed class ReadOnlyDeviceCoordinator(
     finally
     {
       subscriptionCancellation.Cancel();
-      try
-      {
-        await enumerator.DisposeAsync();
-      }
-      catch (OperationCanceledException) when (subscriptionCancellation.IsCancellationRequested)
-      {
-      }
+      await DisposeSubscriptionBoundedAsync(
+        enumerator,
+        SubscriptionDisposeTimeout,
+        timeProvider);
     }
   }
 
@@ -1001,10 +1164,83 @@ public sealed class ReadOnlyDeviceCoordinator(
     IBleConnection connection,
     Guid serviceUuid,
     Guid characteristicUuid,
-    CancellationToken cancellationToken) => await connection.ReadAsync(
-      serviceUuid,
-      characteristicUuid,
-      cancellationToken).AsTask().WaitAsync(GattOperationTimeout, timeProvider, cancellationToken);
+    CancellationToken cancellationToken) => await AwaitGattOperationAsync(
+      operationCancellation => connection.ReadAsync(
+        serviceUuid,
+        characteristicUuid,
+        operationCancellation).AsTask(),
+      GattOperationTimeout,
+      timeProvider,
+      cancellationToken);
+
+  internal static async Task<T> AwaitGattOperationAsync<T>(
+    Func<CancellationToken, Task<T>> operationFactory,
+    TimeSpan timeout,
+    TimeProvider operationTimeProvider,
+    CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(operationFactory);
+    ArgumentNullException.ThrowIfNull(operationTimeProvider);
+    if (timeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
+
+    using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    Task<T> operation = operationFactory(operationCancellation.Token);
+    try
+    {
+      return await operation
+        .WaitAsync(timeout, operationTimeProvider, cancellationToken)
+        .ConfigureAwait(false);
+    }
+    catch (Exception exception) when (
+      exception is TimeoutException or OperationCanceledException)
+    {
+      // Apply the same bound to the native WinRT call, not only its waiter.
+      // A non-cooperative implementation may still finish late; observe only
+      // its eventual fault without retaining this CTS in an async cleanup path.
+      operationCancellation.Cancel();
+      ObserveLateFault(operation);
+      throw;
+    }
+  }
+
+  internal static async Task DisposeSubscriptionBoundedAsync(
+    IAsyncDisposable subscription,
+    TimeSpan timeout,
+    TimeProvider operationTimeProvider)
+  {
+    ArgumentNullException.ThrowIfNull(subscription);
+    ArgumentNullException.ThrowIfNull(operationTimeProvider);
+    if (timeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
+
+    Task disposal = subscription.DisposeAsync().AsTask();
+    try
+    {
+      await disposal
+        .WaitAsync(timeout, operationTimeProvider, CancellationToken.None)
+        .ConfigureAwait(false);
+    }
+    catch (TimeoutException)
+    {
+      // Some native WinRT operations do not cooperate with cancellation. Do
+      // not let their async-iterator disposal pin the worker forever; observe
+      // only an eventual fault after the bounded teardown window expires.
+      ObserveLateFault(disposal);
+    }
+    catch (OperationCanceledException)
+    {
+      // Cancellation is the expected result after the subscription token was
+      // signalled by the telemetry watchdog or worker shutdown.
+    }
+  }
+
+  private static void ObserveLateFault(Task operation)
+  {
+    _ = operation.ContinueWith(
+      static completed => _ = completed.Exception,
+      CancellationToken.None,
+      TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+      TaskScheduler.Default);
+  }
 
   private async Task<(string? Model, string? Firmware)> ReadDeviceInformationAsync(
     IBleConnection connection,
@@ -1751,8 +1987,8 @@ public sealed class ReadOnlyDeviceCoordinator(
         return new HeartRateSourceSnapshot(
           runtime.Enrollment.Id,
           runtime.Enrollment.DisplayName,
-          runtime.Enrollment.HeartRateDeviceKind ?? HeartRateDeviceKind.Sensor,
-          runtime.Enrollment.HeartRateDeviceFamily ?? HeartRateDeviceFamily.Other,
+          HeartRateReconnectResolver.EffectiveKind(runtime.Enrollment),
+          HeartRateReconnectResolver.EffectiveFamily(runtime.Enrollment),
           runtime.Connection.State,
           runtime.Connection.ConnectionGeneration,
           fresh ? runtime.BeatsPerMinute : null,

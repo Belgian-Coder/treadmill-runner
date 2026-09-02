@@ -24,7 +24,7 @@ public sealed class TreadmillCommandCoordinatorTests
     {
       if (payload.Span[0] == 0x07)
       {
-        devices.Set(ReadySnapshot(7, 0.8, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(7, 0.8, observedAt));
       }
     });
     var transport = new FakeCommandTransport(connection);
@@ -50,7 +50,7 @@ public sealed class TreadmillCommandCoordinatorTests
     var connection = new FakeCommandConnection((payload, observedAt) =>
     {
       if (payload.Span[0] == 0x07)
-        devices.Set(ReadySnapshot(7, 0.8, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(7, 0.8, observedAt));
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(
       devices,
@@ -84,7 +84,7 @@ public sealed class TreadmillCommandCoordinatorTests
       {
         if (payload.Span[0] == 0x07)
         {
-          devices.Set(ReadySnapshot(7, 0.8, observedAt.AddMilliseconds(1)));
+          devices.Set(ReadySnapshot(7, 0.8, observedAt));
         }
       },
       omitRequestControlResponse: true);
@@ -187,10 +187,10 @@ public sealed class TreadmillCommandCoordinatorTests
         devices.Set(ReadySnapshot(
           7,
           speedKph: 1.0,
-          observedAt: observedAt.AddMilliseconds(1),
+          observedAt: observedAt,
           inclinePercent: 0,
           speedObservedAt: observedAt.AddSeconds(-10),
-          inclineObservedAt: observedAt.AddMilliseconds(1)));
+          inclineObservedAt: observedAt));
       }
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(
@@ -226,9 +226,9 @@ public sealed class TreadmillCommandCoordinatorTests
         devices.Set(ReadySnapshot(
           7,
           speedKph: 0.8,
-          observedAt: observedAt.AddMilliseconds(1),
+          observedAt: observedAt,
           inclinePercent: 2.5,
-          speedObservedAt: observedAt.AddMilliseconds(1),
+          speedObservedAt: observedAt,
           inclineObservedAt: observedAt.AddSeconds(-10)));
       }
     });
@@ -312,7 +312,7 @@ public sealed class TreadmillCommandCoordinatorTests
     {
       if (payload.Span[0] == 0x08)
       {
-        devices.Set(ReadySnapshot(7, 0, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(7, 0, observedAt));
       }
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, connection, VerifiedEnrollment());
@@ -344,7 +344,7 @@ public sealed class TreadmillCommandCoordinatorTests
     var connection = new FakeCommandConnection((payload, observedAt) =>
     {
       if (payload.Span[0] == 0x08)
-        devices.Set(ReadySnapshot(7, 0, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(7, 0, observedAt));
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, connection, VerifiedEnrollment());
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -370,7 +370,7 @@ public sealed class TreadmillCommandCoordinatorTests
     {
       if (payload.Span[0] == 0x02)
       {
-        devices.Set(ReadySnapshot(7, 1.0, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(7, 1.0, observedAt));
       }
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, connection, VerifiedEnrollment());
@@ -393,11 +393,11 @@ public sealed class TreadmillCommandCoordinatorTests
     {
       if (payload.Span[0] == 0x03)
       {
-        devices.Set(ReadySnapshot(7, 0.8, observedAt.AddMilliseconds(1), inclinePercent: 2.5));
+        devices.Set(ReadySnapshot(7, 0.8, observedAt, inclinePercent: 2.5));
       }
       else if (payload.Span.SequenceEqual(new byte[] { 0x08, 0x02 }))
       {
-        devices.Set(ReadySnapshot(7, 0, observedAt.AddMilliseconds(1), inclinePercent: 2.5));
+        devices.Set(ReadySnapshot(7, 0, observedAt, inclinePercent: 2.5));
       }
     });
     var transport = new FakeCommandTransport(connection);
@@ -432,7 +432,7 @@ public sealed class TreadmillCommandCoordinatorTests
     {
       if (payload.Span[0] == 0x08)
       {
-        devices.Set(ReadySnapshot(11, 0, observedAt.AddMilliseconds(1)));
+        devices.Set(ReadySnapshot(11, 0, observedAt));
       }
     });
     TreadmillCommandCoordinator coordinator = CreateCoordinator(devices, connection, PassiveEnrollment());

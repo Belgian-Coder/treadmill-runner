@@ -7,6 +7,7 @@ public sealed class HeartRateDeviceClassifierTests
   [Theory]
   [InlineData("Polar H10", HeartRateDeviceKind.ChestStrap)]
   [InlineData("Garmin Forerunner 965", HeartRateDeviceKind.Watch)]
+  [InlineData("Garmin Edge 1040", HeartRateDeviceKind.Sensor)]
   [InlineData("Apple Watch", HeartRateDeviceKind.Watch)]
   [InlineData("Generic HRM", HeartRateDeviceKind.Sensor)]
   public void Classifies_named_heart_rate_devices(string name, HeartRateDeviceKind expected) =>
@@ -34,4 +35,11 @@ public sealed class HeartRateDeviceClassifierTests
     Assert.Equal(2, HeartRateDeviceClassifier.Priority("Running Watch"));
     Assert.Equal(3, HeartRateDeviceClassifier.Priority("HRM"));
   }
+
+  [Theory]
+  [InlineData("Garmin Forerunner 965")]
+  [InlineData("Venu 3")]
+  [InlineData("Instinct 2")]
+  public void Recognizes_current_garmin_watch_families(string name) =>
+    Assert.Equal(HeartRateDeviceFamily.Garmin, HeartRateDeviceClassifier.Family(name));
 }

@@ -24,7 +24,9 @@ public sealed class SessionTelemetryWriterTests
       static (_, _) => Task.FromResult(true));
     Guid sessionId = Guid.NewGuid();
     Guid authorityId = Guid.NewGuid();
-    DateTimeOffset capturedAt = DateTimeOffset.UtcNow;
+    DateTimeOffset capturedAt = DateTimeOffset
+      .FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+      .AddMilliseconds(100);
     var writes = Enumerable.Range(0, 3)
       .Select(sequence => CreateWrite(sessionId, sequence, capturedAt.AddMilliseconds(sequence * 100), authorityId))
       .ToArray();

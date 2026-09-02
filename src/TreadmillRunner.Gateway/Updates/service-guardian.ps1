@@ -145,6 +145,13 @@ if ($service.State -ne 'Stopped') {
   return
 }
 
+# An updater may create its marker after this guardian invocation begins but
+# before it stops the service. Recheck after observing the stopped state so the
+# in-flight update wins that race instead of having its old release restarted.
+if (Test-Path -LiteralPath $maintenanceMarker -PathType Leaf) {
+  return
+}
+
 try {
   $previousState = Read-GuardianState
   $diagnosticEvidence = Get-RecentServiceControlEvidence
@@ -155,6 +162,9 @@ try {
   }
   foreach ($key in $diagnosticEvidence.Keys) {
     $recoveryDetails[$key] = $diagnosticEvidence[$key]
+  }
+  if (Test-Path -LiteralPath $maintenanceMarker -PathType Leaf) {
+    return
   }
   Write-GuardianLog -EventName 'recovery-start' -Details $recoveryDetails
   Start-Service -Name $ServiceName -ErrorAction Stop

@@ -201,6 +201,53 @@ public sealed class LiveSessionCoordinator(
       control.SpeedRange,
       control.InclineRange,
       profile.Profile.MaximumSpeedKph);
+    IReadOnlyList<PreflightCheck> profileDeviceChecks = await LoadProfileHeartRateDeviceChecksAsync(
+      profileId,
+      devices,
+      cancellationToken);
+    var checks = new List<PreflightCheck>
+    {
+      new("gateway", "Gateway", PreflightCheckStatus.Ready, "Gateway ready"),
+      new("database", "Database", PreflightCheckStatus.Ready, "Database ready"),
+      new(
+        "workout-targets",
+        "Workout targets",
+        capabilityResult.IsValid ? PreflightCheckStatus.Ready : PreflightCheckStatus.Blocked,
+        capabilityResult.IsValid
+          ? capabilityResult.Targets.Any(static target => target.Disposition == WorkoutTargetDisposition.Normalized)
+            ? "Targets are valid; safer treadmill-increment alignment will be applied."
+            : "Targets fit the selected profile and verified treadmill limits."
+          : string.Join(" ", capabilityResult.Rejected.Take(3).Select(static target => $"{target.Path}: {target.Reason}"))),
+      new(
+        "treadmill",
+        devices.Treadmill.DisplayName ?? "Treadmill",
+        hardwareMode
+          ? treadmillFresh ? PreflightCheckStatus.Ready : PreflightCheckStatus.Waiting
+          : PreflightCheckStatus.Ready,
+        hardwareMode
+          ? treadmillFresh
+            ? $"Treadmill ready via {devices.Treadmill.TelemetryMode}"
+            : devices.Treadmill.Fault ?? (devices.Treadmill.DisplayName is null
+              ? "The enrolled treadmill is disconnected"
+              : $"Treadmill is {devices.Treadmill.State}")
+          : "Treadmill connected (simulator)"),
+      new(
+        "heart-rate",
+        "Heart-rate signal",
+        requiresHeartRate
+          ? hardwareMode
+            ? heartRateFresh ? PreflightCheckStatus.Ready : PreflightCheckStatus.Waiting
+            : PreflightCheckStatus.Ready
+          : PreflightCheckStatus.NotRequired,
+        requiresHeartRate
+          ? hardwareMode
+            ? heartRateFresh
+              ? $"{devices.HeartRate.DisplayName} is supplying fresh readings"
+              : devices.HeartRate.Fault ?? "The preferred or active fallback sensor is not providing fresh telemetry"
+            : "Heart rate connected (simulator)"
+          : "Not required for this workout"),
+    };
+    checks.AddRange(profileDeviceChecks);
     return new PreflightSnapshot(
       timeProvider.GetUtcNow(),
       profile.Profile.Id,
@@ -211,47 +258,7 @@ public sealed class LiveSessionCoordinator(
       requiresHeartRate ? "Heart-rate guided" : "Planned pace",
       requiresHeartRate,
       heartRateSource,
-      [
-        new PreflightCheck("gateway", "Gateway", PreflightCheckStatus.Ready, "Gateway ready"),
-        new PreflightCheck("database", "Database", PreflightCheckStatus.Ready, "Database ready"),
-        new PreflightCheck(
-          "workout-targets",
-          "Workout targets",
-          capabilityResult.IsValid ? PreflightCheckStatus.Ready : PreflightCheckStatus.Blocked,
-          capabilityResult.IsValid
-            ? capabilityResult.Targets.Any(static target => target.Disposition == WorkoutTargetDisposition.Normalized)
-              ? "Targets are valid; safer treadmill-increment alignment will be applied."
-              : "Targets fit the selected profile and verified treadmill limits."
-            : string.Join(" ", capabilityResult.Rejected.Take(3).Select(static target => $"{target.Path}: {target.Reason}"))),
-        new PreflightCheck(
-          "treadmill",
-          "Treadmill",
-          hardwareMode
-            ? treadmillFresh ? PreflightCheckStatus.Ready : PreflightCheckStatus.Waiting
-            : PreflightCheckStatus.Ready,
-          hardwareMode
-            ? treadmillFresh
-              ? $"{devices.Treadmill.DisplayName} ready via {devices.Treadmill.TelemetryMode}"
-              : devices.Treadmill.Fault ?? (devices.Treadmill.DisplayName is null
-                ? "The enrolled treadmill is disconnected"
-                : $"{devices.Treadmill.DisplayName} is {devices.Treadmill.State}")
-            : "Treadmill connected (simulator)"),
-        new PreflightCheck(
-          "heart-rate",
-          "Heart rate",
-          requiresHeartRate
-            ? hardwareMode
-              ? heartRateFresh ? PreflightCheckStatus.Ready : PreflightCheckStatus.Waiting
-              : PreflightCheckStatus.Ready
-            : PreflightCheckStatus.NotRequired,
-          requiresHeartRate
-            ? hardwareMode
-              ? heartRateFresh
-                ? $"{devices.HeartRate.DisplayName} ready"
-                : devices.HeartRate.Fault ?? "The selected heart-rate sensor is not providing fresh telemetry"
-              : "Heart rate connected (simulator)"
-            : "Not required for this workout"),
-      ],
+      checks,
       control.CanStart,
       control.CanStop,
       control.MinimumStartSpeedKph,
@@ -262,6 +269,63 @@ public sealed class LiveSessionCoordinator(
       control.InclineRange,
       targetEvaluations: capabilityResult.Targets);
   }
+
+  private async Task<IReadOnlyList<PreflightCheck>> LoadProfileHeartRateDeviceChecksAsync(
+    Guid profileId,
+    DeviceTelemetrySnapshot devices,
+    CancellationToken cancellationToken)
+  {
+    using IServiceScope scope = scopeFactory.CreateScope();
+    IDeviceEnrollmentStore store = scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>();
+    IReadOnlyList<VersionedDeviceEnrollment> active = await store.ListActiveAsync(cancellationToken);
+    IReadOnlyList<HeartRateDeviceAssignment> assignments = await store.ListHeartRateAssignmentsAsync(cancellationToken);
+    Dictionary<Guid, DeviceEnrollment> enrollments = active
+      .Select(static item => item.Enrollment)
+      .Where(static enrollment => enrollment.Role == DeviceRole.HeartRate)
+      .ToDictionary(static enrollment => enrollment.Id);
+    Dictionary<Guid, HeartRateSourceSnapshot> sources = (devices.HeartRateSources ?? [])
+      .ToDictionary(static source => source.EnrollmentId);
+    HeartRateDeviceAssignment[] profileAssignments = assignments
+      .Where(assignment => assignment.UserProfileId == profileId && enrollments.ContainsKey(assignment.DeviceEnrollmentId))
+      .OrderByDescending(static assignment => assignment.IsPreferred)
+      .ThenBy(static assignment => assignment.Priority)
+      .ThenBy(static assignment => assignment.DeviceEnrollmentId)
+      .ToArray();
+    var checks = new List<PreflightCheck>(profileAssignments.Length);
+    var fallbackIndex = 0;
+    foreach (HeartRateDeviceAssignment assignment in profileAssignments)
+    {
+      DeviceEnrollment enrollment = enrollments[assignment.DeviceEnrollmentId];
+      sources.TryGetValue(enrollment.Id, out HeartRateSourceSnapshot? source);
+      bool selected = devices.SelectedHeartRateEnrollmentId == enrollment.Id;
+      string role = assignment.IsPreferred ? "Preferred" : $"Fallback {++fallbackIndex}";
+      string detail = selected
+        ? $"{role} sensor selected for this run; {DescribeConnection(source)}."
+        : source?.State == DeviceConnectionState.Ready
+          ? $"{role} sensor connected and ready."
+          : assignment.IsPreferred
+            ? $"{role} sensor; {DescribeConnection(source)}."
+            : $"{role} sensor on standby; it connects automatically if an earlier source fails.";
+      checks.Add(new PreflightCheck(
+        $"heart-rate-device-{enrollment.Id:N}",
+        enrollment.DisplayName,
+        source?.State == DeviceConnectionState.Ready ? PreflightCheckStatus.Ready : PreflightCheckStatus.NotRequired,
+        detail));
+    }
+
+    return checks;
+  }
+
+  private static string DescribeConnection(HeartRateSourceSnapshot? source) => source?.State switch
+  {
+    DeviceConnectionState.Ready => "connected and ready",
+    DeviceConnectionState.DiscoveringServices => "discovering services",
+    DeviceConnectionState.Subscribing => "subscribing to heart-rate readings",
+    DeviceConnectionState.Connecting => "connecting",
+    DeviceConnectionState.Reconnecting => "reconnecting",
+    _ when !string.IsNullOrWhiteSpace(source?.Fault) => source.Fault!,
+    _ => "waiting to connect",
+  };
 
   public async Task<ActiveSessionSnapshot> ArmAsync(
     Guid profileId,

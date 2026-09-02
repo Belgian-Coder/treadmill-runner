@@ -14,7 +14,7 @@ public static class GarminLatestTwoReconciliationPlanner
   {
     ArgumentNullException.ThrowIfNull(local);
     ArgumentNullException.ThrowIfNull(candidates);
-    canonical = candidates.Count == 1 && IsCanonical(local, candidates[0]) ? candidates[0] : null;
+    canonical = candidates.Count == 1 && GarminWatchActivityMatcher.IsCanonicalLocalCopy(local, candidates[0]) ? candidates[0] : null;
     return canonical is not null;
   }
 
@@ -33,7 +33,7 @@ public static class GarminLatestTwoReconciliationPlanner
       return false;
     }
 
-    GarminWatchActivityCandidate[] canonical = candidates.Where(candidate => IsCanonical(local, candidate)).ToArray();
+    GarminWatchActivityCandidate[] canonical = candidates.Where(candidate => GarminWatchActivityMatcher.IsCanonicalLocalCopy(local, candidate)).ToArray();
     if (canonical.Length != 1)
     {
       error = "The complete locally uploaded Garmin activity could not be identified uniquely.";
@@ -65,9 +65,4 @@ public static class GarminLatestTwoReconciliationPlanner
     return true;
   }
 
-  private static bool IsCanonical(GarminActivityMatchReference local, GarminWatchActivityCandidate candidate) =>
-    string.Equals(candidate.ActivityType, "treadmill_running", StringComparison.OrdinalIgnoreCase) &&
-    Math.Abs((candidate.StartedAtUtc - local.StartedAtUtc).TotalSeconds) <= 45 &&
-    Math.Abs(candidate.DurationSeconds - local.DurationSeconds) <= 45 &&
-    Math.Abs(candidate.DistanceKilometers - local.DistanceKilometers) <= 0.08;
 }

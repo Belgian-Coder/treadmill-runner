@@ -26,10 +26,12 @@ public static class WorkoutCompletionStopPolicy
     ArgumentNullException.ThrowIfNull(context);
     if (!context.ProgressionComplete) return WorkoutCompletionAction.Continue;
     if (!context.HardwareMode) return WorkoutCompletionAction.Finalize;
-    if (context.TelemetryFresh && !context.IsMoving && context.MeasuredSpeedKph <= 0.05)
+    bool speedValid = double.IsFinite(context.MeasuredSpeedKph) && context.MeasuredSpeedKph >= 0;
+    if (context.TelemetryFresh && speedValid && !context.IsMoving && context.MeasuredSpeedKph <= 0.05)
       return WorkoutCompletionAction.Finalize;
     if (context.StopAttempted) return WorkoutCompletionAction.AwaitPhysicalStop;
     return context.TelemetryFresh &&
+      speedValid &&
       context.IsMoving &&
       context.MeasuredSpeedKph > 0.05 &&
       context.CanStopRemotely &&

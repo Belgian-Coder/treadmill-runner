@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using TreadmillRunner.Protocols.Exports;
 
 namespace TreadmillRunner.Gateway.Garmin;
 
@@ -19,6 +20,17 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
     PruneExpired();
   }
 
+  /// <summary>
+  /// Retains the deterministic local-session FIT alongside the watch-original
+  /// and merged-replacement backups.  Undo uses this copy as the authoritative
+  /// proof for the one plain TreadmillRunner activity that must remain.
+  /// </summary>
+  public async Task BackupLocalAsync(Guid jobId, string sourcePath, CancellationToken cancellationToken)
+  {
+    await BackupAsync(LocalPath(jobId), sourcePath, cancellationToken);
+    PruneExpired();
+  }
+
   public bool HasOriginal(Guid jobId, string remoteId)
   {
     string path = OriginalPath(jobId, remoteId);
@@ -28,10 +40,102 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
   public bool MatchesOriginal(Guid jobId, string originalRemoteId, string candidatePath)
   {
     string originalPath = OriginalPath(jobId, originalRemoteId);
-    if (!File.Exists(originalPath) || !File.Exists(candidatePath)) return false;
-    byte[] originalHash = SHA256.HashData(File.ReadAllBytes(originalPath));
-    byte[] candidateHash = SHA256.HashData(File.ReadAllBytes(candidatePath));
-    return CryptographicOperations.FixedTimeEquals(originalHash, candidateHash);
+    return FilesMatch(originalPath, candidatePath);
+  }
+
+  /// <summary>
+  /// Returns true only when the retained and candidate FIT files have the
+  /// same bytes.  Recovery uses this to make an exact match authoritative
+  /// when a candidate also has strict semantic matches in another category.
+  /// </summary>
+  public bool MatchesOriginalExactly(Guid jobId, string originalRemoteId, string candidatePath) =>
+    FilesMatchExactly(OriginalPath(jobId, originalRemoteId), candidatePath);
+
+  public bool MatchesReplacement(Guid jobId, string originalRemoteId, string candidatePath)
+  {
+    string replacementPath = ReplacementPath(jobId, originalRemoteId);
+    return FilesMatch(replacementPath, candidatePath);
+  }
+
+  public bool MatchesReplacementExactly(Guid jobId, string originalRemoteId, string candidatePath) =>
+    FilesMatchExactly(ReplacementPath(jobId, originalRemoteId), candidatePath);
+
+  public bool MatchesLocal(Guid jobId, string candidatePath) =>
+    FilesMatch(LocalPath(jobId), candidatePath);
+
+  public bool MatchesLocalExactly(Guid jobId, string candidatePath) =>
+    FilesMatchExactly(LocalPath(jobId), candidatePath);
+
+  public bool MatchesRecoveryOriginal(Guid jobId, string candidatePath) =>
+    TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+    !string.IsNullOrWhiteSpace(backupRemoteId) &&
+    MatchesOriginal(jobId, backupRemoteId, candidatePath);
+
+  public bool MatchesRecoveryOriginalExactly(Guid jobId, string candidatePath) =>
+    TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+    !string.IsNullOrWhiteSpace(backupRemoteId) &&
+    MatchesOriginalExactly(jobId, backupRemoteId, candidatePath);
+
+  public bool MatchesRecoveryReplacement(Guid jobId, string candidatePath) =>
+    TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+    !string.IsNullOrWhiteSpace(backupRemoteId) &&
+    MatchesReplacement(jobId, backupRemoteId, candidatePath);
+
+  public bool TryGetOriginalPath(Guid jobId, string originalRemoteId, out string? path) =>
+    TryGetRetainedPath(OriginalPath(jobId, originalRemoteId), out path);
+
+  public bool TryGetReplacementPath(Guid jobId, string originalRemoteId, out string? path) =>
+    TryGetRetainedPath(ReplacementPath(jobId, originalRemoteId), out path);
+
+  public bool TryGetLocalPath(Guid jobId, out string? path) =>
+    TryGetRetainedPath(LocalPath(jobId), out path);
+
+  public bool TryGetRecoveryOriginalPath(Guid jobId, out string? path)
+  {
+    path = null;
+    return TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+      !string.IsNullOrWhiteSpace(backupRemoteId) &&
+      TryGetOriginalPath(jobId, backupRemoteId, out path);
+  }
+
+  public bool TryGetRecoveryReplacementPath(Guid jobId, out string? path)
+  {
+    path = null;
+    return TryFindRecoveryOriginalRemoteId(jobId, out string? backupRemoteId) &&
+      !string.IsNullOrWhiteSpace(backupRemoteId) &&
+      TryGetReplacementPath(jobId, backupRemoteId, out path);
+  }
+
+  public bool HasLocal(Guid jobId)
+  {
+    string path = LocalPath(jobId);
+    return File.Exists(path) && new FileInfo(path).Length > 0;
+  }
+
+  public bool TryFindRecoveryOriginalRemoteId(Guid jobId, out string? originalRemoteId)
+  {
+    originalRemoteId = null;
+    if (!Directory.Exists(root)) return false;
+
+    string suffix = $"_{jobId:N}_original.fit";
+    string[] matches;
+    try
+    {
+      matches = Directory.EnumerateFiles(root, $"*{suffix}", SearchOption.TopDirectoryOnly)
+        .Where(path => new FileInfo(path).Length > 0)
+        .Where(path => TryGetRetainedPath(
+          Path.Combine(root, $"{Path.GetFileName(path)[..^suffix.Length]}_{jobId:N}_replacement.fit"),
+          out _))
+        .Take(2)
+        .ToArray();
+    }
+    catch (IOException) { return false; }
+    catch (UnauthorizedAccessException) { return false; }
+
+    if (matches.Length != 1) return false;
+    string fileName = Path.GetFileName(matches[0]);
+    originalRemoteId = fileName[..^suffix.Length];
+    return !string.IsNullOrWhiteSpace(originalRemoteId);
   }
 
   private async Task BackupAsync(string destinationPath, string sourcePath, CancellationToken cancellationToken)
@@ -68,6 +172,42 @@ public sealed class GarminActivityBackupStore(IConfiguration configuration, Time
 
   private string OriginalPath(Guid jobId, string remoteId) =>
     Path.Combine(root, $"{Safe(remoteId)}_{jobId:N}_original.fit");
+
+  private string ReplacementPath(Guid jobId, string originalRemoteId) =>
+    Path.Combine(root, $"{Safe(originalRemoteId)}_{jobId:N}_replacement.fit");
+
+  private string LocalPath(Guid jobId) =>
+    Path.Combine(root, $"{jobId:N}_local.fit");
+
+  private static bool FilesMatch(string expectedPath, string candidatePath)
+  {
+    if (!File.Exists(expectedPath) || !File.Exists(candidatePath)) return false;
+    byte[] expected = File.ReadAllBytes(expectedPath);
+    byte[] candidate = File.ReadAllBytes(candidatePath);
+    if (CryptographicOperations.FixedTimeEquals(SHA256.HashData(expected), SHA256.HashData(candidate)))
+      return true;
+
+    // Garmin may rewrite FileId/DeviceInfo metadata while retaining the same
+    // activity records.  The strict FIT semantic comparer deliberately ignores
+    // only those non-identity fields; malformed files remain non-matches.
+    try { return GarminFitActivitySemantics.AreEquivalent(expected, candidate); }
+    catch (InvalidDataException) { return false; }
+    catch (Dynastream.Fit.FitException) { return false; }
+  }
+
+  private static bool FilesMatchExactly(string expectedPath, string candidatePath)
+  {
+    if (!File.Exists(expectedPath) || !File.Exists(candidatePath)) return false;
+    byte[] expectedHash = SHA256.HashData(File.ReadAllBytes(expectedPath));
+    byte[] candidateHash = SHA256.HashData(File.ReadAllBytes(candidatePath));
+    return CryptographicOperations.FixedTimeEquals(expectedHash, candidateHash);
+  }
+
+  private static bool TryGetRetainedPath(string candidatePath, out string? path)
+  {
+    path = File.Exists(candidatePath) && new FileInfo(candidatePath).Length > 0 ? candidatePath : null;
+    return path is not null;
+  }
 
   private static string Safe(string remoteId)
   {

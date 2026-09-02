@@ -32,7 +32,8 @@ public sealed class SessionStore(
       "HeartRateBpm", "DistanceKilometers", "EstimatedCalories",
       "TelemetryAgeMilliseconds", "MetricAlgorithmVersion"
     FROM ranked
-    WHERE CAST(("RowIndex" * 239 + "LastIndex" - 1) / "LastIndex" AS INTEGER) <
+    WHERE "LastIndex" = 0 OR
+      CAST(("RowIndex" * 239 + "LastIndex" - 1) / "LastIndex" AS INTEGER) <
       CAST((("RowIndex" + 1) * 239 + "LastIndex" - 1) / "LastIndex" AS INTEGER)
     ORDER BY "Sequence"
     """;
@@ -146,6 +147,7 @@ public sealed class SessionStore(
     // cannot leave samples tracked for a later caller on this context.
     string checkpointJson = SerializeRecoveryCheckpoint(checkpoint);
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
     WorkoutSessionEntity session = await FindRequiredAsync(context, checkpoint.SessionId, cancellationToken);
     SessionState state = ParseState(session.State);
     if (IsTerminal(state))
@@ -186,15 +188,12 @@ public sealed class SessionStore(
       }
       previous = sample;
     }
-    if (session.RecoveryCheckpointUpdatedAtUtc is null ||
-        checkpoint.SavedAtUtc >= session.RecoveryCheckpointUpdatedAtUtc.Value)
-    {
-      session.RecoveryCheckpointJson = checkpointJson;
-      session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
-    }
-    // A single SaveChanges call makes EF Core enlist both inserts/updates in one
-    // provider transaction; a constraint failure rolls back both mutations.
+    // Keep sample inserts and the conditional checkpoint promotion atomic. The
+    // SQL predicate prevents a slower writer with stale state from overwriting a
+    // checkpoint committed by another context after this session was loaded.
     await context.SaveChangesAsync(cancellationToken);
+    await UpdateRecoveryCheckpointIfNewerAsync(context, checkpoint, checkpointJson, cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
   }
 
   public async Task AppendEventAsync(
@@ -631,9 +630,7 @@ public sealed class SessionStore(
     WorkoutSessionEntity session = await FindRequiredAsync(context, checkpoint.SessionId, cancellationToken);
     if (IsTerminal(ParseState(session.State))) return;
     string json = SerializeRecoveryCheckpoint(checkpoint);
-    session.RecoveryCheckpointJson = json;
-    session.RecoveryCheckpointUpdatedAtUtc = checkpoint.SavedAtUtc;
-    await context.SaveChangesAsync(cancellationToken);
+    await UpdateRecoveryCheckpointIfNewerAsync(context, checkpoint, json, cancellationToken);
   }
 
   public async Task<RecoverableWorkoutSession?> FindRecoverableAsync(
@@ -1008,6 +1005,27 @@ public sealed class SessionStore(
 
     return json;
   }
+
+  private static Task<int> UpdateRecoveryCheckpointIfNewerAsync(
+    TreadmillRunnerDbContext context,
+    SessionRecoveryCheckpoint checkpoint,
+    string checkpointJson,
+    CancellationToken cancellationToken) =>
+    context.Database.ExecuteSqlInterpolatedAsync($"""
+      UPDATE "WorkoutSessions"
+      SET "RecoveryCheckpointJson" = {checkpointJson},
+          "RecoveryCheckpointUpdatedAtUtc" = {checkpoint.SavedAtUtc}
+      WHERE "Id" = {checkpoint.SessionId}
+        AND "State" NOT IN ('Completed', 'Stopped', 'Interrupted', 'Faulted')
+        AND (
+          "RecoveryCheckpointUpdatedAtUtc" IS NULL OR
+          "RecoveryCheckpointUpdatedAtUtc" < {checkpoint.SavedAtUtc} OR
+          (
+            "RecoveryCheckpointUpdatedAtUtc" = {checkpoint.SavedAtUtc} AND
+            COALESCE(CAST(json_extract("RecoveryCheckpointJson", '$.sessionVersion') AS INTEGER), -1) < {checkpoint.SessionVersion}
+          )
+        )
+      """, cancellationToken);
 
   private static SessionEventEntity CreateEventEntity(Guid sessionId, SessionEvent sessionEvent) => new()
   {

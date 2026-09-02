@@ -296,6 +296,8 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
       .ToBeVisibleAsync();
 
     await treadmillCard.GetByRole(AriaRole.Button, new() { Name = "Connect", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Connecting Horizon Omega Z until you choose Disconnect or the gateway restarts. This never sends a treadmill command.", new() { Exact = true }))
+      .ToBeVisibleAsync();
     await Expect(Page.GetByText("Horizon Omega Z connected with fresh telemetry. End the run or use Disconnect when you are finished.", new() { Exact = true }))
       .ToBeVisibleAsync(new() { Timeout = 5_000 });
 

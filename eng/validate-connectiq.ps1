@@ -13,6 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'path-helpers.ps1')
 $appRoot = Join-Path $projectRoot 'connectiq/TreadmillRunnerCompanion'
 $manifestPath = Join-Path $appRoot 'manifest.xml'
 $requiredProducts = @('fenix843mm', 'fenix847mm', 'fenix8solar47mm', 'fenix8solar51mm', 'vivoactive5', 'vivoactive6')
@@ -114,9 +115,8 @@ function Invoke-RunNoEvil {
         $escapedDevice = $Device.Replace("'", "''")
         $command = "& '$escapedMonkeyDo' '$escapedProgram' '$escapedDevice' '/t'; exit `$LASTEXITCODE"
         $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-        foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedCommand)) {
-            $processInfo.ArgumentList.Add($argument)
-        }
+        Set-NativeProcessArguments -StartInfo $processInfo -Arguments @(
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedCommand)
 
         $process = [System.Diagnostics.Process]::new()
         $process.StartInfo = $processInfo
@@ -125,7 +125,7 @@ function Invoke-RunNoEvil {
         $stderr = $process.StandardError.ReadToEndAsync()
         try {
             if (-not $process.WaitForExit($SimulatorAttemptTimeoutSeconds * 1000)) {
-                $process.Kill($true)
+                Stop-NativeProcessTree -Process $process
                 $process.WaitForExit()
                 $lastOutput = @(
                     $stdout.GetAwaiter().GetResult()

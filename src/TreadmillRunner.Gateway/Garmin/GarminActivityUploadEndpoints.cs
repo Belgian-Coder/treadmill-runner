@@ -18,6 +18,14 @@ public sealed record GarminActivityFoundRequest(Guid OperationId);
 public sealed record GarminActivityAbsentRetryRequest(Guid OperationId, string Confirmation);
 public sealed record GarminActivityReprocessRequest(Guid OperationId);
 public sealed record GarminLatestTwoReconciliationRequest(Guid OperationId, string Confirmation);
+public sealed record GarminHistoricalRecoveryRequest(Guid OperationId, string Action, string Confirmation);
+public sealed record GarminHistoricalRecoveryStatus(
+  bool Available,
+  bool Busy,
+  bool CanMergeIntoOne,
+  bool CanUndoMerge,
+  string State,
+  string Message);
 public sealed record GarminActivityUploadStatusResponse(
   Guid ProfileId,
   bool Connected,
@@ -56,7 +64,118 @@ public static class GarminActivityUploadEndpoints
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/confirm-absent-retry", ConfirmAbsentAndRetryAsync);
     group.MapPost("/profiles/{profileId:guid}/jobs/{jobId:guid}/reprocess-merge", ReprocessMergeAsync);
     group.MapPost("/profiles/{profileId:guid}/sessions/{sessionId:guid}/reconcile-latest-two", ReconcileLatestTwoAsync);
+    group.MapGet("/profiles/{profileId:guid}/sessions/{sessionId:guid}/historical-recovery", GetHistoricalRecoveryAsync);
+    group.MapPost("/profiles/{profileId:guid}/sessions/{sessionId:guid}/historical-recovery", StartHistoricalRecoveryAsync);
     return endpoints;
+  }
+
+  private static async Task<IResult> GetHistoricalRecoveryAsync(
+    Guid profileId,
+    Guid sessionId,
+    ISessionStore sessions,
+    IGarminActivityUploadStore uploads,
+    GarminActivityBackupStore backups,
+    CancellationToken cancellationToken)
+  {
+    StoredWorkoutSession? session = await sessions.FindAsync(sessionId, cancellationToken);
+    if (session is null || session.Definition.UserProfileId != profileId) return TypedResults.NotFound();
+    GarminActivityUploadJob? job = await uploads.FindBySessionAsync(sessionId, cancellationToken);
+    GarminActivityUploadAccount? account = await uploads.FindAccountAsync(profileId, cancellationToken);
+    bool hasBackup = job is not null && backups.TryFindRecoveryOriginalRemoteId(job.Id, out _);
+    bool connected = account is { Enabled: true, State: "Connected" };
+    bool busy = job?.Status is "Pending" or "InFlight";
+    bool available = job is not null && hasBackup && connected;
+    string message = job is null
+      ? "This historical item has no Garmin upload record."
+      : !hasBackup
+        ? "Retained original and merged Garmin FITs are not available for this historical item."
+        : !connected
+          ? "Reconnect and enable Garmin activity upload before recovering this historical item."
+          : busy
+            ? "Garmin recovery is running. Refresh this historical item for the latest phase."
+            : "Choose one guarded outcome: keep one merged Garmin activity, or restore separate watch-original and TreadmillRunner activities. Local History remains unchanged.";
+    return TypedResults.Ok(new GarminHistoricalRecoveryStatus(
+      available,
+      busy,
+      available && !busy,
+      available && !busy,
+      job?.OperationPhase ?? "Unavailable",
+      message));
+  }
+
+  private static async Task<IResult> StartHistoricalRecoveryAsync(
+    Guid profileId,
+    Guid sessionId,
+    GarminHistoricalRecoveryRequest request,
+    HttpContext context,
+    ILiveSessionCoordinator live,
+    ISessionStore sessions,
+    IGarminActivityUploadStore uploads,
+    GarminActivityBackupStore backups,
+    IOperationReceiptStore receipts,
+    GarminActivityUploadWorker worker,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken)
+  {
+    if (!GarminCredentialTransportPolicy.IsAllowed(context))
+      return Results.Json(new { error = "Historical Garmin recovery is allowed only from the NUC, a private household-network address, or HTTPS." }, statusCode: StatusCodes.Status426UpgradeRequired);
+    if (request.OperationId == Guid.Empty) return TypedResults.BadRequest(new { error = "OperationId is required." });
+    string expectedConfirmation = request.Action switch
+    {
+      "MergeIntoOne" => "MERGE INTO ONE",
+      "UndoMerge" => "UNDO GARMIN MERGE",
+      _ => string.Empty,
+    };
+    if (string.IsNullOrEmpty(expectedConfirmation) || !string.Equals(request.Confirmation, expectedConfirmation, StringComparison.Ordinal))
+      return TypedResults.BadRequest(new { error = "The historical Garmin recovery action or confirmation is invalid." });
+    string fingerprint = PlanningOperationFingerprint.Compute(new { profileId, sessionId, request.Action });
+    OperationReceipt? completed = await receipts.FindAsync(request.OperationId, cancellationToken);
+    if (completed is not null)
+    {
+      if (completed.OperationType != "garmin.activity.historical-recovery" || completed.RequestFingerprint != fingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      GarminActivityUploadJob? replayed = JsonSerializer.Deserialize<GarminActivityUploadJob>(completed.OutcomeJson);
+      return replayed is null
+        ? TypedResults.Conflict(new { error = "The completed Garmin recovery request could not be read." })
+        : Results.Accepted(value: replayed);
+    }
+    if (HasActiveRun(live)) return TypedResults.Conflict(new { error = "Historical Garmin recovery requires an idle runner." });
+    StoredWorkoutSession? session = await sessions.FindAsync(sessionId, cancellationToken);
+    if (session is null || session.Definition.UserProfileId != profileId) return TypedResults.NotFound();
+    GarminActivityUploadJob? job = await uploads.FindBySessionAsync(sessionId, cancellationToken);
+    if (job is null) return TypedResults.NotFound(new { error = "The Garmin upload record was not found for this historical item." });
+    if (!backups.TryFindRecoveryOriginalRemoteId(job.Id, out string? originalRemoteId) || string.IsNullOrWhiteSpace(originalRemoteId))
+      return TypedResults.Conflict(new { error = "The retained original and merged Garmin FIT files are unavailable or ambiguous; nothing was changed." });
+
+    try
+    {
+      GarminActivityUploadJob queued = await uploads.StartHistoricalRecoveryAsync(
+        job.Id,
+        profileId,
+        request.Action,
+        originalRemoteId,
+        request.OperationId,
+        fingerprint,
+        timeProvider.GetUtcNow(),
+        cancellationToken);
+      worker.Wake();
+      return Results.Accepted(value: queued);
+    }
+    catch (OperationReplayException replay)
+    {
+      if (replay.Receipt.OperationType != "garmin.activity.historical-recovery" || replay.Receipt.RequestFingerprint != fingerprint)
+        return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+      GarminActivityUploadJob? queued = JsonSerializer.Deserialize<GarminActivityUploadJob>(replay.Receipt.OutcomeJson);
+      return queued is null
+        ? TypedResults.Conflict(new { error = "The completed Garmin recovery request could not be read." })
+        : Results.Accepted(value: queued);
+    }
+    catch (OperationScopeConflictException)
+    {
+      return TypedResults.Conflict(new { error = "That operation ID was already used for a different request." });
+    }
+    catch (KeyNotFoundException exception) { return TypedResults.NotFound(new { error = exception.Message }); }
+    catch (InvalidOperationException exception) { return TypedResults.Conflict(new { error = exception.Message }); }
   }
 
   private static async Task<IResult> ReconcileLatestTwoAsync(
@@ -69,6 +188,7 @@ public static class GarminActivityUploadEndpoints
     IGarminActivityUploadStore uploads,
     IGarminActivityAdapter adapter,
     GarminActivityConnectionService connections,
+    GarminActivityBackupStore backups,
     TimeProvider timeProvider,
     CancellationToken cancellationToken)
   {
@@ -115,17 +235,41 @@ public static class GarminActivityUploadEndpoints
       if (!GarminLatestTwoReconciliationPlanner.TryCreate(local, search.Candidates ?? [], out GarminLatestTwoReconciliationPlan? plan, out string error))
         return TypedResults.Conflict(new { error });
 
-      GarminAdapterMessage deletion = await adapter.DeleteAsync(search.TokenStore, plan!.Delete.RemoteId, cancellationToken);
-      if (!string.Equals(deletion.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(deletion.TokenStore))
-        return TypedResults.Conflict(new { error = "Garmin did not confirm removal of the late partial activity; the complete activity was left untouched." });
-      await uploads.RecordHistoricalReconciliationAsync(job.Id, plan.Keep.RemoteId, plan.Evidence, connections.Protect(deletion.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
-      return TypedResults.Ok(new
+      if (!backups.TryFindRecoveryOriginalRemoteId(job.Id, out string? originalRemoteId) || string.IsNullOrWhiteSpace(originalRemoteId))
+        return TypedResults.Conflict(new { error = "The late partial activity cannot be removed because its retained original FIT evidence is unavailable." });
+      string verificationDirectory = Path.Combine(Path.GetTempPath(), "TreadmillRunner", "garmin-reconcile");
+      Directory.CreateDirectory(verificationDirectory);
+      string verificationPath = Path.Combine(verificationDirectory, $"{job.Id:N}-{request.OperationId:N}-candidate.fit");
+      try
       {
-        sessionId,
-        keptRemoteId = plan.Keep.RemoteId,
-        deletedRemoteId = plan.Delete.RemoteId,
-        plan.Evidence,
-      });
+        GarminAdapterMessage download = await adapter.DownloadOriginalAsync(
+          search.TokenStore,
+          plan!.Delete.RemoteId,
+          verificationPath,
+          cancellationToken);
+        if (!string.Equals(download.State, "confirmed", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(download.TokenStore) ||
+            !backups.MatchesOriginal(job.Id, originalRemoteId, verificationPath))
+          return TypedResults.Conflict(new { error = "The late partial activity did not match the retained original FIT exactly; nothing was deleted." });
+
+        GarminAdapterMessage deletion = await adapter.DeleteAsync(download.TokenStore, plan.Delete.RemoteId, cancellationToken);
+        if (!string.Equals(deletion.State, "confirmed", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(deletion.TokenStore))
+          return TypedResults.Conflict(new { error = "Garmin did not confirm removal of the FIT-verified late partial activity; the complete activity was left untouched." });
+        await uploads.RecordHistoricalReconciliationAsync(job.Id, plan.Keep.RemoteId, plan.Evidence, connections.Protect(deletion.TokenStore), timeProvider.GetUtcNow(), cancellationToken);
+        return TypedResults.Ok(new
+        {
+          sessionId,
+          keptRemoteId = plan.Keep.RemoteId,
+          deletedRemoteId = plan.Delete.RemoteId,
+          plan.Evidence,
+        });
+      }
+      finally
+      {
+        try { if (File.Exists(verificationPath)) File.Delete(verificationPath); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+      }
     }
     catch (Exception exception) when (exception is InvalidOperationException or GarminAdapterUnavailableException or GarminAdapterAmbiguousResultException or TimeoutException)
     {

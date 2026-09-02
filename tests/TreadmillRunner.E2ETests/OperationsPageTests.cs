@@ -87,6 +87,79 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Database_check_maintenance_rejection_remains_retryable()
+  {
+    await Page.RouteAsync("**/api/operations/database/check", route => route.FulfillAsync(new()
+    {
+      Status = 503,
+      ContentType = "application/json",
+      Body = "{\"error\":\"another maintenance action is active\"}",
+    }));
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator database = Page.GetByRole(AriaRole.Region, new() { Name = "Database health", Exact = true });
+    ILocator check = database.GetByRole(AriaRole.Button, new() { Name = "Check now", Exact = true });
+    await check.ClickAsync();
+
+    await Expect(Page.GetByText("Database health could not be checked while another maintenance action or access gate was active.", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(check).ToBeEnabledAsync();
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Rejected_operator_session_immediately_relocks_the_operations_panel()
+  {
+    await Page.AddInitScriptAsync("sessionStorage.setItem('treadmillrunner.operator-token', 'expired-token');");
+    await Page.RouteAsync("**/api/operator/status", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = "{\"enabled\":true,\"authenticated\":true,\"expiresAtUtc\":\"2030-01-01T00:00:00Z\"}",
+    }));
+    await Page.RouteAsync("**/api/operations/database/check", route => route.FulfillAsync(new()
+    {
+      Status = 401,
+      ContentType = "application/problem+json",
+      Body = "{\"title\":\"Operator access required\",\"status\":401}",
+    }));
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator operatorPanel = Page.GetByRole(AriaRole.Region, new() { Name = "Operator access", Exact = true });
+    await Expect(operatorPanel.GetByText("Unlocked", new() { Exact = true })).ToBeVisibleAsync();
+    ILocator database = Page.GetByRole(AriaRole.Region, new() { Name = "Database health", Exact = true });
+    await database.GetByRole(AriaRole.Button, new() { Name = "Check now", Exact = true }).ClickAsync();
+
+    await Expect(operatorPanel.GetByText("Locked", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(operatorPanel.GetByRole(AriaRole.Button, new() { Name = "Unlock changes", Exact = true })).ToBeVisibleAsync();
+    await Expect(operatorPanel.GetByText("Operator access expired or was rejected.", new() { Exact = false })).ToBeVisibleAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Operator_lock_clears_the_browser_session_when_gateway_logout_is_unreachable()
+  {
+    await Page.AddInitScriptAsync("sessionStorage.setItem('treadmillrunner.operator-token', 'offline-token');");
+    await Page.RouteAsync("**/api/operator/status", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = "{\"enabled\":true,\"authenticated\":true,\"expiresAtUtc\":\"2030-01-01T00:00:00Z\"}",
+    }));
+    await Page.RouteAsync("**/api/operator/logout", route => route.AbortAsync());
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/operations").AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    ILocator operatorPanel = Page.GetByRole(AriaRole.Region, new() { Name = "Operator access", Exact = true });
+    await operatorPanel.GetByRole(AriaRole.Button, new() { Name = "Lock controls", Exact = true }).ClickAsync();
+
+    await Expect(operatorPanel.GetByText("Locked", new() { Exact = true })).ToBeVisibleAsync();
+    await Expect(operatorPanel.GetByText("Changes are locked in this browser.", new() { Exact = false })).ToBeVisibleAsync();
+    Assert.Null(await Page.EvaluateAsync<string?>("sessionStorage.getItem('treadmillrunner.operator-token')"));
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Operations_page_progresses_available_stage_and_two_step_activation()
   {
     await InstallAccessRoutesAsync();

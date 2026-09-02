@@ -168,9 +168,21 @@ def search(request: dict[str, Any]) -> None:
     page_size = 20
     max_pages = 10
     candidates: list[dict[str, Any]] = []
+    search_window_truncated = True
     for page in range(max_pages):
         activities = client.get_activities(page * page_size, page_size)
-        if not isinstance(activities, list) or not activities:
+        if not isinstance(activities, list):
+            emit(
+                {
+                    "state": "failed",
+                    "kind": "response",
+                    "message": "Garmin returned malformed activity search data; no upload or deletion was attempted.",
+                    "tokenStore": client.client.dumps(),
+                }
+            )
+            return
+        if not activities:
+            search_window_truncated = False
             break
         page_dates: list[datetime] = []
         for activity in activities:
@@ -213,14 +225,28 @@ def search(request: dict[str, Any]) -> None:
                     "heartRateSamples": heart_rate_samples,
                 }
             )
-            if len(candidates) >= 5:
+            # Return one overflow candidate so the gateway can detect that its
+            # five-candidate safety bound was exceeded and fail closed.
+            if len(candidates) >= 6:
                 break
-        if len(candidates) >= 5 or len(activities) < page_size:
+        if len(candidates) >= 6 or len(activities) < page_size:
+            search_window_truncated = False
             break
         # Activity pages are normally newest-first. Once the oldest item in a
         # page is older than the local session window, later pages cannot match.
         if page_dates and min(page_dates) < local_start - timedelta(seconds=600):
+            search_window_truncated = False
             break
+    if search_window_truncated:
+        emit(
+            {
+                "state": "failed",
+                "kind": "search-window-truncated",
+                "message": "Garmin activity search exceeded its bounded page window; no upload or deletion was attempted.",
+                "tokenStore": client.client.dumps(),
+            }
+        )
+        return
     emit({"state": "confirmed", "tokenStore": client.client.dumps(), "candidates": candidates})
 
 

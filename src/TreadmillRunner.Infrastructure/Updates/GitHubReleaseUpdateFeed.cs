@@ -34,13 +34,13 @@ public sealed partial class GitHubReleaseUpdateFeed : IUpdateFeed
     if (!response.IsSuccessStatusCode)
       throw new UpdateFeedUnavailableException($"GitHub Releases returned HTTP {(int)response.StatusCode}.");
 
-    byte[] metadata = await ReadBoundedAsync(
-      response.Content,
-      MaximumReleaseMetadataBytes,
-      "The GitHub release metadata is too large.",
-      cancellationToken);
     try
     {
+      byte[] metadata = await ReadBoundedAsync(
+        response.Content,
+        MaximumReleaseMetadataBytes,
+        "The GitHub release metadata is too large.",
+        cancellationToken);
       using JsonDocument document = JsonDocument.Parse(metadata);
       JsonElement assets = document.RootElement.GetProperty("assets");
       if (assets.ValueKind != JsonValueKind.Array || assets.GetArrayLength() > 1000)
@@ -80,7 +80,13 @@ public sealed partial class GitHubReleaseUpdateFeed : IUpdateFeed
         _owner,
         _repository);
     }
-    catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidDataException)
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (Exception exception) when (
+      exception is JsonException or KeyNotFoundException or InvalidDataException or
+      InvalidOperationException or HttpRequestException or IOException or OperationCanceledException)
     {
       throw new UpdateFeedUnavailableException("The GitHub release metadata is invalid.", exception);
     }

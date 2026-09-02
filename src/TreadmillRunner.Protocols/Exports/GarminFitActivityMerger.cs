@@ -29,13 +29,12 @@ public static class GarminFitActivityMerger
     float altitudeBaseline = firstRecord.GetEnhancedAltitude() ?? firstRecord.GetAltitude() ?? 0;
     RecordMesg[] replacementRecords = samples.Select(sample =>
     {
+      uint sampleTimestamp = new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp();
       RecordMesg? watchRecord = records
         .Where(record => record.GetTimestamp() is not null)
-        .MinBy(record => Math.Abs(
-          new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp() -
-          record.GetTimestamp()!.GetTimeStamp()));
-      if (watchRecord?.GetTimestamp() is { } watchTimestamp && Math.Abs(
-            new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp() - watchTimestamp.GetTimeStamp()) > 5)
+        .MinBy(record => TimestampDistance(sampleTimestamp, record.GetTimestamp()!.GetTimeStamp()));
+      if (watchRecord?.GetTimestamp() is { } watchTimestamp &&
+          TimestampDistance(sampleTimestamp, watchTimestamp.GetTimeStamp()) > 5)
         watchRecord = null;
       return OverlayRecord(
         watchRecord is null ? new RecordMesg() : new RecordMesg(watchRecord),
@@ -109,8 +108,13 @@ public static class GarminFitActivityMerger
     var messages = new List<Mesg>();
     decoder.MesgEvent += (_, args) => messages.Add(new Mesg(args.mesg));
     if (!decoder.Read(input) || messages.Count == 0) throw new InvalidDataException("The watch FIT could not be decoded.");
+    Mesg[] fileIds = messages.Where(static message => message.Num == MesgNum.FileId).ToArray();
+    if (fileIds.Length != 1 || new FileIdMesg(fileIds[0]).GetType() != Dynastream.Fit.File.Activity)
+      throw new InvalidDataException("The watch FIT must contain exactly one Activity File Id message.");
     return messages;
   }
+
+  private static long TimestampDistance(uint left, uint right) => Math.Abs((long)left - right);
 
   private static RecordMesg OverlayRecord(
     RecordMesg record,

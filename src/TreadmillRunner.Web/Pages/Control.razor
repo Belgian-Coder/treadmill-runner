@@ -274,7 +274,8 @@
             <button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button>
             <button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button>
             <button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button>
-            <button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session and keep it in History.</span></button>
+            <button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session, keep it in History, and leave manually connected devices online.</span></button>
+            <button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAndDisconnectAsync"><strong>End, save and disconnect devices</strong><span>Finish this session, keep it in History, then disconnect this runner’s treadmill and heart-rate sensors.</span></button>
         </div>
     </DetailSheet>
 }
@@ -867,13 +868,15 @@
     private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout reset to the first step. Press Start when you are ready.", navigateHome: false);
     private Task DiscardSessionAsync() => ApplySessionDecisionAsync("discard", "Session discarded.", navigateHome: true);
     private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", navigateHome: true);
+    private Task EndSessionAndDisconnectAsync() => ApplySessionDecisionAsync("end", "Session ended, saved, and devices disconnected.", navigateHome: true, disconnectDevices: true);
 
-    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome)
+    private async Task ApplySessionDecisionAsync(string action, string successMessage, bool navigateHome, bool disconnectDevices = false)
     {
         if (sessionActionBusy || session is null || lease is null) return;
         sessionActionBusy = true;
         try
         {
+            Guid profileId = session.UserProfileId;
             using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new
             {
                 operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version,
@@ -886,6 +889,16 @@
             }
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
             Guid completedSessionId = session?.SessionId ?? Guid.Empty;
+            if (disconnectDevices)
+            {
+                using HttpResponseMessage disconnect = await Http.PostAsync($"api/devices/profiles/{profileId:D}/disconnect", content: null);
+                if (!disconnect.IsSuccessStatusCode)
+                {
+                    await KeepSessionPausedAsync();
+                    actionStatus = "Session saved, but the devices could not be disconnected. Use Devices to disconnect them.";
+                    return;
+                }
+            }
             await KeepSessionPausedAsync();
             actionStatus = successMessage;
             if (navigateHome)

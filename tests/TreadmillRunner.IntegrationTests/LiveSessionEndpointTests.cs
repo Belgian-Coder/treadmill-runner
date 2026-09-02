@@ -440,6 +440,59 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   }
 
   [Fact]
+  public async Task Preflight_lists_the_profiles_preferred_heart_rate_sensor_and_ordered_fallback()
+  {
+    using HttpClient client = factory.CreateClient();
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client, heartRate: true);
+    async Task<(Guid Id, int Version)> EnrollAsync(string name, bool preferred)
+    {
+      using HttpResponseMessage response = await client.PostAsJsonAsync("/api/devices/enrollments", new
+      {
+        operationId = Guid.NewGuid(),
+        role = "HeartRate",
+        deviceId = $"PREFLIGHT-{Guid.NewGuid():N}",
+        displayName = name,
+        serviceUuids = new[] { HeartRateService },
+        telemetryMode = (string?)null,
+        ownerProfileIds = new[] { profileId },
+        autoConnect = true,
+        isPreferred = preferred,
+      });
+      response.EnsureSuccessStatusCode();
+      JsonElement enrollment = await response.Content.ReadFromJsonAsync<JsonElement>();
+      return (enrollment.GetProperty("id").GetGuid(), enrollment.GetProperty("version").GetInt32());
+    }
+
+    (Guid polarId, int polarVersion) = await EnrollAsync("Polar H10 profile sensor", preferred: true);
+    (Guid fenixId, int fenixVersion) = await EnrollAsync("Garmin fēnix 8 profile fallback", preferred: false);
+    try
+    {
+      PreflightSnapshot preflight = Assert.IsType<PreflightSnapshot>(await client.GetFromJsonAsync<PreflightSnapshot>(
+        $"/api/live/preflight?profileId={profileId}&workoutRevisionId={revisionId}"));
+
+      PreflightCheck polar = Assert.Single(preflight.Checks, check => check.Id == $"heart-rate-device-{polarId:N}");
+      PreflightCheck fenix = Assert.Single(preflight.Checks, check => check.Id == $"heart-rate-device-{fenixId:N}");
+      Assert.Equal("Polar H10 profile sensor", polar.Label);
+      Assert.Contains("Preferred", polar.Detail, StringComparison.Ordinal);
+      Assert.Equal("Garmin fēnix 8 profile fallback", fenix.Label);
+      Assert.Contains("Fallback 1", fenix.Detail, StringComparison.Ordinal);
+      Assert.Contains("standby", fenix.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+    finally
+    {
+      foreach ((Guid id, int version) in new[] { (polarId, polarVersion), (fenixId, fenixVersion) })
+      {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/devices/enrollments/{id}")
+        {
+          Content = JsonContent.Create(new { operationId = Guid.NewGuid(), expectedVersion = version }),
+        };
+        using HttpResponseMessage _ = await client.SendAsync(request);
+      }
+    }
+  }
+
+  [Fact]
   public async Task Gateway_owned_heart_rate_control_survives_browser_lease_expiry_then_suspends_on_stale_hr()
   {
     using HttpClient client = factory.CreateClient();

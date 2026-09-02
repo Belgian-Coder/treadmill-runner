@@ -26,7 +26,7 @@ public sealed class GarminWatchActivityMatcherTests
   }
 
   [Fact]
-  public void More_than_one_plausible_activity_is_left_for_normal_upload()
+  public void More_than_one_plausible_activity_is_left_for_manual_review()
   {
     DateTimeOffset started = DateTimeOffset.Parse("2026-08-21T18:43:15Z");
     GarminActivityMatchReference local = Reference(started);
