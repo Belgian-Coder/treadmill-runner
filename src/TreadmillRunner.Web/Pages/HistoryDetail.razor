@@ -115,30 +115,34 @@ else
         }
         @if (session.Garmin is { } garmin)
         {
-            <section class="panel-card" aria-labelledby="garmin-reconciliation-title">
+            <section class="panel-card garmin-status-card" aria-labelledby="garmin-reconciliation-title">
                 <div class="panel-heading">
-                    <div><p class="eyebrow">Garmin reconciliation</p><h2 id="garmin-reconciliation-title">@(garmin.ReviewRequired ? "Possible match — review required" : garmin.Status)</h2></div>
-                    <span>@garmin.OperationPhase</span>
+                    <div><p class="eyebrow">Garmin activity</p><h2 id="garmin-reconciliation-title">@GarminStatusTitle(garmin)</h2></div>
                 </div>
                 @if (garminRecovery is { Busy: true } busyRecovery)
                 {
                     <div class="controls-card garmin-acknowledgement" role="status">
                         <p>@busyRecovery.Message</p>
-                        <button class="touch-action secondary-action" type="button" disabled="@loading" @onclick="LoadSessionAsync">Refresh Garmin recovery</button>
+                        <button class="touch-action secondary-action" type="button" disabled="@loading" @onclick="LoadSessionAsync">Refresh status</button>
                     </div>
                 }
                 else if (garminRecovery is { Available: true } recovery)
                 {
                     <div class="controls-card garmin-acknowledgement">
-                        <p><strong>Recover this historical item</strong></p>
-                        <p>@recovery.Message</p>
+                        <p><strong>Choose how this run appears in Garmin</strong></p>
+                        <p>Your run stays in TreadmillRunner either way. Only the Garmin activities are changed.</p>
                         @if (string.IsNullOrWhiteSpace(garminRecoveryChoice))
                         {
-                            <div class="form-actions">
-                                <button class="touch-action primary-action" type="button" disabled="@(garminActionBusy || !recovery.CanMergeIntoOne)" @onclick='() => SelectGarminRecovery("MergeIntoOne")'>Merge into one</button>
-                                <button class="touch-action secondary-action" type="button" disabled="@(garminActionBusy || !recovery.CanUndoMerge)" @onclick='() => SelectGarminRecovery("UndoMerge")'>Undo merge</button>
+                            <div class="garmin-choice-grid">
+                                <div>
+                                    <button class="touch-action primary-action" type="button" disabled="@(garminActionBusy || !recovery.CanMergeIntoOne)" @onclick='() => SelectGarminRecovery("MergeIntoOne")'>Keep one Garmin activity</button>
+                                    <small>Keep the verified combined activity and remove proven duplicates.</small>
+                                </div>
+                                <div>
+                                    <button class="touch-action secondary-action" type="button" disabled="@(garminActionBusy || !recovery.CanUndoMerge)" @onclick='() => SelectGarminRecovery("UndoMerge")'>Restore two Garmin activities</button>
+                                    <small>Restore the original watch activity beside the verified TreadmillRunner activity.</small>
+                                </div>
                             </div>
-                            <small>Merge keeps one verified merged Garmin activity. Undo restores two separate source activities: the original Garmin watch activity and one FIT-verified TreadmillRunner activity. Your local History session is never deleted.</small>
                         }
                         else
                         {
@@ -159,90 +163,63 @@ else
                 @if (garmin.Status == "Unknown" && garminRecovery?.Available != true)
                 {
                     <div class="controls-card garmin-acknowledgement" role="status">
-                        <p><strong>Found this activity in Garmin?</strong> Acknowledge it here to settle the local record and unlock local deletion. This does not change Garmin.</p>
-                        <button class="touch-action primary-action" type="button" disabled="@garminActionBusy" @onclick="AcknowledgeGarminFoundAsync">@(garminActionBusy ? "Acknowledging…" : "Acknowledge found in Garmin")</button>
+                        <p><strong>Can you see this run in Garmin?</strong> Mark it as found to settle the local status. This does not change Garmin.</p>
+                        <button class="touch-action primary-action" type="button" disabled="@garminActionBusy" @onclick="AcknowledgeGarminFoundAsync">@(garminActionBusy ? "Saving…" : "I found it in Garmin")</button>
                     </div>
                 }
                 @if (!string.IsNullOrWhiteSpace(garminActionMessage))
                 {
                     <p class="action-status" role="status" aria-live="polite">@garminActionMessage</p>
                 }
-                <dl class="device-facts">
-                    <div><dt>Status</dt><dd>@garmin.Status</dd></div>
-                    <div><dt>Failure phase</dt><dd>@(garmin.FailureKind ?? "None")</dd></div>
-                    <div><dt>Updated</dt><dd>@garmin.UpdatedAtUtc.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss")</dd></div>
-                    <div><dt>Retry time</dt><dd>@FormatOptionalTimestamp(garmin.RetryAtUtc)</dd></div>
-                    <div><dt>Acknowledged</dt><dd>@FormatOptionalTimestamp(garmin.AcknowledgedAtUtc)</dd></div>
-                    <div><dt>Retry eligible</dt><dd>@(garmin.CanRetry ? "Yes" : "No")</dd></div>
-                </dl>
-                @if (!string.IsNullOrWhiteSpace(garmin.MatchEvidence))
-                {
-                    <p><strong>Match evidence:</strong> @garmin.MatchEvidence</p>
-                }
                 @if (!string.IsNullOrWhiteSpace(garmin.LastError))
                 {
                     <p class="field-error">@garmin.LastError</p>
                 }
-                <div class="form-grid">
-                    <label class="field field--wide">Upload job ID
-                        <span class="field-inline"><input readonly value="@garmin.Id" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminJobIdAsync">Copy</button></span>
-                    </label>
-                    @if (!string.IsNullOrWhiteSpace(garmin.RemoteId))
+                <details class="garmin-technical-details">
+                    <summary>Technical details</summary>
+                    <dl class="device-facts">
+                        <div><dt>Status</dt><dd>@garmin.Status</dd></div>
+                        <div><dt>Operation phase</dt><dd>@garmin.OperationPhase</dd></div>
+                        <div><dt>Failure phase</dt><dd>@(garmin.FailureKind ?? "None")</dd></div>
+                        <div><dt>Updated</dt><dd>@garmin.UpdatedAtUtc.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss")</dd></div>
+                        <div><dt>Retry time</dt><dd>@FormatOptionalTimestamp(garmin.RetryAtUtc)</dd></div>
+                        <div><dt>Acknowledged</dt><dd>@FormatOptionalTimestamp(garmin.AcknowledgedAtUtc)</dd></div>
+                        <div><dt>Retry eligible</dt><dd>@(garmin.CanRetry ? "Yes" : "No")</dd></div>
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(garmin.MatchEvidence))
                     {
-                        <label class="field field--wide">Garmin activity ID
-                            <span class="field-inline"><input readonly value="@garmin.RemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminRemoteIdAsync">Copy</button></span>
-                        </label>
+                        <p><strong>Match evidence:</strong> @garmin.MatchEvidence</p>
                     }
-                    @if (!string.IsNullOrWhiteSpace(garmin.MatchedRemoteId))
+                    <div class="form-grid">
+                        <label class="field field--wide">Upload job ID
+                            <span class="field-inline"><input readonly value="@garmin.Id" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminJobIdAsync">Copy</button></span>
+                        </label>
+                        @if (!string.IsNullOrWhiteSpace(garmin.RemoteId))
+                        {
+                            <label class="field field--wide">Garmin activity ID
+                                <span class="field-inline"><input readonly value="@garmin.RemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminRemoteIdAsync">Copy</button></span>
+                            </label>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(garmin.MatchedRemoteId))
+                        {
+                            <label class="field field--wide">Matched activity ID
+                                <span class="field-inline"><input readonly value="@garmin.MatchedRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminMatchedIdAsync">Copy</button></span>
+                            </label>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(garmin.ReplacementRemoteId))
+                        {
+                            <label class="field field--wide">Replacement activity ID
+                                <span class="field-inline"><input readonly value="@garmin.ReplacementRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminReplacementIdAsync">Copy</button></span>
+                            </label>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(identifierCopyMessage))
                     {
-                        <label class="field field--wide">Matched activity ID
-                            <span class="field-inline"><input readonly value="@garmin.MatchedRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminMatchedIdAsync">Copy</button></span>
-                        </label>
+                        <p class="field-hint" role="status">@identifierCopyMessage</p>
                     }
-                    @if (!string.IsNullOrWhiteSpace(garmin.ReplacementRemoteId))
-                    {
-                        <label class="field field--wide">Replacement activity ID
-                            <span class="field-inline"><input readonly value="@garmin.ReplacementRemoteId" /><button class="secondary-action compact-action" type="button" @onclick="CopyGarminReplacementIdAsync">Copy</button></span>
-                        </label>
-                    }
-                </div>
-                @if (!string.IsNullOrWhiteSpace(identifierCopyMessage))
-                {
-                    <p class="field-hint" role="status">@identifierCopyMessage</p>
-                }
+                </details>
             </section>
         }
-        <section class="panel-card adviser-card" aria-labelledby="adviser-title">
-            <div class="panel-heading"><div><p class="eyebrow">Deterministic local adviser</p><h2 id="adviser-title">What next?</h2></div><span>No plan changes without confirmation</span></div>
-            <p class="field-hint">Accepting or rejecting records your decision only. It never edits the saved workout or active training plan.</p>
-            @if (localInsightsLoading)
-            {
-                <p class="muted" role="status">Loading comparison and adviser receipts…</p>
-            }
-            else if (!string.IsNullOrWhiteSpace(localInsightsMessage))
-            {
-                <p class="field-error" role="status">@localInsightsMessage</p>
-                <button class="secondary-action" type="button" @onclick="LoadLocalInsightsAsync">Try again</button>
-            }
-            else if (recommendation is null)
-            {
-                <p>Use this run’s recorded completion, adherence, heart-rate coverage, interruptions, and telemetry quality to create an explainable suggestion.</p>
-                <button class="secondary-action" type="button" @onclick="CreateRecommendationAsync" disabled="@recommendationBusy">@(recommendationBusy ? "Reviewing…" : "Create local suggestion")</button>
-            }
-            else
-            {
-                <p><strong>@recommendation.Recommendation.Action:</strong> @recommendation.Recommendation.Reason</p>
-                <p class="field-hint">Algorithm @recommendation.Recommendation.AlgorithmVersion · receipt @recommendation.Status</p>
-                @if (recommendation.Status == "Pending")
-                {
-                    <div class="controls-card adviser-actions">
-                        <button class="primary-action" type="button" @onclick="() => DecideRecommendationAsync(true)" disabled="@recommendationBusy">Record as accepted</button>
-                        <button class="secondary-action" type="button" @onclick="() => DecideRecommendationAsync(false)" disabled="@recommendationBusy">Record as rejected</button>
-                    </div>
-                }
-            }
-            @if (!string.IsNullOrWhiteSpace(recommendationMessage)) { <p role="status">@recommendationMessage</p> }
-        </section>
         @if (deletionPreview is null && !string.IsNullOrWhiteSpace(deletionMessage))
         {
             <p class="field-error" role="status">@deletionMessage</p>
@@ -441,14 +418,9 @@ else
     private bool previewLoading;
     private bool deleting;
     private string deletionMessage = string.Empty;
-    private RecommendationView? recommendation;
     private ComparisonView? comparison;
-    private bool recommendationBusy;
-    private string recommendationMessage = string.Empty;
     private bool loading = true;
     private string? loadError;
-    private bool localInsightsLoading;
-    private string? localInsightsMessage;
     private bool shareSupported;
     private bool shareBusy;
     private string? shareMessage;
@@ -463,8 +435,8 @@ else
     private GarminHistoricalRecoveryView? garminRecovery;
     private string garminRecoveryChoice = string.Empty;
     private string GarminRecoveryConfirmationText => garminRecoveryChoice == "UndoMerge"
-        ? "Undo this merge? The app will restore exactly two separate Garmin activities—the backed-up watch original and one FIT-verified TreadmillRunner activity—and remove only proven merged or duplicate copies. Local History remains untouched."
-        : "Merge this historical item into one? The app will keep one FIT-verified merged Garmin activity and remove only the backed-up original plus proven generated duplicates.";
+        ? "Restore two Garmin activities? The app will restore the original watch activity and one verified TreadmillRunner activity, then remove only proven merged or duplicate copies. Your local History remains unchanged."
+        : "Keep one Garmin activity? The app will keep the verified combined activity in Garmin and remove only the backed-up original and proven duplicates. Your local History remains unchanged.";
     private string AverageHeartRateLabel => session?.AverageHeartRateBpm is { } heartRate ? $"{heartRate:0} bpm" : "Not recorded";
     private bool HasHeartRateSamples => session?.Samples.Any(static sample => sample.HeartRateBpm is not null) == true;
     private string HistoryGraphSampleSummary => session is null
@@ -526,7 +498,6 @@ else
         session = null;
         garminRecovery = null;
         garminRecoveryChoice = string.Empty;
-        recommendation = null;
         comparison = null;
         debriefPerceivedExertion = null;
         debriefNote = string.Empty;
@@ -558,7 +529,7 @@ else
 
         if (session is not null)
         {
-            await Task.WhenAll(LoadLocalInsightsAsync(), LoadGarminRecoveryAsync());
+            await Task.WhenAll(LoadComparisonAsync(), LoadGarminRecoveryAsync());
         }
     }
 
@@ -610,10 +581,7 @@ else
             debriefPerceivedExertion = saved.PerceivedExertion;
             debriefNote = saved.Note ?? string.Empty;
             debriefEditing = false;
-            bool recommendationRefreshed = await RefreshRecommendationAfterDebriefAsync();
-            debriefMessage = recommendationRefreshed
-                ? skip ? "Debrief skipped. The local suggestion was refreshed." : "Debrief saved. The local suggestion was refreshed."
-                : skip ? "Debrief skipped. The local suggestion could not be refreshed yet." : "Debrief saved. The local suggestion could not be refreshed yet.";
+            debriefMessage = skip ? "Debrief skipped." : "Debrief saved.";
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -625,83 +593,19 @@ else
         }
     }
 
-    private async Task<bool> RefreshRecommendationAfterDebriefAsync()
-    {
-        if (session is null) return false;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsJsonAsync(
-                $"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations",
-                new { OperationId = Guid.NewGuid(), SessionId });
-            if (!response.IsSuccessStatusCode) return false;
-            recommendation = await response.Content.ReadFromJsonAsync<RecommendationView>();
-            return recommendation is not null;
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            return false;
-        }
-    }
-
-    private async Task LoadLocalInsightsAsync()
+    private async Task LoadComparisonAsync()
     {
         if (session is null) return;
-        localInsightsLoading = true;
-        localInsightsMessage = null;
         try
         {
             comparison = await Http.GetFromJsonAsync<ComparisonView>($"api/local-first/profiles/{session.Definition.UserProfileId}/comparisons/{SessionId}");
-            RecommendationView[] existing = await Http.GetFromJsonAsync<RecommendationView[]>($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations") ?? [];
-            recommendation = existing.FirstOrDefault(item => item.SessionId == SessionId);
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            localInsightsMessage = "Comparison and adviser receipts are temporarily unavailable. The session itself is still available.";
-        }
-        finally
-        {
-            localInsightsLoading = false;
+            comparison = null;
         }
     }
 
-    private async Task CreateRecommendationAsync()
-    {
-        if (session is null) return;
-        recommendationBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations", new { OperationId = Guid.NewGuid(), SessionId });
-            recommendation = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<RecommendationView>() : null;
-            recommendationMessage = response.IsSuccessStatusCode ? "Suggestion stored locally for review." : "A suggestion could not be created from this session.";
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            recommendationMessage = "The local gateway could not create a suggestion. No plan or workout was changed.";
-        }
-        finally { recommendationBusy = false; }
-    }
-
-    private async Task DecideRecommendationAsync(bool accepted)
-    {
-        if (session is null || recommendation is null) return;
-        recommendationBusy = true;
-        try
-        {
-            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/local-first/profiles/{session.Definition.UserProfileId}/recommendations/{recommendation.Id}/decision", new { Accepted = accepted, ExpectedVersion = recommendation.Version });
-            if (response.IsSuccessStatusCode) recommendation = await response.Content.ReadFromJsonAsync<RecommendationView>();
-            recommendationMessage = response.IsSuccessStatusCode
-                ? accepted ? "Accepted decision recorded. The active plan and immutable workout remain unchanged." : "Rejected decision recorded; the receipt was retained."
-                : "The decision could not be recorded. The active plan and workout remain unchanged.";
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
-        {
-            recommendationMessage = "The local gateway could not record the decision. The active plan and workout remain unchanged.";
-        }
-        finally { recommendationBusy = false; }
-    }
-
-    private sealed record RecommendationValue(string Action, string Reason, string AlgorithmVersion);
-    private sealed record RecommendationView(Guid Id, Guid ProfileId, Guid SessionId, RecommendationValue Recommendation, string Status, int Version, DateTimeOffset CreatedAtUtc, DateTimeOffset? DecidedAtUtc);
     private sealed record ComparisonView(Guid WorkoutRevisionId, int ComparisonCount, SessionSummary? Previous, string Explanation);
     private sealed record GarminHistoricalRecoveryView(
         bool Available,
@@ -716,6 +620,17 @@ else
 
     private static string FormatOptionalTimestamp(DateTimeOffset? value) =>
         value?.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss") ?? "Not recorded";
+
+    private static string GarminStatusTitle(GarminReconciliationView garmin) => garmin.ReviewRequired
+        ? "Choose what Garmin should keep"
+        : garmin.Status switch
+        {
+            "Confirmed" => "One activity kept in Garmin",
+            "Queued" or "Running" => "Updating Garmin…",
+            "Unknown" => "Check this activity in Garmin",
+            "Failed" => "Garmin needs attention",
+            _ => "Garmin activity status",
+        };
 
     private async Task CopyIdentifierAsync(string value, string label)
     {
@@ -771,8 +686,8 @@ else
                 return;
             }
             garminActionMessage = action == "MergeIntoOne"
-                ? "Merge into one started. The app will identify the existing uploads before deleting anything."
-                : "Undo merge started. Garmin will be restored to one watch original plus one TreadmillRunner activity from exact FIT evidence; local History remains unchanged.";
+                ? "Keeping one Garmin activity. The app will identify the existing uploads before deleting anything."
+                : "Restoring two Garmin activities from verified source files. Your local History remains unchanged.";
             await Task.Delay(750);
             await LoadSessionAsync();
         }

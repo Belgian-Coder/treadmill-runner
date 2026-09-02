@@ -431,12 +431,10 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .legend-line--requested { border-color: #91d7ff; border-top-style: dotted; }
 .legend-line--measured { border-color: #f5c768; border-top-style: dashed; }
 .chart-event-marker { stroke: #ff8fa3; stroke-width: 2; stroke-dasharray: 3 4; }
-.debrief-card { width: min(720px, 100%); margin: 2rem auto; display: grid; gap: 1rem; }.debrief-card textarea { min-height: 150px; }
+.debrief-card { display: grid; gap: 1rem; }.debrief-card textarea { min-height: 150px; }
 .page-heading { display: grid; justify-content: start; gap: .35rem; text-align: left; }.page-heading > div, .page-heading > p { width: min(100%, 46rem); }.page-heading > p { max-width: 46rem; margin: 0; color: #a9c4c1; }.history-toolbar { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .7fr) minmax(150px, .7fr) auto; gap: .65rem; align-items: end; padding: .8rem; border: 1px solid #d9f9f21c; border-radius: 1rem; background: #102c36a8; }.history-result-count { min-height: 46px; display: grid; place-items: center; padding: .6rem .8rem; border-radius: .75rem; background: #081e278f; color: #8ee6c4; font-size: .72rem; font-weight: 800; white-space: nowrap; }.history-list { display: grid; gap: .7rem; }.history-card { display: grid; grid-template-columns: minmax(180px, .75fr) minmax(0, 1.25fr); align-items: center; gap: 1rem; padding: 1rem; border: 1px solid #d9f9f21c; border-radius: 1rem; background: #102c36dc; }.history-card h2 { margin: .35rem 0; }.history-card a { color: #edf8f6; }.history-card dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .55rem; }.history-card dl > div { min-width: 0; padding: .45rem; border-radius: .65rem; background: #081e2766; }.history-card dt { color: #91abaa; font-size: .62rem; }.history-card dd { overflow: hidden; margin: .25rem 0 0; font-size: .75rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }.status-chip { color: #8ee6c4; font-size: .72rem; text-transform: uppercase; }.history-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }.history-summary-grid article { display: grid; gap: .4rem; padding: 1rem; border-radius: 1rem; background: #102c36dc; }.history-summary-grid span { color: #91abaa; font-size: .72rem; }.history-summary-grid strong { font-size: 1.35rem; }
 .event-list { display: grid; gap: .5rem; margin: .8rem 0 0; padding-left: 1.4rem; }.event-list li { padding: .55rem .7rem; border-radius: .65rem; background: #081e278f; color: #c8e0dc; }
 .weekly-summary-panel { display: grid; gap: .55rem; }.weekly-summary-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; color: #a9c4c1; font-size: .72rem; }.weekly-summary-heading strong { color: #d9ece8; }.weekly-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }.weekly-summary article { display: grid; gap: .4rem; padding: 1rem; border-radius: 1rem; background: #102c36dc; }.weekly-summary span { color: #91abaa; font-size: .72rem; }.weekly-summary strong { font-size: 1.35rem; }.zone-list { display: grid; gap: .5rem; }.zone-list div { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem .8rem; border-radius: .65rem; background: #081e278f; }.zone-list dd { margin: 0; font-family: "Cascadia Mono", Consolas, monospace; }.event-counts { color: #a9c4c1; }
-.goal-progress-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .75rem; }.goal-progress-card { display: grid; gap: .55rem; padding: 1rem; border-radius: 1rem; background: #102c36dc; }.goal-progress-card progress { width: 100%; accent-color: #62dfbd; }.goal-progress-card p { margin: 0; }.goal-progress-card .form-grid { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
-
 @media (max-width: 900px) { .preflight-grid { grid-template-columns: 1fr; }.history-summary-grid { grid-template-columns: repeat(2, 1fr); }.history-toolbar { grid-template-columns: 1fr 1fr; }.history-card { grid-template-columns: 1fr; }.history-card dl { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) {
   .app-shell { padding: .75rem; }
@@ -1685,13 +1683,19 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 }
 .history-card > div, .history-card dl, .history-card dl > div { min-width: 0; }
 .history-card p { margin: 0; color: #a9c4c1; line-height: 1.45; }
-.session-export-actions, .adviser-actions {
+.session-export-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: .65rem;
 }
-.adviser-card > p { max-width: 62rem; line-height: 1.55; }
+.garmin-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.garmin-choice-grid > div { display: grid; align-content: start; gap: .45rem; }
+.garmin-choice-grid button { width: 100%; }
+.garmin-choice-grid small { color: #a9c4c1; line-height: 1.45; }
+.garmin-technical-details { margin-top: .85rem; padding-top: .8rem; border-top: 1px solid #d9f9f21c; }
+.garmin-technical-details > summary { color: #8ee6c4; font-weight: 800; cursor: pointer; }
+.garmin-technical-details[open] > summary { margin-bottom: .8rem; }
 .deletion-preview { border-color: #ff8f8052; }
 
 .operations-summary-card { min-height: 24.5rem; }
@@ -1770,8 +1774,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .profile-integration .form-actions > * { width: 100%; }
   .trend-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .trend-summary strong { white-space: normal; }
-  .session-export-actions, .adviser-actions, .backup-policy-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .session-export-actions > *, .adviser-actions > *, .backup-policy-actions > * { width: 100%; }
+  .session-export-actions, .backup-policy-actions, .garmin-choice-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .session-export-actions > *, .backup-policy-actions > * { width: 100%; }
   .operations-summary-card .zone-list div, .backup-policy-card .zone-list div { align-items: stretch; flex-direction: column; gap: .25rem; }
   .operations-summary-card .zone-list dd, .backup-policy-card .zone-list dd { text-align: left; }
   .control-page--largetext .control-primary-metrics article { min-height: 7rem; }

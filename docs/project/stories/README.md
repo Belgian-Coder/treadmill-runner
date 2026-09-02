@@ -40,3 +40,4 @@ The [project backlog](../backlog.md) owns priority and state. These files define
 - [TR-040 — Interactive chart inspector](tr-040-interactive-chart-inspector.md)
 - [US-TR-041 — Coordinated TreadmillRunner improvement program](tr-041-coordinated-improvement-program.md)
 - [TR-042 — Idle Home live-transport lazy loading](tr-042-idle-home-live-transport-lazy-loading.md)
+- [TR-043 — Simplified History and Garmin activity presentation](tr-043-simplified-history.md)

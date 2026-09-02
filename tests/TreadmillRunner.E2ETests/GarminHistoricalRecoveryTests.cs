@@ -15,6 +15,7 @@ public sealed class GarminHistoricalRecoveryTests(GatewayFixture gateway) : Page
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
     await scenario.ConfigureBrowserAsync(Page);
     await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.SetViewportSizeAsync(1180, 820);
 
     string detailRoute = $"**/api/history/{scenario.HistorySessionId:D}";
     string recoveryRoute =
@@ -75,7 +76,7 @@ public sealed class GarminHistoricalRecoveryTests(GatewayFixture gateway) : Page
         Assert.True(Guid.TryParse(root.GetProperty("operationId").GetString(), out _), "The recovery operation must include a valid operation ID.");
         Assert.Contains(action, new[] { "MergeIntoOne", "UndoMerge" });
         Assert.Equal(action == "MergeIntoOne" ? "MERGE INTO ONE" : "UNDO GARMIN MERGE", confirmation);
-        startedAction = action == "MergeIntoOne" ? "Merge into one" : "Undo merge";
+        startedAction = action == "MergeIntoOne" ? "Keeping one Garmin activity" : "Restoring two Garmin activities";
         postBodies.Enqueue(body);
       }
 
@@ -101,6 +102,7 @@ public sealed class GarminHistoricalRecoveryTests(GatewayFixture gateway) : Page
 
       if (action != "MergeIntoOne")
       {
+        await Page.SetViewportSizeAsync(390, 844);
         await Page.GotoAsync(new Uri(gateway.BaseAddress, $"/history/{scenario.HistorySessionId:D}").AbsoluteUri, new PageGotoOptions
         {
           WaitUntil = WaitUntilState.NetworkIdle,
@@ -108,13 +110,20 @@ public sealed class GarminHistoricalRecoveryTests(GatewayFixture gateway) : Page
       }
 
       ILocator garminPanel = Page.Locator("section[aria-labelledby='garmin-reconciliation-title']");
-      await Expect(garminPanel.GetByRole(AriaRole.Button, new() { Name = "Merge into one", Exact = true })).ToBeEnabledAsync();
-      await Expect(garminPanel.GetByRole(AriaRole.Button, new() { Name = "Undo merge", Exact = true })).ToBeEnabledAsync();
+      await Expect(garminPanel.GetByRole(AriaRole.Heading, new() { Name = "Choose what Garmin should keep", Exact = true })).ToBeVisibleAsync();
+      await Expect(garminPanel.GetByText("Your run stays in TreadmillRunner either way. Only the Garmin activities are changed.", new() { Exact = true })).ToBeVisibleAsync();
+      await Expect(garminPanel.GetByRole(AriaRole.Button, new() { Name = "Keep one Garmin activity", Exact = true })).ToBeEnabledAsync();
+      await Expect(garminPanel.GetByRole(AriaRole.Button, new() { Name = "Restore two Garmin activities", Exact = true })).ToBeEnabledAsync();
+      ILocator technicalDetails = garminPanel.Locator("details.garmin-technical-details");
+      await Expect(technicalDetails).Not.ToHaveAttributeAsync("open", "");
+      await technicalDetails.Locator("summary").ClickAsync();
+      await Expect(technicalDetails).ToHaveAttributeAsync("open", "");
+      await Expect(technicalDetails).ToContainTextAsync("FIT duration, start time, and activity type agree.");
 
-      string actionLabel = action == "MergeIntoOne" ? "Merge into one" : "Undo merge";
+      string actionLabel = action == "MergeIntoOne" ? "Keep one Garmin activity" : "Restore two Garmin activities";
       string confirmationText = action == "MergeIntoOne"
-        ? "Merge this historical item into one? The app will keep one FIT-verified merged Garmin activity and remove only the backed-up original plus proven generated duplicates."
-        : "Undo this merge? The app will restore exactly two separate Garmin activities—the backed-up watch original and one FIT-verified TreadmillRunner activity—and remove only proven merged or duplicate copies. Local History remains untouched.";
+        ? "Keep one Garmin activity? The app will keep the verified combined activity in Garmin and remove only the backed-up original and proven duplicates. Your local History remains unchanged."
+        : "Restore two Garmin activities? The app will restore the original watch activity and one verified TreadmillRunner activity, then remove only proven merged or duplicate copies. Your local History remains unchanged.";
 
       await garminPanel.GetByRole(AriaRole.Button, new() { Name = actionLabel, Exact = true }).ClickAsync();
       await Expect(garminPanel.GetByRole(AriaRole.Alert)).ToContainTextAsync(confirmationText);
@@ -133,9 +142,13 @@ public sealed class GarminHistoricalRecoveryTests(GatewayFixture gateway) : Page
       await garminPanel.GetByRole(AriaRole.Button, new() { Name = "Confirm", Exact = true }).ClickAsync();
       await recoveryPost;
 
-      await Expect(Page.GetByText($"{actionLabel} is queued for FIT-verified Garmin recovery.", new() { Exact = true }))
+      string queuedMessage = action == "MergeIntoOne"
+        ? "Keeping one Garmin activity is queued for FIT-verified Garmin recovery."
+        : "Restoring two Garmin activities is queued for FIT-verified Garmin recovery.";
+      await Expect(Page.GetByText(queuedMessage, new() { Exact = true }))
         .ToBeVisibleAsync(new() { Timeout = 10_000 });
-      await Expect(garminPanel.GetByRole(AriaRole.Heading, new() { Name = "Queued", Exact = true })).ToBeVisibleAsync();
+      await Expect(garminPanel.GetByRole(AriaRole.Heading, new() { Name = "Updating Garmin…", Exact = true })).ToBeVisibleAsync();
+      Assert.False(await Page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth > document.documentElement.clientWidth"));
       Assert.Single(postBodies);
     }
   }
