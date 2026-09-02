@@ -46,3 +46,50 @@ First-time: `docs/start-here.md`; consumers: `install-harness`. Run `python -B .
 - Signing stays on the release workstation with the non-exportable certificate. Never place its private key, a PFX, or a signing password in GitHub secrets or repository files.
 - The script owns local validation, signed packaging, annotated tag creation, draft asset verification, and publication. It uploads the locally produced assets directly to GitHub Releases without a hosted workflow. If interrupted, rerun the exact version and exact release notes; it may resume only the matching tag and draft and never force-moves a tag.
 - Do not create a tag or release during unrelated work or without an explicit version/release request. The canonical procedure and recovery rules are in `docs/project/release-operations.md`.
+
+<!-- global-model-routing:start -->
+## Model and subagent routing
+
+These instructions explicitly request delegation and therefore authorize subagent use
+under Codex's default multi-agent runtime policy.
+
+- Keep normal work in the root agent on the user's selected model. The normal
+  operating point is GPT-5.6-Sol Medium on Standard service tier.
+- The user's explicitly selected model, reasoning effort, and service tier are
+  authoritative. Never downgrade them. Never select Fast/Priority automatically,
+  never request a child service-tier override, and never use GPT-5.6-Terra.
+- Only these automatic routes are allowed:
+  - GPT-5.6-Sol Medium for normal engineering, debugging, integration, UI/UX,
+    accessibility, review, final synthesis, and verification.
+  - GPT-5.6-Luna Medium for substantial independent read-heavy work such as
+    repository mapping, inventories, large searches, log analysis, bulk comparison,
+    evidence gathering, classification, or failure categorization.
+  - GPT-5.6-Luna XHigh for substantial self-contained implementation with clear
+    ownership and objective acceptance criteria.
+  - GPT-5.6-Sol High for difficult judgment, ambiguity, architecture, security,
+    concurrency, subtle correctness, hard review, or exact visual alignment.
+- Before substantial work, evaluate delegation. Proactively spawn an appropriate
+  subagent without waiting for the user when at least one condition applies:
+  - a substantial bounded workload can be materially cheaper on Luna;
+  - a large read-heavy investigation can run independently;
+  - implementation has a clean ownership boundary;
+  - substantial independent workloads can run concurrently;
+  - repetitive work across many files would consume significant root-agent work;
+  - independent specialist analysis justifies another context.
+- Do not delegate small tasks, simple searches, routine tests, or minor edits. Do
+  not spawn another Sol Medium child for work the root can reasonably perform.
+- Prefer one coherent child that inspects, implements, tests, corrects, and reports.
+  Prefer root plus one useful child over several tiny children. Use multiple children
+  only for substantial independent workloads.
+- Give write-capable children non-overlapping ownership. Tell them they are not
+  alone in the codebase, must preserve unrelated and concurrent changes, and must
+  adapt to edits made by others.
+- Minimize context duplication. Prefer self-contained assignments with
+  `fork_turns = "none"`; otherwise use the smallest useful recent-turn count.
+  Reuse an existing child when follow-up work depends on its accumulated context.
+- Do not use automatic escalation ladders. Diagnose environment, context, ownership,
+  and instruction failures before changing model or reasoning level.
+- Do not automatically spawn review agents. Prefer compiler/build output, tests,
+  linters, browser checks, screenshots, and existing validation tools. Use an
+  independent Sol High review only when complexity or risk justifies it.
+<!-- global-model-routing:end -->

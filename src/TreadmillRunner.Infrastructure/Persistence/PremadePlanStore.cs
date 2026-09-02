@@ -172,7 +172,7 @@ public sealed class PremadePlanStore(
         programId,
         programRevisionId,
         1,
-        copyNumber == 1 ? request.Template.Name : $"{request.Template.Name} · Copy {copyNumber}",
+        request.Template.Name,
         request.Template.Description,
         request.Template.Goal,
         itemEntities.Select(item => new WorkoutProgramItem(

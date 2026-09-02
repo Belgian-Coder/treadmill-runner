@@ -226,7 +226,7 @@ public sealed class WorkoutProgramStore(
         latest.WorkoutProgram.CreatedAtUtc,
         revision.Id,
         revision.RevisionNumber,
-        revision.Name,
+        DisplayName(revision),
         revision.Description,
         revision.Category,
         itemCount,
@@ -1302,7 +1302,7 @@ public sealed class WorkoutProgramStore(
     entity.WorkoutProgramId,
     entity.Id,
     entity.RevisionNumber,
-    entity.Name,
+    DisplayName(entity),
     entity.Description,
     entity.Category,
     entity.Items.OrderBy(static item => item.Position)
@@ -1313,6 +1313,15 @@ public sealed class WorkoutProgramStore(
     entity.TemplateId,
     entity.TemplateVersion,
     entity.OwnerProfileId);
+
+  private static string DisplayName(WorkoutProgramRevisionEntity entity)
+  {
+    if (entity.TemplateId is null) return entity.Name;
+    PremadePlanTemplate? template = PremadePlanCatalog.All.FirstOrDefault(candidate =>
+      string.Equals(candidate.Id, entity.TemplateId, StringComparison.Ordinal) &&
+      string.Equals(candidate.Version, entity.TemplateVersion, StringComparison.Ordinal));
+    return template?.Name ?? entity.Name;
+  }
 
   private static WorkoutProgramRun MapRun(WorkoutProgramRunEntity entity) => new(
     entity.Id,

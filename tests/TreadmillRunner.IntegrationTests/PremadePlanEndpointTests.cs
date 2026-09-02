@@ -45,8 +45,26 @@ public sealed class PremadePlanEndpointTests(PlanningGatewayFactory factory)
     Assert.Equal(HttpStatusCode.Created, secondResponse.StatusCode);
     JsonElement second = await ReadJsonAsync(secondResponse);
     Assert.False(second.GetProperty("alreadyAdded").GetBoolean());
-    Assert.NotEqual(firstProgramId, second.GetProperty("programId").GetGuid());
+    Guid secondProgramId = second.GetProperty("programId").GetGuid();
+    Assert.NotEqual(firstProgramId, secondProgramId);
     Assert.Equal(2, second.GetProperty("copyNumber").GetInt32());
+
+    using (IServiceScope scope = factory.Services.CreateScope())
+    {
+      IDbContextFactory<TreadmillRunnerDbContext> contexts = scope.ServiceProvider
+        .GetRequiredService<IDbContextFactory<TreadmillRunnerDbContext>>();
+      await using TreadmillRunnerDbContext context = await contexts.CreateDbContextAsync();
+      WorkoutProgramRevisionEntity storedRevision = await context.WorkoutProgramRevisions
+        .SingleAsync(revision => revision.WorkoutProgramId == secondProgramId);
+      Assert.Equal("Getting Started", storedRevision.Name);
+      const string legacyName = "Getting Started · Copy 2";
+      await context.Database.ExecuteSqlInterpolatedAsync(
+        $"UPDATE WorkoutProgramRevisions SET Name = {legacyName} WHERE Id = {storedRevision.Id}");
+    }
+
+    JsonElement[] programs = (await client.GetFromJsonAsync<JsonElement[]>($"/api/planning/programs?profileId={profileId}"))!;
+    JsonElement replacement = Assert.Single(programs, item => item.GetProperty("id").GetGuid() == secondProgramId);
+    Assert.Equal("Getting Started", replacement.GetProperty("name").GetString());
   }
 
   [Fact]
