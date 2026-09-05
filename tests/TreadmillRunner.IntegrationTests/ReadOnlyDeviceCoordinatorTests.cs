@@ -159,15 +159,12 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
       Assert.True(transport.UnavailableDeviceIds.TryRemove(polar.DeviceId, out _));
       using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-      while (true)
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != polar.Id)
       {
-        DeviceTelemetrySnapshot current = coordinator.CurrentForProfile(runner.Id);
-        if (current.SelectedHeartRateEnrollmentId == polar.Id &&
-            current.HeartRateSources?.Single(source => source.EnrollmentId == garmin.Id).State ==
-              DeviceConnectionState.Disconnected)
-          break;
         await Task.Delay(25, recoveryTimeout.Token);
       }
+      Assert.Equal(DeviceConnectionState.Ready, coordinator.CurrentForProfile(runner.Id).HeartRateSources?
+        .Single(source => source.EnrollmentId == garmin.Id).State);
     }
     finally
     {
