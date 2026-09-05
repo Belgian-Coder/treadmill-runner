@@ -1,0 +1,33 @@
+---
+title: Heart-rate gap diagnostics
+type: operations
+status: reviewed
+owner: project
+audience: operator-and-developer
+updated: 2026-09-05
+---
+
+# Heart-rate gap diagnostics
+
+After installing a build containing this instrumentation, hardware sessions automatically record evidence from Bluetooth reception through sample storage. No diagnostic mode or hardware command is required. Historical gaps cannot gain evidence retrospectively.
+
+Run this read-only report from the repository on the service host, using the session ID from History or the session export:
+
+```powershell
+./eng/get-heart-rate-diagnostics.ps1 -SessionId '00000000-0000-0000-0000-000000000000'
+```
+
+For a copied journal or a custom database directory, add `-JournalDirectory 'D:\Evidence\diagnostics'`. To save the JSON report, redirect stdout to a local file. The helper reads files only; it does not connect to Bluetooth, call the application or modify the database.
+
+The report distinguishes:
+
+- Samples captured without heart rate, grouped by observed source availability, readiness, quality or freshness.
+- Samples accepted by the session store, retried, or explicitly discarded by the writer.
+- Writes with no retained outcome, reported as unconfirmed rather than assumed lost.
+- Bluetooth failures and stage events observed from 30 seconds before the first retained capture to 30 seconds after the last retained capture. A delayed store outcome does not extend this window.
+
+The raw JSONL records retain capture and outcome UTC timestamps, session ID and sample sequence, so storage delay can be separated from missing heart rate at capture. `sample-committed` means the store operation returned successfully; the report does not independently query SQLite. Bluetooth records include first notification before parsing, per-attempt notification/valid/contact-loss/invalid counters, maximum notification intervals, distinct initial/established silence stages, rediscovery outcomes and previous source context. They contain no heart-rate values, raw payloads, names or device addresses.
+
+The journal starts with `journal-started`. Check `GET /api/diagnostics/ble/journal` for its last successful write and dropped/storage-failure counters. Files are beside the configured database, normally `C:\ProgramData\TreadmillRunner\data\diagnostics`. Retention is approximately 64 MiB across 32 files; duration depends on event volume. Save a copy soon after a problematic session. Partial records, reported journal loss and missing outcomes reduce confidence, and rotation can remove older evidence.
+
+A native disconnect identifies what Windows reported. It does not prove whether interference, sensor power, the adapter, its driver or another physical cause triggered it. Concurrent events establish timing, not physical causation. The report also cannot prove losses before a session sample was created.

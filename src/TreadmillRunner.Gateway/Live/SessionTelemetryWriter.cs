@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TreadmillRunner.Core.Sessions;
+using TreadmillRunner.Gateway.Devices;
 
 namespace TreadmillRunner.Gateway.Live;
 
@@ -16,7 +17,8 @@ internal sealed class SessionTelemetryWriter(
   IServiceScopeFactory scopeFactory,
   ILogger logger,
   TimeProvider timeProvider,
-  Func<SessionTelemetryWrite, CancellationToken, Task<bool>> isCurrent)
+  Func<SessionTelemetryWrite, CancellationToken, Task<bool>> isCurrent,
+  BleDiagnosticJournal? diagnosticJournal = null)
 {
   private const int QueueCapacity = 256;
   private const int MaximumOverflowSessions = 256;
@@ -42,12 +44,22 @@ internal sealed class SessionTelemetryWriter(
   {
     lock (queueGate)
     {
-      if (completed) return false;
-      if (writes.Writer.TryWrite(write)) return true;
+      if (completed)
+      {
+        Record(write, "sample-writer-completed-discarded");
+        return false;
+      }
+      if (writes.Writer.TryWrite(write))
+      {
+        Record(write, "sample-enqueued");
+        return true;
+      }
 
-      if (overflow.ContainsKey(write.SessionId))
+      if (overflow.TryGetValue(write.SessionId, out SessionTelemetryWrite? replaced))
       {
         overflow[write.SessionId] = write;
+        Record(replaced, "sample-overflow-replaced");
+        Record(write, "sample-enqueued");
         return true;
       }
 
@@ -57,11 +69,14 @@ internal sealed class SessionTelemetryWriter(
           .OrderBy(static pair => pair.Value.Sample.CapturedAt)
           .Select(static pair => pair.Key)
           .First();
+        SessionTelemetryWrite displaced = overflow[oldest];
         overflow.Remove(oldest);
+        Record(displaced, "sample-overflow-replaced");
         logger.LogWarning("The live-session telemetry queue is saturated; an older coalesced session write was replaced.");
       }
 
       overflow[write.SessionId] = write;
+      Record(write, "sample-enqueued");
       return true;
     }
   }
@@ -212,16 +227,22 @@ internal sealed class SessionTelemetryWriter(
             metadata.SessionId,
             metadata.ConnectionGeneration,
             metadata.AuthorityId);
+          RecordAll(writesToPersist, "sample-stale-generation-discarded");
           return;
         }
 
         using IServiceScope scope = scopeFactory.CreateScope();
         ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-        if (!await isCurrent(writesToPersist[^1], cancellationToken)) return;
+        if (!await isCurrent(writesToPersist[^1], cancellationToken))
+        {
+          RecordAll(writesToPersist, "sample-stale-generation-discarded");
+          return;
+        }
         await store.AppendSamplesAndRecoveryCheckpointAsync(
           writesToPersist.Select(static write => write.Sample).ToArray(),
           writesToPersist[^1].Checkpoint,
           cancellationToken);
+        RecordAll(writesToPersist, "sample-committed");
         return;
       }
       catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -230,13 +251,13 @@ internal sealed class SessionTelemetryWriter(
       }
       catch (InvalidOperationException exception)
       {
-        // A session can become terminal while a queued sample is draining. The
-        // terminal summary/checkpoint is authoritative; retrying this batch
-        // forever would block every later session in the single writer.
+        // The store rejected this batch as nonretryable. Retrying it forever
+        // would block every later session in the single writer.
         logger.LogWarning(
           exception,
-          "The live-session telemetry batch for {SessionId} was no longer applicable; it was discarded after the session state changed.",
+          "The live-session telemetry batch for {SessionId} was rejected as nonretryable and discarded.",
           metadata.SessionId);
+        RecordAll(writesToPersist, "sample-nonretryable-discarded", exception.GetType().Name);
         return;
       }
       catch (Exception exception)
@@ -248,6 +269,7 @@ internal sealed class SessionTelemetryWriter(
           "The live-session telemetry batch for {SessionId} could not be persisted; retrying in {DelayMs} ms.",
           metadata.SessionId,
           delay.TotalMilliseconds);
+        RecordAll(writesToPersist, "sample-retry", exception.GetType().Name, delay.TotalSeconds);
         await Task.Delay(delay, cancellationToken);
       }
     }
@@ -257,6 +279,41 @@ internal sealed class SessionTelemetryWriter(
   {
     DateTime utc = value.UtcDateTime;
     return new DateTimeOffset(utc.AddTicks(-(utc.Ticks % TimeSpan.TicksPerSecond)), TimeSpan.Zero);
+  }
+
+  private void RecordAll(
+    IReadOnlyList<SessionTelemetryWrite> writesToRecord,
+    string phase,
+    string? failure = null,
+    double? retrySeconds = null)
+  {
+    foreach (SessionTelemetryWrite write in writesToRecord)
+      Record(write, phase, failure, retrySeconds);
+  }
+
+  private void Record(
+    SessionTelemetryWrite write,
+    string phase,
+    string? failure = null,
+    double? retrySeconds = null)
+  {
+    if (write.HeartRateDiagnostic is not { } diagnostic) return;
+    diagnosticJournal?.Record(new BleDiagnosticEvent(
+      timeProvider.GetUtcNow(),
+      diagnostic.EnrollmentId ?? Guid.Empty,
+      "HeartRate",
+      diagnostic.SourceGeneration,
+      phase,
+      Failure: failure,
+      LastValidAgeSeconds: diagnostic.AgeSeconds,
+      RetrySeconds: retrySeconds,
+      Quality: diagnostic.Quality,
+      ProfileId: diagnostic.ProfileId,
+      SessionId: write.SessionId,
+      SampleSequence: write.Sample.Sequence,
+      HasHeartRate: diagnostic.HasHeartRate,
+      Reason: diagnostic.Reason,
+      CapturedAtUtc: write.Sample.CapturedAt));
   }
 
   private sealed record TelemetryMetadata(
@@ -272,4 +329,14 @@ internal sealed record SessionTelemetryWrite(
   SessionRecoveryCheckpoint Checkpoint,
   long SessionVersion,
   long ConnectionGeneration,
-  Guid AuthorityId);
+  Guid AuthorityId,
+  SessionHeartRateDiagnostic? HeartRateDiagnostic = null);
+
+internal sealed record SessionHeartRateDiagnostic(
+  Guid ProfileId,
+  Guid? EnrollmentId,
+  long SourceGeneration,
+  double? AgeSeconds,
+  string Quality,
+  bool HasHeartRate,
+  string Reason);

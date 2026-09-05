@@ -494,6 +494,7 @@ public sealed class ReadOnlyDeviceCoordinator(
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
         if (firstAttempt && enrollment.Role == DeviceRole.HeartRate)
         {
+          attempt.OperationStage = "rediscovery";
           HeartRateReconnectResolution? initialResolution = await ResolveCurrentDeviceAsync(
             enrollment,
             connectionDeviceId,
@@ -507,10 +508,12 @@ public sealed class ReadOnlyDeviceCoordinator(
           }
         }
         firstAttempt = false;
+        attempt.OperationStage = "connection";
         await using IBleConnection connection = await transport.ConnectAsync(
           connectionDeviceId,
           cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.DiscoveringServices, generation, fault: null);
+        attempt.OperationStage = "service-discovery";
         IReadOnlyList<BleService> services = await AwaitGattOperationAsync(
           operationCancellation =>
             (enrollment.Role == DeviceRole.HeartRate &&
@@ -523,6 +526,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           timeProvider,
           cancellationToken);
         UpdateConnection(enrollment, DeviceConnectionState.Subscribing, generation, fault: null);
+        attempt.OperationStage = "subscription-start";
 
         if (enrollment.Role == DeviceRole.Treadmill)
         {
@@ -544,6 +548,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             services,
             generation,
             observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            attempt,
             cancellationToken);
         }
 
@@ -552,7 +557,14 @@ public sealed class ReadOnlyDeviceCoordinator(
       catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
       {
         diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
-          "attempt-cancelled", Samples: attempt.TelemetrySampleCount));
+          "attempt-cancelled", Samples: attempt.TelemetrySampleCount,
+          Notifications: enrollment.Role == DeviceRole.HeartRate ? attempt.Notifications : null,
+          ContactLostSamples: enrollment.Role == DeviceRole.HeartRate ? attempt.ContactLostSamples : null,
+          InvalidValueSamples: enrollment.Role == DeviceRole.HeartRate ? attempt.InvalidValueSamples : null,
+          MaximumNotificationIntervalSeconds: enrollment.Role == DeviceRole.HeartRate
+            ? attempt.MaximumNotificationIntervalForDiagnostics
+            : null,
+          OperationStage: attempt.OperationStage));
         break;
       }
       catch (Exception exception)
@@ -573,7 +585,14 @@ public sealed class ReadOnlyDeviceCoordinator(
           "attempt-failed", ClassifyFailure(exception).ToString(), exception.HResult,
           attempt.TelemetrySampleCount,
           attempt.LastTelemetryAtUtc is { } lastValid ? (failedAt - lastValid).TotalSeconds : null,
-          reconnectDelay.TotalSeconds));
+          reconnectDelay.TotalSeconds,
+          Notifications: enrollment.Role == DeviceRole.HeartRate ? attempt.Notifications : null,
+          ContactLostSamples: enrollment.Role == DeviceRole.HeartRate ? attempt.ContactLostSamples : null,
+          InvalidValueSamples: enrollment.Role == DeviceRole.HeartRate ? attempt.InvalidValueSamples : null,
+          MaximumNotificationIntervalSeconds: enrollment.Role == DeviceRole.HeartRate
+            ? attempt.MaximumNotificationIntervalForDiagnostics
+            : null,
+          OperationStage: OperationStageForFailure(exception, attempt.OperationStage)));
         logger.LogWarning(
           exception,
           "Read-only {DeviceRole} connection failed; reconnecting without issuing a treadmill command.",
@@ -651,10 +670,12 @@ public sealed class ReadOnlyDeviceCoordinator(
           logger.LogInformation(
             "Freshly rediscovered the enrolled {DeviceRole}; retrying its read-only connection.",
             enrollment.Role);
-          diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation, "rediscovery-exact-match"));
-          return new HeartRateReconnectResolution(
+          var exactResolution = new HeartRateReconnectResolution(
             currentDeviceId,
             HeartRateReconnectMatch.ExactDeviceId);
+          diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+            "rediscovery-resolved", Reason: exactResolution.Match.ToString()));
+          return exactResolution;
         }
       }
     }
@@ -673,6 +694,8 @@ public sealed class ReadOnlyDeviceCoordinator(
         exception,
         "Fresh {DeviceRole} rediscovery was unavailable; retaining bounded reconnect backoff.",
         enrollment.Role);
+      diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+        "rediscovery-failed", ClassifyFailure(exception).ToString(), exception.HResult));
       // Name/family fallback is safe only when the complete bounded scan was
       // observed. Adapter or subscriber overflow must fail closed rather than
       // turn a genuinely ambiguous household into an apparently unique match.
@@ -696,6 +719,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       logger.LogInformation(
         "Freshly resolved the enrolled heart-rate source using {Match}; retrying its read-only connection.",
         resolution.Match);
+      diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+        "rediscovery-resolved", Reason: resolution.Match.ToString()));
     }
     return resolution;
   }
@@ -947,9 +972,10 @@ public sealed class ReadOnlyDeviceCoordinator(
     IReadOnlyList<BleService> services,
     long generation,
     Action<DateTimeOffset> primaryTelemetryObserved,
+    ConnectionAttemptRuntime attempt,
     CancellationToken cancellationToken)
   {
-    RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
+    RequireHeartRateMeasurement(services, attempt);
     HeartRateSignalQuality? previousQuality = null;
     var readyPublished = false;
     using var detailsCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -962,14 +988,24 @@ public sealed class ReadOnlyDeviceCoordinator(
         Uuids.HeartRateMeasurement,
         cancellationToken))
       {
+        bool firstNotification = attempt.ObserveHeartRateNotification(notification.ObservedAt);
+        if (firstNotification)
+        {
+          diagnosticJournal?.Record(new(notification.ObservedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+            "first-notification", Notifications: attempt.Notifications,
+            MaximumNotificationIntervalSeconds: attempt.MaximumNotificationIntervalForDiagnostics,
+            OperationStage: attempt.OperationStage));
+        }
         HeartRateMeasurement measurement = HeartRateMeasurementParser.Parse(notification.Value.Span);
         HeartRateSignalQuality quality = ClassifyHeartRateSignal(measurement);
+        attempt.ObserveHeartRateQuality(quality);
         if (quality != previousQuality)
         {
           diagnosticJournal?.Record(new(notification.ObservedAt, enrollment.Id, enrollment.Role.ToString(), generation,
             "signal-quality", Quality: quality.ToString()));
           previousQuality = quality;
         }
+        bool writeSummary = attempt.ShouldRecordHeartRateSummary(notification.ObservedAt);
         ushort? usableBeatsPerMinute = quality == HeartRateSignalQuality.Valid
           ? measurement.BeatsPerMinute
           : null;
@@ -995,8 +1031,19 @@ public sealed class ReadOnlyDeviceCoordinator(
           UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
           readyPublished = true;
         }
-        if (quality != HeartRateSignalQuality.Valid) continue;
+        if (quality != HeartRateSignalQuality.Valid)
+        {
+          if (writeSummary)
+          {
+            RecordHeartRateSummary(enrollment, generation, notification.ObservedAt, attempt);
+          }
+          continue;
+        }
         primaryTelemetryObserved(notification.ObservedAt);
+        if (writeSummary)
+        {
+          RecordHeartRateSummary(enrollment, generation, notification.ObservedAt, attempt);
+        }
         if (detailsTask is null)
         {
           detailsTask = RunOptionalHeartRateDetailsAsync(
@@ -1025,6 +1072,20 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
     }
   }
+
+  private void RecordHeartRateSummary(
+    DeviceEnrollment enrollment,
+    long generation,
+    DateTimeOffset observedAt,
+    ConnectionAttemptRuntime attempt) =>
+    diagnosticJournal?.Record(new(observedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+      "heart-rate-summary", Samples: attempt.TelemetrySampleCount,
+      Notifications: attempt.Notifications,
+      ContactLostSamples: attempt.ContactLostSamples,
+      InvalidValueSamples: attempt.InvalidValueSamples,
+      MaximumNotificationIntervalSeconds: attempt.MaximumNotificationIntervalForDiagnostics,
+      MaximumValidIntervalSeconds: attempt.MaximumValidIntervalSeconds,
+      OperationStage: attempt.OperationStage));
 
   private async Task RunOptionalHeartRateDetailsAsync(
     IBleConnection connection,
@@ -1163,6 +1224,13 @@ public sealed class ReadOnlyDeviceCoordinator(
     HeartRateSignalQuality.Invalid => "The heart-rate sensor sent an unusable pulse value.",
     _ => null,
   };
+
+  internal static string OperationStageForFailure(Exception exception, string currentStage) =>
+    exception is BleTelemetrySilenceException silence
+      ? silence.Initial
+        ? "subscription-awaiting-first-notification"
+        : "notification-stream"
+      : currentStage;
 
   private static HeartRateContactState MapContactState(HeartRateContactStatus status) => status switch
   {
@@ -2093,11 +2161,21 @@ public sealed class ReadOnlyDeviceCoordinator(
     SelectionRuntime selection = _profileSelections.GetValueOrDefault(selectionKey) ?? new SelectionRuntime(null, 0);
     if (selection.EnrollmentId != selectedId)
     {
+      Guid? previousEnrollmentId = selection.EnrollmentId;
+      HeartRateSourceSnapshot? previousSource = previousEnrollmentId is { } previousId
+        ? sources.FirstOrDefault(source => source.EnrollmentId == previousId)
+        : null;
       diagnosticJournal?.Record(new(now, selectedId ?? selection.EnrollmentId!.Value, "HeartRate",
         selected?.ConnectionGeneration ?? displayed?.ConnectionGeneration ?? 0,
         selectedId is null ? "no-valid-selected-source" : "selected-source",
         LastValidAgeSeconds: displayed?.ObservedAt is { } lastObserved ? (now - lastObserved).TotalSeconds : null,
-        ProfileId: profileId));
+        ProfileId: profileId,
+        PreviousEnrollmentId: previousEnrollmentId,
+        PreviousState: previousSource?.State.ToString(),
+        PreviousQuality: previousSource?.Quality.ToString(),
+        PreviousAgeSeconds: previousSource?.ObservedAt is { } previousObserved && now >= previousObserved
+          ? (now - previousObserved).TotalSeconds
+          : null));
       selection = new SelectionRuntime(selectedId, selection.Generation + 1);
       _profileSelections[selectionKey] = selection;
     }
@@ -2171,6 +2249,15 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
   }
 
+  internal static void RequireHeartRateMeasurement(
+    IReadOnlyList<BleService> services,
+    ConnectionAttemptRuntime attempt)
+  {
+    attempt.OperationStage = "required-characteristic-validation";
+    RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
+    attempt.OperationStage = "subscription-awaiting-first-notification";
+  }
+
   private static BleCharacteristic? FindCharacteristic(
     IReadOnlyList<BleService> services,
     Guid serviceUuid,
@@ -2239,17 +2326,69 @@ public sealed class ReadOnlyDeviceCoordinator(
     HeartRateContactState ContactState = HeartRateContactState.Unknown,
     bool RequiresStableRecovery = false);
 
-  private sealed class ConnectionAttemptRuntime
+  internal sealed class ConnectionAttemptRuntime
   {
     public DateTimeOffset? FirstTelemetryAtUtc { get; private set; }
     public DateTimeOffset? LastTelemetryAtUtc { get; private set; }
     public int TelemetrySampleCount { get; private set; }
     public DateTimeOffset? LastDiagnosticAtUtc { get; set; }
     public double MaximumValidIntervalSeconds { get; private set; }
+    public long Notifications { get; private set; }
+    public long ContactLostSamples { get; private set; }
+    public long InvalidValueSamples { get; private set; }
+    public double MaximumNotificationIntervalSeconds { get; private set; }
+    public double? MaximumNotificationIntervalForDiagnostics =>
+      Notifications >= 2 ? MaximumNotificationIntervalSeconds : null;
+    public string OperationStage { get; set; } = "connection-attempt";
     public bool HasEverBeenDurablyStable { get; private set; }
     public bool IsCurrentWindowDurablyStable { get; private set; }
+    private DateTimeOffset? LastNotificationAtUtc { get; set; }
+    private DateTimeOffset? LastHeartRateSummaryAtUtc { get; set; }
     private DateTimeOffset? StableWindowStartedAtUtc { get; set; }
     private int StableWindowSampleCount { get; set; }
+
+    public bool ObserveHeartRateNotification(DateTimeOffset observedAt)
+    {
+      bool first = Notifications == 0;
+      Notifications++;
+      if (LastNotificationAtUtc is { } previous)
+      {
+        TimeSpan interval = observedAt - previous;
+        if (interval >= TimeSpan.Zero)
+        {
+          MaximumNotificationIntervalSeconds = Math.Max(
+            MaximumNotificationIntervalSeconds,
+            interval.TotalSeconds);
+        }
+      }
+      LastNotificationAtUtc = observedAt;
+      OperationStage = "notification-stream";
+      return first;
+    }
+
+    public void ObserveHeartRateQuality(HeartRateSignalQuality quality)
+    {
+      if (quality == HeartRateSignalQuality.ContactLost)
+      {
+        ContactLostSamples++;
+      }
+      else if (quality == HeartRateSignalQuality.Invalid)
+      {
+        InvalidValueSamples++;
+      }
+    }
+
+    public bool ShouldRecordHeartRateSummary(DateTimeOffset observedAt)
+    {
+      if (LastHeartRateSummaryAtUtc is { } lastSummary &&
+          observedAt - lastSummary < TimeSpan.FromMinutes(1))
+      {
+        return false;
+      }
+
+      LastHeartRateSummaryAtUtc = observedAt;
+      return true;
+    }
 
     public void ObserveTelemetry(DateTimeOffset observedAt)
     {
@@ -2360,10 +2499,13 @@ public sealed class ReadOnlyDeviceCoordinator(
       Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
   }
 
-  private sealed class BleTelemetrySilenceException(bool initial, Exception innerException)
+  internal sealed class BleTelemetrySilenceException(bool initial, Exception innerException)
     : TimeoutException(
       initial
         ? "The BLE subscription did not publish its initial telemetry in time."
         : "The BLE telemetry stream became silent.",
-      innerException);
+      innerException)
+  {
+    public bool Initial { get; } = initial;
+  }
 }

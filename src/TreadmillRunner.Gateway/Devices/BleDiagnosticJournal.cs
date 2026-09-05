@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Channels;
 
 namespace TreadmillRunner.Gateway.Devices;
@@ -10,12 +11,22 @@ public sealed record BleDiagnosticEvent(
   string? Failure = null, int? HResult = null, int? Samples = null,
   double? LastValidAgeSeconds = null, double? RetrySeconds = null,
   string? Quality = null, Guid? ProfileId = null, double? RecoverySeconds = null,
-  double? MaximumValidIntervalSeconds = null);
+  double? MaximumValidIntervalSeconds = null, Guid? SessionId = null,
+  long? SampleSequence = null, bool? HasHeartRate = null, string? Reason = null,
+  long? Notifications = null, long? ContactLostSamples = null,
+  long? InvalidValueSamples = null, double? MaximumNotificationIntervalSeconds = null,
+  string? OperationStage = null, Guid? PreviousEnrollmentId = null,
+  string? PreviousState = null, string? PreviousQuality = null,
+  double? PreviousAgeSeconds = null, DateTimeOffset? CapturedAtUtc = null);
 
 public sealed class BleDiagnosticJournal(string directory, ILogger<BleDiagnosticJournal> logger) : BackgroundService
 {
   private const long MaximumFileBytes = 2 * 1024 * 1024;
-  private const int RetainedFiles = 8;
+  private const int RetainedFiles = 32;
+  private static readonly JsonSerializerOptions SerializerOptions = new()
+  {
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+  };
   private static readonly string ApplicationVersion = typeof(BleDiagnosticJournal).Assembly
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
   private readonly Channel<BleDiagnosticEvent> _events = Channel.CreateBounded<BleDiagnosticEvent>(
@@ -37,6 +48,12 @@ public sealed class BleDiagnosticJournal(string directory, ILogger<BleDiagnostic
   {
     try
     {
+      await WriteAsync(new BleDiagnosticEvent(
+        DateTimeOffset.UtcNow,
+        Guid.Empty,
+        "Journal",
+        0,
+        "journal-started"));
       await foreach (BleDiagnosticEvent entry in _events.Reader.ReadAllAsync(stoppingToken))
         await WriteAsync(entry);
     }
@@ -80,7 +97,7 @@ public sealed class BleDiagnosticJournal(string directory, ILogger<BleDiagnostic
         DroppedEvents,
         ProcessId = Environment.ProcessId,
         ApplicationVersion,
-      }) + Environment.NewLine);
+      }, SerializerOptions) + Environment.NewLine);
       Interlocked.Exchange(ref _lastWrittenTicks, DateTimeOffset.UtcNow.Ticks);
     }
     catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

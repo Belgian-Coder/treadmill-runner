@@ -130,7 +130,8 @@ public sealed class LiveSessionCoordinator(
     IHubContext<LiveHub> hubContext,
     IHostEnvironment hostEnvironment,
     IApplicationMaintenanceState applicationMaintenance,
-    ILogger<LiveSessionCoordinator> logger) :
+    ILogger<LiveSessionCoordinator> logger,
+    BleDiagnosticJournal? diagnosticJournal = null) :
   BackgroundService,
   ILiveSessionCoordinator,
   ILiveSnapshotSource
@@ -160,7 +161,12 @@ public sealed class LiveSessionCoordinator(
     {
       SessionTelemetryWriter? existing = Volatile.Read(ref _telemetryWriter);
       if (existing is not null) return existing;
-      var created = new SessionTelemetryWriter(scopeFactory, logger, timeProvider, IsCurrentTelemetryAsync);
+      var created = new SessionTelemetryWriter(
+        scopeFactory,
+        logger,
+        timeProvider,
+        IsCurrentTelemetryAsync,
+        diagnosticJournal);
       return Interlocked.CompareExchange(ref _telemetryWriter, created, null) ?? created;
     }
   }
@@ -1683,7 +1689,7 @@ public sealed class LiveSessionCoordinator(
         }
         else
         {
-          ApplyHardwareTelemetry(active, now, effects);
+          DeviceTelemetrySnapshot? hardwareTelemetry = ApplyHardwareTelemetry(active, now, effects);
           if (active.RecoveryState == SessionRecoveryState.Recovered &&
               active.LastReconciledAtUtc is { } reconciledAt &&
               now - reconciledAt >= TimeSpan.FromSeconds(5))
@@ -1765,7 +1771,14 @@ public sealed class LiveSessionCoordinator(
                 checkpoint,
                 active.Machine.Version,
                 active.ConnectionGeneration,
-                active.AutomationAuthorityId);
+                active.AutomationAuthorityId,
+                hardwareTelemetry is null
+                  ? null
+                  : CaptureHeartRateDiagnostic(
+                    active.Definition.UserProfileId,
+                    hardwareTelemetry,
+                    sample,
+                    FreshTelemetryLimit));
               telemetryToQueue = telemetry;
             }
           }
@@ -2397,12 +2410,12 @@ public sealed class LiveSessionCoordinator(
       enrollment.IdentityFingerprint);
   }
 
-  private void ApplyHardwareTelemetry(
+  private DeviceTelemetrySnapshot? ApplyHardwareTelemetry(
     ActiveRun active,
     DateTimeOffset now,
     LiveEffectBatch effects)
   {
-    if (!active.HardwareMode) return;
+    if (!active.HardwareMode) return null;
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId);
     if (devices.HeartRateSelectionGeneration != active.HeartRateSelectionGeneration)
     {
@@ -2493,6 +2506,52 @@ public sealed class LiveSessionCoordinator(
       if (active.Machine.State == SessionState.Running && !active.CommandsSuspended)
         SuspendAutomation(active, "Heart-rate telemetry is stale; heart-rate automation is suspended.");
     }
+    return devices;
+  }
+
+  internal static SessionHeartRateDiagnostic CaptureHeartRateDiagnostic(
+    Guid profileId,
+    DeviceTelemetrySnapshot devices,
+    SessionSample sample,
+    TimeSpan freshnessLimit)
+  {
+    Guid? enrollmentId = devices.SelectedHeartRateEnrollmentId;
+    HeartRateSourceSnapshot? source = enrollmentId is { } selectedId
+      ? devices.HeartRateSources?.FirstOrDefault(candidate => candidate.EnrollmentId == selectedId)
+      : devices.HeartRateSources?.FirstOrDefault(candidate =>
+        candidate.ConnectionGeneration == devices.HeartRate.ConnectionGeneration &&
+        string.Equals(candidate.DisplayName, devices.HeartRate.DisplayName, StringComparison.Ordinal));
+    double? ageSeconds = source?.ObservedAt is { } observedAt && observedAt <= devices.CapturedAt
+      ? (devices.CapturedAt - observedAt).TotalSeconds
+      : null;
+    string reason;
+    if (enrollmentId is not null && source is null)
+      reason = "SelectedSourceMissing";
+    else if (source is null)
+      reason = "NoSelectedSource";
+    else if (source.State != DeviceConnectionState.Ready)
+      reason = "SourceNotReady";
+    else if (source.Quality != HeartRateSignalQuality.Valid)
+      reason = "QualityNotValid";
+    else if (source.ObservedAt is null)
+      reason = "MissingObservation";
+    else if (source.ObservedAt > devices.CapturedAt)
+      reason = "ObservationInFuture";
+    else if (devices.CapturedAt - source.ObservedAt.Value > freshnessLimit)
+      reason = "ObservationStale";
+    else if (sample.HeartRateBpm is null)
+      reason = "SampleMissingHeartRate";
+    else
+      reason = "Available";
+
+    return new SessionHeartRateDiagnostic(
+      profileId,
+      source?.EnrollmentId ?? enrollmentId,
+      source?.ConnectionGeneration ?? devices.HeartRate.ConnectionGeneration,
+      ageSeconds,
+      (source?.Quality ?? devices.SelectedHeartRateQuality).ToString(),
+      sample.HeartRateBpm is not null,
+      reason);
   }
 
   private void BeginTelemetryGap(

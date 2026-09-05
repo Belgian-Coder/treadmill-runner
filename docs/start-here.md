@@ -72,7 +72,7 @@ Run `setup` the first time only. While editing, run the focused owner check sele
 ## Helpful Docs
 
 - Copy/setup: [Copy Into A Project](harness/copy-into-project.md), [Setup](harness/setup.md), [No Python Or No Admin](harness/no-python.md), [Initialize Current Project](harness/initialize-current-project.md)
-- Daily use: [Daily Agent Path](operations/daily-agent-path.md), [Daily Use](operations/daily-use.md)
+- Daily use: [Daily Agent Path](operations/daily-agent-path.md), [Daily Use](operations/daily-use.md), [Heart-rate gap diagnostics](operations/heart-rate-diagnostics.md)
 - Commands and search: [Commands](reference/commands.md), [Tools And Search Options](reference/tools-and-search.md)
 - Customization: [Customizing The Harness](reference/customization-guide.md) for canonical edit locations, generated-file boundaries, and examples
 - Workflows: [Workflow Quickstart](workflow/workflow-quickstart.md) for agents, [Using Workflows](workflow/using-workflows.md) for human prompts

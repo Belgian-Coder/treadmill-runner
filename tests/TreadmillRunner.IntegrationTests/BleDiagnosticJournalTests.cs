@@ -15,7 +15,7 @@ public sealed class BleDiagnosticJournalTests
     {
       string path = Path.Combine(directory, "bluetooth.jsonl");
       await File.WriteAllTextAsync(path, new string('x', 2 * 1024 * 1024));
-      for (int index = 1; index <= 7; index++)
+      for (int index = 1; index <= 31; index++)
         await File.WriteAllTextAsync(Path.Combine(directory, $"bluetooth.{index}.jsonl"), "old evidence");
       using var journal = new BleDiagnosticJournal(directory, NullLogger<BleDiagnosticJournal>.Instance);
       Guid enrollment = Guid.NewGuid();
@@ -25,14 +25,21 @@ public sealed class BleDiagnosticJournalTests
       await journal.StopAsync(CancellationToken.None);
 
       Assert.True(File.Exists(Path.Combine(directory, "bluetooth.1.jsonl")));
-      using JsonDocument record = JsonDocument.Parse(Assert.Single(await File.ReadAllLinesAsync(path)));
+      string[] lines = await File.ReadAllLinesAsync(path);
+      Assert.Equal(2, lines.Length);
+      using JsonDocument health = JsonDocument.Parse(lines[0]);
+      JsonElement healthEvent = health.RootElement.GetProperty("Event");
+      Assert.Equal("journal-started", healthEvent.GetProperty("Phase").GetString());
+      Assert.False(healthEvent.TryGetProperty("Failure", out _));
+      Assert.False(healthEvent.TryGetProperty("SessionId", out _));
+      using JsonDocument record = JsonDocument.Parse(lines[1]);
       JsonElement entry = record.RootElement.GetProperty("Event");
       Assert.Equal(enrollment, entry.GetProperty("EnrollmentId").GetGuid());
       Assert.Equal(42, entry.GetProperty("Generation").GetInt64());
       Assert.Equal(1.5, entry.GetProperty("LastValidAgeSeconds").GetDouble());
       Assert.Equal(0, journal.DroppedEvents);
       Assert.NotNull(journal.LastWriteAtUtc);
-      Assert.Equal(8, Directory.GetFiles(directory).Length);
+      Assert.Equal(32, Directory.GetFiles(directory).Length);
     }
     finally { Directory.Delete(directory, recursive: true); }
   }
@@ -56,8 +63,8 @@ public sealed class BleDiagnosticJournalTests
       journal.Record(new(DateTimeOffset.UtcNow, Guid.Empty, "HeartRate", 1, "Connecting"));
       await journal.StartAsync(CancellationToken.None);
       await journal.StopAsync(CancellationToken.None);
-      Assert.Equal(1, journal.StorageFailures);
-      Assert.Equal(1, journal.DroppedEvents);
+      Assert.Equal(2, journal.StorageFailures);
+      Assert.Equal(2, journal.DroppedEvents);
       Assert.Null(journal.LastWriteAtUtc);
     }
     finally { File.Delete(path); }
