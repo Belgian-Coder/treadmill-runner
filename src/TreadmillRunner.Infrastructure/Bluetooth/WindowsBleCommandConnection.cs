@@ -292,9 +292,16 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
       .GetGattServicesForUuidAsync(serviceUuid, BluetoothCacheMode.Uncached)
       .AsTask(cancellationToken)
       .ConfigureAwait(false);
-    WindowsBleStatus.ThrowIfFailed(result.Status, result.ProtocolError, $"discover service {serviceUuid:D}");
-    GattDeviceService? service = result.Services.FirstOrDefault();
-    foreach (GattDeviceService extra in result.Services.Skip(1)) extra.Dispose();
+    GattDeviceService? service = NativeResourceOwnership.TransferFirst(
+      result.Services,
+      () =>
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        WindowsBleStatus.ThrowIfFailed(
+          result.Status,
+          result.ProtocolError,
+          $"discover service {serviceUuid:D}");
+      });
     if (service is null)
     {
       throw new WindowsBleException($"BLE service {serviceUuid:D} was not found.");

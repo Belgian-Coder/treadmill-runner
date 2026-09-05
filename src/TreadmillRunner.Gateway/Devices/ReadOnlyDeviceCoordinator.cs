@@ -358,6 +358,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
 
       var desiredIds = new HashSet<Guid>(manuallyDemandedIds);
+      var progressiveHeartRateIds = new HashSet<Guid>();
       if (runDemand is not null)
       {
         desiredIds.UnionWith(enrollments
@@ -367,6 +368,9 @@ public sealed class ReadOnlyDeviceCoordinator(
           .Where(assignment => assignment.UserProfileId == runDemand.ProfileId)
           .ToArray();
         Guid[] orderedHeartRateIds = profileAssignments
+          .Where(assignment => assignment.AutoConnect || enrollments.Any(enrollment =>
+            enrollment.Enrollment.Id == assignment.DeviceEnrollmentId &&
+            HeartRateReconnectResolver.EffectiveFamily(enrollment.Enrollment) == HeartRateDeviceFamily.Polar))
           .OrderByDescending(static assignment => assignment.IsPreferred)
           .ThenBy(static assignment => assignment.Priority)
           .Select(static assignment => assignment.DeviceEnrollmentId)
@@ -377,7 +381,9 @@ public sealed class ReadOnlyDeviceCoordinator(
         {
           lock (_sync)
           {
-            desiredIds.UnionWith(SelectProgressiveHeartRateDemandLocked(orderedHeartRateIds, now));
+            IReadOnlyList<Guid> progressiveDemand = SelectProgressiveHeartRateDemandLocked(orderedHeartRateIds, now);
+            progressiveHeartRateIds.UnionWith(progressiveDemand);
+            desiredIds.UnionWith(progressiveDemand);
           }
         }
         else if (profileAssignments.Length == 0)
@@ -392,6 +398,14 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
 
       desiredIds.ExceptWith(explicitlyDisconnectedIds);
+      lock (_sync)
+      {
+        foreach ((Guid enrollmentId, HeartRateRuntime runtime) in _heartRateSources.ToArray())
+        {
+          if (runtime.RequiresStableRecovery && !progressiveHeartRateIds.Contains(enrollmentId))
+            _heartRateSources[enrollmentId] = runtime with { RequiresStableRecovery = false };
+        }
+      }
       VersionedDeviceEnrollment[] desiredEnrollments = enrollments
         .Where(enrollment => desiredIds.Contains(enrollment.Enrollment.Id))
         .ToArray();
@@ -502,11 +516,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             (enrollment.Role == DeviceRole.HeartRate &&
              connection is IBleTargetedServiceDiscoveryConnection targetedConnection
               ? targetedConnection.DiscoverServicesForUuidsAsync(
-                [
-                  Uuids.HeartRateService,
-                  Uuids.BatteryService,
-                  Uuids.DeviceInformationService,
-                ],
+                [Uuids.HeartRateService],
                 operationCancellation)
               : connection.DiscoverServicesAsync(operationCancellation)).AsTask(),
           GattOperationTimeout,
@@ -548,7 +558,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       catch (Exception exception)
       {
         DateTimeOffset failedAt = timeProvider.GetUtcNow();
-        if (attempt.IsStableAt(failedAt))
+        if (attempt.HasEverBeenDurablyStable)
         {
           consecutiveFailureCount = 0;
         }
@@ -757,10 +767,17 @@ public sealed class ReadOnlyDeviceCoordinator(
     DateTimeOffset now)
   {
     var desired = new List<Guid>(orderedEnrollmentIds.Count);
-    foreach (Guid enrollmentId in orderedEnrollmentIds)
+    for (var index = 0; index < orderedEnrollmentIds.Count; index++)
     {
+      Guid enrollmentId = orderedEnrollmentIds[index];
       desired.Add(enrollmentId);
       if (!ShouldActivateHeartRateFallbackLocked(enrollmentId, now)) break;
+      if (index + 1 < orderedEnrollmentIds.Count &&
+          _heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime) &&
+          !runtime.RequiresStableRecovery)
+      {
+        _heartRateSources[enrollmentId] = runtime with { RequiresStableRecovery = true };
+      }
     }
     return desired;
   }
@@ -769,6 +786,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     if (_reliabilityIncidents.ContainsKey(enrollmentId)) return true;
     if (!_heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime)) return false;
+    if (runtime.RequiresStableRecovery) return true;
     if (runtime.Connection.State is DeviceConnectionState.Faulted or DeviceConnectionState.Reconnecting)
       return true;
     if (runtime.Connection.State != DeviceConnectionState.Ready) return false;
@@ -1019,9 +1037,20 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     string? model = null;
     string? firmware = null;
+    IReadOnlyList<BleService> optionalServices = services;
     try
     {
-      (model, firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
+      if (connection is IBleTargetedServiceDiscoveryConnection targetedConnection)
+      {
+        optionalServices = await AwaitGattOperationAsync(
+          operationCancellation => targetedConnection.DiscoverServicesForUuidsAsync(
+            [Uuids.BatteryService, Uuids.DeviceInformationService],
+            operationCancellation).AsTask(),
+          GattOperationTimeout,
+          timeProvider,
+          cancellationToken);
+      }
+      (model, firmware) = await ReadDeviceInformationAsync(connection, optionalServices, cancellationToken);
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
@@ -1038,7 +1067,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       capabilities: null,
       generation,
       observedAt);
-    await RunOptionalBatteryAsync(connection, enrollment, services, generation, cancellationToken);
+    await RunOptionalBatteryAsync(connection, enrollment, optionalServices, generation, cancellationToken);
   }
 
   private async Task RunOptionalBatteryAsync(
@@ -1667,6 +1696,18 @@ public sealed class ReadOnlyDeviceCoordinator(
     ConnectionAttemptRuntime attempt)
   {
     attempt.ObserveTelemetry(observedAt);
+    if (attempt.IsCurrentWindowDurablyStable && enrollment.Role == DeviceRole.HeartRate)
+    {
+      lock (_sync)
+      {
+        if (_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime) &&
+            runtime.Connection.ConnectionGeneration == generation &&
+            runtime.RequiresStableRecovery)
+        {
+          _heartRateSources[enrollment.Id] = runtime with { RequiresStableRecovery = false };
+        }
+      }
+    }
     if (attempt.LastDiagnosticAtUtc is null || observedAt - attempt.LastDiagnosticAtUtc >= TimeSpan.FromMinutes(1))
     {
       diagnosticJournal?.Record(new(observedAt, enrollment.Id, enrollment.Role.ToString(), generation,
@@ -2005,6 +2046,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           BatteryObservedAt = null,
           Quality = HeartRateSignalQuality.Unavailable,
           ContactState = HeartRateContactState.Unknown,
+          RequiresStableRecovery = false,
         };
       }
     }
@@ -2194,7 +2236,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     byte? BatteryPercent = null,
     DateTimeOffset? BatteryObservedAt = null,
     HeartRateSignalQuality Quality = HeartRateSignalQuality.Unavailable,
-    HeartRateContactState ContactState = HeartRateContactState.Unknown);
+    HeartRateContactState ContactState = HeartRateContactState.Unknown,
+    bool RequiresStableRecovery = false);
 
   private sealed class ConnectionAttemptRuntime
   {
@@ -2203,22 +2246,42 @@ public sealed class ReadOnlyDeviceCoordinator(
     public int TelemetrySampleCount { get; private set; }
     public DateTimeOffset? LastDiagnosticAtUtc { get; set; }
     public double MaximumValidIntervalSeconds { get; private set; }
+    public bool HasEverBeenDurablyStable { get; private set; }
+    public bool IsCurrentWindowDurablyStable { get; private set; }
+    private DateTimeOffset? StableWindowStartedAtUtc { get; set; }
+    private int StableWindowSampleCount { get; set; }
 
     public void ObserveTelemetry(DateTimeOffset observedAt)
     {
-      if (LastTelemetryAtUtc is { } previous)
-        MaximumValidIntervalSeconds = Math.Max(MaximumValidIntervalSeconds, (observedAt - previous).TotalSeconds);
-      FirstTelemetryAtUtc ??= observedAt;
-      LastTelemetryAtUtc = observedAt;
       TelemetrySampleCount++;
+      if (FirstTelemetryAtUtc is null)
+      {
+        FirstTelemetryAtUtc = observedAt;
+        LastTelemetryAtUtc = observedAt;
+        StableWindowStartedAtUtc = observedAt;
+        StableWindowSampleCount = 1;
+        return;
+      }
+      TimeSpan interval = observedAt - LastTelemetryAtUtc!.Value;
+      if (interval >= TimeSpan.Zero)
+        MaximumValidIntervalSeconds = Math.Max(MaximumValidIntervalSeconds, interval.TotalSeconds);
+      LastTelemetryAtUtc = observedAt;
+      if (interval < TimeSpan.Zero || interval > HeartRateFreshnessLimit)
+      {
+        StableWindowStartedAtUtc = observedAt;
+        StableWindowSampleCount = 1;
+        IsCurrentWindowDurablyStable = false;
+        return;
+      }
+      StableWindowSampleCount++;
+      if (!IsCurrentWindowDurablyStable && StableWindowSampleCount >= 2 &&
+          StableWindowStartedAtUtc is { } stableWindowStartedAt &&
+          observedAt - stableWindowStartedAt >= BleReconnectPolicy.StableConnectionThreshold)
+      {
+        HasEverBeenDurablyStable = true;
+        IsCurrentWindowDurablyStable = true;
+      }
     }
-
-    public bool IsStableAt(DateTimeOffset now) =>
-      FirstTelemetryAtUtc is { } first &&
-      LastTelemetryAtUtc is { } last &&
-      TelemetrySampleCount >= 2 &&
-      now - first >= BleReconnectPolicy.StableConnectionThreshold &&
-      now - last <= HeartRateFreshnessLimit;
   }
 
   internal sealed record ReliabilityWriterMetrics(

@@ -177,6 +177,271 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Keeps_connected_fallback_through_one_sample_primary_recovery_and_loss()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment polar = HeartRate("POLAR-HYSTERESIS", "Polar H10");
+    DeviceEnrollment garmin = HeartRate("GARMIN-HYSTERESIS", "Garmin fenix 8");
+    await store.EnrollWithAssignmentsAsync(polar,
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      now, Op("device.enroll", now));
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new FallbackHysteresisBleTransport(polar.DeviceId, garmin.DeviceId);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(runner.Id, requiresHeartRate: true);
+      using var fallbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != garmin.Id)
+        await Task.Delay(25, fallbackTimeout.Token);
+
+      transport.PrimaryAvailable = true;
+      await transport.PrimarySampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(12));
+      await coordinator.RefreshAsync();
+
+      HeartRateSourceSnapshot recoveredPrimaryFallback = Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!, source => source.EnrollmentId == garmin.Id);
+      Assert.Equal(DeviceConnectionState.Ready, recoveredPrimaryFallback.State);
+      Assert.Equal(1, transport.FallbackConnectionCount);
+
+      transport.ReleasePrimaryFailure.SetResult();
+      using var lossTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.ActiveReliabilityFailureCount(polar.Id) == 0)
+        await Task.Delay(25, lossTimeout.Token);
+      await coordinator.RefreshAsync();
+
+      Assert.Equal(garmin.Id, coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId);
+      Assert.Equal(1, transport.FallbackConnectionCount);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Sparse_samples_keep_fallback_until_preferred_recovery_is_continuously_stable()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var clock = new AdjustableTimeProvider(now);
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment polar = HeartRate("POLAR-STABLE-RECOVERY", "Polar H10");
+    DeviceEnrollment garmin = HeartRate("GARMIN-STABLE-FALLBACK", "Garmin fenix 8");
+    await store.EnrollWithAssignmentsAsync(polar,
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      now, Op("device.enroll", now));
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new FallbackHysteresisBleTransport(polar.DeviceId, garmin.DeviceId, clock)
+    {
+      CompleteStableRecovery = true,
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      clock, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(runner.Id, requiresHeartRate: true);
+      using var fallbackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != garmin.Id)
+        await Task.Delay(25, fallbackTimeout.Token);
+
+      transport.PrimaryAvailable = true;
+      await transport.PrimarySampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(12));
+      await coordinator.RefreshAsync();
+      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == garmin.Id).State);
+
+      transport.ReleaseStablePrimarySample.SetResult();
+      await transport.SparsePrimarySampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+      await coordinator.RefreshAsync();
+      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == garmin.Id).State);
+
+      transport.ReleaseContinuousPrimarySamples.SetResult();
+      await transport.PrimaryStableSampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+      await coordinator.RefreshAsync();
+
+      Assert.Equal(polar.Id, coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId);
+      Assert.Equal(DeviceConnectionState.Disconnected, Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == garmin.Id).State);
+      Assert.Equal(1, transport.FallbackConnectionCount);
+
+      clock.Set(clock.GetUtcNow().AddSeconds(6));
+      await coordinator.RefreshAsync();
+      using var reactivationTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+      while (transport.FallbackConnectionCount < 2 || Assert.Single(
+               coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+               source => source.EnrollmentId == garmin.Id).State != DeviceConnectionState.Ready)
+      {
+        await Task.Delay(25, reactivationTimeout.Token);
+      }
+
+      transport.ReleasePostStablePrimarySample.SetResult();
+      await transport.PostStablePrimarySampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+      await coordinator.RefreshAsync();
+      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == garmin.Id).State);
+      Assert.Equal(2, transport.FallbackConnectionCount);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Does_not_auto_connect_a_disabled_non_polar_assignment_but_manual_retry_still_connects()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment garmin = HeartRate("GARMIN-DISABLED", "Garmin fenix 8");
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 0, false, true)],
+      now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(runner.Id, requiresHeartRate: true);
+      await coordinator.RefreshAsync();
+      await Task.Delay(100);
+      Assert.DoesNotContain(garmin.DeviceId, transport.ConnectionDeviceIds);
+
+      Assert.True(await coordinator.RetryConnectionAsync(garmin.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (!transport.ConnectionDeviceIds.Contains(garmin.DeviceId))
+        await Task.Delay(25, timeout.Token);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Optional_targeted_discovery_cannot_block_required_heart_rate_subscription()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-OPTIONAL-DISCOVERY", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new HangingOptionalDiscoveryBleTransport();
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Equal((ushort)142, coordinator.Current.HeartRateBpm);
+      Assert.True(transport.OptionalDiscoveryStarted.Task.IsCompleted);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Short_and_sparse_flaps_escalate_but_continuous_stability_resets_backoff_after_delayed_failure_detection()
+  {
+    DateTimeOffset began = DateTimeOffset.UtcNow;
+    var clock = new AdjustableTimeProvider(began);
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, began, Op("device.enroll", began));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new BackoffSequenceBleTransport(clock);
+    string journalDirectory = Path.Combine(_directory, "backoff-journal");
+    using var journal = new BleDiagnosticJournal(journalDirectory, NullLogger<BleDiagnosticJournal>.Instance);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      clock, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance, journal);
+
+    await journal.StartAsync(CancellationToken.None);
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+      while (transport.ConnectionAttemptCount < 4)
+        await Task.Delay(25, timeout.Token);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      await journal.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+
+    string path = Path.Combine(journalDirectory, "bluetooth.jsonl");
+    var retrySeconds = new List<double>();
+    foreach (string line in await File.ReadAllLinesAsync(path))
+    {
+      using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(line);
+      System.Text.Json.JsonElement entry = document.RootElement.GetProperty("Event");
+      if (entry.GetProperty("Phase").GetString() == "attempt-failed" && retrySeconds.Count < 3)
+        retrySeconds.Add(entry.GetProperty("RetrySeconds").GetDouble());
+    }
+    var policy = new BleReconnectPolicy();
+    Assert.Equal(3, retrySeconds.Count);
+    Assert.Equal(policy.GetDelay(treadmill.Id, 1).TotalSeconds, retrySeconds[0], 3);
+    Assert.Equal(policy.GetDelay(treadmill.Id, 2).TotalSeconds, retrySeconds[1], 3);
+    Assert.Equal(policy.GetDelay(treadmill.Id, 1).TotalSeconds, retrySeconds[2], 3);
+  }
+
+  [Fact]
   public async Task Publishes_heart_rate_before_optional_device_information_reads_finish()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1423,7 +1688,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         CancellationToken cancellationToken = default)
       {
         Interlocked.Increment(ref owner._targetedDiscoveryCount);
-        Assert.Contains(HeartRateService, serviceUuids);
+        if (!serviceUuids.Contains(HeartRateService))
+          return ValueTask.FromResult<IReadOnlyList<BleService>>([]);
         return ValueTask.FromResult<IReadOnlyList<BleService>>(
         [
           new BleService(HeartRateService,
@@ -1463,6 +1729,268 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     private static Guid Expand(ushort value) =>
       Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class FallbackHysteresisBleTransport(
+    string primaryDeviceId,
+    string fallbackDeviceId,
+    AdjustableTimeProvider? clock = null) : IBleCentralTransport
+  {
+    private static readonly Guid HeartRateService = Expand(0x180D);
+    private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
+    private readonly string _primaryDeviceId = primaryDeviceId;
+    private readonly string _fallbackDeviceId = fallbackDeviceId;
+    private readonly AdjustableTimeProvider? _clock = clock;
+    private int _primaryAvailable;
+    private int _fallbackConnectionCount;
+
+    public bool PrimaryAvailable
+    {
+      get => Volatile.Read(ref _primaryAvailable) != 0;
+      set => Volatile.Write(ref _primaryAvailable, value ? 1 : 0);
+    }
+
+    public int FallbackConnectionCount => Volatile.Read(ref _fallbackConnectionCount);
+    public bool CompleteStableRecovery { get; init; }
+    public TaskCompletionSource PrimarySampleObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleasePrimaryFailure { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleaseStablePrimarySample { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource SparsePrimarySampleObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleaseContinuousPrimarySamples { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource PrimaryStableSampleObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleasePostStablePrimarySample { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource PostStablePrimarySampleObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      yield break;
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default)
+    {
+      if (string.Equals(deviceId, _fallbackDeviceId, StringComparison.OrdinalIgnoreCase))
+        Interlocked.Increment(ref _fallbackConnectionCount);
+      return ValueTask.FromResult<IBleConnection>(new Connection(deviceId, this));
+    }
+
+    private sealed class Connection(string deviceId, FallbackHysteresisBleTransport owner) :
+      IBleConnection, IBleTargetedServiceDiscoveryConnection
+    {
+      public string DeviceId { get; } = deviceId;
+
+      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+        CancellationToken cancellationToken = default) => RequiredServices();
+
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesForUuidsAsync(
+        IReadOnlyCollection<Guid> serviceUuids,
+        CancellationToken cancellationToken = default) =>
+        serviceUuids.Contains(HeartRateService) ? RequiredServices() : ValueTask.FromResult<IReadOnlyList<BleService>>([]);
+
+      private ValueTask<IReadOnlyList<BleService>> RequiredServices()
+      {
+        if (string.Equals(DeviceId, owner._primaryDeviceId, StringComparison.OrdinalIgnoreCase) && !owner.PrimaryAvailable)
+          return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleDeviceUnavailableException());
+        return ValueTask.FromResult<IReadOnlyList<BleService>>([
+          new BleService(HeartRateService,
+            [new BleCharacteristic(HeartRateService, HeartRateMeasurement, false, false, true)]),
+        ]);
+      }
+
+      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+      public async IAsyncEnumerable<BleNotification> SubscribeAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+      {
+        DateTimeOffset firstAt = owner._clock?.GetUtcNow() ?? DateTimeOffset.UtcNow;
+        yield return new BleNotification(serviceUuid, characteristicUuid, new byte[] { 0x00, 142 }, firstAt);
+        if (string.Equals(DeviceId, owner._primaryDeviceId, StringComparison.OrdinalIgnoreCase))
+        {
+          owner.PrimarySampleObserved.TrySetResult();
+          if (owner.CompleteStableRecovery)
+          {
+            await owner.ReleaseStablePrimarySample.Task.WaitAsync(cancellationToken);
+            DateTimeOffset sparseAt = firstAt.Add(BleReconnectPolicy.StableConnectionThreshold);
+            owner._clock!.Set(sparseAt);
+            yield return new BleNotification(serviceUuid, characteristicUuid, new byte[] { 0x00, 142 }, sparseAt);
+            owner.SparsePrimarySampleObserved.TrySetResult();
+            await owner.ReleaseContinuousPrimarySamples.Task.WaitAsync(cancellationToken);
+            for (var second = 1; second <= (int)BleReconnectPolicy.StableConnectionThreshold.TotalSeconds; second++)
+            {
+              DateTimeOffset stableAt = sparseAt.AddSeconds(second);
+              owner._clock!.Set(stableAt);
+              yield return new BleNotification(serviceUuid, characteristicUuid, new byte[] { 0x00, 142 }, stableAt);
+            }
+            owner.PrimaryStableSampleObserved.TrySetResult();
+            await owner.ReleasePostStablePrimarySample.Task.WaitAsync(cancellationToken);
+            DateTimeOffset postStableAt = owner._clock!.GetUtcNow();
+            yield return new BleNotification(serviceUuid, characteristicUuid, new byte[] { 0x00, 142 }, postStableAt);
+            owner.PostStablePrimarySampleObserved.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            yield break;
+          }
+          await owner.ReleasePrimaryFailure.Task.WaitAsync(cancellationToken);
+          throw new WindowsBleDisconnectedException();
+        }
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
+    }
+
+    private static Guid Expand(ushort value) =>
+      Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class HangingOptionalDiscoveryBleTransport : IBleCentralTransport
+  {
+    private static readonly Guid HeartRateService = Expand(0x180D);
+    private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
+    public TaskCompletionSource OptionalDiscoveryStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      yield break;
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromResult<IBleConnection>(new Connection(deviceId, this));
+
+    private sealed class Connection(string deviceId, HangingOptionalDiscoveryBleTransport owner) :
+      IBleConnection, IBleTargetedServiceDiscoveryConnection
+    {
+      public string DeviceId { get; } = deviceId;
+      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+      public async ValueTask<IReadOnlyList<BleService>> DiscoverServicesForUuidsAsync(
+        IReadOnlyCollection<Guid> serviceUuids,
+        CancellationToken cancellationToken = default)
+      {
+        if (serviceUuids.Count == 1 && serviceUuids.Contains(HeartRateService))
+        {
+          return [new BleService(HeartRateService,
+            [new BleCharacteristic(HeartRateService, HeartRateMeasurement, false, false, true)])];
+        }
+        owner.OptionalDiscoveryStarted.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return [];
+      }
+
+      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+      public async IAsyncEnumerable<BleNotification> SubscribeAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+      {
+        yield return new BleNotification(serviceUuid, characteristicUuid, new byte[] { 0x00, 142 }, DateTimeOffset.UtcNow);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
+    }
+
+    private static Guid Expand(ushort value) =>
+      Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class BackoffSequenceBleTransport(AdjustableTimeProvider clock) : IBleCentralTransport
+  {
+    private static readonly Guid FtmsService = Expand(0x1826);
+    private static readonly Guid TreadmillData = Expand(0x2ACD);
+    private int _connectionAttemptCount;
+    public int ConnectionAttemptCount => Volatile.Read(ref _connectionAttemptCount);
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      yield break;
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromResult<IBleConnection>(new Connection(
+        deviceId,
+        Interlocked.Increment(ref _connectionAttemptCount),
+        clock));
+
+    private sealed class Connection(
+      string deviceId,
+      int attempt,
+      AdjustableTimeProvider clock) : IBleConnection
+    {
+      public string DeviceId { get; } = deviceId;
+      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+        CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<BleService>>([
+          new BleService(FtmsService, [new BleCharacteristic(FtmsService, TreadmillData, false, false, true)]),
+        ]);
+      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+      public async IAsyncEnumerable<BleNotification> SubscribeAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+      {
+        byte[] sample = [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00];
+        DateTimeOffset firstAt = clock.GetUtcNow();
+        yield return new BleNotification(serviceUuid, characteristicUuid, sample, firstAt);
+        if (attempt == 1)
+        {
+          clock.Set(firstAt.AddSeconds(1));
+          throw new WindowsBleDisconnectedException();
+        }
+        if (attempt == 2)
+        {
+          DateTimeOffset sparseAt = firstAt.Add(BleReconnectPolicy.StableConnectionThreshold);
+          yield return new BleNotification(serviceUuid, characteristicUuid, sample, sparseAt);
+          clock.Set(sparseAt.AddSeconds(1));
+          throw new WindowsBleDisconnectedException();
+        }
+        if (attempt == 3)
+        {
+          DateTimeOffset lastAt = firstAt;
+          for (var second = 1; second <= (int)BleReconnectPolicy.StableConnectionThreshold.TotalSeconds; second++)
+          {
+            lastAt = firstAt.AddSeconds(second);
+            yield return new BleNotification(serviceUuid, characteristicUuid, sample, lastAt);
+          }
+          clock.Set(lastAt.AddSeconds(6));
+          throw new WindowsBleDisconnectedException();
+        }
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
+    }
+
+    private static Guid Expand(ushort value) =>
+      Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class AdjustableTimeProvider(DateTimeOffset initial) : TimeProvider
+  {
+    private long _utcTicks = initial.UtcTicks;
+    public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _utcTicks), TimeSpan.Zero);
+    public void Set(DateTimeOffset value) => Interlocked.Exchange(ref _utcTicks, value.UtcTicks);
   }
 
   private sealed class NonCooperativeAsyncDisposable : IAsyncDisposable

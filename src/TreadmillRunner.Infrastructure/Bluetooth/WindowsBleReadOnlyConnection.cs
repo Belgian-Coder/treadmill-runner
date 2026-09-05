@@ -17,6 +17,7 @@ internal sealed class WindowsBleReadOnlyConnection :
   private readonly ulong _bluetoothAddress;
   private readonly BluetoothAddressType? _bluetoothAddressType;
   private readonly CancellationTokenSource _disposeCancellation = new();
+  private readonly AsyncNativeResourceOwner<BluetoothLEDevice> _device = new();
   private int _disposed;
 
   public WindowsBleReadOnlyConnection(string deviceId)
@@ -57,7 +58,7 @@ internal sealed class WindowsBleReadOnlyConnection :
       _disposeCancellation.Token);
     var operationCancellation = linkedCancellation.Token;
 
-    using BluetoothLEDevice device = await OpenDeviceAsync(operationCancellation);
+    BluetoothLEDevice device = await OpenDeviceAsync(operationCancellation);
     var servicesResult = await device
       .GetGattServicesAsync(BluetoothCacheMode.Uncached)
       .AsTask(operationCancellation)
@@ -116,7 +117,7 @@ internal sealed class WindowsBleReadOnlyConnection :
       _disposeCancellation.Token);
     CancellationToken operationCancellation = linkedCancellation.Token;
 
-    using BluetoothLEDevice device = await OpenDeviceAsync(operationCancellation);
+    BluetoothLEDevice device = await OpenDeviceAsync(operationCancellation);
     var services = new List<BleService>();
     foreach (Guid serviceUuid in serviceUuids.Distinct())
     {
@@ -272,10 +273,9 @@ internal sealed class WindowsBleReadOnlyConnection :
 
     TypedEventHandler<BluetoothLEDevice, object> connectionHandler = (device, _) =>
     {
-      if (device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
-      {
-        channel.Writer.TryComplete(new WindowsBleDisconnectedException());
-      }
+      CompleteChannelOnDisconnect(
+        () => device.ConnectionStatus == BluetoothConnectionStatus.Disconnected,
+        channel.Writer);
     };
 
     handle.Characteristic.ValueChanged += handler;
@@ -301,9 +301,34 @@ internal sealed class WindowsBleReadOnlyConnection :
     }
     finally
     {
-      handle.Characteristic.ValueChanged -= handler;
-      handle.Device.ConnectionStatusChanged -= connectionHandler;
-      channel.Writer.TryComplete();
+      try
+      {
+        NativeResourceOwnership.RunCleanupActions(
+          operationCancellation.IsCancellationRequested,
+          () => handle.Characteristic.ValueChanged -= handler,
+          () => handle.Device.ConnectionStatusChanged -= connectionHandler);
+      }
+      finally
+      {
+        channel.Writer.TryComplete();
+      }
+    }
+  }
+
+  internal static void CompleteChannelOnDisconnect(
+    Func<bool> isDisconnected,
+    ChannelWriter<BleNotification> writer)
+  {
+    try
+    {
+      if (isDisconnected())
+      {
+        writer.TryComplete(new WindowsBleDisconnectedException());
+      }
+    }
+    catch (Exception exception)
+    {
+      writer.TryComplete(exception);
     }
   }
 
@@ -312,6 +337,7 @@ internal sealed class WindowsBleReadOnlyConnection :
     if (Interlocked.Exchange(ref _disposed, 1) == 0)
     {
       _disposeCancellation.Cancel();
+      _device.Dispose();
       _disposeCancellation.Dispose();
     }
 
@@ -320,27 +346,26 @@ internal sealed class WindowsBleReadOnlyConnection :
 
   private async Task<BluetoothLEDevice> OpenDeviceAsync(CancellationToken cancellationToken)
   {
-    BluetoothLEDevice? device;
-    if (_bluetoothAddressType is { } addressType)
-    {
-      device = await BluetoothLEDevice
-        .FromBluetoothAddressAsync(_bluetoothAddress, addressType)
-        .AsTask(cancellationToken)
-        .ConfigureAwait(false);
-    }
-    else
-    {
-      // Preserve the one-argument API for unknown/unspecified observations;
-      // Windows can infer the address type from its own device cache.
-      device = await BluetoothLEDevice
-        .FromBluetoothAddressAsync(_bluetoothAddress)
-        .AsTask(cancellationToken)
-        .ConfigureAwait(false);
-    }
+    return await _device.GetOrCreateAsync(
+      async operationCancellation =>
+      {
+        if (_bluetoothAddressType is { } addressType)
+        {
+          return await BluetoothLEDevice
+            .FromBluetoothAddressAsync(_bluetoothAddress, addressType)
+            .AsTask(operationCancellation)
+            .ConfigureAwait(false);
+        }
 
-    cancellationToken.ThrowIfCancellationRequested();
-
-    return device ?? throw new WindowsBleDeviceUnavailableException();
+        // Preserve the one-argument API for unknown/unspecified observations;
+        // Windows can infer the address type from its own device cache.
+        return await BluetoothLEDevice
+          .FromBluetoothAddressAsync(_bluetoothAddress)
+          .AsTask(operationCancellation)
+          .ConfigureAwait(false);
+      },
+      static () => new WindowsBleDeviceUnavailableException(),
+      cancellationToken).ConfigureAwait(false);
   }
 
   private async Task<NativeCharacteristicHandle> OpenCharacteristicAsync(
@@ -349,66 +374,61 @@ internal sealed class WindowsBleReadOnlyConnection :
     CancellationToken cancellationToken)
   {
     BluetoothLEDevice device = await OpenDeviceAsync(cancellationToken);
+    GattDeviceServicesResult servicesResult = await device
+      .GetGattServicesForUuidAsync(serviceUuid, BluetoothCacheMode.Uncached)
+      .AsTask(cancellationToken)
+      .ConfigureAwait(false);
+    GattDeviceService? service = NativeResourceOwnership.TransferFirst(
+      servicesResult.Services,
+      () =>
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        WindowsBleStatus.ThrowIfFailed(
+          servicesResult.Status,
+          servicesResult.ProtocolError,
+          $"discover service {serviceUuid:D}");
+      });
+    if (service is null)
+    {
+      throw new WindowsBleException($"BLE service {serviceUuid:D} was not found.");
+    }
+
     try
     {
-      GattDeviceServicesResult servicesResult = await device
-        .GetGattServicesForUuidAsync(serviceUuid, BluetoothCacheMode.Uncached)
+      GattOpenStatus openStatus = await service
+        .OpenAsync(GattSharingMode.SharedReadAndWrite)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false);
+      if (openStatus is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
+      {
+        throw new WindowsBleException(
+          $"Windows BLE could not open service {serviceUuid:D} for shared telemetry access: {openStatus}.");
+      }
+
+      // Keep telemetry and the serialized command connection on compatible
+      // shared service handles. This also avoids starting characteristic
+      // discovery in the same WinRT completion turn as service discovery.
+      await Task.Yield();
+      GattCharacteristicsResult characteristicsResult = await service
+        .GetCharacteristicsForUuidAsync(characteristicUuid, BluetoothCacheMode.Uncached)
         .AsTask(cancellationToken)
         .ConfigureAwait(false);
       WindowsBleStatus.ThrowIfFailed(
-        servicesResult.Status,
-        servicesResult.ProtocolError,
-        $"discover service {serviceUuid:D}");
-
-      GattDeviceService? service = servicesResult.Services.FirstOrDefault();
-      foreach (GattDeviceService extra in servicesResult.Services.Skip(1)) extra.Dispose();
-      if (service is null)
+        characteristicsResult.Status,
+        characteristicsResult.ProtocolError,
+        $"discover characteristic {characteristicUuid:D}");
+      GattCharacteristic? characteristic = characteristicsResult.Characteristics.FirstOrDefault();
+      if (characteristic is null)
       {
-        throw new WindowsBleException($"BLE service {serviceUuid:D} was not found.");
+        throw new WindowsBleException(
+          $"BLE characteristic {characteristicUuid:D} was not found in service {serviceUuid:D}.");
       }
 
-      try
-      {
-        GattOpenStatus openStatus = await service
-          .OpenAsync(GattSharingMode.SharedReadAndWrite)
-          .AsTask(cancellationToken)
-          .ConfigureAwait(false);
-        if (openStatus is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
-        {
-          throw new WindowsBleException(
-            $"Windows BLE could not open service {serviceUuid:D} for shared telemetry access: {openStatus}.");
-        }
-
-        // Keep telemetry and the serialized command connection on compatible
-        // shared service handles. This also avoids starting characteristic
-        // discovery in the same WinRT completion turn as service discovery.
-        await Task.Yield();
-        GattCharacteristicsResult characteristicsResult = await service
-          .GetCharacteristicsForUuidAsync(characteristicUuid, BluetoothCacheMode.Uncached)
-          .AsTask(cancellationToken)
-          .ConfigureAwait(false);
-        WindowsBleStatus.ThrowIfFailed(
-          characteristicsResult.Status,
-          characteristicsResult.ProtocolError,
-          $"discover characteristic {characteristicUuid:D}");
-        GattCharacteristic? characteristic = characteristicsResult.Characteristics.FirstOrDefault();
-        if (characteristic is null)
-        {
-          throw new WindowsBleException(
-            $"BLE characteristic {characteristicUuid:D} was not found in service {serviceUuid:D}.");
-        }
-
-        return new NativeCharacteristicHandle(device, service, characteristic);
-      }
-      catch
-      {
-        service.Dispose();
-        throw;
-      }
+      return new NativeCharacteristicHandle(device, service, characteristic);
     }
     catch
     {
-      device.Dispose();
+      service.Dispose();
       throw;
     }
   }
@@ -474,7 +494,6 @@ internal sealed class WindowsBleReadOnlyConnection :
     public void Dispose()
     {
       service.Dispose();
-      Device.Dispose();
     }
   }
 }

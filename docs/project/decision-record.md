@@ -59,9 +59,9 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Plan phase/week contents and multi-year history cards are render-bounded independently of authoritative stored data. Browser route readiness, DOM size, lazy-assembly loading, and a three-year SQLite fixture are deterministic acceptance budgets.
 - Gateway composition is separated into service-registration and middleware extensions. Request correlation/metrics use normalized route keys and a bounded in-memory snapshot; feature clients begin with the typed operator-access boundary rather than duplicating wire details in UI components.
 - Trusted private HTTPS with HTTP/2 is the production browser transport baseline. Plain loopback HTTP remains for local health and update recovery. HTTP/3 may be added by a managed edge but is not required, and no deployment may label a self-signed or otherwise untrusted certificate as household-ready.
-- The iPhone Home Screen contract serves one complete opaque 180×180 Apple touch icon from the canonical app artwork. Re-adding an existing Home Screen shortcut may be required after an asset refresh; no physical Safari installation claim is made by source validation.
+- The iPhone Home Screen contract serves one complete opaque 180Ãƒâ€”180 Apple touch icon from the canonical app artwork. Re-adding an existing Home Screen shortcut may be required after an asset refresh; no physical Safari installation claim is made by source validation.
 - Core/Protocols contain no WinRT. Infrastructure owns Windows BLE and SQLite.
-- Windows BLE scan-response discovery, public/random address typing, targeted standard-service GATT enumeration, and native timeout cancellation remain Infrastructure concerns. Notification teardown disposes its service/device handles and never starts an unbounded detached CCCD cleanup operation.
+- Windows BLE scan-response discovery, public/random address typing, targeted standard-service GATT enumeration, and native timeout cancellation remain Infrastructure concerns. Notification teardown disposes its service handle; the read-only connection owns the device until generation disposal. Native connection-status callbacks contain closed-device failures; canceled teardown attempts both event detachments without letting closure errors escape. No unbounded detached CCCD cleanup operation is started.
 - SQLite enforces one active session through a filtered unique active-slot index. Startup/migration reconciles pre-existing conflicts before the constraint is enabled, while recovery and Garmin lease queries select only the chosen candidate/available lease with indexed ordering.
 - Treadmill support is adapter-based: portable `ITreadmillProtocol`
   implementations provide identity matching, reported features/ranges, and separately hardware-verified capability declarations, and
@@ -69,6 +69,10 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
   support adds an adapter rather than conditionals in the session engine.
 - A simulated transport proves behavior before hardware commands.
 - QDomyos-Zwift remains GPLv3 external evidence. TreadmillRunner implementation is independently authored with provenance and golden fixtures.
+
+## Bluetooth recovery continuity (2026-09-05)
+
+Use one native device owner per read-only connection generation, with serialized lazy acquisition and disposal of cancellation/failure losers. Do not weaken native-disconnect invalidation or introduce automatic command replay. A bounded timeout closes the generation-owned handle rather than leaving ownership solely inside an abandoned operation. Retain a separate preferred-source stabilization hold before removing a connected fallback; first-valid reliability incident recovery timestamps remain unchanged. Credit a completed healthy interval even when failure detection is delayed, while short flaps continue escalating. Required HRS discovery must not wait for optional Battery/Device Information queries. These software corrections address recovery amplification; they do not establish the initial physical disconnect cause.
 
 ## Superseded decisions
 
