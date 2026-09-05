@@ -41,7 +41,8 @@ public sealed class ReadOnlyDeviceCoordinator(
   IBleAdvertisementBroker advertisementBroker,
   TimeProvider timeProvider,
   IApplicationMaintenanceState maintenanceState,
-  ILogger<ReadOnlyDeviceCoordinator> logger) : BackgroundService, IReadOnlyDeviceCoordinator
+  ILogger<ReadOnlyDeviceCoordinator> logger,
+  BleDiagnosticJournal? diagnosticJournal = null) : BackgroundService, IReadOnlyDeviceCoordinator
 {
   private static readonly TimeSpan EnrollmentRefreshInterval = TimeSpan.FromSeconds(2);
   private static readonly TimeSpan GattOperationTimeout = TimeSpan.FromSeconds(15);
@@ -223,6 +224,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           enrollment.Enrollment,
           enrollment.Enrollment.DeviceId,
           excludeCurrentDevice: false,
+          generation: Current.Treadmill.ConnectionGeneration,
           cancellationToken);
       }
     }
@@ -482,6 +484,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             enrollment,
             connectionDeviceId,
             excludeCurrentDevice: false,
+            generation,
             cancellationToken);
           cancellationToken.ThrowIfCancellationRequested();
           if (initialResolution is not null)
@@ -538,6 +541,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
       catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
       {
+        diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+          "attempt-cancelled", Samples: attempt.TelemetrySampleCount));
         break;
       }
       catch (Exception exception)
@@ -554,6 +559,11 @@ public sealed class ReadOnlyDeviceCoordinator(
           consecutiveFailureCount,
           active: activeDemand);
         string sanitizedFault = SanitizeFault(exception);
+        diagnosticJournal?.Record(new(failedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+          "attempt-failed", ClassifyFailure(exception).ToString(), exception.HResult,
+          attempt.TelemetrySampleCount,
+          attempt.LastTelemetryAtUtc is { } lastValid ? (failedAt - lastValid).TotalSeconds : null,
+          reconnectDelay.TotalSeconds));
         logger.LogWarning(
           exception,
           "Read-only {DeviceRole} connection failed; reconnecting without issuing a treadmill command.",
@@ -580,6 +590,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             connectionDeviceId,
             excludeCurrentDevice: enrollment.Role == DeviceRole.HeartRate &&
               exception is not (WindowsBleDeviceUnavailableException or WindowsBleDisconnectedException),
+            generation,
             cancellationToken);
           if (cancellationToken.IsCancellationRequested) break;
         }
@@ -611,8 +622,10 @@ public sealed class ReadOnlyDeviceCoordinator(
     DeviceEnrollment enrollment,
     string currentDeviceId,
     bool excludeCurrentDevice,
+    long generation,
     CancellationToken cancellationToken)
   {
+    diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation, "rediscovery-start"));
     var resolver = new HeartRateReconnectResolver();
     using var discovery = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     discovery.CancelAfter(ReconnectDiscoveryTimeout);
@@ -628,6 +641,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           logger.LogInformation(
             "Freshly rediscovered the enrolled {DeviceRole}; retrying its read-only connection.",
             enrollment.Role);
+          diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation, "rediscovery-exact-match"));
           return new HeartRateReconnectResolution(
             currentDeviceId,
             HeartRateReconnectMatch.ExactDeviceId);
@@ -655,6 +669,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       return null;
     }
 
+    diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation, "rediscovery-window-ended"));
     if (enrollment.Role != DeviceRole.HeartRate) return null;
 
     (bool allowNameFallback, bool allowFamilyFallback)? fallbackPolicy =
@@ -917,6 +932,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     CancellationToken cancellationToken)
   {
     RequireCharacteristic(services, Uuids.HeartRateService, Uuids.HeartRateMeasurement, requireNotify: true);
+    HeartRateSignalQuality? previousQuality = null;
     var readyPublished = false;
     using var detailsCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     Task? detailsTask = null;
@@ -930,6 +946,12 @@ public sealed class ReadOnlyDeviceCoordinator(
       {
         HeartRateMeasurement measurement = HeartRateMeasurementParser.Parse(notification.Value.Span);
         HeartRateSignalQuality quality = ClassifyHeartRateSignal(measurement);
+        if (quality != previousQuality)
+        {
+          diagnosticJournal?.Record(new(notification.ObservedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+            "signal-quality", Quality: quality.ToString()));
+          previousQuality = quality;
+        }
         ushort? usableBeatsPerMinute = quality == HeartRateSignalQuality.Valid
           ? measurement.BeatsPerMinute
           : null;
@@ -1003,6 +1025,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
+      diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+        "optional-device-information-failed", ClassifyFailure(exception).ToString(), exception.HResult));
       logger.LogDebug(exception, "Optional heart-rate device information was unavailable.");
     }
     cancellationToken.ThrowIfCancellationRequested();
@@ -1043,6 +1067,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
       catch (Exception exception) when (exception is not OperationCanceledException)
       {
+        diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+          "optional-battery-read-failed", ClassifyFailure(exception).ToString(), exception.HResult));
         logger.LogDebug(exception, "Optional heart-rate battery read was unavailable.");
       }
     }
@@ -1071,6 +1097,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
     catch (Exception exception)
     {
+      diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+        "optional-battery-notifications-ended", ClassifyFailure(exception).ToString(), exception.HResult));
       logger.LogDebug(exception, "Optional heart-rate battery notifications ended.");
     }
   }
@@ -1639,12 +1667,21 @@ public sealed class ReadOnlyDeviceCoordinator(
     ConnectionAttemptRuntime attempt)
   {
     attempt.ObserveTelemetry(observedAt);
+    if (attempt.LastDiagnosticAtUtc is null || observedAt - attempt.LastDiagnosticAtUtc >= TimeSpan.FromMinutes(1))
+    {
+      diagnosticJournal?.Record(new(observedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+        attempt.LastDiagnosticAtUtc is null ? "first-valid-reading" : "telemetry-summary",
+        Samples: attempt.TelemetrySampleCount, MaximumValidIntervalSeconds: attempt.MaximumValidIntervalSeconds));
+      attempt.LastDiagnosticAtUtc = observedAt;
+    }
     ReliabilityIncidentRuntime? incident;
     lock (_sync)
     {
       if (!_reliabilityIncidents.Remove(enrollment.Id, out incident)) return;
     }
 
+    diagnosticJournal?.Record(new(observedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+      "recovered", RecoverySeconds: incident.StartedAtUtc is { } began ? (observedAt - began).TotalSeconds : null));
     var resolve = new ResolveReliabilityWrite(
       enrollment.Id,
       generation,
@@ -1689,7 +1726,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       else
       {
         enqueueBegin = true;
-        _reliabilityIncidents[enrollment.Id] = new ReliabilityIncidentRuntime(1, reconnectDelay, true);
+        _reliabilityIncidents[enrollment.Id] = new ReliabilityIncidentRuntime(1, reconnectDelay, true, occurredAtUtc);
       }
     }
 
@@ -1884,6 +1921,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     long generation,
     string? fault)
   {
+    diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation, state.ToString()));
     var connection = new DeviceConnectionSnapshot(
       enrollment.Role,
       state,
@@ -2013,6 +2051,11 @@ public sealed class ReadOnlyDeviceCoordinator(
     SelectionRuntime selection = _profileSelections.GetValueOrDefault(selectionKey) ?? new SelectionRuntime(null, 0);
     if (selection.EnrollmentId != selectedId)
     {
+      diagnosticJournal?.Record(new(now, selectedId ?? selection.EnrollmentId!.Value, "HeartRate",
+        selected?.ConnectionGeneration ?? displayed?.ConnectionGeneration ?? 0,
+        selectedId is null ? "no-valid-selected-source" : "selected-source",
+        LastValidAgeSeconds: displayed?.ObservedAt is { } lastObserved ? (now - lastObserved).TotalSeconds : null,
+        ProfileId: profileId));
       selection = new SelectionRuntime(selectedId, selection.Generation + 1);
       _profileSelections[selectionKey] = selection;
     }
@@ -2158,9 +2201,13 @@ public sealed class ReadOnlyDeviceCoordinator(
     public DateTimeOffset? FirstTelemetryAtUtc { get; private set; }
     public DateTimeOffset? LastTelemetryAtUtc { get; private set; }
     public int TelemetrySampleCount { get; private set; }
+    public DateTimeOffset? LastDiagnosticAtUtc { get; set; }
+    public double MaximumValidIntervalSeconds { get; private set; }
 
     public void ObserveTelemetry(DateTimeOffset observedAt)
     {
+      if (LastTelemetryAtUtc is { } previous)
+        MaximumValidIntervalSeconds = Math.Max(MaximumValidIntervalSeconds, (observedAt - previous).TotalSeconds);
       FirstTelemetryAtUtc ??= observedAt;
       LastTelemetryAtUtc = observedAt;
       TelemetrySampleCount++;
@@ -2182,7 +2229,8 @@ public sealed class ReadOnlyDeviceCoordinator(
   private sealed record ReliabilityIncidentRuntime(
     int FailedAttemptCount,
     TimeSpan MaximumReconnectDelay,
-    bool BeginQueued);
+    bool BeginQueued,
+    DateTimeOffset? StartedAtUtc = null);
 
   private abstract record ReliabilityWrite;
 

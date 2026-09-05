@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-29
+updated: 2026-09-05
 ---
 
 # TreadmillRunner decision record
@@ -47,6 +47,8 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 - Calendar is a view-and-manage surface. Workout creation, recurring workout scheduling, premade-template installation, and training-plan start/restart scheduling belong to Plan. Installing an already-installed template version is idempotent; the product does not offer duplicate copies as an ordinary action. A completed-late session may move to its actual date and shift every later incomplete session by the same offset without changing linked History or progression. Calendar mutations fail closed on occupied target dates, including one-session moves, following-session shifts, restores, and training-day changes; clearing upcoming work is available per selected plan and never alters completed history.
 
 ## Engineering decisions
+
+- Bluetooth diagnostics use a dedicated bounded asynchronous journal beside the database, with eight approximately 2 MiB rotating JSONL files and a 2,048-event queue. Correlation uses enrollment IDs, connection generations, process IDs and UTC timestamps. Stage/failure/freshness evidence is retained without raw payloads or heart-rate values; evidence loss is counted and storage failure cannot block device supervision. Durable incident summaries are retained separately. These records distinguish a software recovery delay from a native disconnect, but do not infer an over-the-air disconnect reason that Windows did not report.
 
 - Eight production projects: Core, Protocols, Infrastructure, Gateway, Web, the lazy Web SignalR transport, the lazy Operations feature, and the small shared Web runtime.
 - Vertical slices inside Gateway/Web; no mediator, repository facade, message broker, microservices, IIS, container, MSIX, or AOT for v1.

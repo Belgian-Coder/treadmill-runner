@@ -17,6 +17,39 @@ public sealed class GarminHistoricalRecoveryEndpointTests(GarminHistoricalRecove
   : IClassFixture<GarminHistoricalRecoveryGatewayFactory>
 {
   [Fact]
+  public async Task Resync_status_explains_that_the_activity_exists_and_checks_are_delayed()
+  {
+    using RecoveryHarness harness = await RecoveryHarness.CreateAsync(factory, createBackups: true);
+    var contexts = factory.Services.GetRequiredService<IDbContextFactory<TreadmillRunnerDbContext>>();
+    await using (TreadmillRunnerDbContext context = await contexts.CreateDbContextAsync())
+    {
+      GarminActivityUploadJobEntity job = await context.GarminActivityUploadJobs.SingleAsync(item => item.Id == harness.Job.Id);
+      job.Status = "Pending";
+      job.OperationPhase = "VerifyResync";
+      job.RemoteId = "merged-123";
+      job.ReplacementRemoteId = "merged-123";
+      await context.SaveChangesAsync();
+    }
+    try
+    {
+      JsonElement status = await harness.GetStatusAsync();
+      Assert.True(status.GetProperty("busy").GetBoolean());
+      Assert.False(status.GetProperty("canMergeIntoOne").GetBoolean());
+      string message = status.GetProperty("message").GetString()!;
+      Assert.Contains("merged activity is in Garmin", message);
+      Assert.Contains("30 minutes", message);
+    }
+    finally
+    {
+      // This fixture shares its queue across tests. Do not leave a due job for
+      // a later test's LeaseNextAsync to pick up instead of its own session.
+      await using TreadmillRunnerDbContext context = await contexts.CreateDbContextAsync();
+      await context.GarminActivityUploadJobs.Where(item => item.Id == harness.Job.Id)
+        .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.Status, "Confirmed"));
+    }
+  }
+
+  [Fact]
   public async Task Status_is_available_only_with_an_exact_retained_fit_pair_and_enabled_connected_account()
   {
     using RecoveryHarness harness = await RecoveryHarness.CreateAsync(factory, createBackups: false);

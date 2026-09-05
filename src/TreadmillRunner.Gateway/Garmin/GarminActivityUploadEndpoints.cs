@@ -92,7 +92,9 @@ public static class GarminActivityUploadEndpoints
         : !connected
           ? "Reconnect and enable Garmin activity upload before recovering this historical item."
           : busy
-            ? "Garmin recovery is running. Refresh this historical item for the latest phase."
+            ? job!.OperationPhase == "VerifyResync"
+              ? "The merged activity is in Garmin. Automatic checks are watching for duplicates re-created by the watch; these checks take about 30 minutes. Refresh status for the latest result."
+              : "Garmin recovery is running. Refresh this historical item for the latest phase."
             : "Choose one guarded outcome: keep one merged Garmin activity, or restore separate watch-original and TreadmillRunner activities. Local History remains unchanged.";
     return TypedResults.Ok(new GarminHistoricalRecoveryStatus(
       available,

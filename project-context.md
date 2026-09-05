@@ -52,6 +52,10 @@ TR-031 keeps household improvements local: profile-owned display/cue/goal settin
 - Any terminal local session may be deleted after explicit preview/confirmation when its Garmin job is absent or settled. Deleting plan-linked history recalculates plan progress from the remaining sessions; deleting a settled Garmin record never deletes the remote activity. Pending, in-flight, or unknown Garmin outcomes remain protected.
 - Accelerated four-hour cadence/bounded-memory proof, a 14,400-write SQLite soak, and local loopback p95 targets pass. Normal household Wi-Fi remains a deployment acceptance check. Auto-update, real BLE session operation, and hardware commands are not implemented by TR-004.
 
+## Bluetooth diagnostics
+
+The gateway retains a bounded, asynchronous Bluetooth diagnostic journal in `diagnostics` beside the configured SQLite database (`C:\ProgramData\TreadmillRunner\data\diagnostics` for the installed service). `bluetooth.jsonl` and seven rotated files retain approximately 16 MiB. Records correlate enrollment ID, connection generation, process ID and UTC time across connection stages, rediscovery, native failure kind/HRESULT, valid-sample counts, last-valid age, signal-quality and selected-source changes. The journal records no raw BLE payloads, addresses, names or heart-rate values. Queue/storage loss is counted in subsequent records; `GET /api/diagnostics/ble/journal` reports the last successful write and dropped/storage-failure counts without exposing file contents. Storage errors never stop device supervision. Database incident summaries remain the long-term record. Logging additions require installation before they can explain a future physical dropout; historical null samples are not reconstructed.
+
 ## Safety reminder
 
 Remote belt Start is software-complete but capability-disabled for current hardware. It is exposed only after the model/firmware-specific TR-006B gate; reconnect, reload, restart, update, and retry may never replay Start or resume a workout. Hardware capabilities remain disabled until their individual evidence gates pass.

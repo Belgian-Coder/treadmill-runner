@@ -146,6 +146,11 @@ public static class GatewayServiceCollectionExtensions
     services.AddSingleton<IBleCentralTransport>(static provider => provider.GetRequiredService<WindowsBleCentralTransport>());
     services.AddSingleton<IBleAdvertisementBroker, BleAdvertisementBroker>();
     services.AddSingleton<IBleCommandCentralTransport>(static provider => provider.GetRequiredService<WindowsBleCentralTransport>());
+    services.AddSingleton(provider => new BleDiagnosticJournal(
+      Path.Combine(Path.GetDirectoryName(Path.GetFullPath(configuration["Persistence:DatabasePath"]
+        ?? Path.Combine(AppContext.BaseDirectory, "data", "treadmillrunner.db")))!, "diagnostics"),
+      provider.GetRequiredService<ILogger<BleDiagnosticJournal>>()));
+    services.AddHostedService(provider => provider.GetRequiredService<BleDiagnosticJournal>());
     services.AddSingleton<ReadOnlyDeviceCoordinator>();
     services.AddSingleton<IReadOnlyDeviceCoordinator>(static provider => provider.GetRequiredService<ReadOnlyDeviceCoordinator>());
     services.AddHostedService(static provider => provider.GetRequiredService<ReadOnlyDeviceCoordinator>());

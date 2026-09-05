@@ -13,6 +13,12 @@ public static class BleDiagnosticsEndpoints
   public static IEndpointRouteBuilder MapBleDiagnostics(this IEndpointRouteBuilder endpoints)
   {
     var group = endpoints.MapGroup("/api/diagnostics/ble");
+    group.MapGet("/journal", static (BleDiagnosticJournal journal) => TypedResults.Ok(new
+    {
+      journal.LastWriteAtUtc,
+      journal.DroppedEvents,
+      journal.StorageFailures,
+    }));
     group.MapGet("/scan", ScanAsync);
     group.MapGet("/devices/{deviceId}/gatt", EnumerateGattAsync);
     return endpoints;

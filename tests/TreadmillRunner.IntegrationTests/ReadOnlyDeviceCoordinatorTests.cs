@@ -76,7 +76,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     await profiles.CreateAsync(marc, now, Op("profile.create", now));
     await profiles.CreateAsync(wife, now, Op("profile.create", now));
     DeviceEnrollment polar = HeartRate("POLAR", "Polar H10");
-    DeviceEnrollment garmin = HeartRate("GARMIN", "Garmin fēnix 8");
+    DeviceEnrollment garmin = HeartRate("GARMIN", "Garmin fÄ“nix 8");
     await store.EnrollWithAssignmentsAsync(polar,
       [new HeartRateAssignmentPreference(marc.Id, 5, true, true), new HeartRateAssignmentPreference(wife.Id, 0, true, true)],
       now, Op("device.enroll", now));
@@ -129,7 +129,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
     await profiles.CreateAsync(runner, now, Op("profile.create", now));
     DeviceEnrollment polar = HeartRate("POLAR-FAIL", "Polar H10");
-    DeviceEnrollment garmin = HeartRate("GARMIN-FALLBACK", "Garmin fēnix 8");
+    DeviceEnrollment garmin = HeartRate("GARMIN-FALLBACK", "Garmin fÄ“nix 8");
     await store.EnrollWithAssignmentsAsync(polar,
       [new HeartRateAssignmentPreference(runner.Id, 5, true, true)],
       now, Op("device.enroll", now));
@@ -225,10 +225,13 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       BlockHeartRateDeviceInformationReads = true,
       DisconnectFirstHeartRateSubscription = true,
     };
+    string journalDirectory = Path.Combine(_directory, "diagnostics");
+    using var journal = new BleDiagnosticJournal(journalDirectory, NullLogger<BleDiagnosticJournal>.Instance);
+    await journal.StartAsync(CancellationToken.None);
     var coordinator = new ReadOnlyDeviceCoordinator(
       provider.GetRequiredService<IServiceScopeFactory>(), transport,
       new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
-      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance, journal);
 
     await coordinator.StartAsync(CancellationToken.None);
     try
@@ -246,7 +249,14 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     {
       await coordinator.StopAsync(CancellationToken.None);
       coordinator.Dispose();
+      await journal.StopAsync(CancellationToken.None);
     }
+    string evidence = await File.ReadAllTextAsync(Path.Combine(journalDirectory, "bluetooth.jsonl"));
+    Assert.Contains("NativeDisconnected", evidence);
+    Assert.Contains("first-valid-reading", evidence);
+    Assert.Contains("rediscovery-window-ended", evidence);
+    Assert.Contains(heartRate.Id.ToString(), evidence);
+    Assert.DoesNotContain("POLAR-RECONNECT-INFO", evidence);
   }
 
   public Task DisposeAsync()
@@ -514,12 +524,10 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     try
     {
       Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
-      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-      while (transport.ConnectionDeviceIds.Count == 0)
-      {
-        await Task.Delay(25, timeout.Token);
-      }
-
+      // This is an identity-safety assertion, not a three-second scheduling
+      // benchmark. Await the observed attempt instead of polling during scans.
+      string firstAttempt = await transport.FirstConnectionAttempt.WaitAsync(TimeSpan.FromSeconds(15));
+      Assert.Equal(heartRate.DeviceId, firstAttempt);
       Assert.Contains(heartRate.DeviceId, transport.ConnectionDeviceIds);
       Assert.DoesNotContain("AABBCCDDEEFF", transport.ConnectionDeviceIds);
     }
@@ -1306,6 +1314,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   {
     private static readonly Guid HeartRateService = Expand(0x180D);
     private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
+    private readonly TaskCompletionSource<string> _firstConnectionAttempt = new(
+      TaskCreationOptions.RunContinuationsAsynchronously);
+    public Task<string> FirstConnectionAttempt => _firstConnectionAttempt.Task;
     private int _scanCount;
     private int _targetedDiscoveryCount;
     private int _currentConnectionCount;
@@ -1345,6 +1356,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       CancellationToken cancellationToken = default)
     {
       ConnectionDeviceIds.Enqueue(deviceId);
+      _firstConnectionAttempt.TrySetResult(deviceId);
       int currentConnection = string.Equals(deviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase)
         ? Interlocked.Increment(ref _currentConnectionCount)
         : 0;
