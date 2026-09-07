@@ -43,7 +43,7 @@
         "default_tokens": 6000,
         "overrides": {
           "evidence": 12000,
-          "handoff": 2500,
+          "handoff": 3200,
           "implementation": 8000,
           "planning": 6000,
           "routing": 1500,
@@ -54,7 +54,7 @@
     },
     "context": {
       "always_loaded": {
-        "budget_tokens": 3500,
+        "budget_tokens": 4000,
         "files": [
           "AGENTS.md",
           ".agents/routing.md",
@@ -314,7 +314,7 @@
       "context_packet_min_savings_percent": 60,
       "context_packet_min_savings_raw_tokens": 3125,
       "context_packet_raw_file_limit": 10,
-      "context_packet_token_limit": 2500,
+      "context_packet_token_limit": 3200,
       "context_packet_validation_file_limit": 3,
       "context_reason_chars": 240,
       "contract_warn_words": 750,
