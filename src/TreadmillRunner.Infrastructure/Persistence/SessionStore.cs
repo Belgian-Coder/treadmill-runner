@@ -211,7 +211,21 @@ public sealed class SessionStore(
       throw new InvalidOperationException($"Cannot append an event to terminal session {sessionId}.");
     }
 
-    context.SessionEvents.Add(CreateEventEntity(sessionId, sessionEvent));
+    SessionEventEntity entity = CreateEventEntity(sessionId, sessionEvent);
+    if (IsTerminalEvent(sessionEvent) && await context.SessionEvents.AsNoTracking().AnyAsync(
+      candidate => candidate.WorkoutSessionId == sessionId &&
+        candidate.OccurredAtUtc == entity.OccurredAtUtc &&
+        candidate.Kind == entity.Kind &&
+        candidate.DetailsJson == entity.DetailsJson,
+      cancellationToken))
+    {
+      // A provider can commit the insert and then report an unknown outcome. The
+      // terminal effect retries with the same immutable event; make that retry a
+      // no-op instead of creating a duplicate history event.
+      return;
+    }
+
+    context.SessionEvents.Add(entity);
     await context.SaveChangesAsync(cancellationToken);
   }
 
@@ -231,6 +245,7 @@ public sealed class SessionStore(
 
     if (IsTerminal(ParseState(session.State)))
     {
+      if (MatchesFinalization(session, summary)) return;
       throw new InvalidOperationException($"Session {summary.SessionId} is already terminal.");
     }
 
@@ -1035,6 +1050,21 @@ public sealed class SessionStore(
     Kind = sessionEvent.EventType,
     DetailsJson = JsonSerializer.Serialize(sessionEvent, sessionEvent.GetType(), EventJsonOptions),
   };
+
+  private static bool IsTerminalEvent(SessionEvent sessionEvent) =>
+    sessionEvent is SessionCompletedEvent or SessionStoppedEvent;
+
+  private static bool MatchesFinalization(WorkoutSessionEntity session, SessionSummary summary) =>
+    session.UserProfileId == summary.UserProfileId &&
+    session.WorkoutRevisionId == summary.WorkoutRevisionId &&
+    string.Equals(session.UserProfileName, summary.UserProfileName, StringComparison.Ordinal) &&
+    string.Equals(session.WorkoutTitle, summary.WorkoutTitle, StringComparison.Ordinal) &&
+    string.Equals(session.State, summary.Status.ToString(), StringComparison.Ordinal) &&
+    session.StartedAtUtc == summary.StartedAt &&
+    session.EndedAtUtc == summary.EndedAt &&
+    session.DurationSeconds == summary.Duration.TotalSeconds &&
+    session.DistanceKilometers == summary.DistanceKilometers &&
+    session.AverageSpeedKph == summary.AverageSpeedKph;
 
   private static SessionEvent MapEvent(SessionEventEntity entity) => entity.Kind switch
   {

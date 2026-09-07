@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Persistence;
 
@@ -33,22 +35,29 @@ public sealed class LocalBackupWorker(
       DateTimeOffset started = timeProvider.GetUtcNow();
       try
       {
-        VerifiedDatabaseBackup created = await backups.CreateAsync(
-          policy.Policy.DestinationPath, policy.Policy.RetentionCount, cancellationToken);
+        VerifiedDatabaseBackup created;
+        try
+        {
+          created = await backups.CreateAsync(
+            policy.Policy.DestinationPath, policy.Policy.RetentionCount, cancellationToken);
+        }
+        catch (Exception exception) when (
+          exception is IOException or UnauthorizedAccessException or InvalidDataException or SqliteException or DbUpdateException)
+        {
+          cancellationToken.ThrowIfCancellationRequested();
+          var failed = new StoredBackupVerification(
+            Guid.NewGuid(), policy.Id, Path.GetFullPath(policy.Policy.DestinationPath), "Failed",
+            exception.Message, 0, started, timeProvider.GetUtcNow());
+          await store.RecordBackupVerificationAsync(failed, cancellationToken);
+          throw;
+        }
+
         var result = new StoredBackupVerification(
           Guid.NewGuid(), policy.Id, Path.Combine(Path.GetFullPath(policy.Policy.DestinationPath), created.FileName),
           "Verified", $"Isolated full SQLite integrity check passed. SHA-256 {created.Sha256}.",
           created.SizeBytes, started, timeProvider.GetUtcNow());
         await store.RecordBackupVerificationAsync(result, cancellationToken);
         return result;
-      }
-      catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
-      {
-        var failed = new StoredBackupVerification(
-          Guid.NewGuid(), policy.Id, Path.GetFullPath(policy.Policy.DestinationPath), "Failed",
-          exception.Message, 0, started, timeProvider.GetUtcNow());
-        await store.RecordBackupVerificationAsync(failed, cancellationToken);
-        throw;
       }
       finally
       {

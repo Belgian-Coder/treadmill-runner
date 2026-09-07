@@ -45,6 +45,12 @@ try {
         # and exit successfully without discovering tests.
         & dotnet restore $solution --locked-mode
         if ($LASTEXITCODE -ne 0) { throw 'Locked restore before the focused test build failed.' }
+
+        # Compile before starting the test watchdog, just as browser verification
+        # publishes its host before timing the tests. Otherwise a cold dependency
+        # build can exhaust the focused test budget before discovery even starts.
+        # The shared builder also serializes static-web-assets generation.
+        & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration -SkipNativeWeb
     }
 
     $arguments = @(
@@ -58,7 +64,7 @@ try {
         '--logger', "trx;LogFilePrefix=$runStamp",
         '--results-directory', $resolvedResults
     )
-    if (-not $Build) { $arguments += '--no-build' }
+    $arguments += '--no-build'
     Write-Host "Test timeout: $effectiveTimeoutMinutes minute(s); inactivity cutoff: $StallTimeoutSeconds second(s)."
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new('dotnet')
     $startInfo.WorkingDirectory = $projectRoot

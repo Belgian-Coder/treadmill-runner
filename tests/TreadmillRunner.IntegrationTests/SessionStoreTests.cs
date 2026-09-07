@@ -108,6 +108,48 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Retried_terminal_effect_does_not_duplicate_event_or_finalization()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset startedAt = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    DateTimeOffset endedAt = startedAt.AddSeconds(1);
+    Guid sessionId = Guid.NewGuid();
+
+    await store.CreateAsync(New(sessionId, ids, startedAt.AddSeconds(-1)));
+    await store.MarkRunningAsync(sessionId, startedAt);
+
+    var completed = new SessionCompletedEvent(endedAt);
+    await store.AppendEventAsync(sessionId, completed);
+    await store.AppendEventAsync(sessionId, completed);
+    var summary = new SessionSummary(
+      sessionId,
+      ids.ProfileId,
+      "Runner",
+      ids.RevisionId,
+      "Easy Run",
+      SessionState.Completed,
+      startedAt,
+      endedAt,
+      TimeSpan.FromSeconds(1),
+      0,
+      0,
+      null,
+      null,
+      0,
+      0);
+    await store.FinalizeAsync(summary);
+    await store.FinalizeAsync(summary);
+
+    StoredWorkoutSession stored = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+    Assert.Equal(SessionState.Completed, stored.State);
+    Assert.Single(stored.Events);
+    Assert.IsType<SessionCompletedEvent>(stored.Events[0]);
+  }
+
+  [Fact]
   public async Task Three_year_history_remains_bounded_and_returns_the_newest_page()
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);

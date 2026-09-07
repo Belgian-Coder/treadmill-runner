@@ -654,13 +654,7 @@ public sealed class LiveSessionCoordinator(
       LiveEffectMetadata metadata = CaptureEffectMetadata(active);
       SessionCompletedEvent completed = new(now);
       SessionSummary summary = CreateSummary(active, SessionState.Completed, now);
-      effects.Add(metadata, async token =>
-      {
-        using IServiceScope scope = scopeFactory.CreateScope();
-        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-        await store.AppendEventAsync(metadata.SessionId, completed, token);
-        await store.FinalizeAsync(summary, token);
-      }, terminal: true);
+      effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, completed, summary), terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
@@ -791,13 +785,7 @@ public sealed class LiveSessionCoordinator(
       LiveEffectMetadata metadata = CaptureEffectMetadata(active);
       SessionStoppedEvent stopped = new(now);
       SessionSummary summary = CreateSummary(active, SessionState.Stopped, now);
-      effects.Add(metadata, async token =>
-      {
-        using IServiceScope scope = scopeFactory.CreateScope();
-        ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-        await store.AppendEventAsync(metadata.SessionId, stopped, token);
-        await store.FinalizeAsync(summary, token);
-      }, terminal: true);
+      effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, stopped, summary), terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
@@ -2112,13 +2100,32 @@ public sealed class LiveSessionCoordinator(
     LiveEffectMetadata metadata = CaptureEffectMetadata(active);
     SessionCompletedEvent completedEvent = new(completedAt);
     SessionSummary summary = CreateSummary(active, SessionState.Completed, completedAt);
-    effects.Add(metadata, async cancellationToken =>
+    effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, completedEvent, summary), terminal: true);
+  }
+
+  private Func<CancellationToken, Task> CreateTerminalPersistenceEffect(
+    Guid sessionId,
+    SessionEvent terminalEvent,
+    SessionSummary summary)
+  {
+    var eventAppended = false;
+    var finalized = false;
+    return async cancellationToken =>
     {
-      using IServiceScope completionScope = scopeFactory.CreateScope();
-      ISessionStore store = completionScope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.AppendEventAsync(metadata.SessionId, completedEvent, cancellationToken);
+      if (finalized) return;
+
+      using IServiceScope scope = scopeFactory.CreateScope();
+      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+      if (!eventAppended)
+      {
+        await store.AppendEventAsync(sessionId, terminalEvent, cancellationToken);
+        eventAppended = true;
+      }
+
+      if (finalized) return;
       await store.FinalizeAsync(summary, cancellationToken);
-    }, terminal: true);
+      finalized = true;
+    };
   }
 
   private async Task<bool> ApplySimulatedCommandMeasurementAsync(

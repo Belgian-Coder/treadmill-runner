@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-09-05
+updated: 2026-09-08
 ---
 
 # TreadmillRunner decision record
@@ -73,6 +73,14 @@ If Session 0 BLE cannot pass its acceptance test, do not enable automatic Window
 ## Bluetooth recovery continuity (2026-09-05)
 
 Use one native device owner per read-only connection generation, with serialized lazy acquisition and disposal of cancellation/failure losers. Do not weaken native-disconnect invalidation or introduce automatic command replay. A bounded timeout closes the generation-owned handle rather than leaving ownership solely inside an abandoned operation. Retain a separate preferred-source stabilization hold before removing a connected fallback; first-valid reliability incident recovery timestamps remain unchanged. Credit a completed healthy interval even when failure detection is delayed, while short flaps continue escalating. Required HRS discovery must not wait for optional Battery/Device Information queries. These software corrections address recovery amplification; they do not establish the initial physical disconnect cause.
+
+## Browser and terminal persistence recovery (2026-09-08)
+
+Passive treadmill telemetry starts before optional model/firmware reads, with one linked metadata task per generation and one evidence write afterward. Hardware-verified enrollments require complete fresh model/firmware identity before readiness because command authority depends on Ready plus stored verification. A changed identity must durably downgrade to passive evidence before Ready is published, and the worker retains the returned enrollment version across reconnects. Storage failure or missing identity fails closed. Matching identity retains approval without an unnecessary evidence write. Generation and cancellation checks protect the publication after the awaited downgrade.
+
+A connected SignalR transport is insufficient proof of current gateway state. Recovery forces a version read and verifies successful, nonempty session/snapshot responses before enabling controls; transient read failures retain automatic retry. Invalid lease payloads clear control authority and reconnect using the supervisor lifetime rather than the canceled heartbeat token. Recovery never repeats a motion request.
+
+Terminal persistence retries at most three times with 100/200-millisecond delays. The captured immutable effect remembers successful event and summary phases, while the database recognizes an identical terminal event or finalization after an uncertain commit result. This bounds recovery work without repeating plan progression or follow-on work. Permanent invariant failures and cancellation do not retry; an exhausted storage failure is logged and process crashes keep the existing startup-interruption behavior. Known backup creation failures are recorded separately from verification-record writes, so a recording failure cannot be misreported as a failed backup creation.
 
 ## Superseded decisions
 

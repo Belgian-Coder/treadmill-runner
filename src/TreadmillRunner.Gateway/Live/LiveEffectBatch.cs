@@ -10,6 +10,8 @@ internal sealed record LiveEffectMetadata(
 
 internal sealed class LiveEffectBatch
 {
+  private const int MaximumTerminalAttempts = 3;
+  private static readonly TimeSpan TerminalRetryDelay = TimeSpan.FromMilliseconds(100);
   private readonly List<LiveEffect> effects = [];
 
   public bool IsEmpty => effects.Count == 0;
@@ -36,7 +38,30 @@ internal sealed class LiveEffectBatch
       // new Arm may legitimately replace the in-memory active run before the
       // old terminal summary has committed.
       if (!effect.Terminal && !await isCurrent(effect.Metadata, cancellationToken)) continue;
-      await effect.Apply(cancellationToken);
+      await ApplyAsync(effect, cancellationToken);
+    }
+  }
+
+  private static async Task ApplyAsync(LiveEffect effect, CancellationToken cancellationToken)
+  {
+    for (var attempt = 1; ; attempt++)
+    {
+      try
+      {
+        await effect.Apply(cancellationToken);
+        return;
+      }
+      catch (OperationCanceledException)
+      {
+        throw;
+      }
+      catch (Exception exception) when (
+        effect.Terminal &&
+        exception is not InvalidOperationException &&
+        attempt < MaximumTerminalAttempts)
+      {
+        await Task.Delay(TerminalRetryDelay * attempt, cancellationToken);
+      }
     }
   }
 

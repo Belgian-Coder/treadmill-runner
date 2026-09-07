@@ -64,7 +64,7 @@
         {
         <section class="planning-panel" aria-labelledby="profile-form-title">
             <div class="panel-heading">
-                <h2 id="profile-form-title">@(editingId is null ? "Create profile" : "Edit profile")</h2>
+                <h2 id="profile-form-title" @ref="formHeading" tabindex="-1">@(editingId is null ? "Create profile" : "Edit profile")</h2>
                 @if (editingId is not null)
                 {
                     <button class="text-action danger-action" type="button" @onclick="BeginArchiveConfirmation">Archive profile</button>
@@ -147,6 +147,8 @@
     private bool saving;
     private bool initialized;
     private bool isFormOpen;
+    private bool focusFormRequested;
+    private ElementReference formHeading;
     private bool zonesUseSuggestedDefaults = true;
     private bool archiveConfirming;
     private string? message;
@@ -160,6 +162,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (focusFormRequested && isFormOpen)
+        {
+            focusFormRequested = false;
+            await formHeading.FocusAsync();
+        }
         if (!firstRender || initialized)
         {
             return;
@@ -226,12 +233,14 @@
     {
         ResetForm();
         isFormOpen = true;
+        focusFormRequested = true;
         message = null;
     }
 
     private void StartEdit(ProfileView profile)
     {
         isFormOpen = true;
+        focusFormRequested = true;
         editingId = profile.Id;
         pendingSaveOperationId = Guid.NewGuid();
         pendingArchiveOperationId = Guid.NewGuid();
@@ -358,6 +367,7 @@
     private void ResetForm()
     {
         isFormOpen = false;
+        focusFormRequested = false;
         editingId = null;
         pendingSaveOperationId = Guid.NewGuid();
         pendingArchiveOperationId = Guid.NewGuid();

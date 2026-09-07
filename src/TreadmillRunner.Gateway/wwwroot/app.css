@@ -1402,7 +1402,6 @@ body.immersive-view { overflow: hidden; }
 .run-program-card small { color: #91abaa; font-size: .66rem; }
 
 @media (max-width: 900px) {
-  .program-workspace { grid-template-columns: minmax(240px, .7fr) minmax(390px, 1.3fr); }
   .program-item { grid-template-columns: 30px minmax(0, 1fr); }
   .program-item__actions { grid-column: 1 / -1; }
   .program-item__actions button { flex: 1 1 0; }
@@ -2676,6 +2675,56 @@ h1:focus-visible {
 .field-inline > input {
   min-width: 0;
   flex: 1 1 auto;
+}
+
+/* Keep open menus inside the visible viewport, including short landscape windows. */
+.site-header { --runner-menu-clearance: 5rem; }
+.nav-more__menu {
+  max-height: calc(100dvh - 5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.active-runner-picker__menu {
+  max-height: min(24rem, calc(100dvh - var(--runner-menu-clearance) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+}
+#profile-form-title { scroll-margin-top: 8rem; }
+.schedule-dialog-backdrop {
+  --dialog-available-height: calc(100dvh - max(.75rem, env(safe-area-inset-top)) - max(.75rem, env(safe-area-inset-bottom)));
+  padding: max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) max(.75rem, env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left));
+}
+.schedule-dialog {
+  max-height: min(760px, var(--dialog-available-height));
+  overscroll-behavior: contain;
+}
+.schedule-dialog.workout-details-dialog { max-height: var(--dialog-available-height); }
+
+@media (max-width: 1180px), (pointer: coarse) {
+  :root .app-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+    min-height: 44px;
+    font-size: max(1rem, 16px);
+  }
+  .field, .builder-compact-field, .builder-repeat-count { font-size: .875rem; }
+  .builder-row-actions button, .builder-advanced > summary, .advanced-settings > summary, .check-field { min-height: 44px; }
+  .builder-row-actions button { font-size: .75rem; }
+}
+
+@media (max-width: 650px) {
+  .runtime-banner { flex-wrap: wrap; justify-content: flex-start; }
+}
+
+@media (max-width: 420px) {
+  .site-header { --runner-menu-clearance: 7.75rem; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .site-header {
+    padding-left: max(.75rem, env(safe-area-inset-left));
+    padding-right: max(.75rem, env(safe-area-inset-right));
+  }
+  .planning-hero { align-items: center; gap: .75rem; padding-block: .25rem; }
+  .planning-hero h1, .runner-page > .dashboard-header h1 { font-size: 1.6rem; }
+  .planning-hero .eyebrow, .runner-page > .dashboard-header .eyebrow { display: none; }
+  .planning-hero p:not(.eyebrow) { font-size: .875rem; line-height: 1.4; }
 }
 
 /* In short iPhone landscape, immersive Chart is the graph—not a dashboard

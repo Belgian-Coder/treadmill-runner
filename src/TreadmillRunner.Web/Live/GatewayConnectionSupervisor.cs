@@ -122,7 +122,7 @@ public sealed class GatewayConnectionSupervisor(
         () => MarkDisconnectedAsync(
           GatewayClientConnectionPhase.Reconnecting,
           "Live updates were interrupted. Last measurements may be stale; treadmill controls remain disabled."),
-        () => RecoverAuthoritativeStateAsync(),
+        RestartAfterReconnectAsync,
         RestartAfterCloseAsync);
       lifetimeCancellation = new CancellationTokenSource();
       connectionTask = ConnectUntilAvailableAsync(lifetimeCancellation.Token);
@@ -152,17 +152,19 @@ public sealed class GatewayConnectionSupervisor(
         return null;
       }
 
-      ControlLease? lease = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
-      SetLease(lease, lease is null ? "The gateway returned no controller lease." : null);
-      if (lease is not null) StartHeartbeat();
+      ControlLease lease = await ReadRequiredLeaseAsync(
+        response.Content,
+        expectedLeaseId: null,
+        cancellationToken: cancellationToken);
+      SetLease(lease, null);
+      StartHeartbeat();
       return lease;
     }
-    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
     {
       SetLease(null, "Manual controls are unavailable while the gateway reconnects.");
-      await MarkDisconnectedAsync(
-        GatewayClientConnectionPhase.Reconnecting,
-        "The controller request was interrupted. No treadmill command was sent.");
+      await ForceReconnectAsync(
+        "The controller request could not be verified. No treadmill command was sent.");
       return null;
     }
   }
@@ -191,73 +193,106 @@ public sealed class GatewayConnectionSupervisor(
   public async Task RefreshAuthoritativeStateAsync(CancellationToken cancellationToken = default)
   {
     await EnsureStartedAsync(cancellationToken);
-    await RecoverAuthoritativeStateAsync(cancellationToken);
+    bool recovered = await RecoverAuthoritativeStateAsync(cancellationToken);
+    if (!recovered && lifetimeCancellation?.IsCancellationRequested == false && connectionTask is not { IsCompleted: false })
+      connectionTask = ConnectUntilAvailableAsync(lifetimeCancellation.Token);
   }
 
   private async Task ConnectUntilAvailableAsync(CancellationToken cancellationToken)
   {
     int attempt = 0;
-    while (!cancellationToken.IsCancellationRequested && hubConnection is { State: LiveHubConnectionState.Disconnected })
+    while (!cancellationToken.IsCancellationRequested && hubConnection is not null)
     {
-      SetConnectionPhase(
-        attempt == 0 ? GatewayClientConnectionPhase.Starting : GatewayClientConnectionPhase.Reconnecting,
-        attempt,
-        attempt == 0 ? "Connecting to the gateway." : "Gateway unavailable; retrying automatically.");
-      try
+      if (hubConnection.State == LiveHubConnectionState.Disconnected)
       {
-        await hubConnection.StartAsync(cancellationToken);
-        await RecoverAuthoritativeStateAsync(cancellationToken);
-        return;
-      }
-      catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-      {
-        return;
-      }
-      catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TimeoutException)
-      {
-        attempt++;
         SetConnectionPhase(
-          GatewayClientConnectionPhase.Disconnected,
+          attempt == 0 ? GatewayClientConnectionPhase.Starting : GatewayClientConnectionPhase.Reconnecting,
           attempt,
-          "Gateway unavailable; retrying automatically. The treadmill may still be moving.");
-        await Task.Delay(RetryDelay(attempt), timeProvider, cancellationToken);
+          attempt == 0 ? "Connecting to the gateway." : "Gateway unavailable; retrying automatically.");
+        try
+        {
+          await hubConnection.StartAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+          return;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or TimeoutException)
+        {
+          attempt++;
+          SetConnectionPhase(
+            GatewayClientConnectionPhase.Disconnected,
+            attempt,
+            "Gateway unavailable; retrying automatically. The treadmill may still be moving.");
+          await Task.Delay(RetryDelay(attempt), timeProvider, cancellationToken);
+          continue;
+        }
       }
+
+      if (await RecoverAuthoritativeStateAsync(cancellationToken)) return;
+      attempt++;
+      SetConnectionPhase(
+        GatewayClientConnectionPhase.Reconnecting,
+        attempt,
+        "Authoritative gateway state is unavailable; retrying automatically. Controls remain disabled.");
+      await Task.Delay(RetryDelay(attempt), timeProvider, cancellationToken);
     }
   }
 
-  private async Task RecoverAuthoritativeStateAsync(CancellationToken cancellationToken = default)
+  private async Task<bool> RecoverAuthoritativeStateAsync(CancellationToken cancellationToken = default)
   {
     await lifecycleGate.WaitAsync(cancellationToken);
     try
     {
-      if (disposed || hubConnection?.State != LiveHubConnectionState.Connected)
+      if (disposed) return true;
+      if (hubConnection?.State != LiveHubConnectionState.Connected)
       {
         SetConnectionPhase(
           GatewayClientConnectionPhase.Reconnecting,
           Current.RetryAttempt,
           "Live updates are not connected; controls remain disabled.");
-        return;
+        return false;
       }
 
       heartbeatCancellation?.Cancel();
       SetLease(null, "Verifying authoritative gateway state.", notify: false);
-      await runtime.CheckAsync(http, cancellationToken);
+      await runtime.CheckAsync(http, cancellationToken, force: true);
+      if (!runtime.IsConnected)
+      {
+        await MarkDisconnectedAsync(
+          GatewayClientConnectionPhase.Reconnecting,
+          "The gateway version could not be verified. Controls remain disabled.");
+        return false;
+      }
       if (runtime.UpdateRequired)
       {
         SetConnectionPhase(
           GatewayClientConnectionPhase.UpdateRequired,
           Current.RetryAttempt,
           "The browser version is stale. Reload before using treadmill controls.");
-        return;
+        return true;
       }
 
       using HttpResponseMessage sessionResponse = await http.GetAsync("api/live/session", cancellationToken);
-      ActiveSessionSnapshot? session = sessionResponse.StatusCode == HttpStatusCode.NoContent
-        ? null
-        : await sessionResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>(cancellationToken: cancellationToken);
+      ActiveSessionSnapshot? session = null;
+      if (sessionResponse.StatusCode != HttpStatusCode.NoContent)
+      {
+        sessionResponse.EnsureSuccessStatusCode();
+        session = await ReadRequiredJsonAsync<ActiveSessionSnapshot>(
+          sessionResponse.Content,
+          "active-session",
+          cancellationToken);
+        if (session.Live.CapturedAt == default)
+          throw new System.Text.Json.JsonException("The gateway returned an invalid active-session live snapshot.");
+      }
       using HttpResponseMessage liveResponse = await http.GetAsync("api/live/snapshot", cancellationToken);
       liveResponse.EnsureSuccessStatusCode();
-      LiveSnapshot? live = await liveResponse.Content.ReadFromJsonAsync<LiveSnapshot>(cancellationToken: cancellationToken);
+      LiveSnapshot live = await ReadRequiredJsonAsync<LiveSnapshot>(
+        liveResponse.Content,
+        "live snapshot",
+        cancellationToken);
+      if (live.CapturedAt == default)
+        throw new System.Text.Json.JsonException("The gateway returned an invalid live snapshot.");
 
       Guid? previousService = Current.ServiceInstanceId;
       Guid? service = session?.ServiceInstanceId;
@@ -268,7 +303,7 @@ public sealed class GatewayConnectionSupervisor(
         ConnectionPhase = GatewayClientConnectionPhase.Connected,
         RetryAttempt = 0,
         Session = session,
-        Live = live ?? session?.Live ?? Current.Live,
+        Live = live,
         LastSnapshotReceivedAtUtc = timeProvider.GetUtcNow(),
         ServiceInstanceId = service,
         ServerBuildFingerprint = runtime.ServerFingerprint,
@@ -284,16 +319,19 @@ public sealed class GatewayConnectionSupervisor(
       else
         LeaseChanged?.Invoke();
       ConnectionChanged?.Invoke();
+      return true;
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       // The active supervisor lifetime or caller owns cancellation.
+      return true;
     }
     catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
     {
       await MarkDisconnectedAsync(
         GatewayClientConnectionPhase.Reconnecting,
         "The gateway returned before authoritative state could be verified. Controls remain disabled.");
+      return false;
     }
     finally
     {
@@ -311,7 +349,10 @@ public sealed class GatewayConnectionSupervisor(
         new { holderId },
         cancellationToken);
       ControlLease? lease = response.IsSuccessStatusCode
-        ? await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken)
+        ? await ReadRequiredLeaseAsync(
+          response.Content,
+          expectedLeaseId: null,
+          cancellationToken: cancellationToken)
         : null;
       SetLease(lease, lease is null
         ? "Another browser currently controls manual actions."
@@ -379,6 +420,13 @@ public sealed class GatewayConnectionSupervisor(
     connectionTask = ConnectUntilAvailableAsync(lifetimeCancellation.Token);
   }
 
+  private async Task RestartAfterReconnectAsync()
+  {
+    if (lifetimeCancellation?.IsCancellationRequested != false || connectionTask is { IsCompleted: false }) return;
+    connectionTask = ConnectUntilAvailableAsync(lifetimeCancellation.Token);
+    await Task.CompletedTask;
+  }
+
   private void StartHeartbeat()
   {
     heartbeatCancellation?.Cancel();
@@ -406,26 +454,66 @@ public sealed class GatewayConnectionSupervisor(
           return;
         }
 
-        ControlLease? renewed = await response.Content.ReadFromJsonAsync<ControlLease>(cancellationToken: cancellationToken);
-        SetLease(renewed, renewed is null ? "The gateway returned no renewed controller lease." : null);
+        ControlLease renewed = await ReadRequiredLeaseAsync(response.Content, lease.Id, cancellationToken);
+        SetLease(renewed, null);
       }
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       // Reconnect, replacement heartbeat, or disposal owns cancellation.
     }
-    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
     {
       SetLease(null, "The lease heartbeat was interrupted. No treadmill command was sent.");
-      await ForceReconnectAsync(cancellationToken);
+      await ForceReconnectAsync(
+        "The controller heartbeat could not be verified. Reconnecting and reloading authoritative state.");
     }
   }
 
-  private async Task ForceReconnectAsync(CancellationToken cancellationToken)
+  private async Task<ControlLease> ReadRequiredLeaseAsync(
+    HttpContent content,
+    Guid? expectedLeaseId,
+    CancellationToken cancellationToken)
   {
+    ControlLease lease = await ReadRequiredJsonAsync<ControlLease>(
+      content,
+      "controller lease",
+      cancellationToken);
+    if (lease.Id == Guid.Empty ||
+        !string.Equals(lease.HolderId, holderId, StringComparison.Ordinal) ||
+        lease.AcquiredAt == default ||
+        lease.ExpiresAt <= timeProvider.GetUtcNow() ||
+        expectedLeaseId is { } expected && lease.Id != expected)
+    {
+      throw new System.Text.Json.JsonException("The gateway returned an invalid controller lease.");
+    }
+
+    return lease;
+  }
+
+  private static async Task<T> ReadRequiredJsonAsync<T>(
+    HttpContent content,
+    string responseName,
+    CancellationToken cancellationToken)
+    where T : class
+  {
+    try
+    {
+      return await content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
+        ?? throw new System.Text.Json.JsonException($"The gateway returned an empty {responseName} response.");
+    }
+    catch (ArgumentException exception)
+    {
+      throw new System.Text.Json.JsonException($"The gateway returned an invalid {responseName} response.", exception);
+    }
+  }
+
+  private async Task ForceReconnectAsync(string reason)
+  {
+    CancellationToken cancellationToken = lifetimeCancellation?.Token ?? CancellationToken.None;
     await MarkDisconnectedAsync(
       GatewayClientConnectionPhase.Reconnecting,
-      "The controller heartbeat failed. Reconnecting and reloading authoritative state.");
+      reason);
     if (hubConnection is null || lifetimeCancellation?.IsCancellationRequested != false) return;
     forcingRestart = true;
     try

@@ -25,6 +25,8 @@ Metric session/workout export routes and their immutable-source guarantees are d
 
 One-tap reuse, Screen Wake Lock behavior, local QR access, generated workout-set import, BLE reliability/battery reporting, and database integrity maintenance are documented in [Local reliability, access, and generated workout sets](local-daily-use-reliability.md).
 
+The [Bluetooth, reliability, and mobile usability audit](bluetooth-mobile-reliability-audit.md) records the recovery review, iPhone/iPad refinements, regression coverage, and physical-device evidence boundary.
+
 Use `python -B .agents/manage.py project-context-review --target . --write-review` to create `docs/project/review/project-context-review.md` and `.json` when facts need answers. Those files are intermediate review artifacts; they help collect answers but do not replace the canonical `project-context.md`. After answers are approved in the JSON artifact, run `python -B .agents/manage.py project-context-apply-review --target .` to preview the managed canonical section, then add `--apply` to write it.
 
 For .NET projects, `python -B .agents/manage.py dotnet-context --target . --write-evidence` can write `docs/project/dotnet-context/dotnet-context.json` and `.md` with read-only SDK/runtime, build-policy, CI, config-key, persistence, and NuGet/feed facts. Treat those files as project-local evidence or baselines for drift review; they are not promotable harness source by default.

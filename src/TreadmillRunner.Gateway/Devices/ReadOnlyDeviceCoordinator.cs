@@ -486,6 +486,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   {
     DeviceEnrollment enrollment = stored.Enrollment;
     string connectionDeviceId = enrollment.DeviceId;
+    int enrollmentVersion = stored.Version;
     var consecutiveFailureCount = 0;
     var retryCachedHeartRateLocator = false;
     while (!cancellationToken.IsCancellationRequested)
@@ -520,10 +521,16 @@ public sealed class ReadOnlyDeviceCoordinator(
           await RunTreadmillAsync(
             connection,
             enrollment,
-            stored.Version,
+            enrollmentVersion,
             services,
             generation,
             observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            updatedEnrollment =>
+            {
+              enrollment = updatedEnrollment.Enrollment;
+              enrollmentVersion = updatedEnrollment.Version;
+              connectionDeviceId = updatedEnrollment.Enrollment.DeviceId;
+            },
             cancellationToken);
         }
         else
@@ -531,7 +538,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           await RunHeartRateAsync(
             connection,
             enrollment,
-            stored.Version,
+            enrollmentVersion,
             services,
             generation,
             observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
@@ -838,39 +845,42 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   private void RefreshEnrollmentMetadata(DeviceEnrollment enrollment)
   {
-    if (enrollment.Role == DeviceRole.Treadmill)
+    lock (_sync)
     {
-      DeviceConnectionSnapshot current = _snapshot.Treadmill;
-      _snapshot = _snapshot with
+      if (enrollment.Role == DeviceRole.Treadmill)
       {
-        Treadmill = current with
+        DeviceConnectionSnapshot current = _snapshot.Treadmill;
+        _snapshot = _snapshot with
         {
-          DisplayName = enrollment.DisplayName,
-          ProtocolId = enrollment.ProtocolId,
-          TelemetryMode = enrollment.TelemetryMode?.ToString(),
-          ModelNumber = enrollment.ModelNumber,
-          FirmwareRevision = enrollment.FirmwareRevision,
-          Evidence = enrollment.Evidence,
-          Capabilities = enrollment.Capabilities,
-        },
-        ReportedCapabilities = enrollment.Capabilities,
-      };
-    }
-    else if (_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime))
-    {
-      _heartRateSources[enrollment.Id] = runtime with { Enrollment = enrollment };
-    }
-    else
-    {
-      _heartRateSources[enrollment.Id] = new HeartRateRuntime(
-        enrollment,
-        EmptyConnection(DeviceRole.HeartRate) with
-        {
-          DisplayName = enrollment.DisplayName,
-          ProtocolId = enrollment.ProtocolId,
-        },
-        null,
-        null);
+          Treadmill = current with
+          {
+            DisplayName = enrollment.DisplayName,
+            ProtocolId = enrollment.ProtocolId,
+            TelemetryMode = enrollment.TelemetryMode?.ToString(),
+            ModelNumber = enrollment.ModelNumber,
+            FirmwareRevision = enrollment.FirmwareRevision,
+            Evidence = enrollment.Evidence,
+            Capabilities = enrollment.Capabilities,
+          },
+          ReportedCapabilities = enrollment.Capabilities,
+        };
+      }
+      else if (_heartRateSources.TryGetValue(enrollment.Id, out HeartRateRuntime? runtime))
+      {
+        _heartRateSources[enrollment.Id] = runtime with { Enrollment = enrollment };
+      }
+      else
+      {
+        _heartRateSources[enrollment.Id] = new HeartRateRuntime(
+          enrollment,
+          EmptyConnection(DeviceRole.HeartRate) with
+          {
+            DisplayName = enrollment.DisplayName,
+            ProtocolId = enrollment.ProtocolId,
+          },
+          null,
+          null);
+      }
     }
   }
 
@@ -881,50 +891,104 @@ public sealed class ReadOnlyDeviceCoordinator(
     IReadOnlyList<BleService> services,
     long generation,
     Action<DateTimeOffset> primaryTelemetryObserved,
+    Action<VersionedDeviceEnrollment> enrollmentUpdated,
     CancellationToken cancellationToken)
   {
     if (enrollment.TelemetryMode == TreadmillTelemetryMode.Ftms)
     {
       RequireCharacteristic(services, Uuids.FtmsService, Uuids.TreadmillData, requireNotify: true);
       TreadmillCapabilities reported = await ReadFtmsCapabilitiesAsync(connection, services, cancellationToken);
-      (string? model, string? firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
-      UpdateCapabilities(reported);
-      var evidencePersisted = false;
-      var readyPublished = false;
-      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
-        connection,
-        Uuids.FtmsService,
-        Uuids.TreadmillData,
-        cancellationToken))
+      bool requireFreshIdentity = enrollment.Evidence == TreadmillCapabilityEvidence.HardwareVerified;
+      (string? model, string? firmware) = (null, null);
+      if (requireFreshIdentity)
       {
-        if (!FtmsTreadmillDataParser.TryParse(notification.Value.Span, out FtmsTreadmillData? data) ||
-            data is null)
+        (model, firmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
+        RequireCompleteHardwareIdentity(model, firmware);
+      }
+      UpdateCapabilities(reported);
+      var readyPublished = false;
+      using var detailsCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+      Task? detailsTask = null;
+      try
+      {
+        await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+          connection,
+          Uuids.FtmsService,
+          Uuids.TreadmillData,
+          cancellationToken))
         {
-          throw new InvalidDataException("FTMS treadmill telemetry was invalid.");
-        }
+          if (!FtmsTreadmillDataParser.TryParse(notification.Value.Span, out FtmsTreadmillData? data) ||
+              data is null)
+          {
+            throw new InvalidDataException("FTMS treadmill telemetry was invalid.");
+          }
 
-        TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(data, notification.ObservedAt, generation);
-        if (update == TreadmillTelemetryUpdateResult.Ignored)
-        {
-          continue;
+          TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(
+            data,
+            notification.ObservedAt,
+            generation,
+            publishReady: !requireFreshIdentity);
+          if (update == TreadmillTelemetryUpdateResult.Ignored)
+          {
+            continue;
+          }
+          if (!readyPublished)
+          {
+            if (requireFreshIdentity && !HardwareIdentityMatches(enrollment, model!, firmware!))
+            {
+              EnsureCurrentGeneration(enrollment, generation, cancellationToken);
+              VersionedDeviceEnrollment persisted = await PersistEvidenceAsync(
+                enrollment,
+                enrollmentVersion,
+                model,
+                firmware,
+                reported,
+                TreadmillCapabilityEvidence.PassivelyObserved,
+                notification.ObservedAt,
+                cancellationToken);
+              EnsureCurrentGeneration(enrollment, generation, cancellationToken);
+              enrollment = persisted.Enrollment;
+              enrollmentVersion = persisted.Version;
+              enrollmentUpdated(persisted);
+              PublishReadyWithEnrollment(enrollment, generation, cancellationToken);
+              readyPublished = true;
+            }
+            else
+            {
+              UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+              readyPublished = true;
+            }
+          }
+          if (update == TreadmillTelemetryUpdateResult.Primary)
+          {
+            primaryTelemetryObserved(notification.ObservedAt);
+          }
+          if (!requireFreshIdentity)
+          {
+            detailsTask ??= RunOptionalTreadmillDetailsAsync(
+              connection,
+              enrollment,
+              enrollmentVersion,
+              services,
+              reported,
+              generation,
+              notification.ObservedAt,
+              detailsCancellation.Token);
+          }
         }
-        if (!readyPublished)
+      }
+      finally
+      {
+        detailsCancellation.Cancel();
+        if (detailsTask is not null)
         {
-          UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
-          readyPublished = true;
-        }
-        if (update == TreadmillTelemetryUpdateResult.Primary)
-          primaryTelemetryObserved(notification.ObservedAt);
-        if (!evidencePersisted && TryEnqueueEvidencePersistence(
-          enrollment,
-          enrollmentVersion,
-          model,
-          firmware,
-          reported,
-          generation,
-          notification.ObservedAt))
-        {
-          evidencePersisted = true;
+          try
+          {
+            await detailsTask;
+          }
+          catch (OperationCanceledException) when (detailsCancellation.IsCancellationRequested)
+          {
+          }
         }
       }
 
@@ -933,50 +997,96 @@ public sealed class ReadOnlyDeviceCoordinator(
 
     RequireCharacteristic(services, Uuids.VendorService, Uuids.VendorStatus, requireNotify: true);
     var reassembler = new OmegaFrameReassembler();
-    (string? vendorModel, string? vendorFirmware) = await ReadDeviceInformationAsync(
-      connection,
-      services,
-      cancellationToken);
-    var vendorEvidencePersisted = false;
-    var vendorReadyPublished = false;
-    await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
-      connection,
-      Uuids.VendorService,
-      Uuids.VendorStatus,
-      cancellationToken))
+    bool requireFreshVendorIdentity = enrollment.Evidence == TreadmillCapabilityEvidence.HardwareVerified;
+    (string? vendorModel, string? vendorFirmware) = (null, null);
+    if (requireFreshVendorIdentity)
     {
-      foreach (byte[] frame in reassembler.Append(notification.Value.Span))
+      (vendorModel, vendorFirmware) = await ReadDeviceInformationAsync(connection, services, cancellationToken);
+      RequireCompleteHardwareIdentity(vendorModel, vendorFirmware);
+    }
+    var vendorReadyPublished = false;
+    using var vendorDetailsCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    Task? vendorDetailsTask = null;
+    try
+    {
+      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+        connection,
+        Uuids.VendorService,
+        Uuids.VendorStatus,
+        cancellationToken))
       {
-        if (OmegaStatusDecoder.TryDecode(frame, out OmegaStatus? status) && status is not null)
+        foreach (byte[] frame in reassembler.Append(notification.Value.Span))
         {
-          TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(
-            new FtmsTreadmillData(0, status.SpeedKph, status.InclinePercent, null),
-            notification.ObservedAt,
-            generation);
-          if (update == TreadmillTelemetryUpdateResult.Ignored)
+          if (OmegaStatusDecoder.TryDecode(frame, out OmegaStatus? status) && status is not null)
           {
-            continue;
-          }
-          if (!vendorReadyPublished)
-          {
-            UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
-            vendorReadyPublished = true;
-          }
-          primaryTelemetryObserved(notification.ObservedAt);
-          if (!vendorEvidencePersisted && TryEnqueueEvidencePersistence(
-            enrollment,
-            enrollmentVersion,
-            vendorModel,
-            vendorFirmware,
-            enrollment.Capabilities,
-            generation,
-            notification.ObservedAt))
-          {
-            vendorEvidencePersisted = true;
+            TreadmillTelemetryUpdateResult update = UpdateTreadmillTelemetry(
+              new FtmsTreadmillData(0, status.SpeedKph, status.InclinePercent, null),
+              notification.ObservedAt,
+              generation,
+              publishReady: !requireFreshVendorIdentity);
+            if (update == TreadmillTelemetryUpdateResult.Ignored)
+            {
+              continue;
+            }
+            if (!vendorReadyPublished)
+            {
+              if (requireFreshVendorIdentity && !HardwareIdentityMatches(enrollment, vendorModel!, vendorFirmware!))
+              {
+                EnsureCurrentGeneration(enrollment, generation, cancellationToken);
+                VersionedDeviceEnrollment persisted = await PersistEvidenceAsync(
+                  enrollment,
+                  enrollmentVersion,
+                  vendorModel,
+                  vendorFirmware,
+                  new TreadmillCapabilities(),
+                  TreadmillCapabilityEvidence.PassivelyObserved,
+                  notification.ObservedAt,
+                  cancellationToken);
+                EnsureCurrentGeneration(enrollment, generation, cancellationToken);
+                enrollment = persisted.Enrollment;
+                enrollmentVersion = persisted.Version;
+                enrollmentUpdated(persisted);
+                PublishReadyWithEnrollment(enrollment, generation, cancellationToken);
+                vendorReadyPublished = true;
+              }
+              else
+              {
+                UpdateConnection(enrollment, DeviceConnectionState.Ready, generation, fault: null);
+                vendorReadyPublished = true;
+              }
+            }
+            primaryTelemetryObserved(notification.ObservedAt);
+            if (!requireFreshVendorIdentity)
+            {
+              vendorDetailsTask ??= RunOptionalTreadmillDetailsAsync(
+                connection,
+                enrollment,
+                enrollmentVersion,
+                services,
+                enrollment.Capabilities,
+                generation,
+                notification.ObservedAt,
+                vendorDetailsCancellation.Token);
+            }
           }
         }
       }
     }
+    finally
+    {
+      vendorDetailsCancellation.Cancel();
+      if (vendorDetailsTask is not null)
+      {
+        try
+        {
+          await vendorDetailsTask;
+        }
+        catch (OperationCanceledException) when (vendorDetailsCancellation.IsCancellationRequested)
+        {
+        }
+      }
+    }
+    return;
   }
 
   private async Task RunHeartRateAsync(
@@ -1394,6 +1504,70 @@ public sealed class ReadOnlyDeviceCoordinator(
     return (model, firmware);
   }
 
+  private static void RequireCompleteHardwareIdentity(string? model, string? firmware)
+  {
+    if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(firmware))
+    {
+      throw new InvalidDataException(
+        "A hardware-verified treadmill did not provide a complete model and firmware identity.");
+    }
+  }
+
+  private static bool HardwareIdentityMatches(
+    DeviceEnrollment enrollment,
+    string model,
+    string firmware) =>
+    string.Equals(enrollment.ModelNumber?.Trim(), model.Trim(), StringComparison.Ordinal) &&
+    string.Equals(enrollment.FirmwareRevision?.Trim(), firmware.Trim(), StringComparison.Ordinal);
+
+  private async Task<(string? Model, string? Firmware)> TryReadOptionalDeviceInformationAsync(
+    IBleConnection connection,
+    DeviceEnrollment enrollment,
+    IReadOnlyList<BleService> services,
+    long generation,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      return await ReadDeviceInformationAsync(connection, services, cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+      diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
+        "optional-device-information-failed", ClassifyFailure(exception).ToString(), exception.HResult,
+        FailureDetails: BleDiagnosticFailureDetails.From(exception)));
+      logger.LogDebug(exception, "Optional device information was unavailable.");
+      return (null, null);
+    }
+  }
+
+  private async Task RunOptionalTreadmillDetailsAsync(
+    IBleConnection connection,
+    DeviceEnrollment enrollment,
+    int enrollmentVersion,
+    IReadOnlyList<BleService> services,
+    TreadmillCapabilities? capabilities,
+    long generation,
+    DateTimeOffset observedAt,
+    CancellationToken cancellationToken)
+  {
+    (string? model, string? firmware) = await TryReadOptionalDeviceInformationAsync(
+      connection,
+      enrollment,
+      services,
+      generation,
+      cancellationToken);
+    cancellationToken.ThrowIfCancellationRequested();
+    TryEnqueueEvidencePersistence(
+      enrollment,
+      enrollmentVersion,
+      model ?? enrollment.ModelNumber,
+      firmware ?? enrollment.FirmwareRevision,
+      capabilities,
+      generation,
+      observedAt);
+  }
+
   private async Task<string?> TryReadStringAsync(
     IBleConnection connection,
     IReadOnlyList<BleService> services,
@@ -1549,6 +1723,19 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
   }
 
+  private void EnsureCurrentGeneration(
+    DeviceEnrollment enrollment,
+    long generation,
+    CancellationToken cancellationToken)
+  {
+    cancellationToken.ThrowIfCancellationRequested();
+    if (!IsCurrentGeneration(enrollment, generation))
+    {
+      throw new InvalidOperationException(
+        "The treadmill connection generation changed while identity evidence was being persisted.");
+    }
+  }
+
   private async Task TryPersistEvidenceAsync(
     DeviceEnrollment enrollment,
     int enrollmentVersion,
@@ -1558,20 +1745,15 @@ public sealed class ReadOnlyDeviceCoordinator(
     DateTimeOffset observedAt,
     CancellationToken cancellationToken)
   {
-    while (!maintenanceState.TryBeginMutation())
-      await Task.Delay(TimeSpan.FromMilliseconds(250), timeProvider, cancellationToken);
     try
     {
-      using IServiceScope scope = scopeFactory.CreateScope();
       bool preserveHardwareVerification = enrollment.Evidence == TreadmillCapabilityEvidence.HardwareVerified;
-      await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>().UpdateEvidenceAsync(
-        enrollment.Id,
+      await PersistEvidenceAsync(
+        enrollment,
         enrollmentVersion,
         model,
         firmware,
-        preserveHardwareVerification
-          ? MergeVerifiedCapabilities(enrollment.Capabilities, capabilities)
-          : capabilities,
+        preserveHardwareVerification ? MergeVerifiedCapabilities(enrollment.Capabilities, capabilities) : capabilities,
         preserveHardwareVerification
           ? TreadmillCapabilityEvidence.HardwareVerified
           : TreadmillCapabilityEvidence.PassivelyObserved,
@@ -1581,6 +1763,33 @@ public sealed class ReadOnlyDeviceCoordinator(
     catch (DbUpdateConcurrencyException)
     {
       // Reconciliation has already replaced this enrollment generation.
+    }
+  }
+
+  private async Task<VersionedDeviceEnrollment> PersistEvidenceAsync(
+    DeviceEnrollment enrollment,
+    int enrollmentVersion,
+    string? model,
+    string? firmware,
+    TreadmillCapabilities? capabilities,
+    TreadmillCapabilityEvidence evidence,
+    DateTimeOffset observedAt,
+    CancellationToken cancellationToken)
+  {
+    while (!maintenanceState.TryBeginMutation())
+      await Task.Delay(TimeSpan.FromMilliseconds(250), timeProvider, cancellationToken);
+    try
+    {
+      using IServiceScope scope = scopeFactory.CreateScope();
+      return await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>().UpdateEvidenceAsync(
+        enrollment.Id,
+        enrollmentVersion,
+        model,
+        firmware,
+        capabilities,
+        evidence,
+        observedAt,
+        cancellationToken);
     }
     finally
     {
@@ -1605,6 +1814,47 @@ public sealed class ReadOnlyDeviceCoordinator(
       reported.ReportsStandardStartResume,
       verified.SpeedRange ?? reported.SpeedRange,
       verified.InclineRange ?? reported.InclineRange);
+  }
+
+  private void PublishReadyWithEnrollment(
+    DeviceEnrollment enrollment,
+    long generation,
+    CancellationToken cancellationToken)
+  {
+    cancellationToken.ThrowIfCancellationRequested();
+    DateTimeOffset now = timeProvider.GetUtcNow();
+    lock (_sync)
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      if (_snapshot.Treadmill.ConnectionGeneration != generation)
+      {
+        throw new InvalidOperationException(
+          "The treadmill connection generation changed before downgraded identity became ready.");
+      }
+
+      DeviceConnectionSnapshot current = _snapshot.Treadmill;
+      DeviceConnectionSnapshot ready = current with
+      {
+        State = DeviceConnectionState.Ready,
+        DisplayName = enrollment.DisplayName,
+        ProtocolId = enrollment.ProtocolId,
+        TelemetryMode = enrollment.TelemetryMode?.ToString(),
+        LastObservedAt = current.LastObservedAt,
+        Fault = null,
+        ModelNumber = enrollment.ModelNumber,
+        FirmwareRevision = enrollment.FirmwareRevision,
+        Evidence = enrollment.Evidence,
+        Capabilities = enrollment.Capabilities,
+      };
+      _snapshot = _snapshot with
+      {
+        CapturedAt = now,
+        Treadmill = ready,
+        ReportedCapabilities = enrollment.Capabilities,
+      };
+    }
+    diagnosticJournal?.Record(new(now, enrollment.Id, enrollment.Role.ToString(), generation,
+      DeviceConnectionState.Ready.ToString()));
   }
 
   private async Task<TreadmillCapabilities> ReadFtmsCapabilitiesAsync(
@@ -1671,7 +1921,8 @@ public sealed class ReadOnlyDeviceCoordinator(
   private TreadmillTelemetryUpdateResult UpdateTreadmillTelemetry(
     FtmsTreadmillData data,
     DateTimeOffset observedAt,
-    long generation)
+    long generation,
+    bool publishReady = true)
   {
     lock (_sync)
     {
@@ -1733,7 +1984,7 @@ public sealed class ReadOnlyDeviceCoordinator(
           data.PowerWatts),
         Treadmill = _snapshot.Treadmill with
         {
-          State = DeviceConnectionState.Ready,
+          State = publishReady ? DeviceConnectionState.Ready : _snapshot.Treadmill.State,
           LastObservedAt = observedAt,
           Fault = null,
         },

@@ -769,6 +769,314 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Continues_treadmill_telemetry_when_optional_device_information_read_fails()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { BlockTreadmillDeviceInformationReads = true };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.True(transport.TreadmillDeviceInformationReadAttempted.Task.IsCompleted);
+      Assert.False(transport.TreadmillDeviceInformationReadCompleted.Task.IsCompleted);
+      Assert.Equal(6, coordinator.Current.TreadmillTelemetry?.SpeedKph);
+      Assert.Equal(1, coordinator.Current.TreadmillTelemetry?.InclinePercent);
+      Assert.Equal(treadmill.ModelNumber, coordinator.Current.Treadmill.ModelNumber);
+      Assert.Equal(treadmill.FirmwareRevision, coordinator.Current.Treadmill.FirmwareRevision);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Continues_vendor_treadmill_telemetry_when_optional_device_information_read_fails()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(TreadmillTelemetryMode.Vendor);
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      UseVendorTreadmill = true,
+      ThrowTreadmillDeviceInformationReads = true,
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstVendorNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.True(transport.TreadmillDeviceInformationReadAttempted.Task.IsCompleted);
+      Assert.InRange(coordinator.Current.TreadmillTelemetry?.SpeedKph ?? 0, 9.99, 10.00);
+      Assert.Equal(5.3, coordinator.Current.TreadmillTelemetry?.InclinePercent);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Does_not_publish_hardware_verified_treadmill_ready_while_identity_reads_are_blocked()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(
+      TreadmillTelemetryMode.Ftms,
+      TreadmillCapabilityEvidence.HardwareVerified);
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { BlockTreadmillDeviceInformationReads = true };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.TreadmillDeviceInformationReadAttempted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Task.Delay(250);
+
+      Assert.NotEqual(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+      Assert.False(transport.FirstTreadmillNotificationConsumed.Task.IsCompleted);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData(TreadmillTelemetryMode.Ftms, false)]
+  [InlineData(TreadmillTelemetryMode.Vendor, true)]
+  public async Task Downgrades_hardware_verified_treadmill_when_fresh_identity_changes(
+    TreadmillTelemetryMode telemetryMode,
+    bool vendor)
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var enrollmentStore = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(
+      telemetryMode,
+      TreadmillCapabilityEvidence.HardwareVerified,
+      modelNumber: "OMEGA Z",
+      firmwareRevision: "V10.23.17");
+    await enrollmentStore.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var trackingStore = new EvidenceTrackingStore(enrollmentStore);
+    trackingStore.ReleaseEvidenceWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore>(_ => trackingStore);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      UseVendorTreadmill = vendor,
+      TreadmillModelNumber = "OMEGA Z 2",
+      TreadmillFirmwareRevision = "V10.23.18",
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await trackingStore.EvidenceWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.NotEqual(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+      trackingStore.ReleaseEvidenceWrite!.TrySetResult();
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      VersionedDeviceEnrollment? observed = null;
+      while (observed?.Enrollment.Evidence != TreadmillCapabilityEvidence.PassivelyObserved)
+      {
+        observed = await enrollmentStore.FindActiveAsync(DeviceRole.Treadmill, timeout.Token);
+        if (observed?.Enrollment.Evidence != TreadmillCapabilityEvidence.PassivelyObserved)
+          await Task.Delay(25, timeout.Token);
+      }
+
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+      Assert.Equal("OMEGA Z 2", observed.Enrollment.ModelNumber);
+      Assert.Equal("V10.23.18", observed.Enrollment.FirmwareRevision);
+      if (vendor)
+      {
+        Assert.Equal(new TreadmillCapabilities(), observed.Enrollment.Capabilities);
+      }
+      else
+      {
+        Assert.NotNull(observed.Enrollment.Capabilities?.SpeedRange);
+        Assert.False(observed.Enrollment.Capabilities!.CanStartRemotely);
+      }
+      Assert.Equal(1, trackingStore.EvidenceWriteCount);
+      Assert.Equal(TreadmillCapabilityEvidence.PassivelyObserved, coordinator.Current.Treadmill.Evidence);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Retains_hardware_verified_treadmill_when_fresh_identity_matches()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var enrollmentStore = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(
+      TreadmillTelemetryMode.Ftms,
+      TreadmillCapabilityEvidence.HardwareVerified,
+      modelNumber: "OMEGA Z",
+      firmwareRevision: "V10.23.17");
+    VersionedDeviceEnrollment original = await enrollmentStore.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var trackingStore = new EvidenceTrackingStore(enrollmentStore);
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore>(_ => trackingStore);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillModelNumber = "OMEGA Z",
+      TreadmillFirmwareRevision = "V10.23.17",
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      VersionedDeviceEnrollment? observed = null;
+      while (observed is null)
+      {
+        observed = await enrollmentStore.FindActiveAsync(DeviceRole.Treadmill, timeout.Token);
+        if (observed is null) await Task.Delay(25, timeout.Token);
+      }
+
+      Assert.Equal(TreadmillCapabilityEvidence.HardwareVerified, observed.Enrollment.Evidence);
+      Assert.Equal(TreadmillCapabilityEvidence.HardwareVerified, coordinator.Current.Treadmill.Evidence);
+      Assert.Equal(original.Version, observed.Version);
+      Assert.Equal(0, trackingStore.EvidenceWriteCount);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Does_not_publish_ready_when_hardware_identity_downgrade_cannot_be_persisted()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var enrollmentStore = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(
+      TreadmillTelemetryMode.Ftms,
+      TreadmillCapabilityEvidence.HardwareVerified,
+      modelNumber: "OMEGA Z",
+      firmwareRevision: "V10.23.17");
+    await enrollmentStore.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var trackingStore = new EvidenceTrackingStore(enrollmentStore) { ThrowEvidenceWrites = true };
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore>(_ => trackingStore);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillModelNumber = "OMEGA Z 2",
+      TreadmillFirmwareRevision = "V10.23.18",
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await trackingStore.EvidenceWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      await Task.Delay(100);
+
+      Assert.NotEqual(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Does_not_publish_hardware_verified_treadmill_ready_when_identity_service_is_missing()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill(
+      TreadmillTelemetryMode.Ftms,
+      TreadmillCapabilityEvidence.HardwareVerified,
+      modelNumber: "OMEGA Z",
+      firmwareRevision: "V10.23.17");
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { OmitTreadmillDeviceInformationService = true };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await Task.Delay(250);
+
+      Assert.NotEqual(DeviceConnectionState.Ready, coordinator.Current.Treadmill.State);
+      Assert.Null(coordinator.Current.TreadmillTelemetry);
+      Assert.False(transport.FirstTreadmillNotificationConsumed.Task.IsCompleted);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Actively_rediscovers_an_enrolled_device_before_retrying_a_windows_cache_miss()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1417,10 +1725,14 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     }
   }
 
-  private static DeviceEnrollment Treadmill() => new(
+  private static DeviceEnrollment Treadmill(
+    TreadmillTelemetryMode telemetryMode = TreadmillTelemetryMode.Ftms,
+    TreadmillCapabilityEvidence evidence = TreadmillCapabilityEvidence.Unknown,
+    string? modelNumber = null,
+    string? firmwareRevision = null) => new(
     Guid.NewGuid(), DeviceRole.Treadmill, "A1B2C3D4E5F6", "horizon-omega-z", new string('a', 64),
-    "Horizon Omega Z", null, null, TreadmillTelemetryMode.Ftms,
-    new TreadmillCapabilities(), TreadmillCapabilityEvidence.Unknown, null);
+    "Horizon Omega Z", modelNumber, firmwareRevision, telemetryMode,
+    new TreadmillCapabilities(), evidence, null);
 
   private static DeviceEnrollment HeartRate() => HeartRate("102030405060", "Polar H10");
 
@@ -1430,6 +1742,70 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
   private static PersistenceWriteOperation Op(string type, DateTimeOffset now) => new(
     Guid.NewGuid(), type, 200, "{}", now, new string('0', 64));
+
+  private sealed class EvidenceTrackingStore(IDeviceEnrollmentStore inner) : IDeviceEnrollmentStore
+  {
+    private int _evidenceWriteCount;
+
+    public int EvidenceWriteCount => Volatile.Read(ref _evidenceWriteCount);
+
+    public bool ThrowEvidenceWrites { get; set; }
+
+    public TaskCompletionSource EvidenceWriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public TaskCompletionSource? ReleaseEvidenceWrite { get; set; }
+
+    public Task<IReadOnlyList<VersionedDeviceEnrollment>> ListActiveAsync(
+      CancellationToken cancellationToken = default) =>
+      inner.ListActiveAsync(cancellationToken);
+
+    public Task<VersionedDeviceEnrollment?> FindActiveAsync(
+      DeviceRole role,
+      CancellationToken cancellationToken = default) =>
+      inner.FindActiveAsync(role, cancellationToken);
+
+    public Task<VersionedDeviceEnrollment> EnrollAsync(
+      DeviceEnrollment enrollment,
+      DateTimeOffset nowUtc,
+      PersistenceWriteOperation operation,
+      CancellationToken cancellationToken = default) =>
+      inner.EnrollAsync(enrollment, nowUtc, operation, cancellationToken);
+
+    public Task<bool> ForgetAsync(
+      DeviceRole role,
+      int expectedVersion,
+      DateTimeOffset nowUtc,
+      PersistenceWriteOperation operation,
+      CancellationToken cancellationToken = default) =>
+      inner.ForgetAsync(role, expectedVersion, nowUtc, operation, cancellationToken);
+
+    public async Task<VersionedDeviceEnrollment> UpdateEvidenceAsync(
+      Guid id,
+      int expectedVersion,
+      string? modelNumber,
+      string? firmwareRevision,
+      TreadmillCapabilities? capabilities,
+      TreadmillCapabilityEvidence evidence,
+      DateTimeOffset verifiedAtUtc,
+      CancellationToken cancellationToken = default)
+    {
+      Interlocked.Increment(ref _evidenceWriteCount);
+      EvidenceWriteStarted.TrySetResult();
+      if (ReleaseEvidenceWrite is { } release)
+        await release.Task.WaitAsync(cancellationToken);
+      if (ThrowEvidenceWrites)
+        throw new InvalidOperationException("The evidence store was intentionally failed by the test.");
+      return await inner.UpdateEvidenceAsync(
+        id,
+        expectedVersion,
+        modelNumber,
+        firmwareRevision,
+        capabilities,
+        evidence,
+        verifiedAtUtc,
+        cancellationToken);
+    }
+  }
 
   private sealed class BlockingMaintenanceState : IApplicationMaintenanceState
   {
@@ -1470,6 +1846,8 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private static readonly Guid HeartRateMeasurement = Expand(0x2A37);
     private static readonly Guid BatteryService = Expand(0x180F);
     private static readonly Guid BatteryLevel = Expand(0x2A19);
+    private static readonly Guid VendorService = Expand(0xFFF0);
+    private static readonly Guid VendorStatus = Expand(0xFFF4);
 
     public DateTimeOffset? FirstHeartRateNotificationAt { get; private set; }
     public DateTimeOffset? FirstBatterySubscriptionAt { get; private set; }
@@ -1478,12 +1856,21 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private int _scanCount;
     public int ActiveScanCount => Volatile.Read(ref _scanCount);
     public ConcurrentDictionary<string, byte> UnavailableDeviceIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool UseVendorTreadmill { get; set; }
     public bool BlockHeartRateDeviceInformationReads { get; set; }
+    public bool BlockTreadmillDeviceInformationReads { get; set; }
+    public bool ThrowTreadmillDeviceInformationReads { get; set; }
+    public bool OmitTreadmillDeviceInformationService { get; set; }
+    public string TreadmillModelNumber { get; set; } = "OMEGA Z";
+    public string TreadmillFirmwareRevision { get; set; } = "V10.23.17";
     public bool DisconnectFirstHeartRateSubscription { get; set; }
     private int _heartRateSubscriptionCount;
     public int HeartRateSubscriptionCount => Volatile.Read(ref _heartRateSubscriptionCount);
     public TaskCompletionSource DeviceInformationReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource DeviceInformationReadCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource TreadmillDeviceInformationReadAttempted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource TreadmillDeviceInformationReadCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource FirstVendorNotificationConsumed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public bool DisconnectAfterFirstTreadmillNotification { get; set; }
     public byte[] HeartRateNotificationValue { get; set; } = [0x00, 142];
     public DateTimeOffset? HeartRateObservedAt { get; set; }
@@ -1524,19 +1911,29 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         if (owner.UnavailableDeviceIds.ContainsKey(DeviceId))
           return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleDeviceUnavailableException());
         IReadOnlyList<BleService> result = DeviceId.StartsWith('A')
-          ? [new BleService(Ftms,
-          [
-            new BleCharacteristic(Ftms, Feature, true, false, false),
-            new BleCharacteristic(Ftms, SpeedRange, true, false, false),
-            new BleCharacteristic(Ftms, InclineRange, true, false, false),
-            new BleCharacteristic(Ftms, ControlPoint, false, true, true),
-            new BleCharacteristic(Ftms, TreadmillData, false, false, true),
-          ]),
-          new BleService(DeviceInformationService,
-          [
-            new BleCharacteristic(DeviceInformationService, ModelNumber, true, false, false),
-            new BleCharacteristic(DeviceInformationService, FirmwareRevision, true, false, false),
-          ])]
+          ? owner.UseVendorTreadmill
+            ? [new BleService(VendorService,
+              [new BleCharacteristic(VendorService, VendorStatus, false, false, true)]),
+              new BleService(DeviceInformationService,
+              [
+                new BleCharacteristic(DeviceInformationService, ModelNumber, true, false, false),
+                new BleCharacteristic(DeviceInformationService, FirmwareRevision, true, false, false),
+              ])]
+            : [new BleService(Ftms,
+            [
+              new BleCharacteristic(Ftms, Feature, true, false, false),
+              new BleCharacteristic(Ftms, SpeedRange, true, false, false),
+              new BleCharacteristic(Ftms, InclineRange, true, false, false),
+              new BleCharacteristic(Ftms, ControlPoint, false, true, true),
+              new BleCharacteristic(Ftms, TreadmillData, false, false, true),
+            ]),
+          ..(owner.OmitTreadmillDeviceInformationService
+            ? Array.Empty<BleService>()
+            : [new BleService(DeviceInformationService,
+              [
+                new BleCharacteristic(DeviceInformationService, ModelNumber, true, false, false),
+                new BleCharacteristic(DeviceInformationService, FirmwareRevision, true, false, false),
+              ])])]
           :
           [
             new BleService(HeartRateService,
@@ -1562,6 +1959,21 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         Guid characteristicUuid,
         CancellationToken cancellationToken = default)
       {
+        if (owner.BlockTreadmillDeviceInformationReads &&
+            DeviceId.StartsWith('A') &&
+            serviceUuid == DeviceInformationService)
+        {
+          owner.TreadmillDeviceInformationReadAttempted.TrySetResult();
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          owner.TreadmillDeviceInformationReadCompleted.TrySetResult();
+        }
+        if (owner.ThrowTreadmillDeviceInformationReads &&
+            DeviceId.StartsWith('A') &&
+            serviceUuid == DeviceInformationService)
+        {
+          owner.TreadmillDeviceInformationReadAttempted.TrySetResult();
+          throw new WindowsBleException("The treadmill device information characteristic is unavailable.");
+        }
         if (owner.BlockHeartRateDeviceInformationReads && serviceUuid == DeviceInformationService)
         {
           owner.DeviceInformationReadStarted.TrySetResult();
@@ -1571,9 +1983,9 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
         byte[] value = characteristicUuid == BatteryLevel
           ? [87]
           : characteristicUuid == ModelNumber
-            ? System.Text.Encoding.UTF8.GetBytes("OMEGA Z")
+            ? System.Text.Encoding.UTF8.GetBytes(owner.TreadmillModelNumber)
           : characteristicUuid == FirmwareRevision
-            ? System.Text.Encoding.UTF8.GetBytes("V10.23.17")
+            ? System.Text.Encoding.UTF8.GetBytes(owner.TreadmillFirmwareRevision)
           : characteristicUuid == Feature
           ? [0, 0, 0, 0, 3, 0, 0, 0]
           : characteristicUuid == SpeedRange
@@ -1599,6 +2011,17 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
             owner.HeartRateObservedAt ?? DateTimeOffset.UtcNow);
           if (owner.DisconnectFirstHeartRateSubscription && subscription == 1)
             throw new WindowsBleDisconnectedException();
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          yield break;
+        }
+        if (characteristicUuid == VendorStatus)
+        {
+          owner.FirstVendorNotificationConsumed.TrySetResult();
+          yield return new BleNotification(
+            serviceUuid,
+            characteristicUuid,
+            CreateVendorStatusFrame(),
+            DateTimeOffset.UtcNow);
           await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
           yield break;
         }
@@ -1632,6 +2055,21 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           throw new WindowsBleDisconnectedException();
         }
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
+
+      private static byte[] CreateVendorStatusFrame()
+      {
+        var frame = new byte[40];
+        frame[0] = 0x55;
+        frame[1] = 0xAA;
+        frame[5] = 0x17;
+        frame[6] = 30;
+        frame[^2] = 0x0D;
+        frame[^1] = 0x0A;
+        frame[24] = 0x6D;
+        frame[25] = 0x02;
+        frame[30] = 53;
+        return frame;
       }
     }
 

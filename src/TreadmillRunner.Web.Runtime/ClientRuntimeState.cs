@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using TreadmillRunner.Core.System;
 
 namespace TreadmillRunner.Web.Runtime;
@@ -41,16 +42,18 @@ public sealed class ClientRuntimeState
       using HttpResponseMessage response = await client.GetAsync($"api/system/version?client={ExpectedFingerprint}", cancellationToken);
       response.EnsureSuccessStatusCode();
       SystemVersionView? version = await response.Content.ReadFromJsonAsync<SystemVersionView>(cancellationToken);
+      if (version is null || string.IsNullOrWhiteSpace(version.BuildFingerprint))
+        throw new JsonException("The gateway version response did not contain a build fingerprint.");
       IsConnected = true;
-      ServerFingerprint = version?.BuildFingerprint;
-      ServerStartedAtUtc = version?.ServiceStartedAtUtc;
+      ServerFingerprint = version.BuildFingerprint;
+      ServerStartedAtUtc = version.ServiceStartedAtUtc;
       UpdateRequired = !string.Equals(ServerFingerprint, ExpectedFingerprint, StringComparison.Ordinal);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       return;
     }
-    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+    catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
     {
       IsConnected = false;
     }

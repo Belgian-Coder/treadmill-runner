@@ -161,6 +161,30 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
 
       if (fileName == "control")
         await scenario.SetSimulatedHeartRateAsync(gateway.BaseAddress, 132);
+      foreach ((int width, int height, string device) in new[]
+      {
+        (390, 844, "iphone-portrait"),
+        (844, 390, "iphone-landscape"),
+        (820, 1180, "ipad-portrait"),
+      })
+      {
+        await Page.SetViewportSizeAsync(width, height);
+        await Page.EvaluateAsync("() => { document.activeElement?.blur(); window.scrollTo(0, 0); }");
+        await AssertNoHorizontalOverflowAsync(fileName, device);
+        if (fileName == "workouts")
+        {
+          LocatorBoundingBoxResult? workspace = await Page.Locator(".program-workspace--browse").BoundingBoxAsync();
+          LocatorBoundingBoxResult? browser = await Page.Locator(".program-browser").BoundingBoxAsync();
+          Assert.NotNull(workspace);
+          Assert.NotNull(browser);
+          Assert.InRange(browser.Width, workspace.Width - 1, workspace.Width + 1);
+        }
+        await Page.ScreenshotAsync(new PageScreenshotOptions
+        {
+          Path = Path.Combine(galleryDirectory, $"{fileName}-{device}.png"),
+          FullPage = true,
+        });
+      }
       await Page.SetViewportSizeAsync(440, 956);
       await Page.EvaluateAsync("() => { window.scrollTo(0, 0); document.activeElement?.blur(); }");
       await Page.WaitForTimeoutAsync(100);
