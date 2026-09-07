@@ -10,7 +10,27 @@ public sealed class PythonGarminActivityAdapterReadinessTests : IAsyncLifetime
   private readonly string directory = Path.Combine(Path.GetTempPath(), "TreadmillRunner.Tests", $"garmin-readiness-{Guid.NewGuid():N}");
 
   public Task InitializeAsync() { Directory.CreateDirectory(directory); return Task.CompletedTask; }
-  public Task DisposeAsync() { if (Directory.Exists(directory)) Directory.Delete(directory, true); return Task.CompletedTask; }
+  public async Task DisposeAsync()
+  {
+    if (!Directory.Exists(directory)) return;
+
+    // Windows can briefly retain the Python script handle after the process
+    // has reported exit. Keep teardown bounded while allowing that handle to
+    // drain; a persistent cleanup failure must still fail the test run.
+    const int maximumAttempts = 20;
+    for (var attempt = 1; ; attempt++)
+    {
+      try
+      {
+        Directory.Delete(directory, recursive: true);
+        return;
+      }
+      catch (IOException) when (attempt < maximumAttempts)
+      {
+        await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(100, attempt * 10)));
+      }
+    }
+  }
 
   [Theory]
   [InlineData("{\"state\":\"ready\"}", GarminAdapterReadinessStates.Ready, true)]

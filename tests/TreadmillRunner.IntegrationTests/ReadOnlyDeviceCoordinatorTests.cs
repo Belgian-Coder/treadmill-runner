@@ -1001,6 +1001,75 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Refreshes_treadmill_enrollment_before_reconnect_after_control_approval()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var enrollmentStore = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await enrollmentStore.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport
+    {
+      TreadmillNotificationValues =
+      [
+        [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00],
+        [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00],
+      ],
+      ReleaseAdditionalTreadmillNotifications = new(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      await transport.FirstTreadmillNotificationConsumed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      VersionedDeviceEnrollment? passive = null;
+      while (passive?.Enrollment.Evidence != TreadmillCapabilityEvidence.PassivelyObserved)
+      {
+        passive = await enrollmentStore.FindActiveAsync(DeviceRole.Treadmill, timeout.Token);
+        if (passive?.Enrollment.Evidence != TreadmillCapabilityEvidence.PassivelyObserved)
+          await Task.Delay(25, timeout.Token);
+      }
+
+      long passiveGeneration = coordinator.Current.Treadmill.ConnectionGeneration;
+      await enrollmentStore.UpdateEvidenceAsync(
+        treadmill.Id,
+        passive.Version,
+        "OMEGA Z",
+        "V10.23.17",
+        AcceptedTreadmillControlProfile.Enable(passive.Enrollment.Capabilities),
+        TreadmillCapabilityEvidence.HardwareVerified,
+        DateTimeOffset.UtcNow);
+
+      transport.BlockTreadmillDeviceInformationReads = true;
+      transport.DisconnectAfterFirstTreadmillNotification = true;
+      transport.ReleaseAdditionalTreadmillNotifications!.TrySetResult();
+
+      while (coordinator.Current.Treadmill.ConnectionGeneration <= passiveGeneration)
+        await Task.Delay(25, timeout.Token);
+      await transport.TreadmillDeviceInformationReadAttempted.Task.WaitAsync(timeout.Token);
+
+      Assert.Equal(DeviceConnectionState.Subscribing, coordinator.Current.Treadmill.State);
+      Assert.Equal(TreadmillCapabilityEvidence.HardwareVerified, coordinator.Current.Treadmill.Evidence);
+      Assert.True(transport.TreadmillDeviceInformationReadAttempted.Task.IsCompleted);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Does_not_publish_ready_when_hardware_identity_downgrade_cannot_be_persisted()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;

@@ -496,6 +496,15 @@ public sealed class ReadOnlyDeviceCoordinator(
       try
       {
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
+        if (enrollment.Role == DeviceRole.Treadmill)
+        {
+          VersionedDeviceEnrollment current = await LoadCurrentTreadmillEnrollmentAsync(
+            enrollment.Id,
+            cancellationToken);
+          enrollment = current.Enrollment;
+          enrollmentVersion = current.Version;
+          connectionDeviceId = enrollment.DeviceId;
+        }
         attempt.OperationStage = "connection";
         await using IBleConnection connection = await transport.ConnectAsync(
           connectionDeviceId,
@@ -662,6 +671,23 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
 
     SetDisconnected(enrollment.Id, enrollment.Role);
+  }
+
+  private async Task<VersionedDeviceEnrollment> LoadCurrentTreadmillEnrollmentAsync(
+    Guid expectedEnrollmentId,
+    CancellationToken cancellationToken)
+  {
+    using IServiceScope scope = scopeFactory.CreateScope();
+    VersionedDeviceEnrollment? current = await scope.ServiceProvider
+      .GetRequiredService<IDeviceEnrollmentStore>()
+      .FindActiveAsync(DeviceRole.Treadmill, cancellationToken);
+    if (current is null || current.Enrollment.Id != expectedEnrollmentId)
+    {
+      throw new InvalidOperationException(
+        "The active treadmill enrollment changed before a new connection generation started.");
+    }
+
+    return current;
   }
 
   private async Task<HeartRateReconnectResolution?> ResolveCurrentDeviceAsync(

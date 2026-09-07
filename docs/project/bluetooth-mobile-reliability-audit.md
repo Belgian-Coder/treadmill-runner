@@ -27,6 +27,8 @@ This audit reviews the existing Windows gateway and all eleven browser screens. 
 
 The baseline browser inspection measured profile input text at 12.16 CSS pixels and a 258.9-pixel plan browser inside a 755.8-pixel iPad workspace. The new profile focus regression failed against the baseline build before the implementation was changed.
 
+Each new treadmill connection reloads the durable enrollment before opening Bluetooth. This also covers controls being approved while an existing passive connection is open: the next reconnect must use the current approval and strict identity checks. Missing or replaced enrollment fails closed.
+
 ## Validation
 
 Validation is performed against isolated simulator gateways and temporary databases. Populated gallery coverage includes Run, Control, Training plans, Workout editor, Import, Calendar, History, History detail, Devices, Profiles, and Operations.

@@ -62,7 +62,7 @@ The [Bluetooth and mobile audit](docs/project/bluetooth-mobile-reliability-audit
 
 Browser recovery verifies the current version and authoritative session/snapshot before enabling controls, keeps retrying failed HTTP reads even when SignalR has reconnected, and rejects malformed controller leases. Heartbeat recovery uses the supervisor lifetime and never replays a motion request. Terminal session persistence makes at most three attempts with bounded delays; repeated matching terminal writes are idempotent. Exhausted failures remain logged and process-crash recovery retains startup interruption. Backup verification records known SQLite/EF storage failures when the status store remains writable.
 
-Passive treadmill telemetry precedes optional identity reads. A hardware-verified treadmill still requires complete fresh model/firmware identity: a mismatch must durably clear approval before readiness, while missing identity or a failed downgrade keeps it unready. Reconnects retain the updated enrollment version, and a matching identity preserves approval.
+Passive treadmill telemetry precedes optional identity reads. A hardware-verified treadmill still requires complete fresh model/firmware identity: a mismatch must durably clear approval before readiness, while missing identity or a failed downgrade keeps it unready. Every new treadmill connection reloads the durable enrollment so approval changes apply to reconnects; a matching identity preserves approval.
 
 ## Bluetooth diagnostics
 
