@@ -53,6 +53,17 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
+  public void Bluetooth_etw_capture_uses_the_supported_multi_provider_file_contract()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "capture-bluetooth-etw.ps1"));
+
+    Assert.Contains("'-pf', $providerFile", script, StringComparison.Ordinal);
+    Assert.Contains("Set-Content -LiteralPath $providerFile -Encoding Ascii", script, StringComparison.Ordinal);
+    Assert.Contains("Remove-Item -LiteralPath $providerFile", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("$arguments += @('-p'", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
   public void GitHub_release_and_offline_install_scripts_preserve_the_local_signer_and_signed_bundle_contract()
   {
     string release = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "create-github-release.ps1"));

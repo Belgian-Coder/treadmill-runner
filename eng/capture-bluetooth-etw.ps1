@@ -45,17 +45,19 @@ $providers = @(
     @('Microsoft-Windows-Bluetooth-BthLEPrepairing', '0x4000000000000000', '0x5'),
     @('Microsoft-Windows-Kernel-PnP', '0x000000000001F000', '0x5')
 )
+$providerFile = [IO.Path]::GetTempFileName()
+$providers |
+    ForEach-Object { $_ -join ' ' } |
+    Set-Content -LiteralPath $providerFile -Encoding Ascii
 
 $arguments = @(
     'create', 'trace', $traceName,
     '-o', $resolvedOutput,
     '-f', 'bincirc',
     '-max', $MaximumFileSizeMb.ToString([Globalization.CultureInfo]::InvariantCulture),
+    '-pf', $providerFile,
     '-ow'
 )
-foreach ($provider in $providers) {
-    $arguments += @('-p', $provider[0], $provider[1], $provider[2])
-}
 $arguments += '-ets'
 
 Write-Warning 'The ETL may contain Bluetooth device identifiers. Keep it local, do not commit or upload it, and sanitize any exported evidence.'
@@ -74,6 +76,7 @@ finally {
             Write-Warning "logman stop returned exit code $LASTEXITCODE; inspect the collector manually with: logman query $traceName"
         }
     }
+    Remove-Item -LiteralPath $providerFile -Force -ErrorAction SilentlyContinue
 }
 
 if (-not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
