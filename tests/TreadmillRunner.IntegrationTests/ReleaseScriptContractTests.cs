@@ -27,6 +27,7 @@ public sealed class ReleaseScriptContractTests
   [InlineData("physical-acceptance-preflight.ps1")]
   [InlineData("verify-recovery-acceptance.ps1")]
   [InlineData("new-operator-access-secret.ps1")]
+  [InlineData("capture-bluetooth-etw.ps1")]
   public async Task Release_script_has_valid_PowerShell_syntax(string scriptName)
   {
     string scriptPath = Path.Combine(ProjectRoot, "eng", scriptName);

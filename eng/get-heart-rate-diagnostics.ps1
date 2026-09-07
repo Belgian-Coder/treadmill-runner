@@ -110,6 +110,7 @@ $unconfirmed = @($samples.Values | Where-Object {
         @($discardPhases | Where-Object { $sample.Phases.Contains($_) }).Count -eq 0
 })
 $concurrentBle = @()
+$concurrentFailures = @()
 $from = $null
 $to = $null
 $captureFrom = $null
@@ -134,6 +135,21 @@ if ($sessionRecords.Count -gt 0) {
         Group-Object Phase, Failure | ForEach-Object {
             [pscustomobject]@{ Event = $_.Name; Count = $_.Count }
         })
+    $concurrentFailures = @($records | Where-Object {
+        $_.At -ge $captureFrom.AddSeconds(-30) -and $_.At -le $captureTo.AddSeconds(30) -and
+        $_.Entry.Role -eq 'HeartRate' -and
+        $null -ne $_.Entry.PSObject.Properties['FailureDetails']
+    } | ForEach-Object {
+        [pscustomobject]@{
+            AtUtc = $_.At
+            EnrollmentId = $_.Entry.EnrollmentId
+            Generation = $_.Entry.Generation
+            Phase = $_.Entry.Phase
+            Failure = $_.Entry.Failure
+            HResult = $_.Entry.HResult
+            Details = $_.Entry.FailureDetails
+        }
+    })
 }
 
 $warnings = [System.Collections.Generic.List[string]]::new()
@@ -166,5 +182,6 @@ $warnings.Add('Concurrent Bluetooth events are observations within the time wind
         [pscustomobject]@{ Reason = $_.Name; Samples = $_.Count }
     })
     ConcurrentBluetoothEvents = $concurrentBle
+    ConcurrentBluetoothFailures = $concurrentFailures
     Warnings = $warnings.ToArray()
 } | ConvertTo-Json -Depth 8

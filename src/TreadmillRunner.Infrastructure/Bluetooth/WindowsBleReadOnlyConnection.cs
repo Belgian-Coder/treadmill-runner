@@ -18,6 +18,7 @@ internal sealed class WindowsBleReadOnlyConnection :
   private readonly BluetoothAddressType? _bluetoothAddressType;
   private readonly CancellationTokenSource _disposeCancellation = new();
   private readonly AsyncNativeResourceOwner<BluetoothLEDevice> _device = new();
+  private readonly AsyncNativeResourceOwner<GattSession> _session = new();
   private int _disposed;
 
   public WindowsBleReadOnlyConnection(string deviceId)
@@ -255,6 +256,10 @@ internal sealed class WindowsBleReadOnlyConnection :
       SingleWriter = false,
     });
 
+    GattSession? session = await GetOrCreateGattSessionAsync(
+      handle.Device,
+      operationCancellation).ConfigureAwait(false);
+
     TypedEventHandler<GattCharacteristic, GattValueChangedEventArgs> handler = (_, args) =>
     {
       try
@@ -275,13 +280,44 @@ internal sealed class WindowsBleReadOnlyConnection :
     {
       CompleteChannelOnDisconnect(
         () => device.ConnectionStatus == BluetoothConnectionStatus.Disconnected,
-        channel.Writer);
+        channel.Writer,
+        () => new WindowsBleDisconnectContext(
+          WindowsBleDisconnectOrigin.ConnectionStatusChanged,
+          DateTimeOffset.UtcNow,
+          ReadSessionStatus(session),
+          SessionError: null,
+          operationCancellation.IsCancellationRequested,
+          Volatile.Read(ref _disposed) != 0 || _disposeCancellation.IsCancellationRequested));
     };
 
-    handle.Characteristic.ValueChanged += handler;
-    handle.Device.ConnectionStatusChanged += connectionHandler;
+    TypedEventHandler<GattSession, GattSessionStatusChangedEventArgs>? sessionHandler = null;
+    if (session is not null)
+    {
+      sessionHandler = (_, args) =>
+      {
+        if (args.Status != GattSessionStatus.Closed) return;
+        CompleteChannelOnDisconnect(
+          () => true,
+          channel.Writer,
+          () => new WindowsBleDisconnectContext(
+            WindowsBleDisconnectOrigin.GattSessionStatusChanged,
+            DateTimeOffset.UtcNow,
+            args.Status,
+            args.Error,
+            operationCancellation.IsCancellationRequested,
+            Volatile.Read(ref _disposed) != 0 || _disposeCancellation.IsCancellationRequested));
+      };
+    }
+
     try
     {
+      handle.Characteristic.ValueChanged += handler;
+      handle.Device.ConnectionStatusChanged += connectionHandler;
+      if (session is not null && sessionHandler is not null)
+      {
+        session.SessionStatusChanged += sessionHandler;
+      }
+
       GattCommunicationStatus status = await handle.Characteristic
         .WriteClientCharacteristicConfigurationDescriptorAsync(mode)
         .AsTask(operationCancellation)
@@ -289,7 +325,14 @@ internal sealed class WindowsBleReadOnlyConnection :
       WindowsBleStatus.ThrowIfFailed(status, null, $"subscribe characteristic {characteristicUuid:D}");
       if (handle.Device.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
       {
-        throw new WindowsBleDisconnectedException();
+        operationCancellation.ThrowIfCancellationRequested();
+        throw new WindowsBleDisconnectedException(new WindowsBleDisconnectContext(
+          WindowsBleDisconnectOrigin.PostCccdConnectionStatusCheck,
+          DateTimeOffset.UtcNow,
+          ReadSessionStatus(session),
+          SessionError: null,
+          operationCancellation.IsCancellationRequested,
+          Volatile.Read(ref _disposed) != 0 || _disposeCancellation.IsCancellationRequested));
       }
 
       await foreach (BleNotification notification in channel.Reader
@@ -306,7 +349,12 @@ internal sealed class WindowsBleReadOnlyConnection :
         NativeResourceOwnership.RunCleanupActions(
           operationCancellation.IsCancellationRequested,
           () => handle.Characteristic.ValueChanged -= handler,
-          () => handle.Device.ConnectionStatusChanged -= connectionHandler);
+          () => handle.Device.ConnectionStatusChanged -= connectionHandler,
+          () =>
+          {
+            if (session is not null && sessionHandler is not null)
+              session.SessionStatusChanged -= sessionHandler;
+          });
       }
       finally
       {
@@ -317,13 +365,19 @@ internal sealed class WindowsBleReadOnlyConnection :
 
   internal static void CompleteChannelOnDisconnect(
     Func<bool> isDisconnected,
-    ChannelWriter<BleNotification> writer)
+    ChannelWriter<BleNotification> writer,
+    Func<WindowsBleDisconnectContext>? contextFactory = null)
   {
     try
     {
       if (isDisconnected())
       {
-        writer.TryComplete(new WindowsBleDisconnectedException());
+        WindowsBleDisconnectContext context = contextFactory?.Invoke() ??
+          WindowsBleDisconnectContext.Unknown;
+        writer.TryComplete(
+          context.CancellationRequested || context.DisposalRequested
+            ? null
+            : new WindowsBleDisconnectedException(context));
       }
     }
     catch (Exception exception)
@@ -332,11 +386,62 @@ internal sealed class WindowsBleReadOnlyConnection :
     }
   }
 
+  private async Task<GattSession?> GetOrCreateGattSessionAsync(
+    BluetoothLEDevice device,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      return await _session.GetOrCreateAsync(
+        operationCancellation => TryOpenGattSessionAsync(device, operationCancellation),
+        static () => new WindowsBleDeviceUnavailableException(),
+        cancellationToken).ConfigureAwait(false);
+    }
+    catch (WindowsBleDeviceUnavailableException) when (!cancellationToken.IsCancellationRequested)
+    {
+      return null;
+    }
+  }
+
+  private static async Task<GattSession?> TryOpenGattSessionAsync(
+    BluetoothLEDevice device,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      return await GattSession.FromDeviceIdAsync(device.BluetoothDeviceId)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false);
+    }
+    catch (Exception) when (!cancellationToken.IsCancellationRequested)
+    {
+      // GattSession is supplemental diagnostics. A device can still provide
+      // read-only telemetry when Windows cannot create the session object.
+      return null;
+    }
+  }
+
+  private static GattSessionStatus? ReadSessionStatus(GattSession? session)
+  {
+    try
+    {
+      return session?.SessionStatus;
+    }
+    catch
+    {
+      // A native session can close concurrently with a device callback. The
+      // disconnect origin and lifecycle flags remain useful without turning
+      // diagnostics into a second failure.
+      return null;
+    }
+  }
+
   public ValueTask DisposeAsync()
   {
     if (Interlocked.Exchange(ref _disposed, 1) == 0)
     {
       _disposeCancellation.Cancel();
+      _session.Dispose();
       _device.Dispose();
       _disposeCancellation.Dispose();
     }

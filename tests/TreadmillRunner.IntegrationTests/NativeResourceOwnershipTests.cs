@@ -1,6 +1,8 @@
 using System.Threading.Channels;
 using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Infrastructure.Bluetooth;
+using Windows.Devices.Bluetooth;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -104,6 +106,82 @@ public sealed class NativeResourceOwnershipTests
     ObjectDisposedException actual = await Assert.ThrowsAsync<ObjectDisposedException>(
       async () => await channel.Reader.Completion);
     Assert.Same(expected, actual);
+  }
+
+  [Fact]
+  public async Task Disconnect_context_preserves_origin_timing_and_session_failure_without_raw_data()
+  {
+    Channel<BleNotification> channel = Channel.CreateUnbounded<BleNotification>();
+    DateTimeOffset callbackAt = DateTimeOffset.UtcNow;
+    var context = new WindowsBleDisconnectContext(
+      WindowsBleDisconnectOrigin.GattSessionStatusChanged,
+      callbackAt,
+      GattSessionStatus.Closed,
+      BluetoothError.DeviceNotConnected,
+      CancellationRequested: false,
+      DisposalRequested: false);
+
+    WindowsBleReadOnlyConnection.CompleteChannelOnDisconnect(
+      () => true,
+      channel.Writer,
+      () => context);
+
+    WindowsBleDisconnectedException actual = await Assert.ThrowsAsync<WindowsBleDisconnectedException>(
+      async () => await channel.Reader.Completion);
+    Assert.Equal(WindowsBleDisconnectOrigin.GattSessionStatusChanged, actual.Origin);
+    Assert.Equal(callbackAt, actual.CallbackAtUtc);
+    Assert.Equal(GattSessionStatus.Closed, actual.SessionStatus);
+    Assert.Equal(BluetoothError.DeviceNotConnected, actual.SessionError);
+    Assert.DoesNotContain("A1B2C3D4E5F6", actual.Message, StringComparison.Ordinal);
+    Assert.DoesNotContain("180D", actual.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
+  [Fact]
+  public async Task Disconnect_callback_does_not_override_cancellation_or_disposal_completion()
+  {
+    Channel<BleNotification> channel = Channel.CreateUnbounded<BleNotification>();
+    var context = new WindowsBleDisconnectContext(
+      WindowsBleDisconnectOrigin.ConnectionStatusChanged,
+      DateTimeOffset.UtcNow,
+      SessionStatus: null,
+      SessionError: null,
+      CancellationRequested: true,
+      DisposalRequested: true);
+
+    WindowsBleReadOnlyConnection.CompleteChannelOnDisconnect(
+      () => true,
+      channel.Writer,
+      () => context);
+
+    await channel.Reader.Completion;
+    Assert.True(channel.Reader.Completion.IsCompletedSuccessfully);
+  }
+
+  [Theory]
+  [InlineData(WindowsBleDisconnectOrigin.ConnectionStatusChanged)]
+  [InlineData(WindowsBleDisconnectOrigin.PostCccdConnectionStatusCheck)]
+  public async Task Disconnect_context_preserves_the_native_disconnect_origin(
+    WindowsBleDisconnectOrigin origin)
+  {
+    Channel<BleNotification> channel = Channel.CreateUnbounded<BleNotification>();
+    DateTimeOffset callbackAt = DateTimeOffset.UtcNow;
+    var context = new WindowsBleDisconnectContext(
+      origin,
+      callbackAt,
+      SessionStatus: null,
+      SessionError: null,
+      CancellationRequested: false,
+      DisposalRequested: false);
+
+    WindowsBleReadOnlyConnection.CompleteChannelOnDisconnect(
+      () => true,
+      channel.Writer,
+      () => context);
+
+    WindowsBleDisconnectedException actual = await Assert.ThrowsAsync<WindowsBleDisconnectedException>(
+      async () => await channel.Reader.Completion);
+    Assert.Equal(origin, actual.Origin);
+    Assert.Equal(callbackAt, actual.CallbackAtUtc);
   }
 
   [Fact]

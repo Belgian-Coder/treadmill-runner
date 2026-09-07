@@ -1,11 +1,46 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using TreadmillRunner.Gateway.Devices;
+using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.IntegrationTests;
 
 public sealed class BleDiagnosticJournalTests
 {
+  [Fact]
+  public void Failure_details_preserve_safe_disconnect_context_without_messages()
+  {
+    DateTimeOffset observedAt = new(2099, 9, 7, 12, 0, 0, TimeSpan.Zero);
+    var exception = new WindowsBleDisconnectedException(new WindowsBleDisconnectContext(
+      WindowsBleDisconnectOrigin.GattSessionStatusChanged,
+      observedAt,
+      Windows.Devices.Bluetooth.GenericAttributeProfile.GattSessionStatus.Closed,
+      Windows.Devices.Bluetooth.BluetoothError.RadioNotAvailable,
+      CancellationRequested: false,
+      DisposalRequested: false));
+
+    BleDiagnosticFailureDetails details = BleDiagnosticFailureDetails.From(exception);
+
+    Assert.Equal("WindowsBleDisconnectedException", details.ExceptionType);
+    Assert.Equal("GattSessionStatusChanged", details.DisconnectOrigin);
+    Assert.Equal(observedAt, details.DisconnectObservedAtUtc);
+    Assert.Equal("Closed", details.GattSessionStatus);
+    Assert.Equal("RadioNotAvailable", details.BluetoothError);
+    Assert.False(details.CancellationRequested);
+    Assert.False(details.DisposalRequested);
+    Assert.DoesNotContain(exception.Message, System.Text.Json.JsonSerializer.Serialize(details),
+      StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Failure_details_allow_list_exception_types()
+  {
+    Assert.Equal("NotSupportedException",
+      BleDiagnosticFailureDetails.From(new NotSupportedException("sensitive")).ExceptionType);
+    Assert.Equal("OtherException",
+      BleDiagnosticFailureDetails.From(new ArithmeticException("sensitive")).ExceptionType);
+  }
+
   [Fact]
   public async Task Shutdown_flushes_correlated_events_and_rotates_existing_large_file()
   {
@@ -19,8 +54,13 @@ public sealed class BleDiagnosticJournalTests
         await File.WriteAllTextAsync(Path.Combine(directory, $"bluetooth.{index}.jsonl"), "old evidence");
       using var journal = new BleDiagnosticJournal(directory, NullLogger<BleDiagnosticJournal>.Instance);
       Guid enrollment = Guid.NewGuid();
+      var failureDetails = BleDiagnosticFailureDetails.From(new WindowsBleException(
+        "service discovery",
+        Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.ProtocolError,
+        0x000E));
       journal.Record(new(DateTimeOffset.UtcNow, enrollment, "HeartRate", 42,
-        "attempt-failed", "NativeDisconnected", Samples: 83, LastValidAgeSeconds: 1.5));
+        "attempt-failed", "NativeDisconnected", Samples: 83, LastValidAgeSeconds: 1.5,
+        FailureDetails: failureDetails));
       await journal.StartAsync(CancellationToken.None);
       await journal.StopAsync(CancellationToken.None);
 
@@ -37,6 +77,12 @@ public sealed class BleDiagnosticJournalTests
       Assert.Equal(enrollment, entry.GetProperty("EnrollmentId").GetGuid());
       Assert.Equal(42, entry.GetProperty("Generation").GetInt64());
       Assert.Equal(1.5, entry.GetProperty("LastValidAgeSeconds").GetDouble());
+      JsonElement details = entry.GetProperty("FailureDetails");
+      Assert.Equal("WindowsBleException", details.GetProperty("ExceptionType").GetString());
+      Assert.Equal("ProtocolError", details.GetProperty("GattCommunicationStatus").GetString());
+      Assert.Equal(0x000E, details.GetProperty("AttProtocolError").GetInt32());
+      Assert.False(details.TryGetProperty("DisconnectOrigin", out _));
+      Assert.DoesNotContain("service discovery", lines[1], StringComparison.OrdinalIgnoreCase);
       Assert.Equal(0, journal.DroppedEvents);
       Assert.NotNull(journal.LastWriteAtUtc);
       Assert.Equal(32, Directory.GetFiles(directory).Length);

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
+using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.Gateway.Devices;
 
@@ -17,7 +18,56 @@ public sealed record BleDiagnosticEvent(
   long? InvalidValueSamples = null, double? MaximumNotificationIntervalSeconds = null,
   string? OperationStage = null, Guid? PreviousEnrollmentId = null,
   string? PreviousState = null, string? PreviousQuality = null,
-  double? PreviousAgeSeconds = null, DateTimeOffset? CapturedAtUtc = null);
+  double? PreviousAgeSeconds = null, DateTimeOffset? CapturedAtUtc = null,
+  BleDiagnosticFailureDetails? FailureDetails = null);
+
+// Deliberately allow-lists only native status and lifecycle fields that can
+// distinguish failure paths without retaining device identifiers, messages,
+// UUIDs, notification payloads, or personal telemetry.
+public sealed record BleDiagnosticFailureDetails(
+  string ExceptionType,
+  string? GattCommunicationStatus = null,
+  ushort? AttProtocolError = null,
+  string? DisconnectOrigin = null,
+  DateTimeOffset? DisconnectObservedAtUtc = null,
+  string? GattSessionStatus = null,
+  string? BluetoothError = null,
+  bool? CancellationRequested = null,
+  bool? DisposalRequested = null)
+{
+  public static BleDiagnosticFailureDetails From(Exception exception)
+  {
+    ArgumentNullException.ThrowIfNull(exception);
+    WindowsBleException? gatt = exception as WindowsBleException;
+    WindowsBleDisconnectedException? disconnected = exception as WindowsBleDisconnectedException;
+    return new(
+      SafeExceptionType(exception),
+      gatt?.Status?.ToString(),
+      gatt?.ProtocolError,
+      disconnected?.Origin.ToString(),
+      disconnected?.CallbackAtUtc,
+      disconnected?.SessionStatus?.ToString(),
+      disconnected?.SessionError?.ToString(),
+      disconnected?.CancellationRequested,
+      disconnected?.DisposalRequested);
+  }
+
+  private static string SafeExceptionType(Exception exception) => exception switch
+  {
+    WindowsBleDisconnectedException => nameof(WindowsBleDisconnectedException),
+    WindowsBleDeviceUnavailableException => nameof(WindowsBleDeviceUnavailableException),
+    WindowsBleException => nameof(WindowsBleException),
+    ObjectDisposedException => nameof(ObjectDisposedException),
+    NotSupportedException => nameof(NotSupportedException),
+    InvalidOperationException => nameof(InvalidOperationException),
+    TimeoutException => nameof(TimeoutException),
+    InvalidDataException => nameof(InvalidDataException),
+    FormatException => nameof(FormatException),
+    IOException => nameof(IOException),
+    OperationCanceledException => nameof(OperationCanceledException),
+    _ => "OtherException",
+  };
+}
 
 public sealed class BleDiagnosticJournal(string directory, ILogger<BleDiagnosticJournal> logger) : BackgroundService
 {

@@ -381,7 +381,10 @@ public sealed class ReadOnlyDeviceCoordinator(
         {
           lock (_sync)
           {
-            IReadOnlyList<Guid> progressiveDemand = SelectProgressiveHeartRateDemandLocked(orderedHeartRateIds, now);
+            IReadOnlyList<Guid> progressiveDemand = SelectProgressiveHeartRateDemandLocked(
+              orderedHeartRateIds,
+              now,
+              warmFirstFallback: runDemand.RequiresHeartRate);
             progressiveHeartRateIds.UnionWith(progressiveDemand);
             desiredIds.UnionWith(progressiveDemand);
           }
@@ -484,7 +487,7 @@ public sealed class ReadOnlyDeviceCoordinator(
     DeviceEnrollment enrollment = stored.Enrollment;
     string connectionDeviceId = enrollment.DeviceId;
     var consecutiveFailureCount = 0;
-    var firstAttempt = true;
+    var retryCachedHeartRateLocator = false;
     while (!cancellationToken.IsCancellationRequested)
     {
       long generation = Interlocked.Increment(ref _nextGeneration);
@@ -492,22 +495,6 @@ public sealed class ReadOnlyDeviceCoordinator(
       try
       {
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
-        if (firstAttempt && enrollment.Role == DeviceRole.HeartRate)
-        {
-          attempt.OperationStage = "rediscovery";
-          HeartRateReconnectResolution? initialResolution = await ResolveCurrentDeviceAsync(
-            enrollment,
-            connectionDeviceId,
-            excludeCurrentDevice: false,
-            generation,
-            cancellationToken);
-          cancellationToken.ThrowIfCancellationRequested();
-          if (initialResolution is not null)
-          {
-            connectionDeviceId = initialResolution.DeviceId;
-          }
-        }
-        firstAttempt = false;
         attempt.OperationStage = "connection";
         await using IBleConnection connection = await transport.ConnectAsync(
           connectionDeviceId,
@@ -569,6 +556,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
       catch (Exception exception)
       {
+        bool isCachedHeartRateRetry = retryCachedHeartRateLocator;
+        retryCachedHeartRateLocator = false;
         DateTimeOffset failedAt = timeProvider.GetUtcNow();
         if (attempt.HasEverBeenDurablyStable)
         {
@@ -592,7 +581,8 @@ public sealed class ReadOnlyDeviceCoordinator(
           MaximumNotificationIntervalSeconds: enrollment.Role == DeviceRole.HeartRate
             ? attempt.MaximumNotificationIntervalForDiagnostics
             : null,
-          OperationStage: OperationStageForFailure(exception, attempt.OperationStage)));
+          OperationStage: OperationStageForFailure(exception, attempt.OperationStage),
+          FailureDetails: BleDiagnosticFailureDetails.From(exception)));
         logger.LogWarning(
           exception,
           "Read-only {DeviceRole} connection failed; reconnecting without issuing a treadmill command.",
@@ -611,8 +601,14 @@ public sealed class ReadOnlyDeviceCoordinator(
           failedAt);
         UpdateConnection(enrollment, DeviceConnectionState.Reconnecting, generation, fault: null);
         HeartRateReconnectResolution? resolution = null;
-        if (enrollment.Role == DeviceRole.HeartRate ||
-            exception is WindowsBleDeviceUnavailableException)
+        bool deferHeartRateRediscoveryForCachedRetry =
+          !isCachedHeartRateRetry &&
+          enrollment.Role == DeviceRole.HeartRate &&
+          exception is WindowsBleDisconnectedException &&
+          attempt.HasEverBeenDurablyStable;
+        if (!deferHeartRateRediscoveryForCachedRetry &&
+            (enrollment.Role == DeviceRole.HeartRate ||
+             exception is WindowsBleDeviceUnavailableException))
         {
           resolution = await ResolveCurrentDeviceAsync(
             enrollment,
@@ -632,6 +628,20 @@ public sealed class ReadOnlyDeviceCoordinator(
         {
           connectionDeviceId = resolution.DeviceId;
           continue;
+        }
+        if (deferHeartRateRediscoveryForCachedRetry)
+        {
+          retryCachedHeartRateLocator = true;
+          diagnosticJournal?.Record(new(
+            failedAt,
+            enrollment.Id,
+            enrollment.Role.ToString(),
+            generation,
+            "cached-locator-retry-scheduled",
+            ClassifyFailure(exception).ToString(),
+            exception.HResult,
+            OperationStage: OperationStageForFailure(exception, attempt.OperationStage),
+            FailureDetails: BleDiagnosticFailureDetails.From(exception)));
         }
         try
         {
@@ -695,7 +705,8 @@ public sealed class ReadOnlyDeviceCoordinator(
         "Fresh {DeviceRole} rediscovery was unavailable; retaining bounded reconnect backoff.",
         enrollment.Role);
       diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
-        "rediscovery-failed", ClassifyFailure(exception).ToString(), exception.HResult));
+        "rediscovery-failed", ClassifyFailure(exception).ToString(), exception.HResult,
+        FailureDetails: BleDiagnosticFailureDetails.From(exception)));
       // Name/family fallback is safe only when the complete bounded scan was
       // observed. Adapter or subscriber overflow must fail closed rather than
       // turn a genuinely ambiguous household into an apparently unique match.
@@ -789,15 +800,18 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   private IReadOnlyList<Guid> SelectProgressiveHeartRateDemandLocked(
     IReadOnlyList<Guid> orderedEnrollmentIds,
-    DateTimeOffset now)
+    DateTimeOffset now,
+    bool warmFirstFallback = false)
   {
     var desired = new List<Guid>(orderedEnrollmentIds.Count);
     for (var index = 0; index < orderedEnrollmentIds.Count; index++)
     {
       Guid enrollmentId = orderedEnrollmentIds[index];
       desired.Add(enrollmentId);
-      if (!ShouldActivateHeartRateFallbackLocked(enrollmentId, now)) break;
-      if (index + 1 < orderedEnrollmentIds.Count &&
+      bool warmFallback = warmFirstFallback && index == 0 && orderedEnrollmentIds.Count > 1;
+      bool shouldActivateFallback = ShouldActivateHeartRateFallbackLocked(enrollmentId, now);
+      if (!warmFallback && !shouldActivateFallback) break;
+      if (shouldActivateFallback && index + 1 < orderedEnrollmentIds.Count &&
           _heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime) &&
           !runtime.RequiresStableRecovery)
       {
@@ -1116,7 +1130,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
       diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
-        "optional-device-information-failed", ClassifyFailure(exception).ToString(), exception.HResult));
+        "optional-device-information-failed", ClassifyFailure(exception).ToString(), exception.HResult,
+        FailureDetails: BleDiagnosticFailureDetails.From(exception)));
       logger.LogDebug(exception, "Optional heart-rate device information was unavailable.");
     }
     cancellationToken.ThrowIfCancellationRequested();
@@ -1158,7 +1173,8 @@ public sealed class ReadOnlyDeviceCoordinator(
       catch (Exception exception) when (exception is not OperationCanceledException)
       {
         diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
-          "optional-battery-read-failed", ClassifyFailure(exception).ToString(), exception.HResult));
+          "optional-battery-read-failed", ClassifyFailure(exception).ToString(), exception.HResult,
+          FailureDetails: BleDiagnosticFailureDetails.From(exception)));
         logger.LogDebug(exception, "Optional heart-rate battery read was unavailable.");
       }
     }
@@ -1188,7 +1204,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     catch (Exception exception)
     {
       diagnosticJournal?.Record(new(timeProvider.GetUtcNow(), enrollment.Id, enrollment.Role.ToString(), generation,
-        "optional-battery-notifications-ended", ClassifyFailure(exception).ToString(), exception.HResult));
+        "optional-battery-notifications-ended", ClassifyFailure(exception).ToString(), exception.HResult,
+        FailureDetails: BleDiagnosticFailureDetails.From(exception)));
       logger.LogDebug(exception, "Optional heart-rate battery notifications ended.");
     }
   }
