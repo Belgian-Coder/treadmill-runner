@@ -132,6 +132,7 @@ $transactionStarted = $false
 $previousPackageSha256 = $null
 $previousManifestSha256 = $null
 $manifestSha256 = $null
+$feedReplacementUnresolvedPaths = @()
 $feedProcess = Get-Process -Id $PID -ErrorAction Stop
 $feedProcessStartTimeUtc = $feedProcess.StartTime.ToUniversalTime().ToString('O')
 $feedProcessPath = [string]$feedProcess.Path
@@ -141,8 +142,18 @@ function Get-FeedSha256 {
     return ([string](Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash).ToUpperInvariant()
 }
 
+function Get-FeedReplacementBackupPath {
+    param([Parameter(Mandatory)][string]$Destination, [Parameter(Mandatory)][string]$TransactionId)
+    if ($TransactionId -notmatch '^[0-9a-fA-F]{32}$') { throw 'The feed replacement transaction id is invalid.' }
+    return "$Destination.replace-backup-$TransactionId"
+}
+
 function Copy-DurableFile {
-    param([Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Destination)
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][string]$TransactionId
+    )
     $temporary = "$Destination.write-tmp"
     $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
     $destinationStream = [System.IO.FileStream]::new(
@@ -156,8 +167,65 @@ function Copy-DurableFile {
         $destinationStream.Dispose()
         $sourceStream.Dispose()
     }
-    if ([System.IO.File]::Exists($Destination)) { [System.IO.File]::Replace($temporary, $Destination, $null, $true) }
+    if ([System.IO.File]::Exists($Destination)) {
+        Replace-DurableFile -Source $temporary -Destination $Destination -TransactionId $TransactionId
+    }
     else { [System.IO.File]::Move($temporary, $Destination) }
+}
+
+function Replace-DurableFile {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][string]$TransactionId
+    )
+    # File.Replace requires a non-empty backup path on Windows/.NET. Keep the
+    # backup transaction-owned and deterministic. If Replace throws after
+    # moving the old destination, reconcile it before preserving evidence.
+    $replacementBackup = Get-FeedReplacementBackupPath -Destination $Destination -TransactionId $TransactionId
+    $replaceCompleted = $false
+    try {
+        [System.IO.File]::Replace($Source, $Destination, $replacementBackup, $true)
+        $replaceCompleted = $true
+    }
+    catch {
+        $failure = $_.Exception.Message
+        if ([System.IO.File]::Exists($replacementBackup)) {
+            if (-not [System.IO.File]::Exists($Destination)) {
+                try {
+                    [System.IO.File]::Move($replacementBackup, $Destination)
+                }
+                catch {
+                    $script:feedReplacementUnresolvedPaths += $replacementBackup
+                    throw "Durable replacement failed and its backup could not restore the missing destination; the backup was preserved at $replacementBackup. Original: $failure"
+                }
+            }
+            else {
+                $script:feedReplacementUnresolvedPaths += $replacementBackup
+                throw "Durable replacement failed with its replacement backup preserved at $replacementBackup. Original: $failure"
+            }
+        }
+        throw
+    }
+    finally {
+        if ($replaceCompleted -and [System.IO.File]::Exists($replacementBackup)) {
+            try {
+                [System.IO.File]::Delete($replacementBackup)
+            }
+            catch {
+                $script:feedReplacementUnresolvedPaths += $replacementBackup
+                throw "Durable replacement completed but its backup could not be removed; the backup was preserved at $replacementBackup. Original: $($_.Exception.Message)"
+            }
+        }
+    }
+}
+
+function Remove-FeedReplacementBackup {
+    param([Parameter(Mandatory)][string]$Destination, [Parameter(Mandatory)][string]$TransactionId)
+    $replacementBackup = Get-FeedReplacementBackupPath -Destination $Destination -TransactionId $TransactionId
+    if ([System.IO.File]::Exists($replacementBackup)) {
+        [System.IO.File]::Delete($replacementBackup)
+    }
 }
 
 function Write-FeedTransactionState {
@@ -207,7 +275,7 @@ function Write-FeedTransactionState {
     }
     finally { $stream.Dispose() }
     if ([System.IO.File]::Exists($Path)) {
-        [System.IO.File]::Replace($temporary, $Path, $null, $true)
+        Replace-DurableFile -Source $temporary -Destination $Path -TransactionId $TransactionId
     }
     else {
         [System.IO.File]::Move($temporary, $Path)
@@ -245,8 +313,20 @@ function Recover-StaleFeedTransaction {
     $stalePid = [int]$Matches.pid
     $staleRoot = Join-Path $destinationFeed ".feed-transaction-$staleTransactionId"
     $staleStatePath = Join-Path $staleRoot 'state.json'
+    $staleStateReplacementBackup = Get-FeedReplacementBackupPath -Destination $staleStatePath -TransactionId $staleTransactionId
+    Assert-FeedPathUnderDestination -Path $staleStateReplacementBackup | Out-Null
     if (-not (Test-Path -LiteralPath $staleStatePath -PathType Leaf)) {
-        throw 'The stable feed maintenance marker has no recoverable transaction state.'
+        if (Test-Path -LiteralPath $staleStateReplacementBackup -PathType Leaf) {
+            try {
+                [System.IO.File]::Move($staleStateReplacementBackup, $staleStatePath)
+            }
+            catch {
+                throw "The stable feed transaction state is missing and its deterministic replacement backup could not be restored: $($_.Exception.Message)"
+            }
+        }
+        else {
+            throw 'The stable feed maintenance marker has no recoverable transaction state.'
+        }
     }
     $state = Get-Content -LiteralPath $staleStatePath -Raw | ConvertFrom-Json
     if ([int]$state.schemaVersion -ne 1 -or [string]$state.transactionId -ne $staleTransactionId) {
@@ -276,7 +356,11 @@ function Recover-StaleFeedTransaction {
     $staleManifest = Join-Path $destinationFeed 'stable.manifest.json'
     $staleBackupPackage = Join-Path $staleRoot $stalePackageName
     $staleBackupManifest = Join-Path $staleRoot 'stable.manifest.json'
-    foreach ($path in @($stalePackage, $staleManifest, $staleBackupPackage, $staleBackupManifest, [string]$state.temporaryPackage, [string]$state.temporaryManifest)) {
+    $staleReplacementBackupPackage = Get-FeedReplacementBackupPath -Destination $stalePackage -TransactionId $staleTransactionId
+    $staleReplacementBackupManifest = Get-FeedReplacementBackupPath -Destination $staleManifest -TransactionId $staleTransactionId
+    foreach ($path in @($staleStateReplacementBackup, $stalePackage, $staleManifest, $staleBackupPackage, $staleBackupManifest,
+            $staleReplacementBackupPackage, $staleReplacementBackupManifest,
+            [string]$state.temporaryPackage, [string]$state.temporaryManifest)) {
         if (-not [string]::IsNullOrWhiteSpace($path)) { Assert-FeedPathUnderDestination -Path $path | Out-Null }
     }
     $phase = [string]$state.phase
@@ -290,6 +374,8 @@ function Recover-StaleFeedTransaction {
             (Get-FeedSha256 -Path $staleManifest) -ne [string]$state.manifestSha256) {
             throw 'The published stable feed pair failed durable recovery verification.'
         }
+        Remove-FeedReplacementBackup -Destination $stalePackage -TransactionId $staleTransactionId
+        Remove-FeedReplacementBackup -Destination $staleManifest -TransactionId $staleTransactionId
         Remove-OwnedFeedMarker -TransactionId $staleTransactionId
     }
     elseif ($phase -in @('MarkerCreated', 'BackupsReady', 'ReplacementStarted')) {
@@ -306,22 +392,32 @@ function Recover-StaleFeedTransaction {
             )
             foreach ($check in $hashChecks) {
                 $path = [string]$check.Path
-                if (Test-Path -LiteralPath $path -PathType Leaf -and (Get-FeedSha256 -Path $path) -notin @($check.AllowedHashes)) {
-                    throw 'The stable feed destination changed outside the recorded transaction.'
+                if (Test-Path -LiteralPath $path -PathType Leaf) {
+                    if ((Get-FeedSha256 -Path $path) -notin @($check.AllowedHashes)) {
+                        throw 'The stable feed destination changed outside the recorded transaction.'
+                    }
                 }
             }
             if ([bool]$state.hadPackage) {
                 if (-not (Test-Path -LiteralPath $staleBackupPackage -PathType Leaf) -or (Get-FeedSha256 -Path $staleBackupPackage) -ne [string]$state.previousPackageSha256) { throw 'The previous stable package backup is missing or corrupt.' }
-                Copy-DurableFile -Source $staleBackupPackage -Destination $stalePackage
+                if (Test-Path -LiteralPath $stalePackage -PathType Leaf) {
+                    Remove-FeedReplacementBackup -Destination $stalePackage -TransactionId $staleTransactionId
+                }
+                Copy-DurableFile -Source $staleBackupPackage -Destination $stalePackage -TransactionId $staleTransactionId
             }
             elseif (Test-Path -LiteralPath $stalePackage -PathType Leaf) { Remove-Item -LiteralPath $stalePackage -Force }
             if ([bool]$state.hadManifest) {
                 if (-not (Test-Path -LiteralPath $staleBackupManifest -PathType Leaf) -or (Get-FeedSha256 -Path $staleBackupManifest) -ne [string]$state.previousManifestSha256) { throw 'The previous stable manifest backup is missing or corrupt.' }
-                Copy-DurableFile -Source $staleBackupManifest -Destination $staleManifest
+                if (Test-Path -LiteralPath $staleManifest -PathType Leaf) {
+                    Remove-FeedReplacementBackup -Destination $staleManifest -TransactionId $staleTransactionId
+                }
+                Copy-DurableFile -Source $staleBackupManifest -Destination $staleManifest -TransactionId $staleTransactionId
             }
             elseif (Test-Path -LiteralPath $staleManifest -PathType Leaf) { Remove-Item -LiteralPath $staleManifest -Force }
             if ([bool]$state.hadPackage -and (Get-FeedSha256 -Path $stalePackage) -ne [string]$state.previousPackageSha256) { throw 'The previous stable package could not be restored.' }
             if ([bool]$state.hadManifest -and (Get-FeedSha256 -Path $staleManifest) -ne [string]$state.previousManifestSha256) { throw 'The previous stable manifest could not be restored.' }
+            Remove-FeedReplacementBackup -Destination $stalePackage -TransactionId $staleTransactionId
+            Remove-FeedReplacementBackup -Destination $staleManifest -TransactionId $staleTransactionId
         }
         Remove-OwnedFeedMarker -TransactionId $staleTransactionId
     }
@@ -376,10 +472,10 @@ try {
     $hadManifest = Test-Path -LiteralPath $destinationManifest -PathType Leaf
     $previousPackageSha256 = if ($hadPackage) { Get-FeedSha256 -Path $destinationPackage } else { $null }
     $previousManifestSha256 = if ($hadManifest) { Get-FeedSha256 -Path $destinationManifest } else { $null }
-    if ($hadPackage) { Copy-DurableFile -Source $destinationPackage -Destination $backupPackage }
-    if ($hadManifest) { Copy-DurableFile -Source $destinationManifest -Destination $backupManifest }
-    Copy-DurableFile -Source $packageSource -Destination $temporaryPackage
-    Copy-DurableFile -Source $manifestSource -Destination $temporaryManifest
+    if ($hadPackage) { Copy-DurableFile -Source $destinationPackage -Destination $backupPackage -TransactionId $transactionId }
+    if ($hadManifest) { Copy-DurableFile -Source $destinationManifest -Destination $backupManifest -TransactionId $transactionId }
+    Copy-DurableFile -Source $packageSource -Destination $temporaryPackage -TransactionId $transactionId
+    Copy-DurableFile -Source $manifestSource -Destination $temporaryManifest -TransactionId $transactionId
     $copiedPackageSha256 = Get-FeedSha256 -Path $temporaryPackage
     $copiedManifestSha256 = Get-FeedSha256 -Path $temporaryManifest
     if ($copiedPackageSha256 -ne $actualHash -or $copiedManifestSha256 -ne $validatedManifestSha256) {
@@ -416,22 +512,45 @@ try {
 catch {
     $failure = $_.Exception.Message
     if (-not $transactionStarted) {
+        if (@($feedReplacementUnresolvedPaths).Count -gt 0) {
+            throw "Stable feed replacement did not start and recovery evidence was preserved at $(@($feedReplacementUnresolvedPaths) -join ', '). $failure"
+        }
         # Marker, transaction root, and temporary copies are transaction-owned
         # even when backup/temp publication fails before replacement starts.
-        # Mark cleanup as safe; incomplete rollback evidence is preserved only
-        # after a replacement has actually begun.
+        # Mark cleanup as safe only when no replacement backup needs recovery.
         $preTransactionCleanupRequired = $true
         throw "Stable feed replacement did not start. $failure"
     }
     try {
-        if ($hadPackage) { Copy-DurableFile -Source $backupPackage -Destination $destinationPackage }
+        if ($hadPackage) {
+            if (-not (Test-Path -LiteralPath $backupPackage -PathType Leaf) -or
+                (Get-FeedSha256 -Path $backupPackage) -ne $previousPackageSha256) {
+                throw 'The previous stable package backup is missing or corrupt.'
+            }
+            if (Test-Path -LiteralPath $destinationPackage -PathType Leaf) {
+                Remove-FeedReplacementBackup -Destination $destinationPackage -TransactionId $transactionId
+            }
+            Copy-DurableFile -Source $backupPackage -Destination $destinationPackage -TransactionId $transactionId
+        }
         elseif (Test-Path -LiteralPath $destinationPackage) { Remove-Item -LiteralPath $destinationPackage -Force }
-        if ($hadManifest) { Copy-DurableFile -Source $backupManifest -Destination $destinationManifest }
+        if ($hadManifest) {
+            if (-not (Test-Path -LiteralPath $backupManifest -PathType Leaf) -or
+                (Get-FeedSha256 -Path $backupManifest) -ne $previousManifestSha256) {
+                throw 'The previous stable manifest backup is missing or corrupt.'
+            }
+            if (Test-Path -LiteralPath $destinationManifest -PathType Leaf) {
+                Remove-FeedReplacementBackup -Destination $destinationManifest -TransactionId $transactionId
+            }
+            Copy-DurableFile -Source $backupManifest -Destination $destinationManifest -TransactionId $transactionId
+        }
         elseif (Test-Path -LiteralPath $destinationManifest) { Remove-Item -LiteralPath $destinationManifest -Force }
         if (($hadPackage -and (Get-FileHash -LiteralPath $destinationPackage -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $backupPackage -Algorithm SHA256).Hash) -or
             ($hadManifest -and (Get-FileHash -LiteralPath $destinationManifest -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $backupManifest -Algorithm SHA256).Hash)) {
             throw 'The previous stable feed pair could not be verified after restore.'
         }
+        Remove-FeedReplacementBackup -Destination $destinationPackage -TransactionId $transactionId
+        Remove-FeedReplacementBackup -Destination $destinationManifest -TransactionId $transactionId
+        $script:feedReplacementUnresolvedPaths = @()
         $rollbackVerified = $true
     }
     catch {
@@ -440,7 +559,8 @@ catch {
     throw "Stable feed replacement failed; the previous stable feed pair was restored. $failure"
 }
 finally {
-    if ($publicationVerified -or $rollbackVerified -or $preTransactionCleanupRequired) {
+    if (($publicationVerified -or $rollbackVerified -or $preTransactionCleanupRequired) -and
+        @($feedReplacementUnresolvedPaths).Count -eq 0) {
         foreach ($temporary in @($temporaryPackage, $temporaryManifest)) {
             if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
         }
@@ -449,6 +569,10 @@ finally {
             if ($markerContent -match "^feed $([regex]::Escape($transactionId)) ") {
                 Remove-Item -LiteralPath $maintenanceMarkerPath -Force
             }
+        }
+        if ($publicationVerified -or $rollbackVerified) {
+            Remove-FeedReplacementBackup -Destination $destinationPackage -TransactionId $transactionId
+            Remove-FeedReplacementBackup -Destination $destinationManifest -TransactionId $transactionId
         }
         if (Test-Path -LiteralPath $transactionRoot) { Remove-Item -LiteralPath $transactionRoot -Recurse -Force }
     }

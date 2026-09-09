@@ -234,8 +234,21 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("previousPackageSha256", script, StringComparison.Ordinal);
     Assert.Contains("previousManifestSha256", script, StringComparison.Ordinal);
     Assert.Contains("function Copy-DurableFile", script, StringComparison.Ordinal);
+    Assert.Contains("function Get-FeedReplacementBackupPath", script, StringComparison.Ordinal);
+    Assert.Contains("function Replace-DurableFile", script, StringComparison.Ordinal);
+    Assert.Contains("return \"$Destination.replace-backup-$TransactionId\"", script, StringComparison.Ordinal);
+    Assert.Contains("-TransactionId $TransactionId", script, StringComparison.Ordinal);
+    Assert.Contains("feedReplacementUnresolvedPaths", script, StringComparison.Ordinal);
+    Assert.Contains("the backup was preserved at", script, StringComparison.Ordinal);
+    Assert.Contains("staleStateReplacementBackup", script, StringComparison.Ordinal);
+    Assert.Contains("File]::Move($staleStateReplacementBackup, $staleStatePath)", script, StringComparison.Ordinal);
+    Assert.Contains("Remove-FeedReplacementBackup -Destination $stalePackage", script, StringComparison.Ordinal);
+    Assert.Contains("Remove-FeedReplacementBackup -Destination $staleManifest", script, StringComparison.Ordinal);
+    Assert.Contains("@($feedReplacementUnresolvedPaths).Count -eq 0", script, StringComparison.Ordinal);
     Assert.Contains("$destinationStream.Flush($true)", script, StringComparison.Ordinal);
     Assert.Contains("Copy-DurableFile -Source $backupPackage -Destination $destinationPackage", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $Destination, $null, $true)", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $Path, $null, $true)", script, StringComparison.Ordinal);
     Assert.Contains("$validatedManifestSha256", script, StringComparison.Ordinal);
     Assert.Contains("The stable feed source changed after signature and package validation", script, StringComparison.Ordinal);
     int feedMutex = script.IndexOf("$maintenanceMutex =", StringComparison.Ordinal);
@@ -243,6 +256,195 @@ public sealed class ReleaseScriptContractTests
     int feedSnapshot = script.IndexOf("$hadPackage = Test-Path", StringComparison.Ordinal);
     Assert.True(feedMutex >= 0 && feedMarker > feedMutex && feedSnapshot > feedMarker,
       "feed rollback existence snapshots must be taken after the mutex and marker are held");
+  }
+
+  [Fact]
+  public async Task Stable_feed_durable_replacements_supply_a_nonempty_backup_path()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-stable-update-feed.ps1"));
+    int functionsStart = source.IndexOf("function Get-FeedSha256", StringComparison.Ordinal);
+    int functionsEnd = source.IndexOf("function Remove-OwnedFeedMarker", functionsStart, StringComparison.Ordinal);
+    Assert.True(functionsStart >= 0 && functionsEnd > functionsStart, "The feed durable-file functions must remain extractable for the regression harness.");
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.FeedReplaceTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "replace-test.ps1");
+    string functions = source.Substring(functionsStart, functionsEnd - functionsStart);
+    string testScript = $$"""
+    $ErrorActionPreference = 'Stop'
+    $feedProcessStartTimeUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    $feedProcessPath = 'feed-replace-regression-test'
+    {{functions}}
+    $root = '{{root.Replace("'", "''", StringComparison.Ordinal)}}'
+    $sourcePath = Join-Path $root 'source.bin'
+    $destinationPath = Join-Path $root 'destination.bin'
+    [System.IO.File]::WriteAllText($sourcePath, 'new')
+    [System.IO.File]::WriteAllText($destinationPath, 'old')
+    Copy-DurableFile -Source $sourcePath -Destination $destinationPath -TransactionId 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    if ([System.IO.File]::ReadAllText($destinationPath) -cne 'new') { throw 'Copy-DurableFile did not replace the existing destination.' }
+
+    $statePath = Join-Path $root 'state.json'
+    Write-FeedTransactionState -Path $statePath -TransactionId 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' -Version '1.5.77' -PackageName 'package.zip' -Phase 'MarkerCreated'
+    Write-FeedTransactionState -Path $statePath -TransactionId 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' -Version '1.5.77' -PackageName 'package.zip' -Phase 'BackupsReady'
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if ([string]$state.phase -cne 'BackupsReady') { throw 'Write-FeedTransactionState did not replace an existing state file.' }
+    if (@(Get-ChildItem -LiteralPath $root -Filter '*.replace-backup-*' -Force).Count -ne 0) { throw 'A transient replace backup was left behind.' }
+    if (@(Get-ChildItem -LiteralPath $root -Filter '*.write-tmp' -Force).Count -ne 0) { throw 'A transient durable-copy file was left behind.' }
+    """;
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Stable-feed replacement regression harness failed: {error}{Environment.NewLine}{output}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task Stable_feed_recovery_owns_missing_state_and_exact_replacement_backups()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-stable-update-feed.ps1"));
+    int functionsStart = source.IndexOf("function Get-FeedSha256", StringComparison.Ordinal);
+    int functionsEnd = source.IndexOf("function Wait-MaintenanceMutex", functionsStart, StringComparison.Ordinal);
+    Assert.True(functionsStart >= 0 && functionsEnd > functionsStart, "The feed recovery functions must remain extractable for the regression harness.");
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.FeedRecoveryTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "recovery-test.ps1");
+    string functions = source.Substring(functionsStart, functionsEnd - functionsStart);
+    string testScript = $$"""
+    $ErrorActionPreference = 'Stop'
+    $feedReplacementUnresolvedPaths = @()
+    $root = '{{root.Replace("'", "''", StringComparison.Ordinal)}}'
+    $updates = Join-Path $root 'updates'
+    $destinationFeed = Join-Path $updates 'feed'
+    $maintenanceMarkerPath = Join-Path $updates 'service-maintenance.lock'
+    New-Item -ItemType Directory -Path $destinationFeed -Force | Out-Null
+    {{functions}}
+    function Get-FeedSha256 {
+      param([Parameter(Mandatory)][string]$Path)
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      try { return ([System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($Path)))).Replace('-', '').ToUpperInvariant() }
+      finally { $sha.Dispose() }
+    }
+
+    $transactionOne = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    $staleRootOne = Join-Path $destinationFeed ".feed-transaction-$transactionOne"
+    New-Item -ItemType Directory -Path $staleRootOne -Force | Out-Null
+    $packageOne = Join-Path $destinationFeed 'one.zip'
+    $manifestPath = Join-Path $destinationFeed 'stable.manifest.json'
+    [System.IO.File]::WriteAllText($packageOne, 'new-package-one')
+    [System.IO.File]::WriteAllText($manifestPath, 'new-manifest-one')
+    $replacementPackageOne = Get-FeedReplacementBackupPath -Destination $packageOne -TransactionId $transactionOne
+    $replacementManifestOne = Get-FeedReplacementBackupPath -Destination $manifestPath -TransactionId $transactionOne
+    [System.IO.File]::WriteAllText($replacementPackageOne, 'old-package-one')
+    [System.IO.File]::WriteAllText($replacementManifestOne, 'old-manifest-one')
+    $statePathOne = Join-Path $staleRootOne 'state.json'
+    $stateBackupOne = Get-FeedReplacementBackupPath -Destination $statePathOne -TransactionId $transactionOne
+    $stateOne = [ordered]@{
+      schemaVersion = 1
+      transactionId = $transactionOne
+      processId = 2147483647
+      processStartTimeUtc = [DateTimeOffset]::UtcNow.ToString('O')
+      processPath = 'dead-feed-recovery-test'
+      version = '1.5.77'
+      packageName = 'one.zip'
+      phase = 'Published'
+      snapshotReady = $true
+      hadPackage = $true
+      hadManifest = $true
+      packageSha256 = Get-FeedSha256 -Path $packageOne
+      manifestSha256 = Get-FeedSha256 -Path $manifestPath
+      previousPackageSha256 = Get-FeedSha256 -Path $replacementPackageOne
+      previousManifestSha256 = Get-FeedSha256 -Path $replacementManifestOne
+      temporaryPackage = ''
+      temporaryManifest = ''
+    }
+    [System.IO.File]::WriteAllText($stateBackupOne, ($stateOne | ConvertTo-Json -Depth 10 -Compress))
+    [System.IO.File]::WriteAllText($maintenanceMarkerPath, "feed $transactionOne 2147483647 $([DateTimeOffset]::UtcNow.ToString('O'))")
+    Recover-StaleFeedTransaction
+    if (Test-Path -LiteralPath $stateBackupOne -PathType Leaf) { throw 'The missing state replacement backup was not consumed.' }
+    if (Test-Path -LiteralPath $maintenanceMarkerPath -PathType Leaf) { throw 'The published stale marker was not removed.' }
+    if (Test-Path -LiteralPath $staleRootOne) { throw 'The published stale transaction root was not removed.' }
+    if (Test-Path -LiteralPath $replacementPackageOne) { throw 'The exact package replacement backup was not removed.' }
+    if (Test-Path -LiteralPath $replacementManifestOne) { throw 'The exact manifest replacement backup was not removed.' }
+
+    $transactionTwo = 'cccccccccccccccccccccccccccccccc'
+    $staleRootTwo = Join-Path $destinationFeed ".feed-transaction-$transactionTwo"
+    New-Item -ItemType Directory -Path $staleRootTwo -Force | Out-Null
+    $packageTwo = Join-Path $destinationFeed 'two.zip'
+    $staleBackupTwo = Join-Path $staleRootTwo 'two.zip'
+    [System.IO.File]::WriteAllText($staleBackupTwo, 'old-package-two')
+    $replacementPackageTwo = Get-FeedReplacementBackupPath -Destination $packageTwo -TransactionId $transactionTwo
+    [System.IO.File]::WriteAllText($replacementPackageTwo, 'old-package-two')
+    $statePathTwo = Join-Path $staleRootTwo 'state.json'
+    $stateTwo = [ordered]@{
+      schemaVersion = 1
+      transactionId = $transactionTwo
+      processId = 2147483647
+      processStartTimeUtc = [DateTimeOffset]::UtcNow.ToString('O')
+      processPath = 'dead-feed-recovery-test'
+      version = '1.5.77'
+      packageName = 'two.zip'
+      phase = 'ReplacementStarted'
+      snapshotReady = $true
+      hadPackage = $true
+      hadManifest = $false
+      packageSha256 = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+      manifestSha256 = Get-FeedSha256 -Path $manifestPath
+      previousPackageSha256 = Get-FeedSha256 -Path $staleBackupTwo
+      previousManifestSha256 = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+      temporaryPackage = ''
+      temporaryManifest = ''
+    }
+    [System.IO.File]::WriteAllText($statePathTwo, ($stateTwo | ConvertTo-Json -Depth 10 -Compress))
+    [System.IO.File]::WriteAllText($maintenanceMarkerPath, "feed $transactionTwo 2147483647 $([DateTimeOffset]::UtcNow.ToString('O'))")
+    Recover-StaleFeedTransaction
+    if (-not (Test-Path -LiteralPath $packageTwo -PathType Leaf)) { throw 'The missing destination was not restored from the durable transaction backup.' }
+    if ([System.IO.File]::ReadAllText($packageTwo) -cne 'old-package-two') { throw 'The missing destination has the wrong recovered content.' }
+    if (Test-Path -LiteralPath $replacementPackageTwo) { throw 'The exact stale replacement backup was not removed after verified restore.' }
+    if (Test-Path -LiteralPath $maintenanceMarkerPath -PathType Leaf) { throw 'The replacement-started stale marker was not removed.' }
+    if (Test-Path -LiteralPath $staleRootTwo) { throw 'The replacement-started stale transaction root was not removed.' }
+    """;
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Stable-feed recovery regression harness failed: {error}{Environment.NewLine}{output}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
   }
 
   [Fact]
@@ -331,6 +533,109 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
+  public async Task Privileged_helper_reconciles_transaction_swaps_and_journal_backups()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    int durableStart = source.IndexOf("function Write-DurableTextFile", StringComparison.Ordinal);
+    int durableEnd = source.IndexOf("function Assert-UnderRoot", durableStart, StringComparison.Ordinal);
+    int journalStart = source.IndexOf("function Read-TransactionJournal", durableEnd, StringComparison.Ordinal);
+    int journalEnd = source.IndexOf("function Wait-ReleaseHealth", journalStart, StringComparison.Ordinal);
+    Assert.True(durableStart >= 0 && durableEnd > durableStart && journalStart > durableEnd && journalEnd > journalStart,
+      "The helper durable-file and journal functions must remain extractable for the regression harness.");
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.HelperReplaceTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "helper-recovery-test.ps1");
+    string durableFunctions = source.Substring(durableStart, durableEnd - durableStart);
+    string journalFunctions = source.Substring(journalStart, journalEnd - journalStart);
+    string testScript = $$"""
+    $ErrorActionPreference = 'Stop'
+    function Get-FileSha256 {
+      param([Parameter(Mandatory)][string]$Path)
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      try { return ([System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($Path)))).Replace('-', '').ToUpperInvariant() }
+      finally { $sha.Dispose() }
+    }
+    function New-MaintenanceMutex { return [System.Threading.Mutex]::new($false, 'Local\TreadmillRunner.HelperReplaceRegression') }
+    function Wait-MaintenanceMutex {
+      param([Parameter(Mandatory)][System.Threading.Mutex]$Mutex, [int]$TimeoutMilliseconds = 30000)
+      try { return $Mutex.WaitOne($TimeoutMilliseconds) }
+      catch [System.Threading.AbandonedMutexException] { return $true }
+    }
+    {{durableFunctions}}
+    {{journalFunctions}}
+    $root = '{{root.Replace("'", "''", StringComparison.Ordinal)}}'
+
+    $durable = Join-Path $root 'durable.bin'
+    $destination = Join-Path $root 'destination.bin'
+    $swap = Join-Path $root 'destination.swap'
+    [System.IO.File]::WriteAllText($durable, 'old')
+    [System.IO.File]::WriteAllText($swap, 'new')
+    $expectedHash = Get-FileSha256 -Path $durable
+    Reconcile-TransactionSwap -Destination $destination -ReplacementBackupPath $swap -DurableSourcePath $durable -ExpectedHash $expectedHash
+    if ([System.IO.File]::ReadAllText($destination) -cne 'old' -or (Test-Path -LiteralPath $swap)) {
+      throw 'A missing destination was not restored from its verified durable source.'
+    }
+
+    [System.IO.File]::WriteAllText($destination, 'new')
+    [System.IO.File]::WriteAllText($swap, 'newer')
+    Reconcile-TransactionSwap -Destination $destination -ReplacementBackupPath $swap -DurableSourcePath $durable -ExpectedHash $expectedHash
+    if ([System.IO.File]::ReadAllText($destination) -cne 'old' -or (Test-Path -LiteralPath $swap)) {
+      throw 'A mismatched destination was not restored from its verified durable source.'
+    }
+
+    $transaction = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    $version = '1.5.78'
+    $journal = Join-Path $root 'transaction.json'
+    $journalSwap = "$journal.replace-backup"
+    $activated = [ordered]@{
+      schemaVersion = 1
+      transactionId = $transaction
+      version = $version
+      state = 'Activated'
+      occurredAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+      reason = 'regression'
+    } | ConvertTo-Json
+    [System.IO.File]::WriteAllText($journalSwap, $activated)
+    Reconcile-JournalSwap -Path $journal -TransactionId $transaction -Version $version
+    $restored = Read-TransactionJournal -Path $journal -TransactionId $transaction -Version $version
+    if ([string]$restored.state -cne 'Activated' -or (Test-Path -LiteralPath $journalSwap)) {
+      throw 'The missing Activated journal was not restored before classification.'
+    }
+
+    [System.IO.File]::WriteAllText($journalSwap, $activated)
+    Write-JournalPayload -Path $journal -TransactionId $transaction -Version $version -State 'RolledBack' -Reason 'retry'
+    $rewritten = Read-TransactionJournal -Path $journal -TransactionId $transaction -Version $version
+    if ([string]$rewritten.state -cne 'RolledBack' -or (Test-Path -LiteralPath $journalSwap)) {
+      throw 'A surviving journal swap wedged the next durable journal write.'
+    }
+    """;
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Privileged-helper replacement recovery harness failed: {error}{Environment.NewLine}{output}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
   public void Privileged_helper_derives_trust_and_roots_from_protected_arguments()
   {
     string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
@@ -356,7 +661,10 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("The pinned certificate or protected task actions changed", helper, StringComparison.Ordinal);
     Assert.Contains("Write-JournalPayload", helper, StringComparison.Ordinal);
     Assert.Contains("function Write-DurableTextFile", helper, StringComparison.Ordinal);
+    Assert.Contains("function Replace-DurableFile", helper, StringComparison.Ordinal);
     Assert.Contains("$stream.Flush($true)", helper, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $Path, $null, $true)", helper, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $Destination, $null, $true)", helper, StringComparison.Ordinal);
     Assert.Contains("Invoke-StaleUpdateRecovery", helper, StringComparison.Ordinal);
     Assert.Contains("parentProcessStartTicks", helper, StringComparison.Ordinal);
     Assert.Contains("before the child claimed transaction ownership", helper, StringComparison.Ordinal);
@@ -634,6 +942,13 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("Restore-InstallerServiceImageSafely", script, StringComparison.Ordinal);
     Assert.Contains("current gateway service image changed outside this installer transaction", script, StringComparison.Ordinal);
     Assert.Contains("FileOptions]::WriteThrough", script, StringComparison.Ordinal);
+    Assert.Contains("function Get-InstallerSwapPaths", script, StringComparison.Ordinal);
+    Assert.Contains("function Publish-DurableFile", script, StringComparison.Ordinal);
+    Assert.Contains(".installer-$TransactionId-swap-backup-$leaf.tmp", script, StringComparison.Ordinal);
+    Assert.Contains("$markerStateSwapPaths = Get-InstallerSwapPaths", script, StringComparison.Ordinal);
+    Assert.Contains("[System.IO.File]::Move($markerStateSwapPaths.Backup, $markerStateSwapPaths.Destination)", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $Destination, $null, $true)", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("[System.IO.File]::Replace($temporary, $installerStatePath, $null, $true)", script, StringComparison.Ordinal);
     Assert.Contains("The installer maintenance marker is no longer owned by this transaction", script, StringComparison.Ordinal);
     int serviceMutationRecord = script.IndexOf("Write-InstallerState -Phase 'ServiceMutationStarted'", StringComparison.Ordinal);
     int serviceStop = script.IndexOf("Stop-Service -Name $serviceName -Force", serviceMutationRecord, StringComparison.Ordinal);

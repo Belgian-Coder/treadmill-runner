@@ -250,12 +250,110 @@ function Restore-InstallerServiceImageSafely {
     }
 }
 
+function Get-InstallerSwapPaths {
+    param(
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][string]$TransactionId
+    )
+    if ($TransactionId -notmatch '^[0-9a-f]{32}$') { throw 'The installer swap transaction id is invalid.' }
+    $resolvedDestination = [System.IO.Path]::GetFullPath($Destination)
+    $directory = Split-Path -Parent $resolvedDestination
+    $leaf = [System.IO.Path]::GetFileName($resolvedDestination)
+    if ([string]::IsNullOrWhiteSpace($directory) -or [string]::IsNullOrWhiteSpace($leaf)) {
+        throw 'The installer swap destination is invalid.'
+    }
+    [pscustomobject]@{
+        Destination = $resolvedDestination
+        Temporary = Join-Path $directory ".installer-$TransactionId-swap-temp-$leaf.tmp"
+        Backup = Join-Path $directory ".installer-$TransactionId-swap-backup-$leaf.tmp"
+    }
+}
+
+function Publish-DurableFile {
+    param(
+        [Parameter(Mandatory)][string]$Temporary,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][string]$TransactionId
+    )
+    $paths = Get-InstallerSwapPaths -Destination $Destination -TransactionId $TransactionId
+    if ([System.IO.Path]::GetFullPath($Temporary) -ne $paths.Temporary) {
+        throw 'The installer durable-file temporary path is not transaction-owned.'
+    }
+    if (-not [System.IO.File]::Exists($paths.Temporary)) { throw 'The installer durable-file temporary source is missing.' }
+
+    # A backup with no destination is a recoverable interrupted ReplaceFile:
+    # restore the old destination before retrying the intended publication.
+    # A backup with a destination is ambiguous, so retain both artifacts.
+    if ([System.IO.File]::Exists($paths.Backup)) {
+        if ([System.IO.File]::Exists($paths.Destination)) {
+            throw "The installer swap for $($paths.Destination) is ambiguous; preserving its transaction evidence."
+        }
+        try {
+            [System.IO.File]::Move($paths.Backup, $paths.Destination)
+        }
+        catch {
+            throw "The installer swap backup for $($paths.Destination) could not be reconciled safely: $($_.Exception.Message)"
+        }
+        if (-not [System.IO.File]::Exists($paths.Destination)) {
+            throw "The installer swap backup for $($paths.Destination) was not restored."
+        }
+    }
+
+    if (-not [System.IO.File]::Exists($paths.Destination)) {
+        [System.IO.File]::Move($paths.Temporary, $paths.Destination)
+        if (-not [System.IO.File]::Exists($paths.Destination)) {
+            throw "The installer durable file $($paths.Destination) was not published."
+        }
+        return
+    }
+
+    try {
+        # PowerShell binds a null third argument to File.Replace as an empty
+        # backup path. A deterministic same-directory backup keeps the
+        # replacement atomic and identifies the transaction if the process dies.
+        [System.IO.File]::Replace($paths.Temporary, $paths.Destination, $paths.Backup, $true)
+        if (-not [System.IO.File]::Exists($paths.Destination)) {
+            throw "The installer durable file $($paths.Destination) disappeared after replacement."
+        }
+    }
+    catch {
+        $backupExists = [System.IO.File]::Exists($paths.Backup)
+        $destinationExists = [System.IO.File]::Exists($paths.Destination)
+        if ($backupExists -and -not $destinationExists) {
+            try {
+                [System.IO.File]::Move($paths.Backup, $paths.Destination)
+                if (-not [System.IO.File]::Exists($paths.Destination)) {
+                    throw "The installer swap backup for $($paths.Destination) was not restored."
+                }
+            }
+            catch {
+                throw "The installer swap failed and its old destination could not be restored safely: $($_.Exception.Message)"
+            }
+        }
+        elseif ($backupExists -and $destinationExists) {
+            throw "The installer swap for $($paths.Destination) is ambiguous after replacement failure; preserving its transaction evidence."
+        }
+        throw
+    }
+
+    # The replacement is confirmed before deleting the old destination. A
+    # cleanup failure leaves the exact transaction-owned backup for terminal
+    # cleanup or recovery instead of risking data loss.
+    if ([System.IO.File]::Exists($paths.Backup)) {
+        try { [System.IO.File]::Delete($paths.Backup) } catch { }
+    }
+}
+
 function Copy-DurableFile {
-    param([Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Destination)
-    $temporary = "$Destination.write-tmp"
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [string]$TransactionId = $installerTransactionId
+    )
+    $paths = Get-InstallerSwapPaths -Destination $Destination -TransactionId $TransactionId
     $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
     $destinationStream = [System.IO.FileStream]::new(
-        $temporary, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
+        $paths.Temporary, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
         [System.IO.FileShare]::None, 65536, [System.IO.FileOptions]::WriteThrough)
     try {
         $sourceStream.CopyTo($destinationStream)
@@ -265,8 +363,7 @@ function Copy-DurableFile {
         $destinationStream.Dispose()
         $sourceStream.Dispose()
     }
-    if ([System.IO.File]::Exists($Destination)) { [System.IO.File]::Replace($temporary, $Destination, $null, $true) }
-    else { [System.IO.File]::Move($temporary, $Destination) }
+    Publish-DurableFile -Temporary $paths.Temporary -Destination $paths.Destination -TransactionId $TransactionId
 }
 $databaseCreatedByTransaction = $false
 $migrationBackupPath = $null
@@ -318,6 +415,7 @@ function Write-InstallerState {
         processId = $PID
         processStartTimeUtc = $installerProcessStartTimeUtc
         processPath = $installerProcessPath
+        databasePath = $databasePath
         phase = $Phase
         targetOwned = $TargetOwned
         serviceCreated = $ServiceCreated
@@ -353,7 +451,7 @@ function Write-InstallerState {
         protectedFiles = @($installerProtectedFileStates.Values)
         updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     }
-    $temporary = "$installerStatePath.tmp"
+    $temporary = (Get-InstallerSwapPaths -Destination $installerStatePath -TransactionId $installerTransactionId).Temporary
     $payload = [System.Text.UTF8Encoding]::new($false).GetBytes(($state | ConvertTo-Json -Depth 20 -Compress))
     $stream = [System.IO.FileStream]::new($temporary, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
         [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::WriteThrough)
@@ -362,12 +460,7 @@ function Write-InstallerState {
         $stream.Flush($true)
     }
     finally { $stream.Dispose() }
-    if ([System.IO.File]::Exists($installerStatePath)) {
-        [System.IO.File]::Replace($temporary, $installerStatePath, $null, $true)
-    }
-    else {
-        [System.IO.File]::Move($temporary, $installerStatePath)
-    }
+    Publish-DurableFile -Temporary $temporary -Destination $installerStatePath -TransactionId $installerTransactionId
 }
 
 function Restore-InstallerProtectedFiles {
@@ -396,7 +489,7 @@ function Restore-InstallerProtectedFiles {
                 (Get-Sha256Hex -Path $resolvedBackup) -ne [string]$record.backupSha256) {
                 throw "The installer backup for $key failed hash verification."
             }
-            Copy-DurableFile -Source $resolvedBackup -Destination $target
+            Copy-DurableFile -Source $resolvedBackup -Destination $target -TransactionId $stateTransactionId
             if ((Get-Sha256Hex -Path $target) -ne [string]$record.backupSha256) { throw "The installer restore for $key failed hash verification." }
         }
         elseif (Test-Path -LiteralPath $target -PathType Leaf) {
@@ -495,8 +588,90 @@ function Replace-InstallerProtectedFile {
     Write-InstallerState -Phase "ProtectedFileCommitted-$Key"
 }
 
+function Get-InstallerTransactionSwapDestinations {
+    param(
+        [Parameter(Mandatory)][string]$TransactionId,
+        [object]$State = $null
+    )
+    if ($TransactionId -notmatch '^[0-9a-f]{32}$') { throw 'The installer swap transaction id is invalid.' }
+    $destinations = [System.Collections.Generic.List[string]]::new()
+    $destinations.Add((Join-Path $planRoot ".installer-$TransactionId.json"))
+
+    $expectedDatabasePath = [System.IO.Path]::GetFullPath($databasePath)
+    if ($null -ne $State -and $State.PSObject.Properties.Name -contains 'databasePath' -and
+        -not [string]::IsNullOrWhiteSpace([string]$State.databasePath) -and
+        [System.IO.Path]::GetFullPath([string]$State.databasePath) -ne $expectedDatabasePath) {
+        throw 'The installer recovery database path is not the configured database path.'
+    }
+    $destinations.Add($expectedDatabasePath)
+
+    $records = if ($null -ne $State -and $State.PSObject.Properties.Name -contains 'protectedFiles') {
+        @($State.protectedFiles)
+    }
+    else {
+        @($installerProtectedFileStates.Values)
+    }
+    foreach ($record in $records) {
+        $key = [string]$record.key
+        if ($key -notin @('helper', 'guardian', 'certificate')) { throw "The installer swap state contains an unknown protected file key: $key." }
+        $expected = $installerProtectedFileStates[$key]
+        $destinations.Add([System.IO.Path]::GetFullPath([string]$expected.targetPath))
+        if ($record.PSObject.Properties.Name -contains 'backupPath' -and
+            -not [string]::IsNullOrWhiteSpace([string]$record.backupPath)) {
+            $expectedBackup = [System.IO.Path]::GetFullPath((Join-Path $planRoot ".installer-$TransactionId-$key.bak"))
+            if ([System.IO.Path]::GetFullPath([string]$record.backupPath) -ne $expectedBackup) {
+                throw "The installer swap backup for $key is outside the transaction workspace."
+            }
+            $destinations.Add($expectedBackup)
+        }
+    }
+
+    $migrationPath = $null
+    if ($null -ne $State -and $State.PSObject.Properties.Name -contains 'migrationBackupPath' -and
+        [bool]$State.migrationBackupCreated) {
+        $migrationPath = [string]$State.migrationBackupPath
+    }
+    elseif ($TransactionId -eq $installerTransactionId -and -not [string]::IsNullOrWhiteSpace([string]$migrationBackupPath)) {
+        $migrationPath = [string]$migrationBackupPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($migrationPath)) {
+        $expectedMigrationPath = [System.IO.Path]::GetFullPath((Join-Path $backupRoot ".installer-$TransactionId-migration.db"))
+        if ([System.IO.Path]::GetFullPath($migrationPath) -ne $expectedMigrationPath) {
+            throw 'The installer migration swap path is outside the backup root.'
+        }
+        $destinations.Add($expectedMigrationPath)
+    }
+
+    return @($destinations | Sort-Object -Unique)
+}
+
+function Remove-InstallerTransactionSwapArtifacts {
+    param(
+        [Parameter(Mandatory)][string]$TransactionId,
+        [object]$State = $null
+    )
+    foreach ($destination in @(Get-InstallerTransactionSwapDestinations -TransactionId $TransactionId -State $State)) {
+        $paths = Get-InstallerSwapPaths -Destination $destination -TransactionId $TransactionId
+        $destinationExists = [System.IO.File]::Exists($paths.Destination)
+        $backupExists = [System.IO.File]::Exists($paths.Backup)
+        if ($backupExists -and -not $destinationExists) {
+            # Without the destination, the backup may be the only recoverable
+            # copy after an interrupted ReplaceFile. Preserve both artifacts.
+            throw "The installer swap for $($paths.Destination) is ambiguous during cleanup; preserving its transaction evidence."
+        }
+        if ($backupExists) { [System.IO.File]::Delete($paths.Backup) }
+        if ([System.IO.File]::Exists($paths.Temporary)) { [System.IO.File]::Delete($paths.Temporary) }
+    }
+}
+
 function Remove-InstallerTransactionWorkspace {
-    param([Parameter(Mandatory)][string]$TransactionId)
+    param(
+        [Parameter(Mandatory)][string]$TransactionId,
+        [object]$State = $null
+    )
+    # Swap artifacts are removed only after the transaction has reached a
+    # terminal state and every destination has been restored or committed.
+    Remove-InstallerTransactionSwapArtifacts -TransactionId $TransactionId -State $State
     foreach ($name in @('helper', 'guardian', 'certificate')) {
         foreach ($suffix in @('.bak', '.tmp')) {
             $path = Join-Path $planRoot ".installer-$TransactionId-$name$suffix"
@@ -529,6 +704,16 @@ function Commit-InstallerMigrationBackup {
 }
 
 function Remove-InstallerStateAndMarker {
+    $stateForCleanup = $null
+    if (Test-Path -LiteralPath $installerStatePath -PathType Leaf) {
+        $stateForCleanup = Get-Content -LiteralPath $installerStatePath -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ([string]$stateForCleanup.transactionId -ne $installerTransactionId) {
+            throw 'The installer cleanup state does not belong to this transaction.'
+        }
+    }
+    # Reconcile and remove exact transaction-owned swap artifacts while the
+    # journal still proves ownership. Marker/state deletion follows cleanup.
+    Remove-InstallerTransactionWorkspace -TransactionId $installerTransactionId -State $stateForCleanup
     if (Test-Path -LiteralPath $maintenanceMarkerPath -PathType Leaf) {
         $marker = Get-Content -LiteralPath $maintenanceMarkerPath -Raw -ErrorAction SilentlyContinue
         if ($marker -notmatch "^installer $([regex]::Escape($Version)) $([regex]::Escape($installerTransactionId)) ") {
@@ -537,11 +722,10 @@ function Remove-InstallerStateAndMarker {
         Remove-Item -LiteralPath $maintenanceMarkerPath -Force -ErrorAction Stop
         if (Test-Path -LiteralPath $maintenanceMarkerPath -PathType Leaf) { throw 'The installer maintenance marker could not be removed.' }
     }
-    # Remove the marker first. A process interruption between these two
-    # operations leaves recoverable state, but cannot wedge every retry behind
-    # an orphaned ownership marker with no transaction state.
+    # Remove the marker before the journal. A process interruption between
+    # these two operations leaves recoverable state, but cannot wedge every
+    # retry behind an orphaned ownership marker with no transaction state.
     if (Test-Path -LiteralPath $installerStatePath -PathType Leaf) { Remove-Item -LiteralPath $installerStatePath -Force -ErrorAction SilentlyContinue }
-    Remove-InstallerTransactionWorkspace -TransactionId $installerTransactionId
     $migrationWorkspace = Join-Path $backupRoot ".installer-$installerTransactionId-migration.db"
     if (Test-Path -LiteralPath $migrationWorkspace -PathType Leaf) { Remove-Item -LiteralPath $migrationWorkspace -Force -ErrorAction SilentlyContinue }
 }
@@ -624,7 +808,7 @@ function Remove-InstallerRecoveryState {
             }
             Remove-Item -LiteralPath "$databasePath-wal" -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath "$databasePath-shm" -Force -ErrorAction SilentlyContinue
-            Copy-DurableFile -Source $resolvedMigrationBackup -Destination $databasePath
+            Copy-DurableFile -Source $resolvedMigrationBackup -Destination $databasePath -TransactionId ([string]$State.transactionId)
             if ((Get-Sha256Hex -Path $databasePath) -ne [string]$State.migrationBackupSha256) { throw 'The installer migration restore failed hash verification.' }
             Remove-Item -LiteralPath $resolvedMigrationBackup -Force -ErrorAction SilentlyContinue
         }
@@ -651,7 +835,7 @@ function Remove-InstallerRecoveryState {
             throw 'The restored gateway service did not return to Running.'
         }
     }
-    Remove-InstallerTransactionWorkspace -TransactionId ([string]$State.transactionId)
+    Remove-InstallerTransactionWorkspace -TransactionId ([string]$State.transactionId) -State $State
 }
 
 function Recover-StaleInstallerTransaction {
@@ -664,7 +848,23 @@ function Recover-StaleInstallerTransaction {
     $markerVersion = $Matches.version
     $markerPid = [int]$Matches.pid
     $markerStatePath = Join-Path $planRoot ".installer-$markerTransactionId.json"
-    if (-not (Test-Path -LiteralPath $markerStatePath -PathType Leaf)) {
+    $markerStateSwapPaths = Get-InstallerSwapPaths -Destination $markerStatePath -TransactionId $markerTransactionId
+    $markerStateExists = Test-Path -LiteralPath $markerStatePath -PathType Leaf
+    $markerStateBackupExists = [System.IO.File]::Exists($markerStateSwapPaths.Backup)
+    if (-not $markerStateExists -and $markerStateBackupExists) {
+        # A hard death after ReplaceFile moved the old journal to its backup
+        # can leave the destination absent. Restore only this exact
+        # transaction-owned backup before reading the marker state. When both
+        # files exist, retain the backup for terminal cleanup after validation.
+        try {
+            [System.IO.File]::Move($markerStateSwapPaths.Backup, $markerStateSwapPaths.Destination)
+        }
+        catch {
+            throw "The installer transaction state backup could not be restored safely: $($_.Exception.Message)"
+        }
+        $markerStateExists = Test-Path -LiteralPath $markerStatePath -PathType Leaf
+    }
+    if (-not $markerStateExists) {
         throw 'The installer maintenance marker has no recoverable transaction state.'
     }
     $state = Get-Content -LiteralPath $markerStatePath -Raw | ConvertFrom-Json
@@ -700,9 +900,9 @@ function Recover-StaleInstallerTransaction {
         # A crash after the durable Committed record but before marker cleanup
         # must never roll back a ready installation. Clear only the stale
         # transaction evidence, even when the next requested version differs.
+        Remove-InstallerTransactionWorkspace -TransactionId $markerTransactionId -State $state
         Remove-Item -LiteralPath $maintenanceMarkerPath -Force -ErrorAction Stop
         Remove-Item -LiteralPath $markerStatePath -Force -ErrorAction SilentlyContinue
-        Remove-InstallerTransactionWorkspace -TransactionId $markerTransactionId
         $committedMigrationWorkspace = Join-Path $backupRoot ".installer-$markerTransactionId-migration.db"
         Remove-Item -LiteralPath $committedMigrationWorkspace -Force -ErrorAction SilentlyContinue
         return

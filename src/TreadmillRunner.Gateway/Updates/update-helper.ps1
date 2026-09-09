@@ -35,7 +35,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Write-DurableTextFile {
-  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content)
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Content,
+    [string]$ReplacementBackupPath
+  )
   $temporary = "$Path.tmp"
   $payload = [System.Text.UTF8Encoding]::new($false).GetBytes($Content)
   $stream = [System.IO.FileStream]::new(
@@ -50,12 +54,73 @@ function Write-DurableTextFile {
     $stream.Flush($true)
   }
   finally { $stream.Dispose() }
-  if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, $null, $true) }
+  if ([System.IO.File]::Exists($Path)) {
+    if ([string]::IsNullOrWhiteSpace($ReplacementBackupPath)) {
+      $ReplacementBackupPath = "$Path.replace-backup"
+    }
+    Replace-DurableFile -Source $temporary -Destination $Path -ReplacementBackupPath $ReplacementBackupPath
+  }
   else { [System.IO.File]::Move($temporary, $Path) }
 }
 
+function Replace-DurableFile {
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination,
+    [Parameter(Mandatory)][string]$ReplacementBackupPath
+  )
+
+  # Windows PowerShell binds a null File.Replace backup argument as an empty
+  # path. Keep the atomic same-volume replacement, but require a deterministic
+  # transaction-owned backup path. The backup is retained on failure so startup
+  # recovery can distinguish a partial swap from a clean transaction.
+  if ([string]::IsNullOrWhiteSpace($ReplacementBackupPath)) {
+    throw 'The durable replacement backup path is empty.'
+  }
+  if ([System.IO.File]::Exists($ReplacementBackupPath)) {
+    throw "The durable replacement backup already exists: $ReplacementBackupPath"
+  }
+  $replacementSucceeded = $false
+  try {
+    [System.IO.File]::Replace($Source, $Destination, $ReplacementBackupPath, $true)
+    $replacementSucceeded = $true
+  }
+  catch {
+    $replacementError = $_
+    # ReplaceFile can report failure after moving the old destination to its
+    # backup. Restore only when the destination is definitely absent; if both
+    # paths exist, preserve both artifacts for transaction recovery.
+    if (-not [System.IO.File]::Exists($Destination) -and [System.IO.File]::Exists($ReplacementBackupPath)) {
+      try {
+        [System.IO.File]::Move($ReplacementBackupPath, $Destination)
+      }
+      catch {
+        throw "Durable replacement failed and its destination could not be restored: $($_.Exception.Message)"
+      }
+    }
+    throw $replacementError
+  }
+  finally {
+    if ($replacementSucceeded) {
+      try {
+        if ([System.IO.File]::Exists($ReplacementBackupPath)) {
+          [System.IO.File]::Delete($ReplacementBackupPath)
+        }
+      }
+      catch {
+        # The replacement is complete. Leave a named artifact if cleanup is
+        # interrupted so terminal recovery can remove it safely.
+      }
+    }
+  }
+}
+
 function Copy-DurableFile {
-  param([Parameter(Mandatory)][string]$Source, [Parameter(Mandatory)][string]$Destination)
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination,
+    [string]$ReplacementBackupPath
+  )
   $temporary = "$Destination.write-tmp"
   $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
   $destinationStream = [System.IO.FileStream]::new(
@@ -73,8 +138,49 @@ function Copy-DurableFile {
     $destinationStream.Dispose()
     $sourceStream.Dispose()
   }
-  if ([System.IO.File]::Exists($Destination)) { [System.IO.File]::Replace($temporary, $Destination, $null, $true) }
+  if ([System.IO.File]::Exists($Destination)) {
+    if ([string]::IsNullOrWhiteSpace($ReplacementBackupPath)) {
+      throw 'An existing durable copy destination requires a transaction-owned replacement backup path.'
+    }
+    Replace-DurableFile -Source $temporary -Destination $Destination -ReplacementBackupPath $ReplacementBackupPath
+  }
   else { [System.IO.File]::Move($temporary, $Destination) }
+}
+
+function Reconcile-TransactionSwap {
+  param(
+    [Parameter(Mandatory)][string]$Destination,
+    [Parameter(Mandatory)][string]$ReplacementBackupPath,
+    [Parameter(Mandatory)][string]$DurableSourcePath,
+    [Parameter(Mandatory)][string]$ExpectedHash
+  )
+  if (-not (Test-Path -LiteralPath $ReplacementBackupPath -PathType Leaf)) { return }
+  if (-not (Test-Path -LiteralPath $DurableSourcePath -PathType Leaf) -or
+      (Get-FileSha256 -Path $DurableSourcePath) -ne $ExpectedHash.ToUpperInvariant()) {
+    throw "The verified durable rollback source is unavailable or has an unexpected hash: $DurableSourcePath"
+  }
+  if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) {
+    Copy-DurableFile -Source $DurableSourcePath -Destination $Destination
+    if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or
+        (Get-FileSha256 -Path $Destination) -ne $ExpectedHash.ToUpperInvariant()) {
+      throw "The transaction replacement backup could not restore its missing destination: $Destination"
+    }
+    Remove-Item -LiteralPath $ReplacementBackupPath -Force -ErrorAction Stop
+    return
+  }
+  if ((Get-FileSha256 -Path $Destination) -eq $ExpectedHash.ToUpperInvariant()) {
+    Remove-Item -LiteralPath $ReplacementBackupPath -Force -ErrorAction Stop
+    return
+  }
+  # The durable rollback source is verified before the ambiguous swap is
+  # removed. Replacing the existing destination recreates the same exact swap
+  # path, and Copy-DurableFile removes it only after the replacement succeeds.
+  Remove-Item -LiteralPath $ReplacementBackupPath -Force -ErrorAction Stop
+  Copy-DurableFile -Source $DurableSourcePath -Destination $Destination -ReplacementBackupPath $ReplacementBackupPath
+  if (-not (Test-Path -LiteralPath $Destination -PathType Leaf) -or
+      (Get-FileSha256 -Path $Destination) -ne $ExpectedHash.ToUpperInvariant()) {
+    throw "The durable rollback source did not restore its destination: $Destination"
+  }
 }
 
 function Assert-UnderRoot {
@@ -109,6 +215,48 @@ function Write-Journal {
   Write-JournalPayload -Path $Path -TransactionId ([string]$plan.TransactionId) -Version ([string]$plan.Version) -State $State -Reason $Reason
 }
 
+function Read-TransactionJournal {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$TransactionId,
+    [Parameter(Mandatory)][string]$Version
+  )
+  $journal = $null
+  try { $journal = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json }
+  catch { throw "The transaction journal is invalid: $Path" }
+  if ([int]$journal.schemaVersion -ne 1 -or
+      [string]$journal.transactionId -ne $TransactionId -or
+      [string]$journal.version -ne $Version -or
+      [string]$journal.state -notin @('Activating', 'Activated', 'RolledBack', 'RollbackFailed')) {
+    throw "The transaction journal does not match its transaction: $Path"
+  }
+  return $journal
+}
+
+function Reconcile-JournalSwap {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$TransactionId,
+    [Parameter(Mandatory)][string]$Version
+  )
+  $journalSwap = "$Path.replace-backup"
+  if (-not (Test-Path -LiteralPath $journalSwap -PathType Leaf)) { return }
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    # Validate the surviving swap before publishing it as the journal.
+    Read-TransactionJournal -Path $journalSwap -TransactionId $TransactionId -Version $Version | Out-Null
+    [System.IO.File]::Move($journalSwap, $Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+      throw 'The journal replacement backup could not restore the missing journal.'
+    }
+    Read-TransactionJournal -Path $Path -TransactionId $TransactionId -Version $Version | Out-Null
+    return
+  }
+  # Both artifacts exist. Only remove the swap after validating the current
+  # journal; an invalid or foreign pair remains available for recovery.
+  Read-TransactionJournal -Path $Path -TransactionId $TransactionId -Version $Version | Out-Null
+  Remove-Item -LiteralPath $journalSwap -Force -ErrorAction Stop
+}
+
 function Write-JournalPayload {
   param(
     [Parameter(Mandatory)][string]$Path,
@@ -125,7 +273,20 @@ function Write-JournalPayload {
     occurredAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     reason = $Reason
   } | ConvertTo-Json
-  Write-DurableTextFile -Path $Path -Content $payload
+  $journalMutex = New-MaintenanceMutex
+  $journalMutexHeld = $false
+  try {
+    if (-not (Wait-MaintenanceMutex -Mutex $journalMutex -TimeoutMilliseconds 30000)) {
+      throw 'The journal replacement could not acquire the maintenance lock.'
+    }
+    $journalMutexHeld = $true
+    Reconcile-JournalSwap -Path $Path -TransactionId $TransactionId -Version $Version
+    Write-DurableTextFile -Path $Path -Content $payload
+  }
+  finally {
+    if ($journalMutexHeld) { $journalMutex.ReleaseMutex() }
+    $journalMutex.Dispose()
+  }
 }
 
 function Wait-ReleaseHealth {
@@ -518,14 +679,9 @@ function Invoke-StaleUpdateRecovery {
     [Parameter(Mandatory)][string]$ServiceName
   )
   $markerExists = Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf
-  $journalPreview = $null
-  if (Test-Path -LiteralPath $JournalPath -PathType Leaf) {
-    $journalPreview = Get-Content -LiteralPath $JournalPath -Raw | ConvertFrom-Json
-  }
-  if (-not $markerExists -and $null -eq $journalPreview) { return $false }
-  if (-not $markerExists -and [string]$journalPreview.state -notin @('Activated', 'RolledBack')) {
-    throw 'An interrupted nonterminal update has no maintenance marker; automatic recovery is unsafe.'
-  }
+  $journalExists = Test-Path -LiteralPath $JournalPath -PathType Leaf
+  $journalSwapExists = Test-Path -LiteralPath ("$JournalPath.replace-backup") -PathType Leaf
+  if (-not $markerExists -and -not $journalExists -and -not $journalSwapExists) { return $false }
   if ($markerExists) {
     $marker = Get-Content -LiteralPath $MaintenanceMarkerPath -Raw
     if ($marker -notmatch "^update $([regex]::Escape($TransactionId)) parent=(\d+) parentStart=(\d+) child=(\d+) childStart=(\d+) ") {
@@ -575,6 +731,9 @@ function Invoke-StaleUpdateRecovery {
 
   $helperBackup = Join-Path $UpdaterRoot ".update-helper-$TransactionId.backup"
   $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
+  $databaseSwap = "$DatabasePath.update-$TransactionId.replace-backup"
+  $helperTargetSwap = "$HelperPath.update-$TransactionId.replace-backup"
+  $guardianTargetSwap = "$GuardianPath.update-$TransactionId.replace-backup"
   $startPath = Join-Path $UpdaterRoot ".update-start-$TransactionId.token"
   $databaseMutationPath = Join-Path $UpdaterRoot ".update-database-$TransactionId.token"
   $ownedArtifacts = @(
@@ -586,12 +745,27 @@ function Invoke-StaleUpdateRecovery {
     $databaseMutationPath,
     $helperBackup,
     $guardianBackup,
+    ("$helperBackup.replace-backup"),
+    ("$guardianBackup.replace-backup"),
+    $databaseSwap,
+    $helperTargetSwap,
+    $guardianTargetSwap,
+    ("$JournalPath.replace-backup"),
+    ("$PreconditionPath.replace-backup"),
+    ("$startPath.replace-backup"),
+    ("$databaseMutationPath.replace-backup"),
+    ("$(Join-Path $UpdaterRoot ".update-ready-$TransactionId.token").replace-backup"),
+    ("$(Join-Path $UpdaterRoot ".update-completion-$TransactionId.token").replace-backup"),
+    ("$(Join-Path $UpdaterRoot ".update-ownership-$TransactionId.token").replace-backup"),
     $PreconditionPath,
     (Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"),
     (Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp")
   )
   foreach ($path in $ownedArtifacts) {
-    $root = if ($path.StartsWith($ReleaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $ReleaseRoot } else { $UpdaterRoot }
+    $dataRoot = Split-Path -Parent (Split-Path -Parent $DatabasePath)
+    $root = if ($path.StartsWith($ReleaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $ReleaseRoot }
+      elseif ($path.StartsWith($UpdaterRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $UpdaterRoot }
+      else { $dataRoot }
     Assert-UnderRoot -Path $path -Root $root | Out-Null
     Assert-NoReparsePoint -Path $path -StopAt $root
   }
@@ -610,14 +784,18 @@ function Invoke-StaleUpdateRecovery {
       }
     }
 
+    # Reconcile the journal swap while this recovery transaction owns the
+    # maintenance mutex, before classifying the journal's terminal state.
+    Reconcile-JournalSwap -Path $JournalPath -TransactionId $TransactionId -Version $ExpectedVersion
     $journal = $null
     if (Test-Path -LiteralPath $JournalPath -PathType Leaf) {
-      $journal = Get-Content -LiteralPath $JournalPath -Raw | ConvertFrom-Json
-      if ([int]$journal.schemaVersion -ne 1 -or [string]$journal.transactionId -ne $TransactionId -or
-          [string]$journal.version -ne $ExpectedVersion -or
-          [string]$journal.state -notin @('Activating', 'Activated', 'RolledBack', 'RollbackFailed')) {
-        throw 'The interrupted update journal is invalid.'
-      }
+      $journal = Read-TransactionJournal -Path $JournalPath -TransactionId $TransactionId -Version $ExpectedVersion
+    }
+    if (-not $markerExists -and $null -eq $journal) {
+      return $false
+    }
+    if (-not $markerExists -and [string]$journal.state -notin @('Activated', 'RolledBack')) {
+      throw 'An interrupted nonterminal update has no maintenance marker; automatic recovery is unsafe.'
     }
 
     if ($null -ne $journal -and [string]$journal.state -eq 'Activated') {
@@ -643,14 +821,21 @@ function Invoke-StaleUpdateRecovery {
       }
       if ($transactionStarted) {
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        $databaseBackupHash = Get-FileSha256 -Path $DatabaseBackupPath
+        Reconcile-TransactionSwap -Destination $DatabasePath -ReplacementBackupPath $databaseSwap -DurableSourcePath $DatabaseBackupPath -ExpectedHash $databaseBackupHash
+        Reconcile-TransactionSwap -Destination $helperBackup -ReplacementBackupPath "$helperBackup.replace-backup" -DurableSourcePath $HelperPath -ExpectedHash ([string]$preconditions.previousHelperHash)
+        Reconcile-TransactionSwap -Destination $guardianBackup -ReplacementBackupPath "$guardianBackup.replace-backup" -DurableSourcePath $GuardianPath -ExpectedHash ([string]$preconditions.previousGuardianHash)
+        Reconcile-TransactionSwap -Destination $HelperPath -ReplacementBackupPath $helperTargetSwap -DurableSourcePath $helperBackup -ExpectedHash ([string]$preconditions.previousHelperHash)
+        Reconcile-TransactionSwap -Destination $GuardianPath -ReplacementBackupPath $guardianTargetSwap -DurableSourcePath $guardianBackup -ExpectedHash ([string]$preconditions.previousGuardianHash)
         if (Test-Path -LiteralPath $databaseMutationPath -PathType Leaf) {
           if (-not [System.StringComparer]::Ordinal.Equals((Get-Content -LiteralPath $databaseMutationPath -Raw).Trim(), [string]$preconditions.databaseMutationToken)) {
             throw 'The interrupted update database-mutation token is invalid.'
           }
           Remove-Item -LiteralPath ($DatabasePath + '-wal') -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath ($DatabasePath + '-shm') -Force -ErrorAction SilentlyContinue
-          Copy-DurableFile -Source $DatabaseBackupPath -Destination $DatabasePath
-          if ((Get-FileSha256 -Path $DatabasePath) -ne (Get-FileSha256 -Path $DatabaseBackupPath)) {
+          Copy-DurableFile -Source $DatabaseBackupPath -Destination $DatabasePath -ReplacementBackupPath $databaseSwap
+          if (-not (Test-Path -LiteralPath $DatabasePath -PathType Leaf) -or
+              (Get-FileSha256 -Path $DatabasePath) -ne $databaseBackupHash) {
             throw 'Interrupted-update database recovery failed hash verification.'
           }
           if ((Test-Path -LiteralPath ($DatabasePath + '-wal')) -or (Test-Path -LiteralPath ($DatabasePath + '-shm'))) {
@@ -661,13 +846,17 @@ function Invoke-StaleUpdateRecovery {
           @{ Target = $HelperPath; Backup = $helperBackup; Hash = ([string]$preconditions.previousHelperHash).ToUpperInvariant() },
           @{ Target = $GuardianPath; Backup = $guardianBackup; Hash = ([string]$preconditions.previousGuardianHash).ToUpperInvariant() }
         )) {
-          if ((Get-FileSha256 -Path $restore.Target) -ne $restore.Hash) {
+          $targetMatches = (Test-Path -LiteralPath $restore.Target -PathType Leaf) -and
+            ((Get-FileSha256 -Path $restore.Target) -eq $restore.Hash)
+          if (-not $targetMatches) {
             if (-not (Test-Path -LiteralPath $restore.Backup -PathType Leaf) -or (Get-FileSha256 -Path $restore.Backup) -ne $restore.Hash) {
               throw 'An interrupted-update protected-script backup is missing or invalid.'
             }
-            Copy-DurableFile -Source $restore.Backup -Destination $restore.Target
+            $restoreSwap = if ($restore.Target -eq $HelperPath) { $helperTargetSwap } else { $guardianTargetSwap }
+            Copy-DurableFile -Source $restore.Backup -Destination $restore.Target -ReplacementBackupPath $restoreSwap
           }
-          if ((Get-FileSha256 -Path $restore.Target) -ne $restore.Hash) { throw 'Interrupted-update protected-script recovery failed.' }
+          if (-not (Test-Path -LiteralPath $restore.Target -PathType Leaf) -or
+              (Get-FileSha256 -Path $restore.Target) -ne $restore.Hash) { throw 'Interrupted-update protected-script recovery failed.' }
         }
         Set-ServiceBinary -Name $ServiceName -ImagePath $previousImagePath
         Start-Service -Name $ServiceName -ErrorAction Stop
@@ -735,6 +924,12 @@ function Invoke-InfrastructureRefresh {
   $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
   $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"
   $guardianStage = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp"
+  $databasePath = Join-Path $DataRoot 'data\treadmillrunner.db'
+  $databaseSwap = "$databasePath.update-$TransactionId.replace-backup"
+  $helperBackupSwap = "$helperBackup.replace-backup"
+  $guardianBackupSwap = "$guardianBackup.replace-backup"
+  $helperTargetSwap = "$HelperPath.update-$TransactionId.replace-backup"
+  $guardianTargetSwap = "$GuardianPath.update-$TransactionId.replace-backup"
   $releaseRoot = Join-Path $InstallRoot 'releases'
   $planRoot = Join-Path $DataRoot 'updates\plans'
   $expectedPlanPath = Join-Path $planRoot 'pending-activation.json'
@@ -772,6 +967,11 @@ function Invoke-InfrastructureRefresh {
     Assert-ExactPath -Actual $OwnershipPath -Expected (Join-Path $resolvedUpdaterRoot ".update-ownership-$TransactionId.token") -Name 'Ownership path' | Out-Null
     Assert-ExactPath -Actual $DatabaseMutationPath -Expected (Join-Path $resolvedUpdaterRoot ".update-database-$TransactionId.token") -Name 'Database mutation path' | Out-Null
     Assert-ExactPath -Actual $DatabaseBackupPath -Expected (Join-Path $resolvedDataRoot "backups\pre-update-$TransactionId.db") -Name 'Database backup path' | Out-Null
+    Assert-ExactPath -Actual $databaseSwap -Expected ((Join-Path $resolvedDataRoot 'data\treadmillrunner.db') + ".update-$TransactionId.replace-backup") -Name 'Database swap path' | Out-Null
+    Assert-ExactPath -Actual $helperBackupSwap -Expected ((Join-Path $resolvedUpdaterRoot ".update-helper-$TransactionId.backup") + '.replace-backup') -Name 'Helper backup swap path' | Out-Null
+    Assert-ExactPath -Actual $guardianBackupSwap -Expected ((Join-Path $resolvedUpdaterRoot ".service-guardian-$TransactionId.backup") + '.replace-backup') -Name 'Guardian backup swap path' | Out-Null
+    Assert-ExactPath -Actual $helperTargetSwap -Expected ((Join-Path $resolvedUpdaterRoot 'update-helper.ps1') + ".update-$TransactionId.replace-backup") -Name 'Helper target swap path' | Out-Null
+    Assert-ExactPath -Actual $guardianTargetSwap -Expected ((Join-Path $resolvedUpdaterRoot 'service-guardian.ps1') + ".update-$TransactionId.replace-backup") -Name 'Guardian target swap path' | Out-Null
     Assert-ExactPath -Actual $JournalPath -Expected (Join-Path $resolvedPlanRoot "transaction-$TransactionId.json") -Name 'Journal path' | Out-Null
     Assert-ExactPath -Actual $MaintenanceMarkerPath -Expected (Join-Path $resolvedDataRoot 'updates\service-maintenance.lock') -Name 'Maintenance marker path' | Out-Null
     $expectedPreviousExecutable = Get-ServiceExecutablePath -ImagePath $PreviousImagePath
@@ -779,12 +979,12 @@ function Invoke-InfrastructureRefresh {
     Assert-NoReparsePoint -Path $expectedPreviousExecutable -StopAt $resolvedInstallRoot
     if ([System.IO.Path]::GetFileName($expectedPreviousExecutable) -ne 'TreadmillRunner.Gateway.exe') { throw 'The previous service image is outside the release executable contract.' }
     if ([System.StringComparer]::OrdinalIgnoreCase.Equals($expectedPreviousExecutable, (Join-Path $expectedNewReleasePath 'TreadmillRunner.Gateway.exe'))) { throw 'The previous service image must differ from the promoted release.' }
-    foreach ($path in @($HelperPath, $GuardianPath, $helperBackup, $guardianBackup, $helperStage, $guardianStage, $PreconditionPath, $ReadyPath, $StartPath, $CompletionPath, $OwnershipPath, $DatabaseMutationPath)) {
+    foreach ($path in @($HelperPath, $GuardianPath, $helperBackup, $guardianBackup, $helperStage, $guardianStage, $helperBackupSwap, $guardianBackupSwap, $helperTargetSwap, $guardianTargetSwap, $PreconditionPath, $ReadyPath, $StartPath, $CompletionPath, $OwnershipPath, $DatabaseMutationPath)) {
       Assert-NoReparsePoint -Path $path -StopAt $UpdaterRoot
     }
     Assert-NoReparsePoint -Path $IncomingPath -StopAt $resolvedReleaseRoot
     Assert-NoReparsePoint -Path $NewReleasePath -StopAt $resolvedInstallRoot
-    foreach ($path in @($DatabaseBackupPath, $JournalPath, $MaintenanceMarkerPath)) {
+    foreach ($path in @($DatabasePath, $DatabaseBackupPath, $databaseSwap, $JournalPath, $MaintenanceMarkerPath)) {
       Assert-NoReparsePoint -Path $path -StopAt $resolvedDataRoot
     }
     if (-not (Test-Path -LiteralPath $PreconditionPath -PathType Leaf)) { throw 'Infrastructure refresh preconditions are missing.' }
@@ -853,10 +1053,10 @@ function Invoke-InfrastructureRefresh {
         (Get-FileSha256 -Path (Join-Path $NewReleasePath 'Updates\service-guardian.ps1')) -ne $ExpectedGuardianHash) {
       throw 'The verified incoming updater script hashes changed before infrastructure refresh.'
     }
-    Copy-DurableFile -Source $HelperPath -Destination $helperBackup
-    Copy-DurableFile -Source $GuardianPath -Destination $guardianBackup
-    Copy-DurableFile -Source $helperStage -Destination $HelperPath
-    Copy-DurableFile -Source $guardianStage -Destination $GuardianPath
+    Copy-DurableFile -Source $HelperPath -Destination $helperBackup -ReplacementBackupPath $helperBackupSwap
+    Copy-DurableFile -Source $GuardianPath -Destination $guardianBackup -ReplacementBackupPath $guardianBackupSwap
+    Copy-DurableFile -Source $helperStage -Destination $HelperPath -ReplacementBackupPath $helperTargetSwap
+    Copy-DurableFile -Source $guardianStage -Destination $GuardianPath -ReplacementBackupPath $guardianTargetSwap
     if ((Get-FileSha256 -Path $HelperPath) -ne $ExpectedHelperHash -or
         (Get-FileSha256 -Path $GuardianPath) -ne $ExpectedGuardianHash) {
       throw 'The protected updater scripts could not be verified after replacement.'
@@ -916,17 +1116,27 @@ function Invoke-InfrastructureRefresh {
     }
     try {
       Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+      $databaseBackupHash = Get-FileSha256 -Path $DatabaseBackupPath
+      Reconcile-TransactionSwap -Destination $databasePath -ReplacementBackupPath $databaseSwap -DurableSourcePath $DatabaseBackupPath -ExpectedHash $databaseBackupHash
+      Reconcile-TransactionSwap -Destination $helperBackup -ReplacementBackupPath $helperBackupSwap -DurableSourcePath $HelperPath -ExpectedHash $previousHelperHash
+      Reconcile-TransactionSwap -Destination $guardianBackup -ReplacementBackupPath $guardianBackupSwap -DurableSourcePath $GuardianPath -ExpectedHash $previousGuardianHash
+      Reconcile-TransactionSwap -Destination $HelperPath -ReplacementBackupPath $helperTargetSwap -DurableSourcePath $helperBackup -ExpectedHash $previousHelperHash
+      Reconcile-TransactionSwap -Destination $GuardianPath -ReplacementBackupPath $guardianTargetSwap -DurableSourcePath $guardianBackup -ExpectedHash $previousGuardianHash
       if ($databaseMutationObserved) {
         Remove-Item -LiteralPath ($DataRoot + '\data\treadmillrunner.db-wal') -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($DataRoot + '\data\treadmillrunner.db-shm') -Force -ErrorAction SilentlyContinue
-        Copy-DurableFile -Source $DatabaseBackupPath -Destination ($DataRoot + '\data\treadmillrunner.db')
-        if ((Get-FileSha256 -Path (Join-Path $DataRoot 'data\treadmillrunner.db')) -ne (Get-FileSha256 -Path $DatabaseBackupPath)) {
+        Copy-DurableFile -Source $DatabaseBackupPath -Destination $databasePath -ReplacementBackupPath $databaseSwap
+        if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf) -or
+            (Get-FileSha256 -Path $databasePath) -ne $databaseBackupHash) {
           throw 'The database backup was not restored before rollback cleanup.'
         }
       }
-      if (Test-Path -LiteralPath $helperBackup -PathType Leaf) { Copy-DurableFile -Source $helperBackup -Destination $HelperPath }
-      if (Test-Path -LiteralPath $guardianBackup -PathType Leaf) { Copy-DurableFile -Source $guardianBackup -Destination $GuardianPath }
-      if ((Get-FileSha256 -Path $HelperPath) -ne $previousHelperHash -or (Get-FileSha256 -Path $GuardianPath) -ne $previousGuardianHash) {
+      if (Test-Path -LiteralPath $helperBackup -PathType Leaf) { Copy-DurableFile -Source $helperBackup -Destination $HelperPath -ReplacementBackupPath $helperTargetSwap }
+      if (Test-Path -LiteralPath $guardianBackup -PathType Leaf) { Copy-DurableFile -Source $guardianBackup -Destination $GuardianPath -ReplacementBackupPath $guardianTargetSwap }
+      if (-not (Test-Path -LiteralPath $HelperPath -PathType Leaf) -or
+          -not (Test-Path -LiteralPath $GuardianPath -PathType Leaf) -or
+          (Get-FileSha256 -Path $HelperPath) -ne $previousHelperHash -or
+          (Get-FileSha256 -Path $GuardianPath) -ne $previousGuardianHash) {
         throw 'The protected updater scripts were not restored before rollback cleanup.'
       }
       Restore-ServiceImageSafely -ServiceName $ServiceName `
@@ -963,6 +1173,12 @@ function Invoke-InfrastructureRefresh {
       Remove-Item -LiteralPath $DatabaseMutationPath -Force -ErrorAction SilentlyContinue
       foreach ($path in @($helperBackup, $guardianBackup)) {
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+      }
+      foreach ($path in @($databaseSwap, $helperBackupSwap, $guardianBackupSwap, $helperTargetSwap, $guardianTargetSwap)) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+      }
+      foreach ($path in @($ReadyPath, $StartPath, $CompletionPath, $OwnershipPath, $DatabaseMutationPath, $JournalPath, $PreconditionPath)) {
+        Remove-Item -LiteralPath ("$path.replace-backup") -Force -ErrorAction SilentlyContinue
       }
       Remove-Item -LiteralPath (Join-Path $UpdaterRoot ('.update-helper-' + $TransactionId + '.tmp')) -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath (Join-Path $UpdaterRoot ('.service-guardian-' + $TransactionId + '.tmp')) -Force -ErrorAction SilentlyContinue
@@ -1115,6 +1331,11 @@ $incomingPath = Assert-UnderRoot -Path (Join-Path $releaseRoot ('.incoming-' + $
 $preconditionPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-preconditions-' + $transactionId + '.json')) -Root $updaterRoot
 $helperBackupPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-helper-' + $transactionId + '.backup')) -Root $updaterRoot
 $guardianBackupPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.service-guardian-' + $transactionId + '.backup')) -Root $updaterRoot
+$databaseSwapPath = "$databasePath.update-$transactionId.replace-backup"
+$helperBackupSwapPath = "$helperBackupPath.replace-backup"
+$guardianBackupSwapPath = "$guardianBackupPath.replace-backup"
+$helperTargetSwapPath = "$helperTarget.update-$transactionId.replace-backup"
+$guardianTargetSwapPath = "$guardianTarget.update-$transactionId.replace-backup"
 $incomingCreated = $false
 $previousImagePath = $null
 $maintenanceMarkerCreated = $false
@@ -1160,6 +1381,14 @@ try {
   # been held since before cleanup and remains held through child handoff.
   foreach ($orphan in @(
     $incomingPath, $preconditionPath, $helperBackupPath, $guardianBackupPath,
+    $databaseSwapPath, $helperBackupSwapPath, $guardianBackupSwapPath,
+    $helperTargetSwapPath, $guardianTargetSwapPath,
+    ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
+    ("$(Join-Path $updaterRoot ".update-ready-$transactionId.token").replace-backup"),
+    ("$(Join-Path $updaterRoot ".update-start-$transactionId.token").replace-backup"),
+    ("$(Join-Path $updaterRoot ".update-completion-$transactionId.token").replace-backup"),
+    ("$(Join-Path $updaterRoot ".update-ownership-$transactionId.token").replace-backup"),
+    ("$(Join-Path $updaterRoot ".update-database-$transactionId.token").replace-backup"),
     (Join-Path $updaterRoot ".update-helper-$transactionId.tmp"),
     (Join-Path $updaterRoot ".service-guardian-$transactionId.tmp"),
     (Join-Path $updaterRoot ".update-ready-$transactionId.token"),
@@ -1168,7 +1397,7 @@ try {
     (Join-Path $updaterRoot ".update-ownership-$transactionId.token"),
     (Join-Path $updaterRoot ".update-database-$transactionId.token")
   )) {
-    Assert-NoReparsePoint -Path $orphan -StopAt $(if ($orphan.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $releaseRoot } else { $updaterRoot })
+    Assert-NoReparsePoint -Path $orphan -StopAt $(if ($orphan.StartsWith($releaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $releaseRoot } elseif ($orphan.StartsWith($updaterRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $updaterRoot } else { $dataRoot })
     if (Test-Path -LiteralPath $orphan -PathType Container) { Remove-Item -LiteralPath $orphan -Recurse -Force }
     else { Remove-Item -LiteralPath $orphan -Force -ErrorAction SilentlyContinue }
   }
@@ -1384,7 +1613,13 @@ try {
     -OwnedArtifactPaths @(
       $incomingPath, $refreshReadyPath, $refreshStartPath, $refreshCompletionPath,
       $refreshOwnershipPath, $databaseMutationPath, $helperBackupPath, $guardianBackupPath,
-      $preconditionPath, $helperRefreshPath, $guardianRefreshPath)
+      $preconditionPath, $helperRefreshPath, $guardianRefreshPath,
+      $databaseSwapPath, $helperBackupSwapPath, $guardianBackupSwapPath,
+      $helperTargetSwapPath, $guardianTargetSwapPath,
+      ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
+      ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
+      ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
+      ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
   return
 }
 catch {
@@ -1426,7 +1661,13 @@ catch {
           -OwnedArtifactPaths @(
             $incomingPath, $refreshReadyPath, $refreshStartPath, $refreshCompletionPath,
             $refreshOwnershipPath, $databaseMutationPath, $helperBackupPath, $guardianBackupPath,
-            $preconditionPath, $helperRefreshPath, $guardianRefreshPath)
+            $preconditionPath, $helperRefreshPath, $guardianRefreshPath,
+            $databaseSwapPath, $helperBackupSwapPath, $guardianBackupSwapPath,
+            $helperTargetSwapPath, $guardianTargetSwapPath,
+            ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
+            ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
+            ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
+            ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
         return
       }
       if ($finalChildState -eq 'RolledBack') {
@@ -1443,17 +1684,34 @@ catch {
     if ($serviceMutationStarted -or $newReleasePromoted) {
       Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
     }
+    $databaseBackupHash = Get-FileSha256 -Path $databaseBackupPath
+      Reconcile-TransactionSwap -Destination $databasePath -ReplacementBackupPath $databaseSwapPath -DurableSourcePath $databaseBackupPath -ExpectedHash $databaseBackupHash
+    if ($null -ne $previousHelperHash -and $null -ne $previousGuardianHash) {
+      if ($null -ne $helperBackupPath) {
+        Reconcile-TransactionSwap -Destination $helperBackupPath -ReplacementBackupPath $helperBackupSwapPath -DurableSourcePath $helperTarget -ExpectedHash $previousHelperHash
+      }
+      if ($null -ne $guardianBackupPath) {
+        Reconcile-TransactionSwap -Destination $guardianBackupPath -ReplacementBackupPath $guardianBackupSwapPath -DurableSourcePath $guardianTarget -ExpectedHash $previousGuardianHash
+      }
+      Reconcile-TransactionSwap -Destination $helperTarget -ReplacementBackupPath $helperTargetSwapPath -DurableSourcePath $helperBackupPath -ExpectedHash $previousHelperHash
+      Reconcile-TransactionSwap -Destination $guardianTarget -ReplacementBackupPath $guardianTargetSwapPath -DurableSourcePath $guardianBackupPath -ExpectedHash $previousGuardianHash
+    }
     if ($databaseMutationStarted) {
       Remove-Item -LiteralPath ($databasePath + '-wal') -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath ($databasePath + '-shm') -Force -ErrorAction SilentlyContinue
-      Copy-DurableFile -Source $databaseBackupPath -Destination $databasePath
-      if ((Get-FileSha256 -Path $databasePath) -ne (Get-FileSha256 -Path $databaseBackupPath)) {
+      Copy-DurableFile -Source $databaseBackupPath -Destination $databasePath -ReplacementBackupPath $databaseSwapPath
+      if (-not (Test-Path -LiteralPath $databasePath -PathType Leaf) -or
+          (Get-FileSha256 -Path $databasePath) -ne $databaseBackupHash) {
         throw 'The database backup was not restored before rollback cleanup.'
       }
     }
-    if ($null -ne $helperBackupPath -and (Test-Path -LiteralPath $helperBackupPath -PathType Leaf)) { Copy-DurableFile -Source $helperBackupPath -Destination $helperTarget }
-    if ($null -ne $guardianBackupPath -and (Test-Path -LiteralPath $guardianBackupPath -PathType Leaf)) { Copy-DurableFile -Source $guardianBackupPath -Destination $guardianTarget }
-    if ($null -ne $previousHelperHash -and ((Get-FileSha256 -Path $helperTarget) -ne $previousHelperHash -or (Get-FileSha256 -Path $guardianTarget) -ne $previousGuardianHash)) {
+    if ($null -ne $helperBackupPath -and (Test-Path -LiteralPath $helperBackupPath -PathType Leaf)) { Copy-DurableFile -Source $helperBackupPath -Destination $helperTarget -ReplacementBackupPath $helperTargetSwapPath }
+    if ($null -ne $guardianBackupPath -and (Test-Path -LiteralPath $guardianBackupPath -PathType Leaf)) { Copy-DurableFile -Source $guardianBackupPath -Destination $guardianTarget -ReplacementBackupPath $guardianTargetSwapPath }
+    if ($null -ne $previousHelperHash -and
+        (-not (Test-Path -LiteralPath $helperTarget -PathType Leaf) -or
+         -not (Test-Path -LiteralPath $guardianTarget -PathType Leaf) -or
+         (Get-FileSha256 -Path $helperTarget) -ne $previousHelperHash -or
+         (Get-FileSha256 -Path $guardianTarget) -ne $previousGuardianHash)) {
       throw 'The protected updater scripts were not restored before rollback cleanup.'
     }
     if ($serviceMutationStarted -or $newReleasePromoted) {
@@ -1495,7 +1753,13 @@ finally {
         -OwnedArtifactPaths @(
           $incomingPath, $refreshReadyPath, $refreshStartPath, $refreshCompletionPath,
           $refreshOwnershipPath, $databaseMutationPath, $helperBackupPath, $guardianBackupPath,
-          $preconditionPath, $helperRefreshPath, $guardianRefreshPath)
+          $preconditionPath, $helperRefreshPath, $guardianRefreshPath,
+          $databaseSwapPath, $helperBackupSwapPath, $guardianBackupSwapPath,
+          $helperTargetSwapPath, $guardianTargetSwapPath,
+          ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
+          ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
+          ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
+          ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
     }
     catch { }
   }
@@ -1519,6 +1783,12 @@ finally {
     if ($null -ne $databaseMutationPath) { Remove-Item -LiteralPath $databaseMutationPath -Force -ErrorAction SilentlyContinue }
     if ($null -ne $helperBackupPath) { Remove-Item -LiteralPath $helperBackupPath -Force -ErrorAction SilentlyContinue }
     if ($null -ne $guardianBackupPath) { Remove-Item -LiteralPath $guardianBackupPath -Force -ErrorAction SilentlyContinue }
+    foreach ($path in @($databaseSwapPath, $helperBackupSwapPath, $guardianBackupSwapPath, $helperTargetSwapPath, $guardianTargetSwapPath)) {
+      if ($null -ne $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    }
+    foreach ($path in @($resolvedPlan, $preconditionPath, $refreshReadyPath, $refreshStartPath, $refreshCompletionPath, $refreshOwnershipPath, $databaseMutationPath, $journalPath)) {
+      if ($null -ne $path) { Remove-Item -LiteralPath ("$path.replace-backup") -Force -ErrorAction SilentlyContinue }
+    }
     if ($null -ne $helperRefreshPath) { Remove-Item -LiteralPath $helperRefreshPath -Force -ErrorAction SilentlyContinue }
     if ($null -ne $guardianRefreshPath) { Remove-Item -LiteralPath $guardianRefreshPath -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $resolvedPlan -Force -ErrorAction SilentlyContinue
