@@ -517,7 +517,11 @@ public sealed class GarminActivityUploadStore(
     job.OperationPhase = "VerifyResync";
     job.RemoteId = job.ReplacementRemoteId;
     job.AttemptCount = 0;
-    job.AvailableAtUtc = nowUtc.AddMinutes(2);
+    // The worker has already completed the destructive delete and carries the
+    // confirmed post-delete token store.  Start the bounded read-after-write
+    // verification immediately; a timer delay left successful jobs visibly
+    // pending and was unnecessary for the strict FIT proof below.
+    job.AvailableAtUtc = nowUtc;
     job.FailureKind = null;
     job.LastError = null;
     job.LeaseExpiresAtUtc = null;
@@ -536,18 +540,16 @@ public sealed class GarminActivityUploadStore(
   {
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     GarminActivityUploadJobEntity job = await RequiredWorkerJobAsync(context, jobId, expectedLeaseExpiresAtUtc, cancellationToken);
-    if (job.AttemptCount >= 3)
-    {
-      job.Status = "Confirmed";
-      job.RemoteId = job.ReplacementRemoteId;
-    }
-    else
-    {
-      int delayMinutes = job.AttemptCount == 1 ? 10 : 15;
-      job.Status = "Pending";
-      job.OperationPhase = "VerifyResync";
-      job.AvailableAtUtc = nowUtc.AddMinutes(delayMinutes);
-    }
+    // VerifyResync has already performed the strict retained-replacement FIT
+    // check and removed every FIT-proven re-created original in this leased
+    // pass.  The merge is complete at this boundary; keeping the job pending
+    // for timer-based follow-up checks made a successfully reconciled upload
+    // appear stuck and could cycle forever after a restart.  A later watch
+    // re-upload is a new reconciliation concern and must not reopen this job.
+    job.Status = "Confirmed";
+    job.OperationPhase = "Upload";
+    job.RemoteId = job.ReplacementRemoteId;
+    job.AttemptCount = 0;
     job.FailureKind = null;
     job.LastError = null;
     job.LeaseExpiresAtUtc = null;

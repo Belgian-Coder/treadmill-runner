@@ -339,6 +339,70 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Verified_resync_completes_terminally_without_timer_requeue()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, _) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      "protected-token-json",
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+
+    GarminActivityUploadJob upload = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    DateTimeOffset uploadLease = Assert.IsType<DateTimeOffset>(upload.LeaseExpiresAtUtc);
+    await store.MarkReplacementUploadStartedAsync(
+      upload.Id,
+      "watch-original",
+      "Resolved accepted merged activity using strict FIT content proof; no second upload was sent.",
+      uploadLease,
+      now.AddSeconds(1));
+    await store.MarkReplacementUploadedAsync(
+      upload.Id,
+      "watch-original",
+      "replacement-1",
+      "Resolved accepted merged activity using strict FIT content proof; no second upload was sent.",
+      "updated-token-store",
+      now.AddSeconds(2),
+      expectedLeaseExpiresAtUtc: uploadLease);
+
+    GarminActivityUploadJob deletion = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddSeconds(3), TimeSpan.FromMinutes(2)));
+    Assert.Equal("DeleteOriginal", deletion.OperationPhase);
+    DateTimeOffset deletionLease = Assert.IsType<DateTimeOffset>(deletion.LeaseExpiresAtUtc);
+    await store.MarkOriginalDeletedAwaitingResyncAsync(
+      deletion.Id,
+      "deleted-token-store",
+      now.AddSeconds(4),
+      expectedLeaseExpiresAtUtc: deletionLease);
+
+    GarminActivityUploadJob verify = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddSeconds(5), TimeSpan.FromMinutes(2)));
+    Assert.Equal("VerifyResync", verify.OperationPhase);
+    DateTimeOffset verifyLease = Assert.IsType<DateTimeOffset>(verify.LeaseExpiresAtUtc);
+    await store.CompleteResyncCheckAsync(
+      verify.Id,
+      "verified-token-store",
+      now.AddSeconds(6),
+      expectedLeaseExpiresAtUtc: verifyLease);
+
+    GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.Equal("Confirmed", completed.Status);
+    Assert.Equal("Upload", completed.OperationPhase);
+    Assert.Equal("replacement-1", completed.RemoteId);
+    Assert.Equal(0, completed.AttemptCount);
+    Assert.False(completed.CanRetry);
+    Assert.Null(completed.RetryAtUtc);
+    Assert.Null(await store.LeaseNextAsync(now.AddHours(1), TimeSpan.FromMinutes(2)));
+  }
+
+  [Fact]
   public async Task Duplicate_can_be_retried_from_watch_search_after_the_user_removes_the_existing_import()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();

@@ -4,7 +4,7 @@ type: operator-runbook
 status: active
 owner: project
 audience: operator-and-developer
-updated: 2026-08-07
+updated: 2026-09-10
 ---
 
 # TreadmillRunner release operations
@@ -152,6 +152,24 @@ These commands do not create a tag, package, signature, or GitHub Release. `crea
 
 Release assets are `stable.manifest.json`, `treadmillrunner-<version>-win-x64.zip`, `treadmillrunner-<version>-offline-update.zip`, `TreadmillRunner-<version>-Windows-x64.zip`, the public `.cer`, and `SHA256SUMS.txt`.
 
+### Reviewed deployment coordinator
+
+Use `eng/run-deployment.ps1` for the operator deployment path after the exact GitHub release and commit are known. It downloads the published asset set, verifies the release tag resolves to the requested commit, checks `SHA256SUMS.txt`, validates the signed manifest and package provenance, runs the read-only physical acceptance preflight, installs the verified stable feed, checks and stages the exact version, and performs installed-service, immutable-path, readiness, build-fingerprint, protected-updater, and exact profile-payload plus retained-history-ID and payload checks after activation. Other data tables are outside this coordinator's retention assertion.
+
+The default command stages the verified release and stops. `-DryRun` performs the release, signature, package, and read-only preflight checks without changing the feed or staging an update. Activation requires both `-Activate` and the literal `-Confirmation ACTIVATE`; immediately before the activation request the coordinator requires `GET /api/live/session` to return HTTP 204. For example:
+
+```powershell
+./eng/run-deployment.ps1 `
+  -ExpectedVersion 1.5.77 `
+  -ExpectedCommit 0123456789abcdef0123456789abcdef01234567 `
+  -ExpectedRelease v1.5.77 `
+  -Activate -Confirmation ACTIVATE
+```
+
+The privileged updater refreshes the protected `update-helper.ps1` and `service-guardian.ps1` only from the already verified incoming release. It stages both files, records and checks the pinned certificate and scheduled-task action and principal contracts, verifies hashes after replacement, and restores the prior release, database, and updater scripts when the refresh or readiness gate fails. The updater and guardian share an exclusive maintenance mutex, and the maintenance marker remains present until that handoff reaches a terminal journal state, so the guardian cannot restart a stopped service during the transition. A bounded ready-token handoff keeps rollback responsibility with the parent until the staged child has accepted its fixed paths and preconditions. On a first deployment where the installed helper is older than the current handoff contract, `eng/run-deployment.ps1` repairs the protected infrastructure from the already verified package's four required entries, verifies the resulting helper and guardian hashes, service state, and readiness, then requests update discovery.
+
+Terminal update journals retain the five newest completed transactions. A cleanup pass removes only unambiguous terminal journal, stage, and database-backup triples; current, staged, pending, non-terminal, malformed, unreadable, or otherwise ambiguous artifacts remain. Repeated failed or interrupted transactions therefore fail closed and remain available for recovery inspection.
+
 ## Update from the UI
 
 1. Confirm no workout is active, armed, recovering, or awaiting debrief.
@@ -236,7 +254,9 @@ The installer also enables the retained 4 MB `Microsoft-Windows-Services/Diagnos
 
 To inspect a later outage, run `sudo powershell.exe -NoProfile -File eng\inspect-service-recovery.ps1`. The script is read-only and reports the bounded guardian log, latest healthy observation, and matching service-control events without exporting command lines or process memory.
 
-The signed updater and reviewed installer create `%ProgramData%\TreadmillRunner\updates\service-maintenance.lock` before stopping the gateway and remove it in `finally`. The guardian never starts the service while that marker exists. Do not create this marker to hide an unresolved outage, and do not delete it while the update task is running.
+The signed updater and reviewed installer create `%ProgramData%\TreadmillRunner\updates\service-maintenance.lock` before stopping the gateway and remove their own marker only after a terminal journal has been written. The guardian never starts the service while that marker exists and coordinates its check with the exclusive maintenance mutex. Do not create this marker to hide an unresolved outage, and do not delete it while the update task is running.
+
+Terminal artifact retention keeps only the five newest successful `Activated` or `RolledBack` transactions eligible for cleanup. In-flight, malformed, semantically invalid, and `RollbackFailed` journals retain their journal, staged release, and database backup as recovery evidence.
 
 Run `eng/accept-gateway-service.ps1` after installation or infrastructure repair. It verifies both SYSTEM tasks, the immutable service path, loopback readiness, LAN access, and current release status. A missing guardian task or script requires the documented `-RepairUpdateInfrastructureOnly` installer procedure; copying a script into Program Files manually is not accepted.
 

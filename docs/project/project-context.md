@@ -4,7 +4,7 @@ type: project-context
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-08-29
+updated: 2026-09-10
 ---
 
 # Project context
@@ -46,6 +46,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 
 - The gateway owns arm/wait-for-physical-motion, workout progression, 4 Hz snapshots, one-second persisted samples, events, completion, and browser-independent recovery. Natural hardware completion is two-phase: reaching the final workout step requests one exact-device verified Stop, and the session remains live and absent from completed History until fresh stopped telemetry is confirmed. Rejected or unknown completion Stop outcomes are never retried and require the physical Stop control. BLE treadmill and heart-rate sources publish Ready only with their first valid telemetry snapshot.
 - A demanded Polar/Garmin standard-HRS worker performs bounded fresh active discovery before connect and after relevant failures. It may use a unique exact-name or family/kind match as an ephemeral current BLE locator, but ambiguous or truncated scans fail closed, the persisted enrollment is not rewritten, and treadmill identity/command authority never rebinds. Heart-rate GATT enumeration is limited to the standard services the app consumes; native operations share the caller's timeout/cancellation, and subscription disposal does not launch detached CCCD cleanup.
+- A transient incomplete required-characteristic result receives one same-locator targeted retry before the normal active-rediscovery path. Strict notify-capability validation remains mandatory, the retry does not scan or rewrite enrollment, and its one-shot budget resets only after valid telemetry or a locator change.
 - A single controller lease renews every five seconds and expires after fifteen seconds; observers remain read-only. Browser reload can reclaim manual control without owning the workout timer.
 - History includes data-derived planned/requested/measured and heart-rate charts with a shared nearest-point inspector, exact snapshotted HR-zone analytics, adherence/version, event counts, weekly completed totals, and optional RPE/note. Detail responses bound the interactive graph to representative samples and expose the full persisted-sample count; analytics and CSV/FIT exports remain full-resolution.
 - Profile-owned run preferences select two or three primary metrics and balanced, large-text, or high-contrast presentation. Missing metrics remain `--`; cues are informational and volume-controlled.
@@ -57,6 +58,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 - The command connection accepts only the FTMS indication whose request opcode matches the current serialized write. Late acknowledgements for an earlier operation are ignored within the existing bounded wait and can never confirm or reject the current command; a matching response plus fresh telemetry remains mandatory.
 - Explicit local-history deletion permits terminal plan-linked sessions and settled Garmin upload records. Plan progress is recalculated from remaining history, and any remote Garmin activity remains untouched; pending, in-flight, and unknown upload outcomes still block deletion.
 - See [Simulated live session](live-session.md). Accelerated four-hour cadence/memory, 14,400 one-second SQLite writes, and loopback latency targets passed on the earlier baseline. Formal normal-Wi-Fi latency measurement is not a release check; command and telemetry timestamps remain available for diagnosing practical issues. Signed GitHub/local checks, expected-version staging, pinned-key offline bundle import, UI activation, health verification, and rollback are implemented. GitHub metadata is transport only; the installed public certificate and signed manifest remain authoritative.
+- The reviewed deployment coordinator binds the public release and package provenance to an exact commit, stages and activates an exact version only while `/api/live/session` is idle, verifies installed service/readiness/fingerprint and selected persisted data, and confirms that protected updater scripts match the signed package. Protected-script replacement uses a bounded acknowledged handoff and preserves recovery evidence on an incomplete rollback.
 
 ## Non-negotiable boundaries
 

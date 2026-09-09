@@ -17,6 +17,8 @@ $rotatedLogPath = Join-Path $logDirectory 'service-guardian.previous.log'
 $statePath = Join-Path $logDirectory 'service-guardian-state.json'
 $maximumLogBytes = 1MB
 $serviceDiagnosticLog = 'Microsoft-Windows-Services/Diagnostic'
+$maintenanceMutex = [System.Threading.Mutex]::new($false, 'Global\TreadmillRunnerGateway.Maintenance')
+$maintenanceMutexHeld = $false
 
 function Write-GuardianLog {
   param(
@@ -123,6 +125,23 @@ function Get-RecentServiceControlEvidence {
   }
 }
 
+function Wait-MaintenanceMutex {
+  param(
+    [Parameter(Mandatory)][System.Threading.Mutex]$Mutex,
+    [int]$TimeoutMilliseconds = 30000
+  )
+  try {
+    return $Mutex.WaitOne($TimeoutMilliseconds)
+  }
+  catch [System.Threading.AbandonedMutexException] {
+    # WaitOne throws after transferring ownership when the previous owner died.
+    return $true
+  }
+}
+
+if (-not (Wait-MaintenanceMutex -Mutex $maintenanceMutex -TimeoutMilliseconds 30000)) { return }
+$maintenanceMutexHeld = $true
+try {
 if (Test-Path -LiteralPath $maintenanceMarker -PathType Leaf) {
   return
 }
@@ -199,4 +218,9 @@ catch {
     errorType = $_.Exception.GetType().FullName
   }
   throw
+}
+}
+finally {
+  if ($maintenanceMutexHeld) { $maintenanceMutex.ReleaseMutex() }
+  $maintenanceMutex.Dispose()
 }

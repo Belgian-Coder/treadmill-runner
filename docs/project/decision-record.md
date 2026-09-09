@@ -4,7 +4,7 @@ type: decision-record
 status: reviewed
 owner: project
 audience: agent-and-developer
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # TreadmillRunner decision record
@@ -81,6 +81,16 @@ Passive treadmill telemetry starts before optional model/firmware reads, with on
 A connected SignalR transport is insufficient proof of current gateway state. Recovery forces a version read and verifies successful, nonempty session/snapshot responses before enabling controls; transient read failures retain automatic retry. Invalid lease payloads clear control authority and reconnect using the supervisor lifetime rather than the canceled heartbeat token. Recovery never repeats a motion request.
 
 Terminal persistence retries at most three times with 100/200-millisecond delays. The captured immutable effect remembers successful event and summary phases, while the database recognizes an identical terminal event or finalization after an uncertain commit result. This bounds recovery work without repeating plan progression or follow-on work. Permanent invariant failures and cancellation do not retry; an exhausted storage failure is logged and process crashes keep the existing startup-interruption behavior. Known backup creation failures are recorded separately from verification-record writes, so a recording failure cannot be misreported as a failed backup creation.
+
+## Polar, reconciliation, and deployment recovery (2026-09-09)
+
+An incomplete required-characteristic result from targeted standard-HRS discovery receives one immediate retry against the same current locator before active rediscovery. The retry budget stays consumed across repeated failures and resets only after a valid pulse sample or a locator change. Both attempts still require the standard Heart Rate Measurement notify characteristic and retain the generation cancellation boundary. This removes a redundant scan delay without treating incomplete discovery as valid identity or telemetry.
+
+A Garmin merge-and-replace job is terminal once the replacement has strict retained-FIT proof, the original deletion is confirmed, and one immediate read-only verification finds no proven recreated original. It does not remain pending for speculative later watch resyncs. An ambiguous or unresolved action retains the existing bounded retry and review states; a later duplicate is a separate reconciliation event.
+
+Arming publishes the created authoritative snapshot immediately after the transition lock is released. Devices refreshes passive status while the route remains open and owns cancellation and disposal of its polling work. Neither path adds command authority.
+
+Signed activation refreshes the administrator-owned updater and guardian only from the already signature- and hash-verified incoming package. Parent-to-child handoff is bounded and acknowledged before ownership transfers. Failure restores the prior database, service image, and updater scripts; an incomplete rollback retains its maintenance marker and recovery artifacts. Automated retention applies only to unambiguous successful activation or completed rollback records, never pending, malformed, unreadable, or rollback-failed state.
 
 ## Superseded decisions
 

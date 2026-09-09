@@ -17,7 +17,7 @@ public sealed class GarminHistoricalRecoveryEndpointTests(GarminHistoricalRecove
   : IClassFixture<GarminHistoricalRecoveryGatewayFactory>
 {
   [Fact]
-  public async Task Resync_status_explains_that_the_activity_exists_and_checks_are_delayed()
+  public async Task Resync_status_explains_immediate_read_only_verification()
   {
     using RecoveryHarness harness = await RecoveryHarness.CreateAsync(factory, createBackups: true);
     var contexts = factory.Services.GetRequiredService<IDbContextFactory<TreadmillRunnerDbContext>>();
@@ -37,7 +37,8 @@ public sealed class GarminHistoricalRecoveryEndpointTests(GarminHistoricalRecove
       Assert.False(status.GetProperty("canMergeIntoOne").GetBoolean());
       string message = status.GetProperty("message").GetString()!;
       Assert.Contains("merged activity is in Garmin", message);
-      Assert.Contains("30 minutes", message);
+      Assert.Contains("immediate read-only verification", message);
+      Assert.Contains("unresolved or ambiguous", message);
     }
     finally
     {

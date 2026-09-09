@@ -4,12 +4,24 @@ type: operations
 status: reviewed
 owner: project
 audience: operator-and-developer
-updated: 2026-09-05
+updated: 2026-09-10
 ---
 
 # Heart-rate gap diagnostics
 
 After installing a build containing this instrumentation, hardware sessions automatically record evidence from Bluetooth reception through sample storage. No diagnostic mode or hardware command is required. Historical gaps cannot gain evidence retrospectively.
+
+For an ordinary run, no preparation is required. Wear and wake the strap as usual, then start the run without refreshing Devices or pressing Connect. If heart rate does not appear, first note the exact local time and what the app shows; avoid changing Bluetooth state until that timestamp is recorded. After the run, retain the session ID shown in History. Together, the timestamp and session ID let the automatic journal distinguish demand, discovery, connection, notification, selection, sample creation, and persistence stages.
+
+When investigating an intermittent startup or reconnect problem, an optional elevated Windows trace can cover the first ten minutes of the run. Start it immediately before opening the run:
+
+```powershell
+./eng/capture-bluetooth-etw.ps1 `
+  -OutputPath 'C:\ProgramData\TreadmillRunner\data\diagnostics\captures\polar-run.etl' `
+  -DurationSeconds 600
+```
+
+The automatic journal remains the primary session-correlated record. The ETW adds Windows controller and Bluetooth-provider timing that the application cannot observe. Keep the ETL local because Windows events can contain device identifiers.
 
 Run this read-only report from the repository on the service host, using the session ID from History or the session export:
 

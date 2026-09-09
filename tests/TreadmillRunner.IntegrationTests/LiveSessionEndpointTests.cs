@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
 using TreadmillRunner.Core.Sessions;
@@ -261,6 +263,63 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     JsonElement weekly = await client.GetFromJsonAsync<JsonElement>(
       $"/api/history/weekly?profileId={profileId}");
     Assert.Equal(1, weekly.GetProperty("completedSessionCount").GetInt32());
+  }
+
+  [Fact]
+  public async Task Arming_publishes_the_authoritative_session_snapshot_to_live_hub()
+  {
+    using HttpClient client = factory.CreateClient();
+    using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
+      Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client);
+    string holderId = $"arm-publication-{Guid.NewGuid():N}";
+    ControlLease lease = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+
+    var published = new TaskCompletionSource<ActiveSessionSnapshot>(
+      TaskCreationOptions.RunContinuationsAsynchronously);
+    await using HubConnection connection = new HubConnectionBuilder()
+      .WithUrl(new Uri(factory.Server.BaseAddress, "/hubs/live"), options =>
+      {
+        options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
+        options.Transports = HttpTransportType.LongPolling;
+      })
+      .Build();
+    connection.On<ActiveSessionSnapshot>("sessionSnapshot", snapshot =>
+    {
+      if (snapshot.Live.SessionState == SessionState.ArmedWaitingForPhysicalStart)
+        published.TrySetResult(snapshot);
+    });
+    await connection.StartAsync();
+
+    try
+    {
+      using HttpResponseMessage armResponse = await client.PostAsJsonAsync(
+        "/api/live/sessions/arm",
+        new
+        {
+          profileId,
+          workoutRevisionId = revisionId,
+          holderId,
+          leaseId = lease.Id,
+          operationId = Guid.NewGuid(),
+          selectionSource = "Library",
+        });
+      Assert.Equal(HttpStatusCode.Created, armResponse.StatusCode);
+      ActiveSessionSnapshot armed = Assert.IsType<ActiveSessionSnapshot>(
+        await armResponse.Content.ReadFromJsonAsync<ActiveSessionSnapshot>());
+
+      ActiveSessionSnapshot broadcast = await published.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.Equal(armed.SessionId, broadcast.SessionId);
+      Assert.Equal(armed.Version, broadcast.Version);
+      Assert.Equal(SessionState.ArmedWaitingForPhysicalStart, broadcast.Live.SessionState);
+    }
+    finally
+    {
+      using HttpResponseMessage finalReset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+      Assert.Equal(HttpStatusCode.NoContent, finalReset.StatusCode);
+    }
   }
 
   [Fact]

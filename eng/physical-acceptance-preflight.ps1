@@ -3,7 +3,7 @@ param(
     [string] $GatewayUrl = 'http://127.0.0.1:5180',
     [string] $ExpectedTreadmillModel = 'OMEGA Z',
     [string] $ExpectedTreadmillFirmware = 'V10.23.17',
-    [string] $ExpectedHeartRateDisplayName = 'Polar H10',
+    [string] $ExpectedHeartRateDisplayName = 'Polar heart-rate sensor',
     [switch] $RequireFreshTelemetry,
     [string] $OutputPath
 )

@@ -489,10 +489,13 @@ public sealed class ReadOnlyDeviceCoordinator(
     int enrollmentVersion = stored.Version;
     var consecutiveFailureCount = 0;
     var retryCachedHeartRateLocator = false;
+    var hasRetriedRequiredHeartRateLocator = false;
     while (!cancellationToken.IsCancellationRequested)
     {
       long generation = Interlocked.Increment(ref _nextGeneration);
       var attempt = new ConnectionAttemptRuntime();
+      var usedTargetedHeartRateDiscovery = false;
+      string? attemptedConnectionDeviceId = null;
       try
       {
         UpdateConnection(enrollment, DeviceConnectionState.Connecting, generation, fault: null);
@@ -509,6 +512,10 @@ public sealed class ReadOnlyDeviceCoordinator(
         await using IBleConnection connection = await transport.ConnectAsync(
           connectionDeviceId,
           cancellationToken);
+        attemptedConnectionDeviceId = connection.DeviceId;
+        usedTargetedHeartRateDiscovery =
+          enrollment.Role == DeviceRole.HeartRate &&
+          connection is IBleTargetedServiceDiscoveryConnection;
         UpdateConnection(enrollment, DeviceConnectionState.DiscoveringServices, generation, fault: null);
         attempt.OperationStage = "service-discovery";
         IReadOnlyList<BleService> services = await AwaitGattOperationAsync(
@@ -550,7 +557,11 @@ public sealed class ReadOnlyDeviceCoordinator(
             enrollmentVersion,
             services,
             generation,
-            observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            observedAt =>
+            {
+              hasRetriedRequiredHeartRateLocator = false;
+              OnPrimaryTelemetry(enrollment, generation, observedAt, attempt);
+            },
             attempt,
             cancellationToken);
         }
@@ -617,12 +628,36 @@ public sealed class ReadOnlyDeviceCoordinator(
           failedAt);
         UpdateConnection(enrollment, DeviceConnectionState.Reconnecting, generation, fault: null);
         HeartRateReconnectResolution? resolution = null;
+        bool retrySameHeartRateLocator =
+          !hasRetriedRequiredHeartRateLocator &&
+          enrollment.Role == DeviceRole.HeartRate &&
+          usedTargetedHeartRateDiscovery &&
+          string.Equals(
+            attemptedConnectionDeviceId,
+            connectionDeviceId,
+            StringComparison.OrdinalIgnoreCase) &&
+          ClassifyFailure(exception) == BleReliabilityFailureKind.RequiredCharacteristicMissing;
+        if (retrySameHeartRateLocator)
+        {
+          hasRetriedRequiredHeartRateLocator = true;
+          diagnosticJournal?.Record(new(
+            failedAt,
+            enrollment.Id,
+            enrollment.Role.ToString(),
+            generation,
+            "targeted-locator-retry-scheduled",
+            ClassifyFailure(exception).ToString(),
+            exception.HResult,
+            OperationStage: OperationStageForFailure(exception, attempt.OperationStage),
+            FailureDetails: BleDiagnosticFailureDetails.From(exception)));
+        }
         bool deferHeartRateRediscoveryForCachedRetry =
           !isCachedHeartRateRetry &&
           enrollment.Role == DeviceRole.HeartRate &&
           exception is WindowsBleDisconnectedException &&
           attempt.HasEverBeenDurablyStable;
-        if (!deferHeartRateRediscoveryForCachedRetry &&
+        if (!retrySameHeartRateLocator &&
+            !deferHeartRateRediscoveryForCachedRetry &&
             (enrollment.Role == DeviceRole.HeartRate ||
              exception is WindowsBleDeviceUnavailableException))
         {
@@ -642,6 +677,7 @@ public sealed class ReadOnlyDeviceCoordinator(
                resolution.DeviceId,
                StringComparison.OrdinalIgnoreCase)))
         {
+          hasRetriedRequiredHeartRateLocator = false;
           connectionDeviceId = resolution.DeviceId;
           continue;
         }

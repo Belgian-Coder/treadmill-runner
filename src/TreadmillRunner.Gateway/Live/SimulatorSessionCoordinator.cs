@@ -345,6 +345,7 @@ public sealed class LiveSessionCoordinator(
     try
     {
       var terminalSessionWasActive = false;
+      ActiveSessionSnapshot? armedSnapshot = null;
       if (leaseCoordinator.Current is not ControlLease initialLease ||
           initialLease.Id != leaseId ||
           !string.Equals(initialLease.HolderId, holderId, StringComparison.Ordinal))
@@ -515,12 +516,18 @@ public sealed class LiveSessionCoordinator(
           _active = active;
           leaseExpiry = finalLease.ExpiresAt;
           PublishSnapshot(active, now, SessionControlAccess.Controller, leaseExpiry);
-          return active.Snapshot;
+          armedSnapshot = active.Snapshot;
         }
       }
       finally
       {
         _gate.Release();
+      }
+
+      if (armedSnapshot is not null)
+      {
+        _snapshotBroadcaster.Publish(null, armedSnapshot);
+        return armedSnapshot;
       }
 
       try

@@ -90,25 +90,23 @@ public sealed class GarminActivityUploadWorkerTests : IAsyncLifetime
       GarminActivityUploadJob deleteLease = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddSeconds(1), TimeSpan.FromMinutes(2)));
       Assert.Equal("DeleteOriginal", deleteLease.OperationPhase);
       await worker.ProcessOneAsync(deleteLease, default);
-      for (var check = 0; check < 3; check++)
-      {
-        GarminActivityUploadJob verifyLease = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddDays(1), TimeSpan.FromMinutes(2)));
-        Assert.Equal("VerifyResync", verifyLease.OperationPhase);
-        await worker.ProcessOneAsync(verifyLease, default);
-      }
+      GarminActivityUploadJob verifyLease = Assert.IsType<GarminActivityUploadJob>(await store.LeaseNextAsync(now.AddSeconds(1), TimeSpan.FromMinutes(2)));
+      Assert.Equal("VerifyResync", verifyLease.OperationPhase);
+      await worker.ProcessOneAsync(verifyLease, default);
+      Assert.Null(await store.LeaseNextAsync(now.AddDays(1), TimeSpan.FromMinutes(2)));
       Assert.Equal(new[]
       {
         "search", "download", "upload",
         "download", "download", "delete",
         "search", "download", "download", "delete",
-        "search", "download",
-        "search", "download",
       }, adapter.Calls);
       Assert.Equal(3, Directory.GetFiles(Path.Combine(directory, "garmin-backups"), "*.fit").Length);
     }
 
     GarminActivityUploadJob completed = Assert.Single(await store.ListJobsAsync(profileId));
     Assert.Equal(expectedStatus, completed.Status);
+    if (handling == GarminWatchActivityHandling.MergeAndReplace && replacementHasId)
+      Assert.Equal("Upload", completed.OperationPhase);
     Assert.Equal("watch-123", completed.MatchedRemoteId);
     if (handling == GarminWatchActivityHandling.PreferWatch)
       Assert.Equal(new[] { "search" }, adapter.Calls);

@@ -1,5 +1,5 @@
 @page "/devices"
-@implements IDisposable
+@implements IAsyncDisposable
 
 @inject HttpClient Http
 @inject ActiveProfileState ActiveProfile
@@ -363,6 +363,17 @@
     private Guid maintenanceEventOperationId;
     private bool initialLoading = true;
     private Guid? activeProfileId;
+    private readonly object statusRefreshLifecycleSync = new();
+    private readonly CancellationTokenSource lifecycleCancellation = new();
+    private readonly SemaphoreSlim statusRefreshGate = new(1, 1);
+    private Task? statusRefreshLoop;
+    private TaskCompletionSource<bool>? statusRefreshesCompleted;
+    private Task? disposalTask;
+    private int statusRefreshesInFlight;
+    private bool hasRendered;
+    private bool disposed;
+
+    private bool IsDisposed => Volatile.Read(ref disposed);
 
     private IEnumerable<DeviceEnrollmentView> OrderedHeartRateEnrollments => enrollments
         .Where(item => item.Role == "HeartRate")
@@ -383,6 +394,38 @@
         finally
         {
             initialLoading = false;
+        }
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            lock (statusRefreshLifecycleSync)
+            {
+                if (disposed) return Task.CompletedTask;
+                hasRendered = true;
+                statusRefreshLoop = RefreshStatusLoopAsync(lifecycleCancellation.Token);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task RefreshStatusLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                // A slow gateway read must not stack another read behind it.
+                await RefreshStatusAsync(cancellationToken, skipIfBusy: true, suppressTransientFailures: true);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Navigation or component disposal owns cancellation of the loop.
         }
     }
 
@@ -506,8 +549,100 @@
         {
             foreach (ProfileSummary profile in profiles) newSensorProfiles.Add(profile.Id);
         }
-        status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>(
-            activeProfileId is Guid profileId ? $"api/devices/status?profileId={profileId}" : "api/devices/status");
+        await RefreshStatusAsync();
+    }
+
+    private async Task RefreshStatusAsync(
+        CancellationToken cancellationToken = default,
+        bool skipIfBusy = false,
+        bool suppressTransientFailures = false)
+    {
+        if (!TryBeginStatusRefresh()) return;
+        if (cancellationToken == default) cancellationToken = lifecycleCancellation.Token;
+
+        bool entered = false;
+        try
+        {
+            if (skipIfBusy)
+            {
+                if (!await statusRefreshGate.WaitAsync(0, cancellationToken)) return;
+            }
+            else
+            {
+                await statusRefreshGate.WaitAsync(cancellationToken);
+            }
+            entered = true;
+
+            if (IsDisposed) return;
+            Guid? requestedProfileId = activeProfileId;
+            DeviceTelemetrySnapshot? next = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>(
+                requestedProfileId is Guid profileId ? $"api/devices/status?profileId={profileId}" : "api/devices/status",
+                cancellationToken);
+            if (IsDisposed || requestedProfileId != activeProfileId) return;
+
+            bool notify = hasRendered;
+            await InvokeAsync(() =>
+            {
+                if (IsDisposed || requestedProfileId != activeProfileId) return;
+                status = next;
+                if (notify) StateHasChanged();
+            });
+        }
+        catch (Exception exception) when (suppressTransientFailures &&
+            (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException ||
+             (IsDisposed && exception is (ObjectDisposedException or InvalidOperationException))))
+        {
+            // Status is best-effort while the page is open. Keep the last known
+            // snapshot and leave action messages untouched when a poll fails.
+        }
+        catch (OperationCanceledException) when (suppressTransientFailures && cancellationToken.IsCancellationRequested)
+        {
+            // Component disposal canceled a queued status read.
+        }
+        finally
+        {
+            try
+            {
+                if (entered) statusRefreshGate.Release();
+            }
+            finally
+            {
+                EndStatusRefresh();
+            }
+        }
+    }
+
+    private bool TryBeginStatusRefresh()
+    {
+        lock (statusRefreshLifecycleSync)
+        {
+            if (disposed) return false;
+            if (statusRefreshesInFlight++ == 0)
+            {
+                statusRefreshesCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            return true;
+        }
+    }
+
+    private void EndStatusRefresh()
+    {
+        lock (statusRefreshLifecycleSync)
+        {
+            if (--statusRefreshesInFlight != 0) return;
+            statusRefreshesCompleted?.TrySetResult(true);
+            statusRefreshesCompleted = null;
+        }
+    }
+
+    private Task WaitForStatusRefreshesAsync()
+    {
+        lock (statusRefreshLifecycleSync)
+        {
+            return statusRefreshesInFlight == 0
+                ? Task.CompletedTask
+                : statusRefreshesCompleted!.Task;
+        }
     }
 
     private async Task RetryConnectionAsync(DeviceEnrollmentView enrollment)
@@ -526,7 +661,7 @@
             for (var attempt = 0; attempt < 12; attempt++)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1));
-                status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>("api/devices/status");
+                await RefreshStatusAsync();
                 bool ready = enrollment.Role == "Treadmill"
                     ? status?.Treadmill.State == DeviceConnectionState.Ready && status.TreadmillAge <= TimeSpan.FromSeconds(5)
                     : status?.HeartRateSources?.FirstOrDefault(item => item.EnrollmentId == enrollment.Id) is
@@ -749,13 +884,32 @@
 
     private void ActiveProfileChanged(Guid? profileId)
     {
-        activeProfileId = profileId;
-        _ = InvokeAsync(async () =>
+        CancellationToken cancellationToken;
+        lock (statusRefreshLifecycleSync)
         {
-            status = await Http.GetFromJsonAsync<DeviceTelemetrySnapshot>(
-                profileId is Guid selected ? $"api/devices/status?profileId={selected}" : "api/devices/status");
-            StateHasChanged();
-        });
+            if (disposed) return;
+            activeProfileId = profileId;
+            cancellationToken = lifecycleCancellation.Token;
+        }
+
+        _ = RefreshStatusAfterProfileChangeAsync(cancellationToken);
+    }
+
+    private async Task RefreshStatusAfterProfileChangeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (IsDisposed) return Task.CompletedTask;
+                return RefreshStatusAsync(cancellationToken, suppressTransientFailures: true);
+            });
+        }
+        catch (Exception exception) when (IsDisposed && exception is (ObjectDisposedException or InvalidOperationException))
+        {
+            // Navigation can dispose the renderer while this queued profile
+            // refresh is waiting for the component dispatcher.
+        }
     }
 
     private static bool IsPolar(DeviceEnrollmentView enrollment) =>
@@ -883,5 +1037,44 @@
         public string DisplayName { get; set; } = string.Empty;
     }
 
-    public void Dispose() => ActiveProfile.Changed -= ActiveProfileChanged;
+    public ValueTask DisposeAsync()
+    {
+        lock (statusRefreshLifecycleSync)
+        {
+            disposalTask ??= DisposeCoreAsync();
+            return new ValueTask(disposalTask);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        Task? loop;
+        lock (statusRefreshLifecycleSync)
+        {
+            if (disposed) return;
+            Volatile.Write(ref disposed, true);
+            ActiveProfile.Changed -= ActiveProfileChanged;
+            lifecycleCancellation.Cancel();
+            loop = statusRefreshLoop;
+        }
+
+        if (loop is not null)
+        {
+            try
+            {
+                await loop;
+            }
+            catch (OperationCanceledException) when (lifecycleCancellation.IsCancellationRequested)
+            {
+                // The component owns cancellation of its timer loop.
+            }
+        }
+
+        // A status callback may have entered the gate from a user event or a
+        // profile change while the timer loop was stopping. Wait for all such
+        // callbacks before disposing the gate they release in finally.
+        await WaitForStatusRefreshesAsync();
+        statusRefreshGate.Dispose();
+        lifecycleCancellation.Dispose();
+    }
 }

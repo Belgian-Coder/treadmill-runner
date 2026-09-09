@@ -26,6 +26,7 @@ public sealed class ReleaseScriptContractTests
   [InlineData("verify-change.ps1")]
   [InlineData("physical-acceptance-preflight.ps1")]
   [InlineData("verify-recovery-acceptance.ps1")]
+  [InlineData("run-deployment.ps1")]
   [InlineData("new-operator-access-secret.ps1")]
   [InlineData("capture-bluetooth-etw.ps1")]
   public async Task Release_script_has_valid_PowerShell_syntax(string scriptName)
@@ -220,6 +221,28 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("Updates\\update-helper.ps1", script, StringComparison.Ordinal);
     Assert.Contains("Updates\\service-guardian.ps1", script, StringComparison.Ordinal);
     Assert.Contains("stable.manifest.json", script, StringComparison.Ordinal);
+    Assert.Contains(".feed-transaction-", script, StringComparison.Ordinal);
+    Assert.Contains("Write-FeedTransactionState", script, StringComparison.Ordinal);
+    Assert.Contains("Recover-StaleFeedTransaction", script, StringComparison.Ordinal);
+    Assert.Contains("MarkerCreated", script, StringComparison.Ordinal);
+    Assert.Contains("ReplacementStarted", script, StringComparison.Ordinal);
+    Assert.Contains("Published", script, StringComparison.Ordinal);
+    Assert.Contains("The stable feed maintenance marker has no recoverable transaction state", script, StringComparison.Ordinal);
+    Assert.Contains("previous stable feed pair was restored", script, StringComparison.Ordinal);
+    Assert.Contains("post-replacement verification", script, StringComparison.Ordinal);
+    Assert.Contains("AllowedHashes", script, StringComparison.Ordinal);
+    Assert.Contains("previousPackageSha256", script, StringComparison.Ordinal);
+    Assert.Contains("previousManifestSha256", script, StringComparison.Ordinal);
+    Assert.Contains("function Copy-DurableFile", script, StringComparison.Ordinal);
+    Assert.Contains("$destinationStream.Flush($true)", script, StringComparison.Ordinal);
+    Assert.Contains("Copy-DurableFile -Source $backupPackage -Destination $destinationPackage", script, StringComparison.Ordinal);
+    Assert.Contains("$validatedManifestSha256", script, StringComparison.Ordinal);
+    Assert.Contains("The stable feed source changed after signature and package validation", script, StringComparison.Ordinal);
+    int feedMutex = script.IndexOf("$maintenanceMutex =", StringComparison.Ordinal);
+    int feedMarker = script.IndexOf("$markerBytes", StringComparison.Ordinal);
+    int feedSnapshot = script.IndexOf("$hadPackage = Test-Path", StringComparison.Ordinal);
+    Assert.True(feedMutex >= 0 && feedMarker > feedMutex && feedSnapshot > feedMarker,
+      "feed rollback existence snapshots must be taken after the mutex and marker are held");
   }
 
   [Fact]
@@ -315,15 +338,243 @@ public sealed class ReleaseScriptContractTests
 
     Assert.Contains("Join-Path $updaterRoot 'signing.cer'", helper, StringComparison.Ordinal);
     Assert.Contains("^[0-9a-f]{32}$", helper, StringComparison.Ordinal);
-    Assert.Contains("The update transaction workspace already exists", helper, StringComparison.Ordinal);
+    Assert.Contains("preparation artifacts left before the first risky mutation", helper, StringComparison.Ordinal);
     Assert.Contains("$currentVersionText = Split-Path -Leaf $currentReleasePath", helper, StringComparison.Ordinal);
-    Assert.Contains("Test-Path -LiteralPath $previousImagePath -PathType Leaf", helper, StringComparison.Ordinal);
+    Assert.Contains("function Get-ServiceExecutablePath", helper, StringComparison.Ordinal);
+    Assert.Contains("function Restore-ServiceImageSafely", helper, StringComparison.Ordinal);
+    Assert.Contains("TargetImagePath", helper, StringComparison.Ordinal);
+    Assert.Contains("current gateway service image changed outside this update transaction", helper, StringComparison.Ordinal);
+    Assert.Contains("The Windows Service ImagePath is not a single executable path", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("$previousImagePath.Split(' ')[0]", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("GetAssemblyName($currentExecutable)", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("$plan.SigningCertificatePath", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("SigningCertificatePath =", manager, StringComparison.Ordinal);
     Assert.Contains("service-maintenance.lock", helper, StringComparison.Ordinal);
     Assert.Contains("$maintenanceMarkerCreated", helper, StringComparison.Ordinal);
+    Assert.Contains("InfrastructureRefresh", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshExpectedHelperHash", helper, StringComparison.Ordinal);
+    Assert.Contains("The pinned certificate or protected task actions changed", helper, StringComparison.Ordinal);
+    Assert.Contains("Write-JournalPayload", helper, StringComparison.Ordinal);
+    Assert.Contains("function Write-DurableTextFile", helper, StringComparison.Ordinal);
+    Assert.Contains("$stream.Flush($true)", helper, StringComparison.Ordinal);
+    Assert.Contains("Invoke-StaleUpdateRecovery", helper, StringComparison.Ordinal);
+    Assert.Contains("parentProcessStartTicks", helper, StringComparison.Ordinal);
+    Assert.Contains("before the child claimed transaction ownership", helper, StringComparison.Ordinal);
+    Assert.Contains("Interrupted-update database sidecars remained after recovery", helper, StringComparison.Ordinal);
+    Assert.Contains(".update-helper-$TransactionId.backup", helper, StringComparison.Ordinal);
+    Assert.Contains("Start-Process -FilePath 'powershell.exe'", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshReadyPath", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshReadyToken", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshCompletionPath", helper, StringComparison.Ordinal);
+    Assert.Contains("Wait-RefreshCompletionAcknowledgement", helper, StringComparison.Ordinal);
+    Assert.Contains("Wait-RefreshChildReady", helper, StringComparison.Ordinal);
+    Assert.Contains("Wait-RefreshChildOwnership", helper, StringComparison.Ordinal);
+    Assert.Contains("Wait-RefreshChildTerminal", helper, StringComparison.Ordinal);
+    Assert.Contains("Wait-Process -Id $Process.Id -Timeout 10", helper, StringComparison.Ordinal);
+    Assert.Contains("Read-RefreshTerminalState", helper, StringComparison.Ordinal);
+    Assert.DoesNotContain("Wait-ParentProcessExit", helper, StringComparison.Ordinal);
+    Assert.Contains("$refreshChildRolledBack", helper, StringComparison.Ordinal);
+    Assert.Contains("$activationCompleted", helper, StringComparison.Ordinal);
+    Assert.Contains("Complete-ActivatedParentCleanup", helper, StringComparison.Ordinal);
+    Assert.Contains("The activation journal no longer records the expected Activated transaction", helper, StringComparison.Ordinal);
+    Assert.Contains("The protected updater child did not complete within", helper, StringComparison.Ordinal);
+    Assert.Contains("Stop-Process -Id $refreshChildProcess.Id", helper, StringComparison.Ordinal);
+    Assert.Contains("if (-not $Process.HasExited)", helper, StringComparison.Ordinal);
+    Assert.Contains("Reconcile once more outside the timed loop", helper, StringComparison.Ordinal);
+    Assert.Contains("$finalChildState = Read-RefreshTerminalState", helper, StringComparison.Ordinal);
+    Assert.Contains("if ($refreshChildRolledBack -and $rollbackCompleted) { throw }", helper, StringComparison.Ordinal);
+    int finalChildExitCheck = helper.LastIndexOf("if (-not $refreshChildProcess.HasExited)", StringComparison.Ordinal);
+    int finalChildJournalRead = helper.LastIndexOf("$finalChildState = Read-RefreshTerminalState", StringComparison.Ordinal);
+    int parentRollbackMutation = helper.LastIndexOf("if ($serviceMutationStarted -or $newReleasePromoted)", StringComparison.Ordinal);
+    Assert.True(finalChildExitCheck >= 0 && finalChildJournalRead > finalChildExitCheck && parentRollbackMutation > finalChildJournalRead);
+    Assert.Contains("recovery artifacts were preserved", helper, StringComparison.Ordinal);
+    Assert.Contains("parent rollback was not started", helper, StringComparison.Ordinal);
+    Assert.Contains("Copy-DurableFile -Source $helperBackupPath -Destination $helperTarget", helper, StringComparison.Ordinal);
+    Assert.Contains("Copy-DurableFile -Source $guardianBackupPath -Destination $guardianTarget", helper, StringComparison.Ordinal);
+    Assert.Contains("The parent could not reacquire the maintenance lock for rollback", helper, StringComparison.Ordinal);
+    Assert.Contains("New-MaintenanceMutex", helper, StringComparison.Ordinal);
+    Assert.Contains("Remove-FailedRelease", helper, StringComparison.Ordinal);
+    Assert.Contains("$terminalCleanupAllowed", helper, StringComparison.Ordinal);
+    Assert.Contains("if ($activationJournaled)", helper, StringComparison.Ordinal);
+    Assert.Contains("must never turn success into rollback", helper, StringComparison.Ordinal);
+    Assert.Contains("updatePrincipalRunLevel", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshOwnershipPath", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshOwnershipToken", helper, StringComparison.Ordinal);
+    Assert.Contains("RefreshIncomingPath", helper, StringComparison.Ordinal);
+    Assert.Contains("transactionStarted", helper, StringComparison.Ordinal);
+    Assert.Contains("removed only the transaction-owned incoming workspace", helper, StringComparison.Ordinal);
+    Assert.Contains("$databaseMutationPath", helper, StringComparison.Ordinal);
+    Assert.Contains("$helperBackupPath", helper, StringComparison.Ordinal);
+    Assert.Contains("$guardianBackupPath", helper, StringComparison.Ordinal);
+    int expectedHash = helper.IndexOf("$helperExpectedHash = Get-FileSha256", StringComparison.Ordinal);
+    int durablePrecondition = helper.IndexOf("Write-DurableTextFile -Path $preconditionPath", StringComparison.Ordinal);
+    Assert.True(expectedHash >= 0 && durablePrecondition > expectedHash);
+    int durableActivating = helper.LastIndexOf("Write-Journal -Path $journalPath -State 'Activating'", StringComparison.Ordinal);
+    int riskyServiceStop = helper.LastIndexOf("Stop-Service -Name $serviceName -Force", StringComparison.Ordinal);
+    Assert.True(durableActivating >= 0 && riskyServiceStop > durableActivating);
+    Assert.Contains("$maintenanceMutex.ReleaseMutex()", helper, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Service_installer_creates_the_maintenance_marker_inside_its_cleanup_scope()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-gateway-service.ps1"));
+    int tryStart = script.IndexOf("try\n{", StringComparison.Ordinal);
+    if (tryStart < 0) tryStart = script.IndexOf("try {", StringComparison.Ordinal);
+    int markerWrite = script.IndexOf("$maintenanceMarkerPath,", StringComparison.Ordinal);
+    int finallyStart = script.IndexOf("finally", markerWrite, StringComparison.Ordinal);
+    Assert.True(tryStart >= 0 && markerWrite > tryStart && finallyStart > markerWrite);
+    Assert.Contains("targetReleaseOwned", script, StringComparison.Ordinal);
+    Assert.Contains("serviceInstallStarted", script, StringComparison.Ordinal);
+    Assert.Contains("Remove-Item -LiteralPath $targetRelease -Recurse -Force", script, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public async Task Protected_helper_rejects_refresh_paths_outside_fixed_roots_before_mutation()
+  {
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.HelperContract", Guid.NewGuid().ToString("N"));
+    string install = Path.Combine(root, "install");
+    string data = Path.Combine(root, "data");
+    Directory.CreateDirectory(Path.Combine(install, "updater"));
+    Directory.CreateDirectory(Path.Combine(install, "releases", "1.0.0"));
+    Directory.CreateDirectory(Path.Combine(data, "updates", "plans"));
+    Directory.CreateDirectory(Path.Combine(data, "backups"));
+    string sourceHelper = Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1");
+    string helper = Path.Combine(install, "updater", "update-helper.ps1");
+    File.Copy(sourceHelper, helper);
+    string tx = new string('a', 32);
+    var startInfo = new ProcessStartInfo
+    {
+      FileName = "powershell.exe",
+      UseShellExecute = false,
+      CreateNoWindow = true,
+      RedirectStandardError = true,
+      RedirectStandardOutput = true,
+    };
+    foreach (string argument in new[]
+    {
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper,
+      "-InfrastructureRefresh", "-InstallRoot", install, "-DataRoot", data,
+      "-PlanPath", Path.Combine(data, "updates", "plans", "pending-activation.json"),
+      "-RefreshTransactionId", tx, "-RefreshExpectedVersion", "2.0.0",
+      "-RefreshNewReleasePath", Path.Combine(root, "outside-release"),
+      "-RefreshIncomingPath", Path.Combine(install, "releases", $".incoming-{tx}"),
+      "-RefreshPreviousImagePath", Path.Combine(install, "releases", "1.0.0", "TreadmillRunner.Gateway.exe"),
+      "-RefreshDatabaseBackupPath", Path.Combine(data, "backups", $"pre-update-{tx}.db"),
+      "-RefreshJournalPath", Path.Combine(data, "updates", "plans", $"transaction-{tx}.json"),
+      "-RefreshMaintenanceMarkerPath", Path.Combine(data, "updates", "service-maintenance.lock"),
+      "-RefreshHelperPath", Path.Combine(install, "updater", "update-helper.ps1"),
+      "-RefreshGuardianPath", Path.Combine(install, "updater", "service-guardian.ps1"),
+      "-RefreshReadyPath", Path.Combine(install, "updater", $".update-ready-{tx}.token"),
+      "-RefreshReadyToken", "contract-token",
+      "-RefreshStartPath", Path.Combine(install, "updater", $".update-start-{tx}.token"),
+      "-RefreshStartToken", "contract-start-token",
+      "-RefreshCompletionPath", Path.Combine(install, "updater", $".update-completion-{tx}.token"),
+      "-RefreshCompletionToken", "contract-completion-token",
+      "-RefreshOwnershipPath", Path.Combine(install, "updater", $".update-ownership-{tx}.token"),
+      "-RefreshOwnershipToken", "contract-ownership-token",
+      "-RefreshDatabaseMutationPath", Path.Combine(install, "updater", $".update-database-{tx}.token"),
+      "-RefreshDatabaseMutationToken", "contract-database-token",
+      "-RefreshExpectedHelperHash", new string('0', 64),
+      "-RefreshExpectedGuardianHash", new string('0', 64),
+      "-RefreshPreconditionPath", Path.Combine(install, "updater", $".update-preconditions-{tx}.json"),
+    }) startInfo.ArgumentList.Add(argument);
+    try
+    {
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.NotEqual(0, process.ExitCode);
+      Assert.Contains("New release path is outside its fixed update path contract", $"{output}{error}", StringComparison.Ordinal);
+      Assert.False(File.Exists(Path.Combine(data, "updates", "service-maintenance.lock")));
+      Assert.False(File.Exists(Path.Combine(install, "updater", $".update-ready-{tx}.token")));
+      Assert.False(File.Exists(Path.Combine(install, "updater", $".update-ownership-{tx}.token")));
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
+  public void Deployment_coordinator_requires_exact_release_commit_and_explicit_idle_activation()
+  {
+    string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
+    Assert.Contains("ExpectedVersion", script, StringComparison.Ordinal);
+    Assert.Contains("ExpectedCommit", script, StringComparison.Ordinal);
+    Assert.Contains("ExpectedRelease", script, StringComparison.Ordinal);
+    Assert.Contains("Invoke-GhJson", script, StringComparison.Ordinal);
+    Assert.Contains("'release', 'view'", script, StringComparison.Ordinal);
+    Assert.Contains("gh api", script, StringComparison.Ordinal);
+    Assert.Contains("SHA256SUMS.txt", script, StringComparison.Ordinal);
+    Assert.Contains("install-stable-update-feed.ps1", script, StringComparison.Ordinal);
+    Assert.Contains("physical-acceptance-preflight.ps1", script, StringComparison.Ordinal);
+    Assert.Contains("/api/updates/check", script, StringComparison.Ordinal);
+    Assert.Contains("/api/updates/stage", script, StringComparison.Ordinal);
+    Assert.Contains("/api/updates/activate", script, StringComparison.Ordinal);
+    Assert.Contains("Confirmation ACTIVATE", script, StringComparison.Ordinal);
+    Assert.Contains("StatusCode -eq 204", script, StringComparison.Ordinal);
+    Assert.Contains("StatusCode -ne 200", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq '4'", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq '5'", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq '6'", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq '7'", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq 'Interrupted'", script, StringComparison.Ordinal);
+    Assert.Contains("$text -eq 'Faulted'", script, StringComparison.Ordinal);
+    Assert.Contains("Convert-TerminalSessionState -Value $history.state", script, StringComparison.Ordinal);
+    Assert.Contains("Restart-Service -Name 'TreadmillRunnerGateway'", script, StringComparison.Ordinal);
+    Assert.Contains("/api/history/$sessionId", script, StringComparison.Ordinal);
+    Assert.Contains("The live session $sessionId and durable history disagree", script, StringComparison.Ordinal);
+    Assert.Contains("/api/system/version", script, StringComparison.Ordinal);
+    Assert.Contains("/api/planning/profiles", script, StringComparison.Ordinal);
+    Assert.Contains("/api/history?profileId=", script, StringComparison.Ordinal);
+    Assert.Contains("take=5000", script, StringComparison.Ordinal);
+    Assert.Contains("Expand-JsonArray", script, StringComparison.Ordinal);
+    Assert.Contains("Profile $($profile.id) payload changed", script, StringComparison.Ordinal);
+    Assert.Contains("History item $historyId", script, StringComparison.Ordinal);
+    Assert.Contains("stagedVersion -ne $ExpectedVersion", script, StringComparison.Ordinal);
+    Assert.Contains("schemaVersion -ne 1", script, StringComparison.Ordinal);
+    Assert.Contains("manifest.channel -cne 'stable'", script, StringComparison.Ordinal);
+    Assert.Contains("Get-CurrentInstalledRelease", script, StringComparison.Ordinal);
+    Assert.Contains("Expand-VerifiedRepairSource", script, StringComparison.Ordinal);
+    Assert.Contains("Repair-ProtectedInfrastructure", script, StringComparison.Ordinal);
+    Assert.Contains("protected-infrastructure-repair", script, StringComparison.Ordinal);
+    Assert.Contains("-RepairUpdateInfrastructureOnly", script, StringComparison.Ordinal);
+    Assert.Contains("four installer-required entries", script, StringComparison.Ordinal);
+    Assert.Contains("if (-not $DryRun)", script, StringComparison.Ordinal);
+    Assert.Contains("Normalize a verified terminal session before the GET-only physical", script, StringComparison.Ordinal);
+    int preflight = script.IndexOf("# This is a GET-only, no-command preflight", StringComparison.Ordinal);
+    int preflightIdle = script.IndexOf("Normalize a verified terminal session before the GET-only physical", StringComparison.Ordinal);
+    Assert.True(preflightIdle >= 0 && preflight > preflightIdle,
+      "mutating deployment modes must normalize a terminal session before physical preflight");
+  }
+
+  [Fact]
+  public void Update_manager_retention_is_terminal_state_only_and_conservative()
+  {
+    string manager = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "UpdateManager.cs"));
+    string endpoints = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "UpdateEndpoints.cs"));
+    Assert.Contains("MaximumRetainedTerminalTransactions = 5", manager, StringComparison.Ordinal);
+    Assert.Contains("journal.State is \"Activated\" or \"RolledBack\"", manager, StringComparison.Ordinal);
+    Assert.Contains("journal.State is not (\"Activating\" or \"Activated\" or \"RolledBack\" or \"RollbackFailed\")", manager, StringComparison.Ordinal);
+    Assert.Contains("pending-activation.json", manager, StringComparison.Ordinal);
+    Assert.Contains("ScheduledTaskName must be TreadmillRunnerUpdate", manager, StringComparison.Ordinal);
+    Assert.Contains("ContainsReparsePoint", manager, StringComparison.Ordinal);
+    Assert.Contains("Staged is { } staged", manager, StringComparison.Ordinal);
+    Assert.Contains("Directory.Delete(stagePath, recursive: true)", manager, StringComparison.Ordinal);
+    Assert.Contains("bool taskStarted = false", manager, StringComparison.Ordinal);
+    Assert.Contains("catch (Exception) when (taskStarted)", manager, StringComparison.Ordinal);
+    Assert.Contains("launcher result was indeterminate", manager, StringComparison.Ordinal);
+    Assert.Contains("Task.Run", manager, StringComparison.Ordinal);
+    Assert.Contains("ActivateUnderMaintenanceMutex", manager, StringComparison.Ordinal);
+    Assert.Contains("using MaintenanceMutexLease maintenanceLease = AcquireMaintenanceMutex()", manager, StringComparison.Ordinal);
+    Assert.Contains("EnsureReleaseWasNotRejected(staged.Version)", manager, StringComparison.Ordinal);
+    Assert.Contains("ReadTransactionJournalsForActivation", manager, StringComparison.Ordinal);
+    Assert.Contains("Update transaction history is unreadable or ambiguous", manager, StringComparison.Ordinal);
+    Assert.Contains("The update maintenance lock could not be acquired", manager, StringComparison.Ordinal);
+    Assert.Contains("The signed update task was queued", manager, StringComparison.Ordinal);
+    Assert.Contains("if (!activationAccepted) await live.CancelMaintenanceAsync", endpoints, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -332,6 +583,7 @@ public sealed class ReleaseScriptContractTests
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-gateway-service.ps1"));
 
     Assert.Contains("RepairUpdateInfrastructureOnly", script, StringComparison.Ordinal);
+    Assert.Contains("$taskName, $guardianTaskName", script, StringComparison.Ordinal);
     Assert.Contains("$updaterRoot 'signing.cer'", script, StringComparison.Ordinal);
     Assert.Contains("$readOnlyDirectory", script, StringComparison.Ordinal);
     Assert.Contains("$writableDirectory", script, StringComparison.Ordinal);
@@ -344,6 +596,48 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("TreadmillRunnerGuardian", script, StringComparison.Ordinal);
     Assert.Contains("service-maintenance.lock", script, StringComparison.Ordinal);
     Assert.Contains("failureflag $serviceName 1", script, StringComparison.Ordinal);
+    Assert.Contains("pending activation or refresh workspace", script, StringComparison.Ordinal);
+    Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);
+    Assert.Contains("if ([string]$state.phase -eq 'Committed')", script, StringComparison.Ordinal);
+    Assert.Contains("processStartTimeUtc", script, StringComparison.Ordinal);
+    Assert.Contains("processPath", script, StringComparison.Ordinal);
+    Assert.Contains("Get-ExistingGatewayService", script, StringComparison.Ordinal);
+    Assert.Contains("Get-ExistingRootScheduledTask", script, StringComparison.Ordinal);
+    Assert.Contains("does not own the existing gateway service image", script, StringComparison.Ordinal);
+    Assert.Contains("protectedFiles", script, StringComparison.Ordinal);
+    Assert.Contains("serviceEnvironmentCaptured", script, StringComparison.Ordinal);
+    Assert.Contains("directoryAclStates", script, StringComparison.Ordinal);
+    Assert.Contains("Restore-InstallerMutableInfrastructure", script, StringComparison.Ordinal);
+    Assert.Contains("Set-PostCommitOperationalInfrastructure", script, StringComparison.Ordinal);
+    Assert.Contains("backupSha256", script, StringComparison.Ordinal);
+    Assert.Contains("Initialize-InstallerProtectedFileState", script, StringComparison.Ordinal);
+    Assert.Contains("record.changed", script, StringComparison.Ordinal);
+    Assert.Contains("migrationBackupPath", script, StringComparison.Ordinal);
+    Assert.Contains("migrationBackupSha256", script, StringComparison.Ordinal);
+    Assert.Contains("restoredMigrationPhases", script, StringComparison.Ordinal);
+    Assert.Contains("migration backup is missing and the database restore is not durably verified", script, StringComparison.Ordinal);
+    Assert.Contains("MigrationCommitted", script, StringComparison.Ordinal);
+    Assert.Contains("Commit-InstallerMigrationBackup", script, StringComparison.Ordinal);
+    int durableCommit = script.LastIndexOf("Write-InstallerState -Phase 'Committed'", StringComparison.Ordinal);
+    int migrationSnapshotCleanup = script.LastIndexOf("Commit-InstallerMigrationBackup", StringComparison.Ordinal);
+    Assert.True(durableCommit >= 0 && migrationSnapshotCleanup > durableCommit);
+    Assert.Contains("Register-ScheduledTask -TaskName $Name -Xml $PreviousXml", script, StringComparison.Ordinal);
+    Assert.Contains("Unregister-ScheduledTask -TaskName $Name", script, StringComparison.Ordinal);
+    Assert.Contains("updateTaskRegistrationCompleted", script, StringComparison.Ordinal);
+    Assert.Contains("guardianTaskRegistrationCompleted", script, StringComparison.Ordinal);
+    Assert.Contains("updateTaskRegisteredArguments", script, StringComparison.Ordinal);
+    Assert.Contains("guardianTaskRegisteredArguments", script, StringComparison.Ordinal);
+    Assert.Contains("Test-InstallerTaskMatchesRegistration", script, StringComparison.Ordinal);
+    Assert.Contains("is neither the prior task nor the exact transaction registration", script, StringComparison.Ordinal);
+    Assert.Contains("Recovery is idempotent after the compensating mutation itself completed", script, StringComparison.Ordinal);
+    Assert.Contains("$RegistrationCompleted -and", script, StringComparison.Ordinal);
+    Assert.Contains("Restore-InstallerServiceImageSafely", script, StringComparison.Ordinal);
+    Assert.Contains("current gateway service image changed outside this installer transaction", script, StringComparison.Ordinal);
+    Assert.Contains("FileOptions]::WriteThrough", script, StringComparison.Ordinal);
+    Assert.Contains("The installer maintenance marker is no longer owned by this transaction", script, StringComparison.Ordinal);
+    int serviceMutationRecord = script.IndexOf("Write-InstallerState -Phase 'ServiceMutationStarted'", StringComparison.Ordinal);
+    int serviceStop = script.IndexOf("Stop-Service -Name $serviceName -Force", serviceMutationRecord, StringComparison.Ordinal);
+    Assert.True(serviceMutationRecord >= 0 && serviceStop > serviceMutationRecord);
   }
 
   [Fact]
@@ -363,6 +657,9 @@ public sealed class ReleaseScriptContractTests
     Assert.DoesNotContain("CommandLine", script, StringComparison.Ordinal);
     Assert.Contains("Start-Service -Name $ServiceName", script, StringComparison.Ordinal);
     Assert.Contains("recovery-complete", script, StringComparison.Ordinal);
+    Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);
+    Assert.Contains("Wait-MaintenanceMutex", script, StringComparison.Ordinal);
+    Assert.Contains("AbandonedMutexException", script, StringComparison.Ordinal);
     Assert.DoesNotContain("Stop-Service", script, StringComparison.Ordinal);
 
     const string markerCheck = "Test-Path -LiteralPath $maintenanceMarker -PathType Leaf";

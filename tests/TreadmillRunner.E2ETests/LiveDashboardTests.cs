@@ -153,6 +153,102 @@ public sealed class LiveDashboardTests(GatewayFixture gateway) : PageTest, IClas
 
   [Fact]
   [Trait("Category", "Browser")]
+  public async Task Devices_refreshes_passive_status_while_the_page_remains_open()
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ResetSimulatorAsync(gateway.BaseAddress);
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.UnrouteAsync("**/api/devices/status*");
+
+    var statusReady = false;
+    var statusRequestCount = 0;
+    await Page.RouteAsync("**/api/devices/status*", async route =>
+    {
+      Interlocked.Increment(ref statusRequestCount);
+      DateTimeOffset now = DateTimeOffset.UtcNow;
+      bool ready = statusReady;
+      object payload = new
+      {
+        capturedAt = now,
+        treadmill = new
+        {
+          role = 0,
+          state = ready ? 6 : 2,
+          connectionGeneration = 4,
+          displayName = "Horizon Omega Z",
+          protocolId = "horizon-omega-z-ftms",
+          telemetryMode = "Ftms",
+          lastObservedAt = ready ? now : (DateTimeOffset?)null,
+          fault = ready ? null : "Waiting for fresh treadmill telemetry.",
+        },
+        heartRate = new
+        {
+          role = 1,
+          state = 0,
+          connectionGeneration = 7,
+          displayName = "Polar H10 A1B2C3D4",
+          protocolId = "bluetooth-heart-rate",
+          telemetryMode = "ChestStrap",
+          lastObservedAt = (DateTimeOffset?)null,
+          fault = (string?)null,
+        },
+        treadmillTelemetry = (object?)null,
+        heartRateBpm = (ushort?)null,
+        heartRateObservedAt = (DateTimeOffset?)null,
+        reportedCapabilities = (object?)null,
+        heartRateSources = Array.Empty<object>(),
+        selectedHeartRateEnrollmentId = (Guid?)null,
+        selectedHeartRateDeviceKind = (int?)null,
+        selectedHeartRateDeviceFamily = (int?)null,
+        heartRateSelectionGeneration = 0,
+        heartRateSelectionReason = (string?)null,
+        selectedHeartRateBatteryPercent = (byte?)null,
+        selectedHeartRateBatteryObservedAt = (DateTimeOffset?)null,
+        selectedHeartRateQuality = 0,
+        selectedHeartRateContactState = 0,
+      };
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = System.Text.Json.JsonSerializer.Serialize(payload),
+      });
+    });
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/devices").AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Devices", Exact = true })).ToBeVisibleAsync();
+    ILocator treadmillCard = Page.Locator(".device-card").First;
+    ILocator connection = treadmillCard.Locator("dd").First;
+    await Expect(connection).ToHaveTextAsync("Connecting");
+    string pageUrl = Page.Url;
+    int requestsBeforeChange = Volatile.Read(ref statusRequestCount);
+
+    // Change the external fixture state while Devices stays mounted. The next
+    // one-second status tick must update the card without user navigation.
+    statusReady = true;
+    await Expect(connection).ToHaveTextAsync("Ready", new() { Timeout = 5_000 });
+
+    Assert.Equal(pageUrl, Page.Url);
+    Assert.True(
+      Volatile.Read(ref statusRequestCount) > requestsBeforeChange,
+      "Devices should issue a follow-up status request while it remains open.");
+
+    // Leave the page while its one-second loop is active so component teardown
+    // waits for the loop and any in-flight status callback before disposing it.
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions
+    {
+      WaitUntil = WaitUntilState.NetworkIdle,
+    });
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready to run", Exact = true }))
+      .ToBeVisibleAsync(new() { Timeout = 15_000 });
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
   public async Task Device_cards_follow_effective_priority_and_polar_has_no_priority_controls()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();

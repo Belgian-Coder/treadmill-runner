@@ -44,6 +44,14 @@ public sealed record UpdateStatusSnapshot(
   string Message,
   string? FeedSource = null);
 
+internal sealed record UpdateArtifactRetentionResult(
+  int TerminalJournalCount,
+  int RetainedTerminalJournalCount,
+  int DeletedJournalCount,
+  int DeletedStageCount,
+  int DeletedBackupCount,
+  bool SkippedAmbiguous);
+
 public sealed class UpdateManager(
   IConfiguration configuration,
   TimeProvider timeProvider,
@@ -52,6 +60,7 @@ public sealed class UpdateManager(
   UpdateFeedFactory? updateFeedFactory = null)
 {
   public const long MaximumUploadedBundleBytes = ReleaseVerifier.MaximumPackageBytes + (2L * 1024 * 1024);
+  internal const int MaximumRetainedTerminalTransactions = 5;
   private readonly SemaphoreSlim _gate = new(1, 1);
   private readonly UpdateFeedFactory _updateFeedFactory = updateFeedFactory ?? new UpdateFeedFactory(configuration);
   private StagedUpdate? _staged;
@@ -75,6 +84,8 @@ public sealed class UpdateManager(
       (IUpdateFeed feed, ReleaseVerifier verifier, string channel) = CreateServices();
       IUpdateFeedRelease? feedRelease = await feed.ReadLatestReleaseAsync(channel, cancellationToken);
       ReleaseValidationResult result;
+      UpdateTransactionJournal? releaseJournal = null;
+      bool releaseRejected = false;
       if (feedRelease is null)
       {
         result = new ReleaseValidationResult(ReleaseValidationStatus.NotNewer, "No release manifest is available.");
@@ -83,7 +94,18 @@ public sealed class UpdateManager(
       {
         UpdateCheckContext context = await ContextAsync(channel, cancellationToken);
         result = verifier.VerifyManifest(feedRelease.ManifestContent.Span, context);
-        if (result is { IsValid: true, Manifest: not null } && Staged is null)
+        IReadOnlyList<UpdateTransactionJournal> transactionHistory = ReadTransactionJournalsForActivation();
+        releaseJournal = result.Manifest is { } checkedManifest
+          ? transactionHistory.FirstOrDefault(journal =>
+            string.Equals(journal.Version, checkedManifest.Version, StringComparison.Ordinal) &&
+            journal.State is "RolledBack" or "RollbackFailed")
+          : null;
+        releaseRejected = releaseJournal?.State is "RolledBack" or "RollbackFailed";
+        if (releaseRejected)
+        {
+          Volatile.Write(ref _staged, null);
+        }
+        else if (result is { IsValid: true, Manifest: not null } && Staged is null)
         {
           StagedUpdate? adopted = await TryAdoptExistingStageAsync(
             verifier,
@@ -104,7 +126,7 @@ public sealed class UpdateManager(
             _ => UpdateLifecycleState.Rejected,
           };
       UpdateManifest? manifest = result.Manifest;
-      UpdateTransactionJournal? journal = ReadLatestJournal();
+      UpdateTransactionJournal? journal = releaseRejected ? releaseJournal : ReadLatestJournal();
       if (manifest is not null && string.Equals(journal?.Version, manifest.Version, StringComparison.Ordinal))
       {
         state = journal!.State switch
@@ -129,6 +151,7 @@ public sealed class UpdateManager(
             : result.Message,
         FeedSource = staged is not null ? Status.FeedSource ?? feedRelease?.Source : feedRelease?.Source,
       });
+      PruneTerminalArtifacts();
       return result;
     }
     catch (Exception exception) when (exception is not OperationCanceledException)
@@ -158,11 +181,7 @@ public sealed class UpdateManager(
         throw new InvalidOperationException(manifestResult.Message);
       if (!string.Equals(manifest.Version, expectedVersion, StringComparison.Ordinal))
         throw new InvalidOperationException("The available update changed after it was reviewed. Check again before staging.");
-      UpdateTransactionJournal? latestJournal = ReadLatestJournal();
-      if (latestJournal is { } journal &&
-          string.Equals(journal.Version, manifest.Version, StringComparison.Ordinal) &&
-          journal.State is "RolledBack" or "RollbackFailed")
-        throw new InvalidOperationException("This release was already rejected by activation health and cannot be restaged.");
+      EnsureReleaseWasNotRejected(manifest.Version);
 
       await using Stream package = await feedRelease.OpenPackageAsync(manifest.PackageFileName, cancellationToken);
       ReleaseValidationResult packageResult = await verifier.VerifyPackageAsync(manifest, package, cancellationToken);
@@ -170,9 +189,14 @@ public sealed class UpdateManager(
       if (package.CanSeek) package.Position = 0;
 
       string stagingRoot = RequiredFullPath("Updates:StagingRoot");
-      Directory.CreateDirectory(stagingRoot);
       string finalPath = Path.Combine(stagingRoot, manifest.Version);
       string temporaryPath = Path.Combine(stagingRoot, $".{manifest.Version}-{Guid.NewGuid():N}.tmp");
+      // Mutex ownership is thread-affine. Keep each lease strictly around
+      // synchronous filesystem decisions; no await may run while it is held.
+      using (MaintenanceMutexLease feedPublicationLease = AcquireMaintenanceMutex())
+      {
+        Directory.CreateDirectory(stagingRoot);
+      }
       if (Directory.Exists(finalPath))
       {
         StagedUpdate? adopted = await TryAdoptExistingStageAsync(verifier, context, manifest, cancellationToken);
@@ -205,6 +229,21 @@ public sealed class UpdateManager(
         }
         string manifestPath = Path.Combine(temporaryPath, "verified-manifest.json");
         await File.WriteAllBytesAsync(manifestPath, feedRelease.ManifestContent.ToArray(), cancellationToken);
+        using MaintenanceMutexLease feedPublicationLease = AcquireMaintenanceMutex();
+        // The local feed publisher replaces package and manifest as one
+        // mutex-protected transaction. Re-read the manifest while holding the
+        // same mutex before adopting the package we just verified. If a feed
+        // publication overlapped the earlier reads, retry from a coherent
+        // manifest/package pair instead of staging a stale or mixed release.
+        IUpdateFeedRelease currentFeedRelease = feed
+          .ReadLatestReleaseAsync(channel, cancellationToken)
+          .GetAwaiter()
+          .GetResult()
+          ?? throw new InvalidOperationException("The update feed changed while the release was being staged.");
+        if (!currentFeedRelease.ManifestContent.Span.SequenceEqual(feedRelease.ManifestContent.Span))
+          throw new InvalidOperationException("The update feed changed while the release was being staged. Check again before retrying.");
+        if (Directory.Exists(finalPath))
+          throw new InvalidOperationException("Another verified release became staged while this package was being written.");
         Directory.Move(temporaryPath, finalPath);
       }
       catch
@@ -315,11 +354,7 @@ public sealed class UpdateManager(
         if (!manifestResult.IsValid || manifestResult.Manifest is not { } verifiedManifest)
           throw new InvalidDataException(manifestResult.Message);
         manifest = verifiedManifest;
-        UpdateTransactionJournal? latestJournal = ReadLatestJournal();
-        if (latestJournal is { } journal &&
-            string.Equals(journal.Version, manifest.Version, StringComparison.Ordinal) &&
-            journal.State is "RolledBack" or "RollbackFailed")
-          throw new InvalidOperationException("This release was already rejected by activation health and cannot be restaged.");
+        EnsureReleaseWasNotRejected(manifest.Version);
 
         ZipArchiveEntry packageEntry = archive.GetEntry(manifest.PackageFileName)
           ?? throw new InvalidDataException("The manifest-named package is missing from the signed update bundle.");
@@ -412,63 +447,100 @@ public sealed class UpdateManager(
       StagedUpdate staged = Staged ?? throw new InvalidOperationException("No verified release is staged.");
       if (!string.Equals(staged.Version, expectedVersion, StringComparison.Ordinal))
         throw new InvalidOperationException("The staged update changed after it was reviewed.");
+      EnsureReleaseWasNotRejected(staged.Version);
       string backupRoot = RequiredFullPath("Updates:BackupRoot");
       string planRoot = RequiredFullPath("Updates:PlanRoot");
       string taskName = configuration["Updates:ScheduledTaskName"]
         ?? throw new InvalidOperationException("Updates:ScheduledTaskName is required.");
-      Directory.CreateDirectory(backupRoot);
-      Directory.CreateDirectory(planRoot);
-      string transactionId = Guid.NewGuid().ToString("N");
-      string backupPath = Path.Combine(backupRoot, $"pre-update-{transactionId}.db");
-      string planPath = Path.Combine(planRoot, "pending-activation.json");
-      if (File.Exists(planPath))
-        throw new InvalidOperationException("A pending activation plan already exists.");
-      await databaseBackup.BackupAsync(backupPath, cancellationToken);
-      try
+      if (!string.Equals(taskName, "TreadmillRunnerUpdate", StringComparison.Ordinal))
+        throw new InvalidOperationException("Updates:ScheduledTaskName must be TreadmillRunnerUpdate because the protected helper contract is fixed.");
+      // Mutex is thread-affine. Keep the complete publication and task-launch
+      // transaction on one worker thread so ownership survives every blocking
+      // wait and is released only after schtasks has exited.
+      return await Task.Run(
+        () => ActivateUnderMaintenanceMutex(staged, backupRoot, planRoot, taskName, cancellationToken),
+        CancellationToken.None);
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  private string ActivateUnderMaintenanceMutex(
+    StagedUpdate staged,
+    string backupRoot,
+    string planRoot,
+    string taskName,
+    CancellationToken cancellationToken)
+  {
+    using MaintenanceMutexLease maintenanceLease = AcquireMaintenanceMutex();
+    EnsureReleaseWasNotRejected(staged.Version);
+    string? configuredDataRoot = configuration["Updates:DataRoot"];
+    if (!string.IsNullOrWhiteSpace(configuredDataRoot) &&
+        File.Exists(Path.Combine(Path.GetFullPath(configuredDataRoot), "updates", "service-maintenance.lock")))
+      throw new InvalidOperationException("Service maintenance is already in progress; activation was not started.");
+    Directory.CreateDirectory(backupRoot);
+    Directory.CreateDirectory(planRoot);
+    string transactionId = Guid.NewGuid().ToString("N");
+    string backupPath = Path.Combine(backupRoot, $"pre-update-{transactionId}.db");
+    string planPath = Path.Combine(planRoot, "pending-activation.json");
+    if (File.Exists(planPath))
+      throw new InvalidOperationException("A pending activation plan already exists.");
+    bool planOwned = false;
+    bool taskStarted = false;
+    try
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      databaseBackup.BackupAsync(backupPath, cancellationToken).GetAwaiter().GetResult();
+      using (var planFile = new FileStream(
+        planPath,
+        FileMode.CreateNew,
+        FileAccess.Write,
+        FileShare.None,
+        bufferSize: 16 * 1024,
+        FileOptions.WriteThrough))
       {
-        await using var planFile = new FileStream(
-          planPath,
-          FileMode.CreateNew,
-          FileAccess.Write,
-          FileShare.None,
-          bufferSize: 16 * 1024,
-          FileOptions.Asynchronous | FileOptions.WriteThrough);
-        await JsonSerializer.SerializeAsync(planFile, new
+        planOwned = true;
+        JsonSerializer.SerializeAsync(planFile, new
         {
           TransactionId = transactionId,
           Version = staged.Version,
-        }, cancellationToken: cancellationToken);
-        await planFile.FlushAsync(cancellationToken);
-      }
-      catch
-      {
-        File.Delete(backupPath);
-        throw;
+        }, cancellationToken: CancellationToken.None).GetAwaiter().GetResult();
+        planFile.Flush(true);
       }
 
-      try
+      var startInfo = new ProcessStartInfo
       {
-        var startInfo = new ProcessStartInfo
+        FileName = "schtasks.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        WindowStyle = ProcessWindowStyle.Hidden,
+      };
+      startInfo.ArgumentList.Add("/Run");
+      startInfo.ArgumentList.Add("/TN");
+      startInfo.ArgumentList.Add(taskName);
+      using Process process = Process.Start(startInfo)
+        ?? throw new InvalidOperationException("The privileged update task could not be started.");
+      taskStarted = true;
+      // Once Process.Start succeeds, the task may already be queued even if
+      // this wait is canceled or schtasks later reports an error. Keep the
+      // plan and backup until the privileged helper records a terminal result.
+      process.WaitForExitAsync(cancellationToken).GetAwaiter().GetResult();
+      if (process.ExitCode != 0)
+      {
+        // Process.Start means Task Scheduler may already have accepted and
+        // queued the protected helper. Preserve the maintenance gate by
+        // reporting an indeterminate dispatch as Activating instead of
+        // surfacing an error that lets the endpoint admit a new live session.
+        Volatile.Write(ref _staged, null);
+        Volatile.Write(ref _status, Status with
         {
-          FileName = "schtasks.exe",
-          UseShellExecute = false,
-          CreateNoWindow = true,
-          WindowStyle = ProcessWindowStyle.Hidden,
-        };
-        startInfo.ArgumentList.Add("/Run");
-        startInfo.ArgumentList.Add("/TN");
-        startInfo.ArgumentList.Add(taskName);
-        using Process process = Process.Start(startInfo)
-          ?? throw new InvalidOperationException("The privileged update task could not be started.");
-        await process.WaitForExitAsync(cancellationToken);
-        if (process.ExitCode != 0)
-          throw new InvalidOperationException("The privileged update task rejected the activation request.");
-      }
-      catch
-      {
-        File.Delete(planPath);
-        File.Delete(backupPath);
-        throw;
+          State = UpdateLifecycleState.Activating,
+          StagedVersion = null,
+          Message = "The signed update task was queued, but its launcher result was indeterminate; activation or rollback continues under maintenance.",
+        });
+        return transactionId;
       }
 
       Volatile.Write(ref _staged, null);
@@ -480,9 +552,25 @@ public sealed class UpdateManager(
       });
       return transactionId;
     }
-    finally
+    catch (Exception) when (taskStarted)
     {
-      _gate.Release();
+      // Cancellation or a process-inspection failure after Process.Start does
+      // not prove that the task was rejected. Keep the durable plan, backup,
+      // and live-session maintenance gate until terminal recovery evidence.
+      Volatile.Write(ref _staged, null);
+      Volatile.Write(ref _status, Status with
+      {
+        State = UpdateLifecycleState.Activating,
+        StagedVersion = null,
+        Message = "The signed update task was queued; activation continues while the service reconnects after promotion or rollback.",
+      });
+      return transactionId;
+    }
+    catch
+    {
+      if (planOwned) File.Delete(planPath);
+      if (File.Exists(backupPath)) File.Delete(backupPath);
+      throw;
     }
   }
 
@@ -495,6 +583,187 @@ public sealed class UpdateManager(
       LastCheckedAtUtc = timeProvider.GetUtcNow(),
       Message = message,
     });
+  }
+
+  internal UpdateArtifactRetentionResult PruneTerminalArtifacts()
+  {
+    string? configuredPlanRoot = configuration["Updates:PlanRoot"];
+    string? configuredStagingRoot = configuration["Updates:StagingRoot"];
+    string? configuredBackupRoot = configuration["Updates:BackupRoot"];
+    if (string.IsNullOrWhiteSpace(configuredPlanRoot) ||
+        string.IsNullOrWhiteSpace(configuredStagingRoot) ||
+        string.IsNullOrWhiteSpace(configuredBackupRoot))
+    {
+      return new(0, 0, 0, 0, 0, true);
+    }
+
+    try
+    {
+      string planRoot = Path.GetFullPath(configuredPlanRoot);
+      string stagingRoot = Path.GetFullPath(configuredStagingRoot);
+      string backupRoot = Path.GetFullPath(configuredBackupRoot);
+      if (!Directory.Exists(planRoot) || !Directory.Exists(stagingRoot) || !Directory.Exists(backupRoot) ||
+          ContainsReparsePoint(planRoot) || ContainsReparsePoint(stagingRoot) || ContainsReparsePoint(backupRoot))
+      {
+        return new(0, 0, 0, 0, 0, true);
+      }
+
+      var referencedVersions = new HashSet<string>(StringComparer.Ordinal);
+      var referencedTransactions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      var versionReferenceCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+      var transactionReferenceCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      var terminal = new List<TerminalArtifact>();
+      bool ambiguousJournal = false;
+
+      foreach (string journalPath in Directory.EnumerateFiles(planRoot, "transaction-*.json", SearchOption.TopDirectoryOnly))
+      {
+        string fileName = Path.GetFileNameWithoutExtension(journalPath);
+        string transactionId = fileName.StartsWith("transaction-", StringComparison.Ordinal)
+          ? fileName["transaction-".Length..]
+          : string.Empty;
+        if (!IsTransactionId(transactionId))
+        {
+          ambiguousJournal = true;
+          continue;
+        }
+
+        try
+        {
+          UpdateTransactionJournal? journal = JsonSerializer.Deserialize<UpdateTransactionJournal>(
+            File.ReadAllText(journalPath), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+          if (journal is null || journal.SchemaVersion != 1 ||
+              !IsTransactionId(journal.TransactionId) ||
+              !string.Equals(journal.TransactionId, transactionId, StringComparison.OrdinalIgnoreCase) ||
+              !IsVersion(journal.Version) ||
+              journal.State is not ("Activating" or "Activated" or "RolledBack" or "RollbackFailed") ||
+              journal.OccurredAtUtc == default ||
+              journal.Reason is null)
+          {
+            ambiguousJournal = true;
+            continue;
+          }
+
+          versionReferenceCounts[journal.Version] = versionReferenceCounts.GetValueOrDefault(journal.Version) + 1;
+          transactionReferenceCounts[transactionId] = transactionReferenceCounts.GetValueOrDefault(transactionId) + 1;
+          if (journal.State is "Activated" or "RolledBack")
+          {
+            terminal.Add(new TerminalArtifact(
+              journalPath,
+              transactionId,
+              journal.Version,
+              journal.OccurredAtUtc,
+              File.GetLastWriteTimeUtc(journalPath)));
+          }
+          else
+          {
+            referencedTransactions.Add(transactionId);
+            referencedVersions.Add(journal.Version);
+          }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        {
+          // A malformed or unreadable journal could share a version directory
+          // or backup with a parseable journal. Protect the entire retention pass.
+          ambiguousJournal = true;
+        }
+      }
+
+      if (ambiguousJournal)
+        return new(terminal.Count, terminal.Count, 0, 0, 0, true);
+
+      string pendingPath = Path.Combine(planRoot, "pending-activation.json");
+      if (File.Exists(pendingPath))
+      {
+        try
+        {
+          using JsonDocument pending = JsonDocument.Parse(File.ReadAllText(pendingPath));
+          if (pending.RootElement.ValueKind != JsonValueKind.Object ||
+              !pending.RootElement.TryGetProperty("TransactionId", out JsonElement transaction) ||
+              transaction.ValueKind != JsonValueKind.String ||
+              !pending.RootElement.TryGetProperty("Version", out JsonElement version) ||
+              version.ValueKind != JsonValueKind.String)
+            return new(terminal.Count, terminal.Count, 0, 0, 0, true);
+          string? transactionIdText = transaction.GetString();
+          string? versionText = version.GetString();
+          if (transactionIdText is null || versionText is null || !IsTransactionId(transactionIdText) || !IsVersion(versionText))
+            return new(terminal.Count, terminal.Count, 0, 0, 0, true);
+          string transactionId = transactionIdText;
+          referencedTransactions.Add(transactionId);
+          transactionReferenceCounts[transactionId] = transactionReferenceCounts.GetValueOrDefault(transactionId) + 1;
+          referencedVersions.Add(versionText);
+          versionReferenceCounts[versionText] = versionReferenceCounts.GetValueOrDefault(versionText) + 1;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+          // An unreadable pending plan protects all possibly related artifacts.
+          return new(terminal.Count, terminal.Count, 0, 0, 0, true);
+        }
+      }
+
+      if (IsVersion(CurrentVersion())) referencedVersions.Add(CurrentVersion());
+      if (Staged is { } staged && IsVersion(staged.Version)) referencedVersions.Add(staged.Version);
+
+      IReadOnlyList<TerminalArtifact> ordered = terminal
+        .OrderByDescending(static artifact => artifact.OccurredAtUtc)
+        .ThenByDescending(static artifact => artifact.LastWriteTimeUtc)
+        .ToArray();
+      var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (TerminalArtifact artifact in ordered.Take(MaximumRetainedTerminalTransactions)) keep.Add(artifact.JournalPath);
+      foreach (TerminalArtifact artifact in ordered.Where(artifact => referencedVersions.Contains(artifact.Version) || referencedTransactions.Contains(artifact.TransactionId)))
+        keep.Add(artifact.JournalPath);
+
+      int deletedJournals = 0;
+      int deletedStages = 0;
+      int deletedBackups = 0;
+      foreach (TerminalArtifact artifact in ordered)
+      {
+        if (keep.Contains(artifact.JournalPath)) continue;
+
+        // A version or transaction mentioned by any journal remains protected;
+        // only an unambiguous, terminal journal may release its three artifacts.
+        if (versionReferenceCounts.GetValueOrDefault(artifact.Version) > 1 ||
+            transactionReferenceCounts.GetValueOrDefault(artifact.TransactionId) > 1)
+          continue;
+
+        string stagePath = Path.Combine(stagingRoot, artifact.Version);
+        string backupPath = Path.Combine(backupRoot, $"pre-update-{artifact.TransactionId}.db");
+        if (!IsSafeArtifactPath(stagePath, stagingRoot) || !IsSafeArtifactPath(backupPath, backupRoot) ||
+            !IsSafeArtifactPath(artifact.JournalPath, planRoot))
+          continue;
+
+        try
+        {
+          if (Directory.Exists(stagePath))
+          {
+            Directory.Delete(stagePath, recursive: true);
+            deletedStages++;
+          }
+          if (File.Exists(backupPath))
+          {
+            File.Delete(backupPath);
+            deletedBackups++;
+          }
+          File.Delete(artifact.JournalPath);
+          deletedJournals++;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+          // Leave the journal and any remaining artifact for a later safe pass.
+        }
+      }
+
+      return new(
+        terminal.Count,
+        terminal.Count - deletedJournals,
+        deletedJournals,
+        deletedStages,
+        deletedBackups,
+        false);
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+    {
+      return new(0, 0, 0, 0, 0, true);
+    }
   }
 
   private (IUpdateFeed Feed, ReleaseVerifier Verifier, string Channel) CreateServices()
@@ -548,10 +817,154 @@ public sealed class UpdateManager(
     }
   }
 
+  private void EnsureReleaseWasNotRejected(string version)
+  {
+    UpdateTransactionJournal? journal = ReadTransactionJournalsForActivation()
+      .FirstOrDefault(candidate =>
+        string.Equals(candidate.Version, version, StringComparison.Ordinal) &&
+        candidate.State is "RolledBack" or "RollbackFailed");
+    if (journal is not null)
+    {
+      Volatile.Write(ref _staged, null);
+      throw new InvalidOperationException("This release was already rejected by activation health and cannot be activated again.");
+    }
+  }
+
+  private IReadOnlyList<UpdateTransactionJournal> ReadTransactionJournalsForActivation()
+  {
+    string? configuredRoot = configuration["Updates:PlanRoot"];
+    if (string.IsNullOrWhiteSpace(configuredRoot)) return [];
+    string root = Path.GetFullPath(configuredRoot);
+    if (!Directory.Exists(root)) return [];
+    try
+    {
+      var journals = new List<(DateTime LastWriteTimeUtc, UpdateTransactionJournal Journal)>();
+      foreach (string path in Directory.EnumerateFiles(root, "transaction-*.json", SearchOption.TopDirectoryOnly))
+      {
+        using FileStream input = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        UpdateTransactionJournal journal = JsonSerializer.Deserialize<UpdateTransactionJournal>(
+          input,
+          new JsonSerializerOptions(JsonSerializerDefaults.Web))
+          ?? throw new InvalidDataException("An update transaction journal is empty.");
+        string fileTransactionId = Path.GetFileNameWithoutExtension(path)["transaction-".Length..];
+        if (journal.SchemaVersion != 1 ||
+            !IsTransactionId(journal.TransactionId) ||
+            !string.Equals(fileTransactionId, journal.TransactionId, StringComparison.OrdinalIgnoreCase) ||
+            !IsVersion(journal.Version) ||
+            journal.State is not ("Activating" or "Activated" or "RolledBack" or "RollbackFailed") ||
+            journal.OccurredAtUtc == default ||
+            journal.Reason is null)
+          throw new InvalidDataException("An update transaction journal is invalid.");
+        journals.Add((File.GetLastWriteTimeUtc(path), journal));
+      }
+      return journals
+        .OrderByDescending(static item => item.LastWriteTimeUtc)
+        .Select(static item => item.Journal)
+        .ToArray();
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+    {
+      throw new InvalidOperationException("Update transaction history is unreadable or ambiguous; activation was not started.", exception);
+    }
+  }
+
   private string RequiredFullPath(string key)
   {
     string value = configuration[key] ?? throw new InvalidOperationException($"{key} is required.");
     return Path.GetFullPath(value);
+  }
+
+  private sealed class MaintenanceMutexLease(Mutex mutex) : IDisposable
+  {
+    private bool held = true;
+
+    public void Dispose()
+    {
+      if (held)
+      {
+        mutex.ReleaseMutex();
+        held = false;
+      }
+      mutex.Dispose();
+    }
+  }
+
+  private static MaintenanceMutexLease AcquireMaintenanceMutex()
+  {
+    Mutex mutex = new(false, "Global\\TreadmillRunnerGateway.Maintenance");
+    try
+    {
+      bool acquired;
+      try
+      {
+        acquired = mutex.WaitOne(30_000);
+      }
+      catch (AbandonedMutexException)
+      {
+        acquired = true;
+      }
+      if (!acquired) throw new InvalidOperationException("The update maintenance lock could not be acquired.");
+      return new MaintenanceMutexLease(mutex);
+    }
+    catch
+    {
+      mutex.Dispose();
+      throw;
+    }
+  }
+
+  private static bool IsTransactionId(string? value) =>
+    value is { Length: 32 } && value.All(static character => Uri.IsHexDigit(character));
+
+  private static bool IsVersion(string? value) =>
+    value is not null && Version.TryParse(value, out Version? parsed) &&
+    parsed.ToString(3) == value;
+
+  private static bool IsSafeArtifactPath(string path, string root)
+  {
+    try
+    {
+      string resolvedPath = Path.GetFullPath(path);
+      string resolvedRoot = Path.GetFullPath(root);
+      string prefix = resolvedRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+      if (!resolvedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+      string? cursor = resolvedPath;
+      while (cursor is not null && cursor.StartsWith(resolvedRoot, StringComparison.OrdinalIgnoreCase))
+      {
+        if (File.Exists(cursor) || Directory.Exists(cursor))
+        {
+          if ((File.GetAttributes(cursor) & FileAttributes.ReparsePoint) != 0) return false;
+        }
+        if (string.Equals(cursor, resolvedRoot, StringComparison.OrdinalIgnoreCase)) break;
+        cursor = Path.GetDirectoryName(cursor);
+      }
+      return !Directory.Exists(resolvedPath) || !ContainsReparsePoint(resolvedPath);
+    }
+    catch (IOException) { return false; }
+    catch (UnauthorizedAccessException) { return false; }
+    catch (ArgumentException) { return false; }
+  }
+
+  private static bool ContainsReparsePoint(string root)
+  {
+    try
+    {
+      var pending = new Stack<DirectoryInfo>();
+      DirectoryInfo rootInfo = new(root);
+      if ((rootInfo.Attributes & FileAttributes.ReparsePoint) != 0) return true;
+      pending.Push(rootInfo);
+      while (pending.Count > 0)
+      {
+        foreach (FileSystemInfo item in pending.Pop().EnumerateFileSystemInfos("*", SearchOption.TopDirectoryOnly))
+        {
+          if ((item.Attributes & FileAttributes.ReparsePoint) != 0) return true;
+          if (item is DirectoryInfo directory) pending.Push(directory);
+        }
+      }
+      return false;
+    }
+    catch (IOException) { return true; }
+    catch (UnauthorizedAccessException) { return true; }
   }
 
   private static async Task CopyBoundedAsync(
@@ -603,3 +1016,10 @@ internal sealed record UpdateTransactionJournal(
   string State,
   DateTimeOffset OccurredAtUtc,
   string Reason);
+
+internal sealed record TerminalArtifact(
+  string JournalPath,
+  string TransactionId,
+  string Version,
+  DateTimeOffset OccurredAtUtc,
+  DateTime LastWriteTimeUtc);
