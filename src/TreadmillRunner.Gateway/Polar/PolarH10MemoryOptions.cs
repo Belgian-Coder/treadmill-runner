@@ -8,7 +8,7 @@ namespace TreadmillRunner.Gateway.Polar;
 public sealed class PolarH10MemoryOptions
 {
   public const string SectionName = "Features:PolarH10Memory";
-  public bool Enabled { get; set; }
+  public bool Enabled { get; set; } = true;
   public int LeaseSeconds { get; set; } = 120;
   public int PollSeconds { get; set; } = 5;
 }
