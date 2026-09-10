@@ -980,6 +980,61 @@ if ($child.ExitCode -ne 0) { throw "Nested capture exited with $($child.ExitCode
     }
   }
 
+  [Fact]
+  public async Task Deployment_timestamp_conversion_preserves_zoned_calendar_values_under_Belgian_culture()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
+    int functionStart = source.IndexOf("function Convert-ToUtcDateTimeOffset", StringComparison.Ordinal);
+    int functionEnd = source.IndexOf("function Get-ActivationFailureEvidence", functionStart, StringComparison.Ordinal);
+    Assert.True(functionStart >= 0 && functionEnd > functionStart);
+    string function = source[functionStart..functionEnd];
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.TimestampContract", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "timestamp-conversion.ps1");
+    string testScript = function + """
+
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo('nl-BE')
+$typedLocal = [DateTime]::SpecifyKind([DateTime]::new(2026, 9, 10, 5, 4, 11), [DateTimeKind]::Local)
+$typedResult = Convert-ToUtcDateTimeOffset -Value $typedLocal -Name 'typed task timestamp'
+if ($typedResult.Month -ne 9 -or $typedResult.Day -ne 10) { throw "Typed DateTime calendar fields were changed: $typedResult" }
+$isoResult = Convert-ToUtcDateTimeOffset -Value '2026-09-10T05:04:11+02:00' -Name 'ISO journal timestamp'
+if ($isoResult.UtcDateTime.ToString('O') -cne '2026-09-10T03:04:11.0000000Z') { throw "ISO timestamp was not converted invariantly: $($isoResult.UtcDateTime.ToString('O'))" }
+$unspecifiedRejected = $false
+try {
+  Convert-ToUtcDateTimeOffset -Value ([DateTime]::SpecifyKind([DateTime]::new(2026, 9, 10, 5, 4, 11), [DateTimeKind]::Unspecified)) -Name 'unspecified timestamp' | Out-Null
+}
+catch { $unspecifiedRejected = $_.Exception.Message -like '*no timezone information*' }
+if (-not $unspecifiedRejected) { throw 'An Unspecified DateTime was accepted without timezone evidence.' }
+$cultureShapedRejected = $false
+try { Convert-ToUtcDateTimeOffset -Value '09/10/2026 05:04:11' -Name 'culture-shaped timestamp' | Out-Null }
+catch { $cultureShapedRejected = $_.Exception.Message -like '*zoned ISO-8601 timestamp*' }
+if (-not $cultureShapedRejected) { throw 'A culture-shaped timestamp was accepted.' }
+""";
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string stdout = await process.StandardOutput.ReadToEndAsync();
+      string stderr = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Timestamp conversion harness failed: {stderr}{Environment.NewLine}{stdout}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
   [Theory]
   [InlineData("eng/run-deployment.ps1", "function Get-CurrentInstalledRelease")]
   [InlineData("src/TreadmillRunner.Gateway/Updates/update-helper.ps1", "function Assert-ExactPath")]
@@ -1088,6 +1143,12 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("schemaVersion -ne 1", script, StringComparison.Ordinal);
     Assert.Contains("manifest.channel -cne 'stable'", script, StringComparison.Ordinal);
     Assert.Contains("Get-CurrentInstalledRelease", script, StringComparison.Ordinal);
+    Assert.Contains("function Convert-ToUtcDateTimeOffset", script, StringComparison.Ordinal);
+    Assert.Contains("has no timezone information", script, StringComparison.Ordinal);
+    Assert.Contains("zoned ISO-8601 timestamp", script, StringComparison.Ordinal);
+    Assert.Contains("Convert-ToUtcDateTimeOffset -Value $status.lastCheckedAtUtc", script, StringComparison.Ordinal);
+    Assert.Contains("$statusCheckedAtUtc -ge $ActivationStartedAtUtc.AddSeconds(-2)", script, StringComparison.Ordinal);
+    Assert.Contains("Convert-ToUtcDateTimeOffset -Value $serviceProcess.StartTime", script, StringComparison.Ordinal);
     Assert.Contains("function Get-ActivationFailureEvidence", script, StringComparison.Ordinal);
     Assert.Contains("$status.availableVersion -ceq $ExpectedVersion", script, StringComparison.Ordinal);
     Assert.Contains("$occurredAtUtc -lt $ActivationStartedAtUtc.AddSeconds(-2)", script, StringComparison.Ordinal);
@@ -1117,7 +1178,7 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("/api/operations/database/status", script, StringComparison.Ordinal);
     Assert.Contains("HealthyWithBackupWarning", script, StringComparison.Ordinal);
     Assert.Contains("$databaseIdentityRecheck -cne $databaseIdentity", script, StringComparison.Ordinal);
-    Assert.Contains("$serviceStartedAtUtc = ([DateTimeOffset]$serviceProcess.StartTime).ToUniversalTime()", script, StringComparison.Ordinal);
+    Assert.Contains("$serviceStartedAtUtc = Convert-ToUtcDateTimeOffset -Value $serviceProcess.StartTime", script, StringComparison.Ordinal);
     Assert.Contains("$serviceStartedAtUtc -ge $journalOccurredAtUtc", script, StringComparison.Ordinal);
     Assert.Contains("Restart-Service -Name 'TreadmillRunnerGateway' -Force", script, StringComparison.Ordinal);
     Assert.Contains("$afterStatus.state -ceq 'Activating'", script, StringComparison.Ordinal);

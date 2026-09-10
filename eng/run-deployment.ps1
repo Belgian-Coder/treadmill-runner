@@ -165,6 +165,40 @@ function Get-CurrentInstalledRelease {
     return [pscustomobject]@{ Version = $version; Executable = $executable }
 }
 
+function Convert-ToUtcDateTimeOffset {
+    param(
+        [Parameter(Mandatory)]$Value,
+        [string]$Name = 'timestamp'
+    )
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset]$Value).ToUniversalTime()
+    }
+    if ($Value -is [DateTime]) {
+        $dateTime = [DateTime]$Value
+        if ($dateTime.Kind -eq [DateTimeKind]::Utc) {
+            return [DateTimeOffset]::new($dateTime, [TimeSpan]::Zero)
+        }
+        if ($dateTime.Kind -eq [DateTimeKind]::Local) {
+            return ([DateTimeOffset]$dateTime).ToUniversalTime()
+        }
+        throw "The $Name has no timezone information."
+    }
+    $text = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { throw "The $Name is missing." }
+    if ($text -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$') {
+        throw "The $Name is not a zoned ISO-8601 timestamp."
+    }
+    try {
+        return ([DateTimeOffset]::Parse(
+            $text,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AllowWhiteSpaces)).ToUniversalTime()
+    }
+    catch {
+        throw "The $Name is not a valid invariant timestamp."
+    }
+}
+
 function Get-ActivationFailureEvidence {
     param(
         [Parameter(Mandatory)][string]$ResolvedDataRoot,
@@ -179,13 +213,17 @@ function Get-ActivationFailureEvidence {
         $status = Invoke-GetJson '/api/updates/status'
         if ([string]$status.availableVersion -ceq $ExpectedVersion -and
             [string]$status.state -in @('RolledBack', 'Failed')) {
-            $reason = [string]$status.message
-            if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'The update status did not provide a rollback reason.' }
-            return [pscustomobject]@{
-                State = [string]$status.state
-                Version = $ExpectedVersion
-                Reason = $reason
-                Source = 'status'
+            $statusCheckedAtUtc = Convert-ToUtcDateTimeOffset -Value $status.lastCheckedAtUtc -Name 'update status timestamp'
+            if ($statusCheckedAtUtc -ge $ActivationStartedAtUtc.AddSeconds(-2)) {
+                $reason = [string]$status.message
+                if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'The update status did not provide a rollback reason.' }
+                return [pscustomobject]@{
+                    State = [string]$status.state
+                    Version = $ExpectedVersion
+                    Reason = $reason
+                    Source = 'status'
+                    LastCheckedAtUtc = $statusCheckedAtUtc
+                }
             }
         }
     }
@@ -197,7 +235,7 @@ function Get-ActivationFailureEvidence {
         try {
             $transactionId = [System.IO.Path]::GetFileNameWithoutExtension($journalFile.Name).Substring('transaction-'.Length)
             $journal = Get-Content -LiteralPath $journalFile.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
-            $occurredAtUtc = ([DateTimeOffset]::Parse([string]$journal.occurredAtUtc)).ToUniversalTime()
+            $occurredAtUtc = Convert-ToUtcDateTimeOffset -Value $journal.occurredAtUtc -Name 'rollback journal timestamp'
             if ($transactionId -notmatch '^[0-9a-f]{32}$' -or [int]$journal.schemaVersion -ne 1 -or
                 [string]$journal.transactionId -cne $transactionId -or [string]$journal.version -cne $ExpectedVersion -or
                 [string]$journal.state -notin @('RolledBack', 'RollbackFailed') -or
@@ -532,24 +570,25 @@ function Invoke-StaleActivatingCoordinatorNormalization {
         }
 
         try {
-            $journalOccurredAtUtc = ([DateTimeOffset]::Parse([string]$matchingJournals[0].Journal.occurredAtUtc)).ToUniversalTime()
-            $statusCheckedAtUtc = ([DateTimeOffset]::Parse([string]$status.lastCheckedAtUtc)).ToUniversalTime()
+            $journalOccurredAtUtc = Convert-ToUtcDateTimeOffset -Value $matchingJournals[0].Journal.occurredAtUtc -Name 'terminal rollback journal timestamp'
+            $statusCheckedAtUtc = Convert-ToUtcDateTimeOffset -Value $status.lastCheckedAtUtc -Name 'update status timestamp'
         }
         catch { throw 'The stale Activating status or terminal RolledBack journal timestamp is invalid.' }
+        try { $taskLastRunAtUtc = Convert-ToUtcDateTimeOffset -Value $taskInfo.LastRunTime -Name 'protected update task timestamp' }
+        catch { throw 'The protected update task invocation timestamp is invalid.' }
         if ($taskResult -ne 0) {
             # A failed helper dispatch is admissible only when the exact
             # target rollback is durably recorded and the failed task run is
             # bounded by the stale status observation and that journal. This
             # keeps an unrelated scheduler error from clearing maintenance.
-            try { $taskLastRunAtUtc = ([DateTimeOffset]$taskInfo.LastRunTime).ToUniversalTime() }
-            catch { throw 'The failed protected update task invocation timestamp is invalid.' }
             if ($taskLastRunAtUtc -lt $statusCheckedAtUtc.AddSeconds(-5) -or
                 $taskLastRunAtUtc -gt $journalOccurredAtUtc.AddSeconds(30)) {
                 throw 'The failed protected update task invocation does not match the exact terminal rollback journal.'
             }
         }
         $serviceProcess = Get-Process -Id ([int]$service.ProcessId) -ErrorAction Stop
-        $serviceStartedAtUtc = ([DateTimeOffset]$serviceProcess.StartTime).ToUniversalTime()
+        try { $serviceStartedAtUtc = Convert-ToUtcDateTimeOffset -Value $serviceProcess.StartTime -Name 'gateway service start timestamp' }
+        catch { throw 'The gateway service process start timestamp is invalid.' }
         if ($serviceStartedAtUtc -ge $journalOccurredAtUtc -or $serviceStartedAtUtc -ge $statusCheckedAtUtc) {
             throw 'The current service process does not predate the stale status and terminal rollback journal.'
         }
@@ -595,9 +634,11 @@ function Invoke-StaleActivatingCoordinatorNormalization {
         }
         $afterTask = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
         $afterTaskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        try { $afterTaskLastRunAtUtc = Convert-ToUtcDateTimeOffset -Value $afterTaskInfo.LastRunTime -Name 'post-normalization update task timestamp' }
+        catch { throw 'The post-normalization update task timestamp is invalid.' }
         if ([string]$afterTask.State -cne 'Ready' -or [string]$afterTask.Settings.MultipleInstances -ine 'IgnoreNew' -or
             [uint32]$afterTaskInfo.LastTaskResult -ne $taskResult -or
-            $afterTaskInfo.LastRunTime -ne $taskInfo.LastRunTime) {
+            $afterTaskLastRunAtUtc -ne $taskLastRunAtUtc) {
             throw 'The protected update task changed during stale coordinator normalization.'
         }
         $afterService = Get-CimInstance Win32_Service -Filter "Name='TreadmillRunnerGateway'" -ErrorAction Stop
