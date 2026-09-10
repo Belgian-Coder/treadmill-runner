@@ -1066,6 +1066,14 @@ function Invoke-InfrastructureRefresh {
     }
     if (-not (Test-Path -LiteralPath $PreconditionPath -PathType Leaf)) { throw 'Infrastructure refresh preconditions are missing.' }
     $preconditions = Get-Content -LiteralPath $PreconditionPath -Raw | ConvertFrom-Json
+    $preconditionPreviousExecutable = Get-ServiceExecutablePath -ImagePath ([string]$preconditions.previousImagePath)
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($preconditionPreviousExecutable, $expectedPreviousExecutable)) {
+      throw 'The infrastructure refresh previous service image changed before handoff.'
+    }
+    # The supervisor stores the service image in its canonical quoted form,
+    # while this child receives a plain executable path. Normalize it once so
+    # every rollback path preserves spaces in the Windows service ImagePath.
+    $PreviousImagePath = '"{0}"' -f $expectedPreviousExecutable
     if (-not (Test-Path -LiteralPath $HelperPath -PathType Leaf) -or
         -not (Test-Path -LiteralPath $GuardianPath -PathType Leaf)) {
       throw 'The protected updater scripts are missing; infrastructure refresh is not safe.'
@@ -1600,7 +1608,10 @@ try {
     '-RefreshTransactionId', $transactionId, '-RefreshExpectedVersion', $version,
     '-RefreshNewReleasePath', ('"{0}"' -f $newReleasePath),
     '-RefreshIncomingPath', ('"{0}"' -f $incomingPath),
-    '-RefreshPreviousImagePath', ('"{0}"' -f $previousImagePath),
+    # $previousImagePath is already quoted for sc.exe. Pass the raw
+    # executable here and add exactly one argument-boundary quote pair; a
+    # second quote layer is parsed by Windows PowerShell as a truncated path.
+    '-RefreshPreviousImagePath', ('"{0}"' -f $currentExecutable),
     '-RefreshDatabaseBackupPath', ('"{0}"' -f $databaseBackupPath),
     '-RefreshJournalPath', ('"{0}"' -f $journalPath),
     '-RefreshMaintenanceMarkerPath', ('"{0}"' -f $maintenanceMarkerPath),

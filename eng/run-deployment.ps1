@@ -165,6 +165,59 @@ function Get-CurrentInstalledRelease {
     return [pscustomobject]@{ Version = $version; Executable = $executable }
 }
 
+function Get-ActivationFailureEvidence {
+    param(
+        [Parameter(Mandatory)][string]$ResolvedDataRoot,
+        [Parameter(Mandatory)][string]$ExpectedVersion,
+        [Parameter(Mandatory)][DateTimeOffset]$ActivationStartedAtUtc
+    )
+    # The gateway can retain Activating in memory when the protected helper
+    # fails before the service handoff. Read the API first when it has already
+    # published a terminal state, then fall back to the durable journal so a
+    # stale in-memory state cannot hide an exact rollback reason.
+    try {
+        $status = Invoke-GetJson '/api/updates/status'
+        if ([string]$status.availableVersion -ceq $ExpectedVersion -and
+            [string]$status.state -in @('RolledBack', 'Failed')) {
+            $reason = [string]$status.message
+            if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'The update status did not provide a rollback reason.' }
+            return [pscustomobject]@{
+                State = [string]$status.state
+                Version = $ExpectedVersion
+                Reason = $reason
+                Source = 'status'
+            }
+        }
+    }
+    catch { }
+
+    $planRoot = Join-Path $ResolvedDataRoot 'updates\plans'
+    if (-not (Test-Path -LiteralPath $planRoot -PathType Container)) { return $null }
+    foreach ($journalFile in @(Get-ChildItem -LiteralPath $planRoot -Filter 'transaction-*.json' -File -Force -ErrorAction SilentlyContinue)) {
+        try {
+            $transactionId = [System.IO.Path]::GetFileNameWithoutExtension($journalFile.Name).Substring('transaction-'.Length)
+            $journal = Get-Content -LiteralPath $journalFile.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
+            $occurredAtUtc = ([DateTimeOffset]::Parse([string]$journal.occurredAtUtc)).ToUniversalTime()
+            if ($transactionId -notmatch '^[0-9a-f]{32}$' -or [int]$journal.schemaVersion -ne 1 -or
+                [string]$journal.transactionId -cne $transactionId -or [string]$journal.version -cne $ExpectedVersion -or
+                [string]$journal.state -notin @('RolledBack', 'RollbackFailed') -or
+                $occurredAtUtc -lt $ActivationStartedAtUtc.AddSeconds(-2)) {
+                continue
+            }
+            $reason = [string]$journal.reason
+            if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'The terminal update journal did not provide a rollback reason.' }
+            return [pscustomobject]@{
+                State = [string]$journal.state
+                Version = $ExpectedVersion
+                Reason = $reason
+                Source = 'journal'
+            }
+        }
+        catch { }
+    }
+    return $null
+}
+
 function Expand-VerifiedRepairSource {
     param([Parameter(Mandatory)][string]$PackagePath, [Parameter(Mandatory)][string]$DestinationRoot)
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -417,9 +470,10 @@ function Invoke-StaleActivatingCoordinatorNormalization {
 
         $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
         $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        $taskResult = [uint32]$taskInfo.LastTaskResult
         if ([string]$task.State -cne 'Ready' -or [string]$task.Settings.MultipleInstances -ine 'IgnoreNew' -or
-            [uint32]$taskInfo.LastTaskResult -ne 0) {
-            throw 'Stale coordinator normalization requires the protected update task to be Ready with result 0 and IgnoreNew.'
+            $null -eq $taskInfo.LastRunTime -or $taskInfo.LastRunTime -eq [DateTime]::MinValue) {
+            throw 'Stale coordinator normalization requires the protected update task to be Ready with IgnoreNew and a recorded invocation.'
         }
 
         $databaseStatus = Invoke-GetJson '/api/operations/database/status'
@@ -482,6 +536,18 @@ function Invoke-StaleActivatingCoordinatorNormalization {
             $statusCheckedAtUtc = ([DateTimeOffset]::Parse([string]$status.lastCheckedAtUtc)).ToUniversalTime()
         }
         catch { throw 'The stale Activating status or terminal RolledBack journal timestamp is invalid.' }
+        if ($taskResult -ne 0) {
+            # A failed helper dispatch is admissible only when the exact
+            # target rollback is durably recorded and the failed task run is
+            # bounded by the stale status observation and that journal. This
+            # keeps an unrelated scheduler error from clearing maintenance.
+            try { $taskLastRunAtUtc = ([DateTimeOffset]$taskInfo.LastRunTime).ToUniversalTime() }
+            catch { throw 'The failed protected update task invocation timestamp is invalid.' }
+            if ($taskLastRunAtUtc -lt $statusCheckedAtUtc.AddSeconds(-5) -or
+                $taskLastRunAtUtc -gt $journalOccurredAtUtc.AddSeconds(30)) {
+                throw 'The failed protected update task invocation does not match the exact terminal rollback journal.'
+            }
+        }
         $serviceProcess = Get-Process -Id ([int]$service.ProcessId) -ErrorAction Stop
         $serviceStartedAtUtc = ([DateTimeOffset]$serviceProcess.StartTime).ToUniversalTime()
         if ($serviceStartedAtUtc -ge $journalOccurredAtUtc -or $serviceStartedAtUtc -ge $statusCheckedAtUtc) {
@@ -530,8 +596,9 @@ function Invoke-StaleActivatingCoordinatorNormalization {
         $afterTask = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
         $afterTaskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
         if ([string]$afterTask.State -cne 'Ready' -or [string]$afterTask.Settings.MultipleInstances -ine 'IgnoreNew' -or
-            [uint32]$afterTaskInfo.LastTaskResult -ne 0) {
-            throw 'The protected update task was not Ready with result 0 after stale coordinator normalization.'
+            [uint32]$afterTaskInfo.LastTaskResult -ne $taskResult -or
+            $afterTaskInfo.LastRunTime -ne $taskInfo.LastRunTime) {
+            throw 'The protected update task changed during stale coordinator normalization.'
         }
         $afterService = Get-CimInstance Win32_Service -Filter "Name='TreadmillRunnerGateway'" -ErrorAction Stop
         $afterRelease = Get-CurrentInstalledRelease
@@ -772,12 +839,19 @@ try {
             # Recheck the idle gate directly adjacent to activation. No other
             # request is allowed to stand in for this HTTP 204 observation.
             Assert-Idle
+            $activationStartedAtUtc = [DateTimeOffset]::UtcNow
             $activateBody = @{ confirmation = 'ACTIVATE'; expectedVersion = $ExpectedVersion } | ConvertTo-Json -Compress
             Invoke-RestMethod -Method Post -Uri ($GatewayUrl.TrimEnd('/') + '/api/updates/activate') -ContentType 'application/json' -Body $activateBody -TimeoutSec 30 | Out-Null
             $deadline = [DateTimeOffset]::UtcNow.AddSeconds(180)
+            $activationFailure = $null
             do {
                 Start-Sleep -Seconds 3
                 try {
+                    $activationFailure = Get-ActivationFailureEvidence `
+                        -ResolvedDataRoot $resolvedDataRoot `
+                        -ExpectedVersion $ExpectedVersion `
+                        -ActivationStartedAtUtc $activationStartedAtUtc
+                    if ($null -ne $activationFailure) { break }
                     $installed = Assert-InstalledState -ExpectedFingerprint $expectedFingerprint -ExpectedHelperHash $helperHash -ExpectedGuardianHash $guardianHash
                     break
                 }
@@ -785,6 +859,9 @@ try {
                     if ([DateTimeOffset]::UtcNow -ge $deadline) { throw }
                 }
             } while ([DateTimeOffset]::UtcNow -lt $deadline)
+            if ($null -ne $activationFailure) {
+                throw "Activation failed for $ExpectedVersion with terminal state $($activationFailure.State) ($($activationFailure.Source)): $($activationFailure.Reason)"
+            }
             $afterProfiles = @(Expand-JsonArray -Value (Invoke-GetJson '/api/planning/profiles'))
             if ($afterProfiles.Count -ne $beforeProfiles.Count) {
                 throw "The profile count changed across activation ($($beforeProfiles.Count) -> $($afterProfiles.Count))."

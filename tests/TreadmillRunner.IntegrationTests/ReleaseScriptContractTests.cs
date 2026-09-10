@@ -921,6 +921,65 @@ public sealed class ReleaseScriptContractTests
     }
   }
 
+  [Fact]
+  public async Task Protected_helper_refresh_transport_preserves_previous_executable_with_spaces()
+  {
+    string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    Assert.Contains("'-RefreshPreviousImagePath', ('\"{0}\"' -f $currentExecutable)", helper, StringComparison.Ordinal);
+    Assert.DoesNotContain("'-RefreshPreviousImagePath', ('\"{0}\"' -f $previousImagePath)", helper, StringComparison.Ordinal);
+    Assert.Contains("$preconditionPreviousExecutable = Get-ServiceExecutablePath", helper, StringComparison.Ordinal);
+    Assert.Contains("$PreviousImagePath = '\"{0}\"' -f $expectedPreviousExecutable", helper, StringComparison.Ordinal);
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.RefreshTransport", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string capturePath = Path.Combine(root, "capture.ps1");
+    string launcherPath = Path.Combine(root, "launcher.ps1");
+    string outputPath = Path.Combine(root, "bound-value.txt");
+    string expected = @"C:\Program Files\TreadmillRunner\releases\1.5.76\TreadmillRunner.Gateway.exe";
+    await File.WriteAllTextAsync(capturePath, """
+param([string]$RefreshPreviousImagePath, [string]$OutPath)
+Set-Content -LiteralPath $OutPath -Value $RefreshPreviousImagePath -NoNewline
+""");
+    string launcher = """
+$expected = '__EXPECTED__'
+$arguments = @(
+  '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+  '-File', ('"{0}"' -f '__CAPTURE__'),
+  '-RefreshPreviousImagePath', ('"{0}"' -f $expected),
+  '-OutPath', ('"{0}"' -f '__OUTPUT__')
+)
+$child = Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Hidden -PassThru -Wait
+if ($child.ExitCode -ne 0) { throw "Nested capture exited with $($child.ExitCode)." }
+"""
+      .Replace("__EXPECTED__", expected.Replace("'", "''"), StringComparison.Ordinal)
+      .Replace("__CAPTURE__", capturePath.Replace("'", "''"), StringComparison.Ordinal)
+      .Replace("__OUTPUT__", outputPath.Replace("'", "''"), StringComparison.Ordinal);
+    await File.WriteAllTextAsync(launcherPath, launcher);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", launcherPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string stdout = await process.StandardOutput.ReadToEndAsync();
+      string stderr = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Nested refresh transport harness failed: {stderr}{Environment.NewLine}{stdout}");
+      Assert.Equal(expected, await File.ReadAllTextAsync(outputPath));
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
   [Theory]
   [InlineData("eng/run-deployment.ps1", "function Get-CurrentInstalledRelease")]
   [InlineData("src/TreadmillRunner.Gateway/Updates/update-helper.ps1", "function Assert-ExactPath")]
@@ -1029,6 +1088,10 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("schemaVersion -ne 1", script, StringComparison.Ordinal);
     Assert.Contains("manifest.channel -cne 'stable'", script, StringComparison.Ordinal);
     Assert.Contains("Get-CurrentInstalledRelease", script, StringComparison.Ordinal);
+    Assert.Contains("function Get-ActivationFailureEvidence", script, StringComparison.Ordinal);
+    Assert.Contains("$status.availableVersion -ceq $ExpectedVersion", script, StringComparison.Ordinal);
+    Assert.Contains("$occurredAtUtc -lt $ActivationStartedAtUtc.AddSeconds(-2)", script, StringComparison.Ordinal);
+    Assert.Contains("Activation failed for $ExpectedVersion with terminal state", script, StringComparison.Ordinal);
     Assert.Contains("Expand-VerifiedRepairSource", script, StringComparison.Ordinal);
     Assert.Contains("Repair-ProtectedInfrastructure", script, StringComparison.Ordinal);
     Assert.Contains("protected-infrastructure-repair", script, StringComparison.Ordinal);
@@ -1048,7 +1111,9 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("$staleStatusVersion = [string]$status.availableVersion", script, StringComparison.Ordinal);
     Assert.Contains("$liveBeforeRestart.StatusCode -ne 204", script, StringComparison.Ordinal);
     Assert.Contains("$task.State -cne 'Ready'", script, StringComparison.Ordinal);
-    Assert.Contains("[uint32]$taskInfo.LastTaskResult -ne 0", script, StringComparison.Ordinal);
+    Assert.Contains("$taskResult = [uint32]$taskInfo.LastTaskResult", script, StringComparison.Ordinal);
+    Assert.Contains("$taskResult -ne 0", script, StringComparison.Ordinal);
+    Assert.Contains("The failed protected update task invocation does not match the exact terminal rollback journal", script, StringComparison.Ordinal);
     Assert.Contains("/api/operations/database/status", script, StringComparison.Ordinal);
     Assert.Contains("HealthyWithBackupWarning", script, StringComparison.Ordinal);
     Assert.Contains("$databaseIdentityRecheck -cne $databaseIdentity", script, StringComparison.Ordinal);
@@ -1059,6 +1124,7 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("$afterStatus.currentVersion -cne $ExpectedCurrentVersion", script, StringComparison.Ordinal);
     Assert.Contains("$afterTask.State -cne 'Ready'", script, StringComparison.Ordinal);
     Assert.Contains("$afterTask.Settings.MultipleInstances -ine 'IgnoreNew'", script, StringComparison.Ordinal);
+    Assert.Contains("$afterTaskInfo.LastTaskResult -ne $taskResult", script, StringComparison.Ordinal);
     Assert.Contains("$afterService.StartMode -ne 'Auto'", script, StringComparison.Ordinal);
     Assert.Contains("The exact terminal RolledBack journal changed during stale coordinator normalization", script, StringComparison.Ordinal);
     Assert.Contains("if ((Test-Path -LiteralPath $pendingPlanPath) -or (Test-Path -LiteralPath $maintenanceMarkerPath))", script, StringComparison.Ordinal);
