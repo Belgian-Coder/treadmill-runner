@@ -636,6 +636,122 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
+  public async Task Privileged_helper_cleans_only_a_markerless_prestart_terminal_rollback_plan()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    int guardStart = source.IndexOf("function Assert-UnderRoot", StringComparison.Ordinal);
+    int guardEnd = source.IndexOf("function Write-Journal", guardStart, StringComparison.Ordinal);
+    int journalStart = source.IndexOf("function Read-TransactionJournal", guardEnd, StringComparison.Ordinal);
+    int journalEnd = source.IndexOf("function Write-JournalPayload", journalStart, StringComparison.Ordinal);
+    int mutexStart = source.IndexOf("function New-MaintenanceMutex", journalEnd, StringComparison.Ordinal);
+    int mutexEnd = source.IndexOf("function Invoke-StaleUpdateRecovery", mutexStart, StringComparison.Ordinal);
+    int staleStart = mutexEnd;
+    int staleEnd = source.IndexOf("function Invoke-InfrastructureRefresh", staleStart, StringComparison.Ordinal);
+    Assert.True(guardStart >= 0 && guardEnd > guardStart && journalStart > guardEnd && journalEnd > journalStart &&
+      mutexStart > journalEnd && mutexEnd > mutexStart && staleEnd > staleStart,
+      "The helper recovery functions must remain extractable for the terminal rollback regression harness.");
+    int markerRefresh = source.IndexOf("# The marker was sampled before waiting for the mutex.", mutexStart, StringComparison.Ordinal);
+    int journalClassification = source.IndexOf("if (-not $markerExists -and $null -eq $journal)", markerRefresh, StringComparison.Ordinal);
+    Assert.True(markerRefresh >= 0 && journalClassification > markerRefresh,
+      "Stale recovery must refresh the maintenance marker after acquiring its mutex and before journal classification.");
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.TerminalRollbackTests", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "terminal-rollback-test.ps1");
+    string guards = source.Substring(guardStart, guardEnd - guardStart);
+    string journal = source.Substring(journalStart, journalEnd - journalStart);
+    string mutex = source.Substring(mutexStart, mutexEnd - mutexStart);
+    string stale = source.Substring(staleStart, staleEnd - staleStart);
+    string testScript = $$"""
+    $ErrorActionPreference = 'Stop'
+    {{guards}}
+    {{journal}}
+    {{mutex}}
+    {{stale}}
+    $root = '{{root.Replace("'", "''", StringComparison.Ordinal)}}'
+    $installRoot = Join-Path $root 'install'
+    $releaseRoot = Join-Path $installRoot 'releases'
+    $updaterRoot = Join-Path $installRoot 'updater'
+    $dataRoot = Join-Path $root 'data'
+    $planRoot = Join-Path $dataRoot 'updates\plans'
+    $planPath = Join-Path $planRoot 'pending-activation.json'
+    $transaction = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    $version = '1.5.79'
+    $journalPath = Join-Path $planRoot "transaction-$transaction.json"
+    $markerPath = Join-Path $dataRoot 'updates\service-maintenance.lock'
+    $preconditionPath = Join-Path $updaterRoot ".update-preconditions-$transaction.json"
+    $incomingPath = Join-Path $releaseRoot ".incoming-$transaction"
+    $newReleasePath = Join-Path $releaseRoot $version
+    $databasePath = Join-Path $dataRoot 'data\treadmillrunner.db'
+    $databaseBackupPath = Join-Path $dataRoot "backups\pre-update-$transaction.db"
+    $helperPath = Join-Path $updaterRoot 'update-helper.ps1'
+    $guardianPath = Join-Path $updaterRoot 'service-guardian.ps1'
+    New-Item -ItemType Directory -Force -Path $planRoot, $updaterRoot, (Split-Path -Parent $databasePath) | Out-Null
+
+    function Write-Plan([string]$tx = $transaction, [string]$v = $version) {
+      [ordered]@{ TransactionId = $tx; Version = $v } | ConvertTo-Json | Set-Content -LiteralPath $planPath -Encoding UTF8
+    }
+    function Write-Journal([string]$state = 'RolledBack', [string]$tx = $transaction, [string]$v = $version) {
+      [ordered]@{ schemaVersion = 1; transactionId = $tx; version = $v; state = $state; occurredAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); reason = 'regression' } |
+        ConvertTo-Json | Set-Content -LiteralPath $journalPath -Encoding UTF8
+    }
+    function Recover {
+      Invoke-StaleUpdateRecovery -TransactionId $transaction -ExpectedVersion $version -PlanPath $planPath `
+        -JournalPath $journalPath -MaintenanceMarkerPath $markerPath -PreconditionPath $preconditionPath `
+        -IncomingPath $incomingPath -NewReleasePath $newReleasePath -DatabasePath $databasePath `
+        -DatabaseBackupPath $databaseBackupPath -HelperPath $helperPath -GuardianPath $guardianPath `
+        -UpdaterRoot $updaterRoot -ReleaseRoot $releaseRoot -HealthUrl 'http://127.0.0.1:1/ready' `
+        -ServiceName 'TreadmillRunnerGateway'
+    }
+
+    Write-Plan
+    Write-Journal
+    if (-not (Recover) -or (Test-Path -LiteralPath $planPath) -or -not (Test-Path -LiteralPath $journalPath)) {
+      throw 'A clean markerless terminal rollback did not remove only its pending plan.'
+    }
+
+    Write-Plan
+    Write-Journal -state 'Activating'
+    try { Recover; throw 'A nonterminal markerless journal was recovered.' } catch { if (-not (Test-Path -LiteralPath $planPath)) { throw } }
+
+    Write-Plan -v '1.5.80'
+    Write-Journal
+    try { Recover; throw 'A plan/journal mismatch was recovered.' } catch { if (-not (Test-Path -LiteralPath $planPath)) { throw } }
+
+    Write-Plan
+    Write-Journal
+    $readyPath = Join-Path $updaterRoot ".update-ready-$transaction.token"
+    [System.IO.File]::WriteAllText($readyPath, 'artifact')
+    try { Recover; throw 'A terminal rollback with mutation residue was recovered.' } catch { if (-not (Test-Path -LiteralPath $planPath)) { throw } }
+    Remove-Item -LiteralPath $readyPath -Force
+    'Terminal rollback recovery smoke OK'
+    """;
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Terminal rollback recovery harness failed: {error}{Environment.NewLine}{output}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
   public void Privileged_helper_derives_trust_and_roots_from_protected_arguments()
   {
     string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
@@ -917,6 +1033,26 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("Repair-ProtectedInfrastructure", script, StringComparison.Ordinal);
     Assert.Contains("protected-infrastructure-repair", script, StringComparison.Ordinal);
     Assert.Contains("-RepairUpdateInfrastructureOnly", script, StringComparison.Ordinal);
+    Assert.Contains("Invoke-PendingActivationReconciliation", script, StringComparison.Ordinal);
+    Assert.Contains("schtasks.exe /Run /TN '\\TreadmillRunnerUpdate'", script, StringComparison.Ordinal);
+    Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);
+    Assert.Contains("$journal.state -cne 'RolledBack'", script, StringComparison.Ordinal);
+    Assert.Contains("$task.Settings.MultipleInstances -ine 'IgnoreNew'", script, StringComparison.Ordinal);
+    Assert.Contains("$dispatchIdentity -cne $planIdentity", script, StringComparison.Ordinal);
+    Assert.Contains("(Get-Sha256Hex -Path $journalPath) -cne $journalHash", script, StringComparison.Ordinal);
+    Assert.Contains("$dispatchObserved", script, StringComparison.Ordinal);
+    Assert.Contains("The pending activation transaction journal changed after reconciliation", script, StringComparison.Ordinal);
+    Assert.Contains("The pending activation inbox is not a regular protected file", script, StringComparison.Ordinal);
+    int reconciliationStart = script.IndexOf("function Invoke-PendingActivationReconciliation", StringComparison.Ordinal);
+    int mutexWait = script.IndexOf("$maintenanceMutex.WaitOne", reconciliationStart, StringComparison.Ordinal);
+    int noPlanReturn = script.IndexOf("if (-not (Test-Path -LiteralPath $pendingPlanPath)) { return }", reconciliationStart, StringComparison.Ordinal);
+    Assert.True(reconciliationStart >= 0 && mutexWait >= 0 && noPlanReturn > mutexWait,
+      "The no-plan decision must be established only after the maintenance mutex is acquired.");
+    int repair = script.LastIndexOf("Repair-ProtectedInfrastructure", StringComparison.Ordinal);
+    int reconcile = script.LastIndexOf("Invoke-PendingActivationReconciliation", StringComparison.Ordinal);
+    int feed = script.IndexOf("install-stable-update-feed.ps1", StringComparison.Ordinal);
+    Assert.True(repair >= 0 && reconcile > repair && feed > reconcile,
+      "protected infrastructure repair and pending-plan reconciliation must precede feed publication");
     Assert.Contains("four installer-required entries", script, StringComparison.Ordinal);
     Assert.Contains("if (-not $DryRun)", script, StringComparison.Ordinal);
     Assert.Contains("Normalize a verified terminal session before the GET-only physical", script, StringComparison.Ordinal);
@@ -971,6 +1107,12 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("Updates\\service-guardian.ps1", script, StringComparison.Ordinal);
     Assert.Contains("TreadmillRunnerGuardian", script, StringComparison.Ordinal);
     Assert.Contains("service-maintenance.lock", script, StringComparison.Ordinal);
+    Assert.Contains("Test-RepairPendingActivation", script, StringComparison.Ordinal);
+    Assert.Contains("terminal RolledBack", script, StringComparison.Ordinal);
+    Assert.Contains("Repair mode cannot proceed while update maintenance is active", script, StringComparison.Ordinal);
+    Assert.Contains("journal.transactionId -cne $transactionId", script, StringComparison.Ordinal);
+    Assert.Contains("journal.version -cne $version", script, StringComparison.Ordinal);
+    Assert.Contains("[string]$journal.state -cne 'RolledBack'", script, StringComparison.Ordinal);
     Assert.Contains("failureflag $serviceName 1", script, StringComparison.Ordinal);
     Assert.Contains("pending activation or refresh workspace", script, StringComparison.Ordinal);
     Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);

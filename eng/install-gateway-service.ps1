@@ -916,6 +916,48 @@ function Recover-StaleInstallerTransaction {
 
 $pendingPlanPath = Join-Path $planRoot 'pending-activation.json'
 
+function Test-RepairPendingActivation {
+    $pendingPlanExists = Test-Path -LiteralPath $pendingPlanPath
+    if (-not $pendingPlanExists) { return $false }
+    if (-not (Test-Path -LiteralPath $pendingPlanPath -PathType Leaf)) {
+        throw 'Repair mode found a pending activation path that is not a file.'
+    }
+    if ((Get-Item -LiteralPath $pendingPlanPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        throw 'Repair mode found a reparse-point pending activation plan.'
+    }
+    if (-not $RepairUpdateInfrastructureOnly) {
+        throw 'The installer cannot run while a pending activation or refresh workspace exists.'
+    }
+    if (Test-Path -LiteralPath $maintenanceMarkerPath) {
+        throw 'Repair mode cannot proceed while update maintenance is active.'
+    }
+    $pendingPlan = $null
+    try { $pendingPlan = Get-Content -LiteralPath $pendingPlanPath -Raw | ConvertFrom-Json }
+    catch { throw 'Repair mode found an invalid pending activation plan.' }
+    $transactionId = [string]$pendingPlan.TransactionId
+    $version = [string]$pendingPlan.Version
+    if ($transactionId -notmatch '^[0-9a-f]{32}$' -or $version -notmatch '^\d+\.\d+\.\d+$') {
+        throw 'Repair mode found an invalid pending activation identity.'
+    }
+    $journalPath = Join-Path $planRoot "transaction-$transactionId.json"
+    if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) {
+        throw 'Repair mode found a pending activation without its matching journal.'
+    }
+    if ((Get-Item -LiteralPath $journalPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        throw 'Repair mode found a reparse-point pending activation journal.'
+    }
+    $journal = $null
+    try { $journal = Get-Content -LiteralPath $journalPath -Raw | ConvertFrom-Json }
+    catch { throw 'Repair mode found an invalid pending activation journal.' }
+    if ([int]$journal.schemaVersion -ne 1 -or
+        [string]$journal.transactionId -cne $transactionId -or
+        [string]$journal.version -cne $version -or
+        [string]$journal.state -cne 'RolledBack') {
+        throw 'Repair mode requires the pending activation journal to be the exact terminal RolledBack transaction.'
+    }
+    return $true
+}
+
 if (-not $PSCmdlet.ShouldProcess($serviceName, $(if ($RepairUpdateInfrastructureOnly) { 'Repair protected update infrastructure' } else { "Install release $Version and configure the Windows Service" }))) { return }
 foreach ($directory in @($releaseRoot, $updaterRoot, (Split-Path -Parent $databasePath), $dataProtectionKeyPath, $backupRoot, $feedRoot, $stagingRoot, $planRoot)) {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
@@ -932,7 +974,8 @@ $maintenanceMutexHeld = $true
 if (Test-Path -LiteralPath $maintenanceMarkerPath -PathType Leaf) {
     Recover-StaleInstallerTransaction
 }
-if ((Test-Path -LiteralPath $pendingPlanPath -PathType Leaf) -or
+$pendingActivationTerminalRollback = Test-RepairPendingActivation
+if (((Test-Path -LiteralPath $pendingPlanPath -PathType Leaf) -and -not $pendingActivationTerminalRollback) -or
     @(Get-ChildItem -LiteralPath $updaterRoot -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -like '.update-*' -or $_.Name -like '.service-guardian-*' }).Count -gt 0) {
     throw 'The installer cannot run while a pending activation or refresh workspace exists.'

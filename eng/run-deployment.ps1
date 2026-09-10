@@ -239,6 +239,147 @@ function Repair-ProtectedInfrastructure {
     if ($ready.StatusCode -ne 200) { throw 'The gateway readiness endpoint did not return HTTP 200 after bootstrap.' }
 }
 
+function Invoke-PendingActivationReconciliation {
+    param(
+        [Parameter(Mandatory)][string]$ResolvedInstallRoot,
+        [Parameter(Mandatory)][string]$ResolvedDataRoot
+    )
+    $pendingPlanPath = Join-Path $ResolvedDataRoot 'updates\plans\pending-activation.json'
+    $maintenanceMarkerPath = Join-Path $ResolvedDataRoot 'updates\service-maintenance.lock'
+    $maintenanceMutex = [System.Threading.Mutex]::new($false, 'Global\TreadmillRunnerGateway.Maintenance')
+    $maintenanceMutexHeld = $false
+    try {
+        try { $maintenanceMutexAcquired = $maintenanceMutex.WaitOne(30000) }
+        catch [System.Threading.AbandonedMutexException] { $maintenanceMutexAcquired = $true }
+        if (-not $maintenanceMutexAcquired) { throw 'The update maintenance lock could not be acquired for pending-plan reconciliation.' }
+        $maintenanceMutexHeld = $true
+
+        # Establish the no-plan case under the same gate as plan publication.
+        if (-not (Test-Path -LiteralPath $pendingPlanPath)) { return }
+        if (-not (Test-Path -LiteralPath $pendingPlanPath -PathType Leaf) -or
+            ((Get-Item -LiteralPath $pendingPlanPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw 'The pending activation inbox is not a regular protected file.'
+        }
+        if (Test-Path -LiteralPath $maintenanceMarkerPath) {
+            throw 'The pending activation cannot be reconciled while update maintenance is active.'
+        }
+        $plan = Get-Content -LiteralPath $pendingPlanPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        $transactionId = [string]$plan.TransactionId
+        $version = [string]$plan.Version
+        if ($transactionId -notmatch '^[0-9a-f]{32}$' -or $version -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'The pending activation plan transaction identity is invalid.'
+        }
+        $journalPath = Join-Path (Split-Path -Parent $pendingPlanPath) ("transaction-{0}.json" -f $transactionId)
+        if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf) -or
+            ((Get-Item -LiteralPath $journalPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw 'The pending activation transaction journal is missing.'
+        }
+        $journal = Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ([int]$journal.schemaVersion -ne 1 -or [string]$journal.transactionId -cne $transactionId -or
+            [string]$journal.version -cne $version -or [string]$journal.state -cne 'RolledBack') {
+            throw 'The pending activation transaction journal is not the exact terminal RolledBack transaction.'
+        }
+        $journalHash = Get-Sha256Hex -Path $journalPath
+        $planFile = Get-Item -LiteralPath $pendingPlanPath -Force
+        $planHash = Get-Sha256Hex -Path $pendingPlanPath
+        $planIdentity = '{0}|{1}|{2}|{3}|{4}' -f $transactionId, $version, $planHash,
+            [long]$planFile.Length, $planFile.LastWriteTimeUtc.Ticks
+
+        $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        if ([string]$task.State -eq 'Running' -or [string]$task.Settings.MultipleInstances -ine 'IgnoreNew') {
+            throw 'The protected update task is already processing a run or does not ignore overlapping runs.'
+        }
+        $previousLastRunTime = $taskInfo.LastRunTime
+        $expectedHelperPath = [System.IO.Path]::GetFullPath((Join-Path $ResolvedInstallRoot 'updater\update-helper.ps1'))
+        $expectedPlanPath = [System.IO.Path]::GetFullPath($pendingPlanPath)
+        $expectedInstallRoot = [System.IO.Path]::GetFullPath($ResolvedInstallRoot)
+        $expectedDataRoot = [System.IO.Path]::GetFullPath($ResolvedDataRoot)
+        $expectedArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -PlanPath "{1}" -InstallRoot "{2}" -DataRoot "{3}" -HealthUrl "{4}"' -f
+            $expectedHelperPath, $expectedPlanPath, $expectedInstallRoot, $expectedDataRoot, 'http://127.0.0.1:5180/health/ready'
+        $actions = @($task.Actions)
+        if ($actions.Count -ne 1 -or [string]$actions[0].Execute -ine 'powershell.exe' -or
+            [string]$actions[0].Arguments -cne $expectedArguments -or
+            [string]$task.Principal.UserId -ine 'SYSTEM' -or
+            [string]$task.Principal.LogonType -ine 'ServiceAccount' -or
+            [string]$task.Principal.RunLevel -ine 'Highest') {
+            throw 'The protected update task does not match the fixed SYSTEM/highest-privilege contract.'
+        }
+
+        # Revalidate the transaction identity while owning the same mutex that
+        # creates/replaces pending plans. Keep it held through schtasks and
+        # until the scheduler reports a fresh Running invocation. The task is
+        # IgnoreNew, and UpdateManager must acquire this mutex and refuses to
+        # create a replacement while this pending plan still exists, so the
+        # helper can only consume the captured transaction after the gate opens.
+        if (Test-Path -LiteralPath $maintenanceMarkerPath) {
+            throw 'The pending activation maintenance marker appeared before dispatch.'
+        }
+        if (-not (Test-Path -LiteralPath $pendingPlanPath -PathType Leaf) -or
+            ((Get-Item -LiteralPath $pendingPlanPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw 'The pending activation plan changed before dispatch.'
+        }
+        $dispatchPlan = Get-Content -LiteralPath $pendingPlanPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        $dispatchFile = Get-Item -LiteralPath $pendingPlanPath -Force
+        $dispatchIdentity = '{0}|{1}|{2}|{3}|{4}' -f [string]$dispatchPlan.TransactionId, [string]$dispatchPlan.Version,
+            (Get-Sha256Hex -Path $pendingPlanPath), [long]$dispatchFile.Length, $dispatchFile.LastWriteTimeUtc.Ticks
+        if ($dispatchIdentity -cne $planIdentity) {
+            throw 'The pending activation plan changed before dispatch.'
+        }
+        $dispatchAtUtc = [DateTime]::UtcNow
+        & schtasks.exe /Run /TN '\TreadmillRunnerUpdate' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'The protected update task could not be started for pending-plan reconciliation.' }
+        $startDeadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+        $dispatchObserved = $false
+        do {
+            $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+            $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+            $freshLastRun = $null -ne $taskInfo.LastRunTime -and $taskInfo.LastRunTime -ne [DateTime]::MinValue -and
+                $taskInfo.LastRunTime.ToUniversalTime() -ge $dispatchAtUtc.AddSeconds(-1) -and
+                ($null -eq $previousLastRunTime -or $taskInfo.LastRunTime -ne $previousLastRunTime)
+            if ([string]$task.State -eq 'Running' -and $freshLastRun) { $dispatchObserved = $true; break }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTimeOffset]::UtcNow -lt $startDeadline)
+        if (-not $dispatchObserved) { throw 'The protected update task was accepted but did not show a fresh Running invocation.' }
+    }
+    finally {
+        if ($maintenanceMutexHeld) { $maintenanceMutex.ReleaseMutex() }
+        $maintenanceMutex.Dispose()
+    }
+    $taskStarted = $false
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(120)
+    do {
+        $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        if ([string]$task.State -eq 'Running') { $taskStarted = $true }
+        elseif ($null -ne $taskInfo.LastRunTime -and $taskInfo.LastRunTime -ne [DateTime]::MinValue -and
+            $taskInfo.LastRunTime.ToUniversalTime() -ge $dispatchAtUtc.AddSeconds(-5)) { $taskStarted = $true }
+        if ($taskStarted -and [string]$task.State -ne 'Running') {
+            if ([uint32]$taskInfo.LastTaskResult -ne 0) {
+                throw "The protected update task failed pending-plan reconciliation with result $([uint32]$taskInfo.LastTaskResult)."
+            }
+            if (-not (Test-Path -LiteralPath $pendingPlanPath) -and
+                -not (Test-Path -LiteralPath $maintenanceMarkerPath)) {
+                if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf) -or
+                    ((Get-Item -LiteralPath $journalPath -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                    throw 'The pending activation transaction journal disappeared after reconciliation.'
+                }
+                $terminalJournal = Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json
+                if ((Get-Sha256Hex -Path $journalPath) -cne $journalHash -or
+                    [int]$terminalJournal.schemaVersion -ne 1 -or
+                    [string]$terminalJournal.transactionId -cne $transactionId -or
+                    [string]$terminalJournal.version -cne $version -or
+                    [string]$terminalJournal.state -cne 'RolledBack') {
+                    throw 'The pending activation transaction journal changed after reconciliation.'
+                }
+                return
+            }
+        }
+        Start-Sleep -Seconds 2
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw 'The protected update task did not reconcile the pending activation plan within 120 seconds.'
+}
+
 function Assert-InstalledState {
     param(
         [Parameter(Mandatory)][string] $ExpectedFingerprint,
@@ -407,18 +548,11 @@ try {
     }
 
     if (-not $DryRun) {
-        & (Join-Path $PSScriptRoot 'install-stable-update-feed.ps1') `
-            -Version $ExpectedVersion `
-            -SourceFeed $workRoot `
-            -PublicCertificatePath $certificatePath `
-            -InstallRoot $resolvedInstallRoot `
-            -DataRoot $resolvedDataRoot
-        if ($LASTEXITCODE -ne 0) { throw 'The verified GitHub feed could not be installed.' }
-
         # The currently installed helper cannot load code from the newly
         # published ZIP until its protected infrastructure is refreshed. Use
         # the already signature/hash-verified package to bootstrap exactly the
-        # four installer-required entries before any update API request.
+        # four installer-required entries before feed publication or any update
+        # API request.
         $currentRelease = Get-CurrentInstalledRelease
         $repairRoot = Join-Path $workRoot 'protected-infrastructure-repair'
         Repair-ProtectedInfrastructure `
@@ -428,6 +562,17 @@ try {
             -ExpectedGuardianHash $guardianHash `
             -CurrentVersion ([string]$currentRelease.Version) `
             -RepairRoot $repairRoot
+        Invoke-PendingActivationReconciliation `
+            -ResolvedInstallRoot $resolvedInstallRoot `
+            -ResolvedDataRoot $resolvedDataRoot
+
+        & (Join-Path $PSScriptRoot 'install-stable-update-feed.ps1') `
+            -Version $ExpectedVersion `
+            -SourceFeed $workRoot `
+            -PublicCertificatePath $certificatePath `
+            -InstallRoot $resolvedInstallRoot `
+            -DataRoot $resolvedDataRoot
+        if ($LASTEXITCODE -ne 0) { throw 'The verified GitHub feed could not be installed.' }
 
         $check = Invoke-RestMethod -Method Post -Uri ($GatewayUrl.TrimEnd('/') + '/api/updates/check') -TimeoutSec 15
         if ([string]$check.availableVersion -ne $ExpectedVersion) { throw "Update check did not expose exact version $ExpectedVersion." }

@@ -692,10 +692,46 @@ function Invoke-StaleUpdateRecovery {
     [Parameter(Mandatory)][string]$HealthUrl,
     [Parameter(Mandatory)][string]$ServiceName
   )
-  $markerExists = Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf
+  $dataRoot = Split-Path -Parent (Split-Path -Parent $DatabasePath)
+  $markerPathExists = Test-Path -LiteralPath $MaintenanceMarkerPath
+  if ($markerPathExists) {
+    Assert-UnderRoot -Path $MaintenanceMarkerPath -Root $dataRoot | Out-Null
+    Assert-NoReparsePoint -Path $MaintenanceMarkerPath -StopAt $dataRoot
+    if (-not (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf)) {
+      throw 'The maintenance marker path is not a regular file.'
+    }
+  }
+  $markerExists = $markerPathExists
   $journalExists = Test-Path -LiteralPath $JournalPath -PathType Leaf
   $journalSwapExists = Test-Path -LiteralPath ("$JournalPath.replace-backup") -PathType Leaf
   if (-not $markerExists -and -not $journalExists -and -not $journalSwapExists) { return $false }
+  $helperBackup = Join-Path $UpdaterRoot ".update-helper-$TransactionId.backup"
+  $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
+  $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"
+  $guardianStage = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp"
+  $readyPath = Join-Path $UpdaterRoot ".update-ready-$TransactionId.token"
+  $startPath = Join-Path $UpdaterRoot ".update-start-$TransactionId.token"
+  $completionPath = Join-Path $UpdaterRoot ".update-completion-$TransactionId.token"
+  $ownershipPath = Join-Path $UpdaterRoot ".update-ownership-$TransactionId.token"
+  $databaseMutationPath = Join-Path $UpdaterRoot ".update-database-$TransactionId.token"
+  $databaseSwap = "$DatabasePath.update-$TransactionId.replace-backup"
+  $helperBackupSwap = "$helperBackup.replace-backup"
+  $guardianBackupSwap = "$guardianBackup.replace-backup"
+  $helperTargetSwap = "$HelperPath.update-$TransactionId.replace-backup"
+  $guardianTargetSwap = "$GuardianPath.update-$TransactionId.replace-backup"
+  $preStartArtifacts = @(
+    $IncomingPath, $NewReleasePath, $PreconditionPath,
+    $helperBackup, $guardianBackup, $helperStage, $guardianStage,
+    $readyPath, $startPath, $completionPath, $ownershipPath, $databaseMutationPath,
+    $databaseSwap, $helperBackupSwap, $guardianBackupSwap, $helperTargetSwap, $guardianTargetSwap,
+    "$PlanPath.replace-backup", "$PreconditionPath.replace-backup",
+    "$helperBackup.write-tmp", "$guardianBackup.write-tmp",
+    "$helperStage.write-tmp", "$guardianStage.write-tmp",
+    "$HelperPath.write-tmp", "$GuardianPath.write-tmp", "$DatabasePath.write-tmp",
+    "$JournalPath.tmp", "$PlanPath.tmp", "$PreconditionPath.tmp",
+    "$readyPath.replace-backup", "$startPath.replace-backup",
+    "$completionPath.replace-backup", "$ownershipPath.replace-backup",
+    "$databaseMutationPath.replace-backup")
   if ($markerExists) {
     $marker = Get-Content -LiteralPath $MaintenanceMarkerPath -Raw
     if ($marker -notmatch "^update $([regex]::Escape($TransactionId)) parent=(\d+) parentStart=(\d+) child=(\d+) childStart=(\d+) ") {
@@ -719,37 +755,6 @@ function Invoke-StaleUpdateRecovery {
       }
     }
   }
-  if (-not (Test-Path -LiteralPath $PreconditionPath -PathType Leaf)) {
-    throw 'The interrupted update has no durable recovery preconditions.'
-  }
-  $preconditions = Get-Content -LiteralPath $PreconditionPath -Raw | ConvertFrom-Json
-  if ([int]$preconditions.schemaVersion -ne 1 -or
-      [string]$preconditions.transactionId -ne $TransactionId -or
-      [string]$preconditions.version -ne $ExpectedVersion -or
-      [string]$preconditions.previousHelperHash -notmatch '^[0-9A-Fa-f]{64}$' -or
-      [string]$preconditions.previousGuardianHash -notmatch '^[0-9A-Fa-f]{64}$' -or
-      [string]$preconditions.expectedHelperHash -notmatch '^[0-9A-Fa-f]{64}$' -or
-      [string]$preconditions.expectedGuardianHash -notmatch '^[0-9A-Fa-f]{64}$' -or
-      [string]$preconditions.startToken -notmatch '^[0-9a-f]{32}$' -or
-      [string]$preconditions.databaseMutationToken -notmatch '^[0-9a-f]{32}$' -or
-      [int]$preconditions.parentProcessId -le 0 -or
-      [long]$preconditions.parentProcessStartTicks -le 0) {
-    throw 'The interrupted update recovery preconditions are invalid.'
-  }
-  $previousImagePath = [string]$preconditions.previousImagePath
-  $previousExecutable = Get-ServiceExecutablePath -ImagePath $previousImagePath
-  Assert-UnderRoot -Path $previousExecutable -Root $ReleaseRoot | Out-Null
-  if ([System.IO.Path]::GetFileName($previousExecutable) -ne 'TreadmillRunner.Gateway.exe') {
-    throw 'The interrupted update previous service image is outside the release contract.'
-  }
-
-  $helperBackup = Join-Path $UpdaterRoot ".update-helper-$TransactionId.backup"
-  $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
-  $databaseSwap = "$DatabasePath.update-$TransactionId.replace-backup"
-  $helperTargetSwap = "$HelperPath.update-$TransactionId.replace-backup"
-  $guardianTargetSwap = "$GuardianPath.update-$TransactionId.replace-backup"
-  $startPath = Join-Path $UpdaterRoot ".update-start-$TransactionId.token"
-  $databaseMutationPath = Join-Path $UpdaterRoot ".update-database-$TransactionId.token"
   $ownedArtifacts = @(
     $IncomingPath,
     (Join-Path $UpdaterRoot ".update-ready-$TransactionId.token"),
@@ -791,6 +796,18 @@ function Invoke-StaleUpdateRecovery {
       throw 'The interrupted update is still active; startup recovery did not acquire its maintenance lock.'
     }
     $maintenanceMutexHeld = $true
+    # The marker was sampled before waiting for the mutex. Re-read it while
+    # owning the lock so a concurrently started update cannot be mistaken for
+    # a markerless terminal transaction.
+    $markerPathExists = Test-Path -LiteralPath $MaintenanceMarkerPath
+    if ($markerPathExists) {
+      Assert-UnderRoot -Path $MaintenanceMarkerPath -Root $dataRoot | Out-Null
+      Assert-NoReparsePoint -Path $MaintenanceMarkerPath -StopAt $dataRoot
+      if (-not (Test-Path -LiteralPath $MaintenanceMarkerPath -PathType Leaf)) {
+        throw 'The maintenance marker path is not a regular file.'
+      }
+    }
+    $markerExists = $markerPathExists
     if ($markerExists) {
       $marker = Get-Content -LiteralPath $MaintenanceMarkerPath -Raw
       if ($marker -notmatch "^update $([regex]::Escape($TransactionId)) parent=(\d+) parentStart=(\d+) child=(\d+) childStart=(\d+) ") {
@@ -810,6 +827,52 @@ function Invoke-StaleUpdateRecovery {
     }
     if (-not $markerExists -and [string]$journal.state -notin @('Activated', 'RolledBack')) {
       throw 'An interrupted nonterminal update has no maintenance marker; automatic recovery is unsafe.'
+    }
+
+    if (-not $markerExists -and $null -ne $journal -and [string]$journal.state -eq 'RolledBack' -and
+        -not (Test-Path -LiteralPath $PreconditionPath -PathType Leaf)) {
+      $planOnDisk = Get-Content -LiteralPath $PlanPath -Raw | ConvertFrom-Json
+      if ([string]$planOnDisk.TransactionId -ne $TransactionId -or
+          [string]$planOnDisk.Version -ne $ExpectedVersion) {
+        throw 'The rolled-back terminal journal does not match the pending activation plan.'
+      }
+      $dataRoot = Split-Path -Parent (Split-Path -Parent $DatabasePath)
+      foreach ($artifact in $preStartArtifacts) {
+        $root = if ($artifact.StartsWith($ReleaseRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $ReleaseRoot }
+          elseif ($artifact.StartsWith($UpdaterRoot, [System.StringComparison]::OrdinalIgnoreCase)) { $UpdaterRoot }
+          else { $dataRoot }
+        Assert-UnderRoot -Path $artifact -Root $root | Out-Null
+        Assert-NoReparsePoint -Path $artifact -StopAt $root
+        if (Test-Path -LiteralPath $artifact) {
+          throw "The rolled-back terminal transaction still has a mutation artifact: $artifact"
+        }
+      }
+      Remove-Item -LiteralPath $PlanPath -Force -ErrorAction Stop
+      return $true
+    }
+
+    if (-not (Test-Path -LiteralPath $PreconditionPath -PathType Leaf)) {
+      throw 'The interrupted update has no durable recovery preconditions.'
+    }
+    $preconditions = Get-Content -LiteralPath $PreconditionPath -Raw | ConvertFrom-Json
+    if ([int]$preconditions.schemaVersion -ne 1 -or
+        [string]$preconditions.transactionId -ne $TransactionId -or
+        [string]$preconditions.version -ne $ExpectedVersion -or
+        [string]$preconditions.previousHelperHash -notmatch '^[0-9A-Fa-f]{64}$' -or
+        [string]$preconditions.previousGuardianHash -notmatch '^[0-9A-Fa-f]{64}$' -or
+        [string]$preconditions.expectedHelperHash -notmatch '^[0-9A-Fa-f]{64}$' -or
+        [string]$preconditions.expectedGuardianHash -notmatch '^[0-9A-Fa-f]{64}$' -or
+        [string]$preconditions.startToken -notmatch '^[0-9a-f]{32}$' -or
+        [string]$preconditions.databaseMutationToken -notmatch '^[0-9a-f]{32}$' -or
+        [int]$preconditions.parentProcessId -le 0 -or
+        [long]$preconditions.parentProcessStartTicks -le 0) {
+      throw 'The interrupted update recovery preconditions are invalid.'
+    }
+    $previousImagePath = [string]$preconditions.previousImagePath
+    $previousExecutable = Get-ServiceExecutablePath -ImagePath $previousImagePath
+    Assert-UnderRoot -Path $previousExecutable -Root $ReleaseRoot | Out-Null
+    if ([System.IO.Path]::GetFileName($previousExecutable) -ne 'TreadmillRunner.Gateway.exe') {
+      throw 'The interrupted update previous service image is outside the release executable contract.'
     }
 
     if ($null -ne $journal -and [string]$journal.state -eq 'Activated') {
