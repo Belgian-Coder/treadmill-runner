@@ -715,7 +715,8 @@ function Invoke-StaleUpdateRecovery {
   if (-not $markerExists -and -not $journalExists -and -not $journalSwapExists) { return $false }
   $helperBackup = Join-Path $UpdaterRoot ".update-helper-$TransactionId.backup"
   $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
-  $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"
+  $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp.ps1"
+  $legacyHelperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"
   $guardianStage = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp"
   $readyPath = Join-Path $UpdaterRoot ".update-ready-$TransactionId.token"
   $startPath = Join-Path $UpdaterRoot ".update-start-$TransactionId.token"
@@ -729,7 +730,7 @@ function Invoke-StaleUpdateRecovery {
   $guardianTargetSwap = "$GuardianPath.update-$TransactionId.replace-backup"
   $preStartArtifacts = @(
     $IncomingPath, $NewReleasePath, $PreconditionPath,
-    $helperBackup, $guardianBackup, $helperStage, $guardianStage,
+    $helperBackup, $guardianBackup, $helperStage, $legacyHelperStage, $guardianStage,
     $readyPath, $startPath, $completionPath, $ownershipPath, $databaseMutationPath,
     $databaseSwap, $helperBackupSwap, $guardianBackupSwap, $helperTargetSwap, $guardianTargetSwap,
     "$PlanPath.replace-backup", "$PreconditionPath.replace-backup",
@@ -785,6 +786,7 @@ function Invoke-StaleUpdateRecovery {
     ("$(Join-Path $UpdaterRoot ".update-completion-$TransactionId.token").replace-backup"),
     ("$(Join-Path $UpdaterRoot ".update-ownership-$TransactionId.token").replace-backup"),
     $PreconditionPath,
+    (Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp.ps1"),
     (Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"),
     (Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp")
   )
@@ -1007,7 +1009,7 @@ function Invoke-InfrastructureRefresh {
 
   $helperBackup = Join-Path $UpdaterRoot ".update-helper-$TransactionId.backup"
   $guardianBackup = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.backup"
-  $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp"
+  $helperStage = Join-Path $UpdaterRoot ".update-helper-$TransactionId.tmp.ps1"
   $guardianStage = Join-Path $UpdaterRoot ".service-guardian-$TransactionId.tmp"
   $databasePath = Join-Path $DataRoot 'data\treadmillrunner.db'
   $databaseSwap = "$databasePath.update-$TransactionId.replace-backup"
@@ -1043,7 +1045,7 @@ function Invoke-InfrastructureRefresh {
     Assert-ExactPath -Actual $GuardianPath -Expected (Join-Path $resolvedUpdaterRoot 'service-guardian.ps1') -Name 'Protected guardian path' | Out-Null
     Assert-ExactPath -Actual $helperBackup -Expected (Join-Path $resolvedUpdaterRoot ".update-helper-$TransactionId.backup") -Name 'Helper backup path' | Out-Null
     Assert-ExactPath -Actual $guardianBackup -Expected (Join-Path $resolvedUpdaterRoot ".service-guardian-$TransactionId.backup") -Name 'Guardian backup path' | Out-Null
-    Assert-ExactPath -Actual $helperStage -Expected (Join-Path $resolvedUpdaterRoot ".update-helper-$TransactionId.tmp") -Name 'Helper stage path' | Out-Null
+    Assert-ExactPath -Actual $helperStage -Expected (Join-Path $resolvedUpdaterRoot ".update-helper-$TransactionId.tmp.ps1") -Name 'Helper stage path' | Out-Null
     Assert-ExactPath -Actual $guardianStage -Expected (Join-Path $resolvedUpdaterRoot ".service-guardian-$TransactionId.tmp") -Name 'Guardian stage path' | Out-Null
     Assert-ExactPath -Actual $PreconditionPath -Expected (Join-Path $resolvedUpdaterRoot ".update-preconditions-$TransactionId.json") -Name 'Precondition path' | Out-Null
     Assert-ExactPath -Actual $ReadyPath -Expected (Join-Path $resolvedUpdaterRoot ".update-ready-$TransactionId.token") -Name 'Ready path' | Out-Null
@@ -1273,7 +1275,7 @@ function Invoke-InfrastructureRefresh {
       foreach ($path in @($ReadyPath, $StartPath, $CompletionPath, $OwnershipPath, $DatabaseMutationPath, $JournalPath, $PreconditionPath)) {
         Remove-Item -LiteralPath ("$path.replace-backup") -Force -ErrorAction SilentlyContinue
       }
-      Remove-Item -LiteralPath (Join-Path $UpdaterRoot ('.update-helper-' + $TransactionId + '.tmp')) -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath (Join-Path $UpdaterRoot ('.update-helper-' + $TransactionId + '.tmp.ps1')) -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath (Join-Path $UpdaterRoot ('.service-guardian-' + $TransactionId + '.tmp')) -Force -ErrorAction SilentlyContinue
     }
     if ($ownershipAccepted -and $terminalCleanupAllowed) {
@@ -1482,6 +1484,7 @@ try {
     ("$(Join-Path $updaterRoot ".update-completion-$transactionId.token").replace-backup"),
     ("$(Join-Path $updaterRoot ".update-ownership-$transactionId.token").replace-backup"),
     ("$(Join-Path $updaterRoot ".update-database-$transactionId.token").replace-backup"),
+    (Join-Path $updaterRoot ".update-helper-$transactionId.tmp.ps1"),
     (Join-Path $updaterRoot ".update-helper-$transactionId.tmp"),
     (Join-Path $updaterRoot ".service-guardian-$transactionId.tmp"),
     (Join-Path $updaterRoot ".update-ready-$transactionId.token"),
@@ -1547,7 +1550,7 @@ try {
   $currentVersion = [Version]$currentVersionText
   if ([Version]$version -le $currentVersion) { throw 'The signed release is not newer than the installed release.' }
   $preconditionPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-preconditions-' + $transactionId + '.json')) -Root $updaterRoot
-  $helperRefreshPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-helper-' + $transactionId + '.tmp')) -Root $updaterRoot
+  $helperRefreshPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-helper-' + $transactionId + '.tmp.ps1')) -Root $updaterRoot
   $guardianRefreshPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.service-guardian-' + $transactionId + '.tmp')) -Root $updaterRoot
   $helperBackupPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.update-helper-' + $transactionId + '.backup')) -Root $updaterRoot
   $guardianBackupPath = Assert-UnderRoot -Path (Join-Path $updaterRoot ('.service-guardian-' + $transactionId + '.backup')) -Root $updaterRoot

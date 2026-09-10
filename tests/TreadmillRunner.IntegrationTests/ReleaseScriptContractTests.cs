@@ -863,10 +863,12 @@ public sealed class ReleaseScriptContractTests
     Directory.CreateDirectory(Path.Combine(install, "releases", "1.0.0"));
     Directory.CreateDirectory(Path.Combine(data, "updates", "plans"));
     Directory.CreateDirectory(Path.Combine(data, "backups"));
+    string tx = new string('a', 32);
     string sourceHelper = Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1");
     string helper = Path.Combine(install, "updater", "update-helper.ps1");
+    string stagedHelper = Path.Combine(install, "updater", $".update-helper-{tx}.tmp.ps1");
     File.Copy(sourceHelper, helper);
-    string tx = new string('a', 32);
+    File.Copy(sourceHelper, stagedHelper);
     var startInfo = new ProcessStartInfo
     {
       FileName = "powershell.exe",
@@ -877,7 +879,7 @@ public sealed class ReleaseScriptContractTests
     };
     foreach (string argument in new[]
     {
-      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper,
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", stagedHelper,
       "-InfrastructureRefresh", "-InstallRoot", install, "-DataRoot", data,
       "-PlanPath", Path.Combine(data, "updates", "plans", "pending-activation.json"),
       "-RefreshTransactionId", tx, "-RefreshExpectedVersion", "2.0.0",
@@ -925,6 +927,8 @@ public sealed class ReleaseScriptContractTests
   public async Task Protected_helper_refresh_transport_preserves_previous_executable_with_spaces()
   {
     string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    Assert.Contains("('.update-helper-' + $transactionId + '.tmp.ps1')", helper, StringComparison.Ordinal);
+    Assert.Contains("'-File', ('\"{0}\"' -f $helperRefreshPath)", helper, StringComparison.Ordinal);
     Assert.Contains("'-RefreshPreviousImagePath', ('\"{0}\"' -f $currentExecutable)", helper, StringComparison.Ordinal);
     Assert.DoesNotContain("'-RefreshPreviousImagePath', ('\"{0}\"' -f $previousImagePath)", helper, StringComparison.Ordinal);
     Assert.Contains("$preconditionPreviousExecutable = Get-ServiceExecutablePath", helper, StringComparison.Ordinal);
