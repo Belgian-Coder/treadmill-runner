@@ -805,12 +805,16 @@ public sealed class ReleaseScriptContractTests
     }
   }
 
-  [Fact]
-  public async Task Deployment_coordinator_accepts_the_unquoted_service_executable_path_returned_by_CIM()
+  [Theory]
+  [InlineData("eng/run-deployment.ps1", "function Get-CurrentInstalledRelease")]
+  [InlineData("src/TreadmillRunner.Gateway/Updates/update-helper.ps1", "function Assert-ExactPath")]
+  public async Task Deployment_helpers_accept_the_unquoted_service_executable_path_returned_by_CIM(
+    string relativeScriptPath,
+    string nextFunction)
   {
-    string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, relativeScriptPath));
     int functionStart = source.IndexOf("function Get-ServiceExecutablePath", StringComparison.Ordinal);
-    int functionEnd = source.IndexOf("function Get-CurrentInstalledRelease", functionStart, StringComparison.Ordinal);
+    int functionEnd = source.IndexOf(nextFunction, functionStart, StringComparison.Ordinal);
     Assert.True(functionStart >= 0 && functionEnd > functionStart);
     string function = source[functionStart..functionEnd];
     string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.DeploymentContract", Guid.NewGuid().ToString("N"));

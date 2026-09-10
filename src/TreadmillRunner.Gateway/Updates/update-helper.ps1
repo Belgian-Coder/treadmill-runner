@@ -321,10 +321,24 @@ function Get-FileSha256 {
 
 function Get-ServiceExecutablePath {
   param([Parameter(Mandatory)][string]$ImagePath)
-  $trimmed = $ImagePath.Trim()
-  if ($trimmed -match '^\s*"([^"]+)"\s*$') { return [System.IO.Path]::GetFullPath($Matches[1]) }
-  if ($trimmed -match '^\s*(\S+)\s*$') { return [System.IO.Path]::GetFullPath($Matches[1]) }
-  throw 'The Windows Service ImagePath is not a single executable path.'
+  $candidate = $ImagePath.Trim()
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    throw 'The Windows Service ImagePath is empty.'
+  }
+  $executable = if ($candidate -match '^"([^"]+)"$') {
+    $Matches[1]
+  }
+  elseif ($candidate -match '^[^"]+\.exe$') {
+    $candidate
+  }
+  else {
+    throw 'The Windows Service ImagePath is not a single executable path.'
+  }
+  $canonical = [System.IO.Path]::GetFullPath($executable)
+  if (-not $executable.Equals($canonical, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The Windows Service ImagePath is not a canonical executable path.'
+  }
+  return $canonical
 }
 
 function Assert-ExactPath {
