@@ -922,14 +922,14 @@ try {
                 }
                 $afterHistoryById = @{}
                 foreach ($historyItem in $afterHistory) {
-                    $historyId = [string]$historyItem.id
+                    $historyId = [string]$historyItem.sessionId
                     if ([string]::IsNullOrWhiteSpace($historyId) -or $afterHistoryById.ContainsKey($historyId)) {
                         throw "History for profile $($profile.id) contains a missing or duplicate ID."
                     }
                     $afterHistoryById[$historyId] = $historyItem
                 }
                 foreach ($historyItem in $beforeHistoryItems) {
-                    $historyId = [string]$historyItem.id
+                    $historyId = [string]$historyItem.sessionId
                     if (-not $afterHistoryById.ContainsKey($historyId)) {
                         throw "History item $historyId for profile $($profile.id) was not retained across activation."
                     }

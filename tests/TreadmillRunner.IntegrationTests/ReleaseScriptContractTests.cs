@@ -1191,6 +1191,8 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("Expand-JsonArray", script, StringComparison.Ordinal);
     Assert.Contains("Profile $($profile.id) payload changed", script, StringComparison.Ordinal);
     Assert.Contains("History item $historyId", script, StringComparison.Ordinal);
+    Assert.Contains("$historyId = [string]$historyItem.sessionId", script, StringComparison.Ordinal);
+    Assert.DoesNotContain("$historyId = [string]$historyItem.id", script, StringComparison.Ordinal);
     Assert.Contains("stagedVersion -ne $ExpectedVersion", script, StringComparison.Ordinal);
     Assert.Contains("schemaVersion -ne 1", script, StringComparison.Ordinal);
     Assert.Contains("manifest.channel -cne 'stable'", script, StringComparison.Ordinal);
