@@ -316,7 +316,15 @@ function Set-ServiceBinary {
 
 function Get-FileSha256 {
   param([Parameter(Mandatory)][string]$Path)
-  return ([string](Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash).ToUpperInvariant()
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    return ([System.BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '')
+  }
+  finally {
+    $stream.Dispose()
+    $sha.Dispose()
+  }
 }
 
 function Get-ServiceExecutablePath {
@@ -1404,7 +1412,7 @@ finally {
   if ($null -ne $rsa) { $rsa.Dispose() }
   $certificate.Dispose()
 }
-$actualHash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
+$actualHash = Get-FileSha256 -Path $packagePath
 if ($actualHash -ne ([string]$manifest.packageSha256).ToUpperInvariant()) {
   throw 'The staged package hash changed after verification.'
 }

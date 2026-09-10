@@ -981,6 +981,54 @@ if ($child.ExitCode -ne 0) { throw "Nested capture exited with $($child.ExitCode
   }
 
   [Fact]
+  public async Task Protected_helper_hashing_does_not_require_powershell_module_autoload()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    int functionStart = source.IndexOf("function Get-FileSha256", StringComparison.Ordinal);
+    int functionEnd = source.IndexOf("function Get-ServiceExecutablePath", functionStart, StringComparison.Ordinal);
+    Assert.True(functionStart >= 0 && functionEnd > functionStart);
+    Assert.DoesNotContain("Get-FileHash", source, StringComparison.Ordinal);
+
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.HelperHash", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string payloadPath = Path.Combine(root, "payload.bin");
+    string scriptPath = Path.Combine(root, "hash-without-modules.ps1");
+    byte[] payload = "nested protected helper hash"u8.ToArray();
+    await File.WriteAllBytesAsync(payloadPath, payload);
+    string expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
+    string function = source[functionStart..functionEnd];
+    string harness = $$"""
+$PSModuleAutoloadingPreference = 'None'
+{{function}}
+$actual = Get-FileSha256 -Path '{{payloadPath.Replace("'", "''", StringComparison.Ordinal)}}'
+if ($actual -cne '{{expected}}') { throw "Unexpected SHA-256: $actual" }
+""";
+    await File.WriteAllTextAsync(scriptPath, harness);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string stdout = await process.StandardOutput.ReadToEndAsync();
+      string stderr = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Protected helper hashing required module autoload: {stderr}{Environment.NewLine}{stdout}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
   public async Task Deployment_timestamp_conversion_preserves_zoned_calendar_values_under_Belgian_culture()
   {
     string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
