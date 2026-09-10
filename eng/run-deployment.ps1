@@ -129,9 +129,24 @@ function Assert-Idle {
 
 function Get-ServiceExecutablePath {
     param([Parameter(Mandatory)][string] $ImagePath)
-    if ($ImagePath -match '^\s*"([^"]+)"\s*$') { return $Matches[1] }
-    if ($ImagePath -match '^\s*(\S+)\s*$') { return $Matches[1] }
-    throw 'The Windows Service ImagePath is empty.'
+    $candidate = $ImagePath.Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        throw 'The Windows Service ImagePath is empty.'
+    }
+    $executable = if ($candidate -match '^"([^"]+)"$') {
+        $Matches[1]
+    }
+    elseif ($candidate -match '^[^"]+\.exe$') {
+        $candidate
+    }
+    else {
+        throw 'The Windows Service ImagePath is not a single executable path.'
+    }
+    $canonical = [System.IO.Path]::GetFullPath($executable)
+    if (-not $executable.Equals($canonical, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The Windows Service ImagePath is not a canonical executable path.'
+    }
+    return $canonical
 }
 
 function Get-CurrentInstalledRelease {

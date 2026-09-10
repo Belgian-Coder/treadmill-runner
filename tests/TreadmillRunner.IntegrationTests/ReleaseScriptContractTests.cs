@@ -806,6 +806,70 @@ public sealed class ReleaseScriptContractTests
   }
 
   [Fact]
+  public async Task Deployment_coordinator_accepts_the_unquoted_service_executable_path_returned_by_CIM()
+  {
+    string source = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
+    int functionStart = source.IndexOf("function Get-ServiceExecutablePath", StringComparison.Ordinal);
+    int functionEnd = source.IndexOf("function Get-CurrentInstalledRelease", functionStart, StringComparison.Ordinal);
+    Assert.True(functionStart >= 0 && functionEnd > functionStart);
+    string function = source[functionStart..functionEnd];
+    string root = Path.Combine(Path.GetTempPath(), "TreadmillRunner.DeploymentContract", Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    string scriptPath = Path.Combine(root, "service-image-path.ps1");
+    string testScript = function + """
+
+$expected = 'C:\Program Files\TreadmillRunner\releases\1.5.76\TreadmillRunner.Gateway.exe'
+if ((Get-ServiceExecutablePath -ImagePath $expected) -cne $expected) {
+  throw 'The unquoted CIM service path was not preserved.'
+}
+if ((Get-ServiceExecutablePath -ImagePath ('"' + $expected + '"')) -cne $expected) {
+  throw 'The quoted service path was not unwrapped.'
+}
+$rejected = $false
+try {
+  Get-ServiceExecutablePath -ImagePath ($expected + ' --unexpected') | Out-Null
+}
+catch {
+  if ($_.Exception.Message -notlike '*not a single executable path*') { throw }
+  $rejected = $true
+}
+if (-not $rejected) { throw 'Service arguments were accepted as an executable path.' }
+$normalizingSuffixRejected = $false
+try {
+  Get-ServiceExecutablePath -ImagePath ($expected + ' ignored\..\TreadmillRunner.Gateway.exe') | Out-Null
+}
+catch {
+  if ($_.Exception.Message -notlike '*not a canonical executable path*') { throw }
+  $normalizingSuffixRejected = $true
+}
+if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suffix was accepted.' }
+""";
+    await File.WriteAllTextAsync(scriptPath, testScript);
+    try
+    {
+      var startInfo = new ProcessStartInfo
+      {
+        FileName = "powershell.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardError = true,
+        RedirectStandardOutput = true,
+      };
+      foreach (string argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath })
+        startInfo.ArgumentList.Add(argument);
+      using Process process = Process.Start(startInfo)!;
+      string output = await process.StandardOutput.ReadToEndAsync();
+      string error = await process.StandardError.ReadToEndAsync();
+      await process.WaitForExitAsync();
+      Assert.True(process.ExitCode == 0, $"Deployment service-path harness failed: {error}{Environment.NewLine}{output}");
+    }
+    finally
+    {
+      if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+    }
+  }
+
+  [Fact]
   public void Deployment_coordinator_requires_exact_release_commit_and_explicit_idle_activation()
   {
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "run-deployment.ps1"));
