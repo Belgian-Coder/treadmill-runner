@@ -1034,6 +1034,7 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("protected-infrastructure-repair", script, StringComparison.Ordinal);
     Assert.Contains("-RepairUpdateInfrastructureOnly", script, StringComparison.Ordinal);
     Assert.Contains("Invoke-PendingActivationReconciliation", script, StringComparison.Ordinal);
+    Assert.Contains("Invoke-StaleActivatingCoordinatorNormalization", script, StringComparison.Ordinal);
     Assert.Contains("schtasks.exe /Run /TN '\\TreadmillRunnerUpdate'", script, StringComparison.Ordinal);
     Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);
     Assert.Contains("$journal.state -cne 'RolledBack'", script, StringComparison.Ordinal);
@@ -1043,6 +1044,25 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("$dispatchObserved", script, StringComparison.Ordinal);
     Assert.Contains("The pending activation transaction journal changed after reconciliation", script, StringComparison.Ordinal);
     Assert.Contains("The pending activation inbox is not a regular protected file", script, StringComparison.Ordinal);
+    Assert.Contains("$status.state -cne 'Activating'", script, StringComparison.Ordinal);
+    Assert.Contains("$staleStatusVersion = [string]$status.availableVersion", script, StringComparison.Ordinal);
+    Assert.Contains("$liveBeforeRestart.StatusCode -ne 204", script, StringComparison.Ordinal);
+    Assert.Contains("$task.State -cne 'Ready'", script, StringComparison.Ordinal);
+    Assert.Contains("[uint32]$taskInfo.LastTaskResult -ne 0", script, StringComparison.Ordinal);
+    Assert.Contains("/api/operations/database/status", script, StringComparison.Ordinal);
+    Assert.Contains("HealthyWithBackupWarning", script, StringComparison.Ordinal);
+    Assert.Contains("$databaseIdentityRecheck -cne $databaseIdentity", script, StringComparison.Ordinal);
+    Assert.Contains("$serviceStartedAtUtc = ([DateTimeOffset]$serviceProcess.StartTime).ToUniversalTime()", script, StringComparison.Ordinal);
+    Assert.Contains("$serviceStartedAtUtc -ge $journalOccurredAtUtc", script, StringComparison.Ordinal);
+    Assert.Contains("Restart-Service -Name 'TreadmillRunnerGateway' -Force", script, StringComparison.Ordinal);
+    Assert.Contains("$afterStatus.state -ceq 'Activating'", script, StringComparison.Ordinal);
+    Assert.Contains("$afterStatus.currentVersion -cne $ExpectedCurrentVersion", script, StringComparison.Ordinal);
+    Assert.Contains("$afterTask.State -cne 'Ready'", script, StringComparison.Ordinal);
+    Assert.Contains("$afterTask.Settings.MultipleInstances -ine 'IgnoreNew'", script, StringComparison.Ordinal);
+    Assert.Contains("$afterService.StartMode -ne 'Auto'", script, StringComparison.Ordinal);
+    Assert.Contains("The exact terminal RolledBack journal changed during stale coordinator normalization", script, StringComparison.Ordinal);
+    Assert.Contains("if ((Test-Path -LiteralPath $pendingPlanPath) -or (Test-Path -LiteralPath $maintenanceMarkerPath))", script, StringComparison.Ordinal);
+    Assert.Contains("The gateway did not return to readiness and HTTP 204 idle state", script, StringComparison.Ordinal);
     int reconciliationStart = script.IndexOf("function Invoke-PendingActivationReconciliation", StringComparison.Ordinal);
     int mutexWait = script.IndexOf("$maintenanceMutex.WaitOne", reconciliationStart, StringComparison.Ordinal);
     int noPlanReturn = script.IndexOf("if (-not (Test-Path -LiteralPath $pendingPlanPath)) { return }", reconciliationStart, StringComparison.Ordinal);
@@ -1050,9 +1070,10 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
       "The no-plan decision must be established only after the maintenance mutex is acquired.");
     int repair = script.LastIndexOf("Repair-ProtectedInfrastructure", StringComparison.Ordinal);
     int reconcile = script.LastIndexOf("Invoke-PendingActivationReconciliation", StringComparison.Ordinal);
+    int normalize = script.LastIndexOf("Invoke-StaleActivatingCoordinatorNormalization", StringComparison.Ordinal);
     int feed = script.IndexOf("install-stable-update-feed.ps1", StringComparison.Ordinal);
-    Assert.True(repair >= 0 && reconcile > repair && feed > reconcile,
-      "protected infrastructure repair and pending-plan reconciliation must precede feed publication");
+    Assert.True(repair >= 0 && reconcile > repair && normalize > reconcile && feed > normalize,
+      "protected infrastructure repair, pending-plan reconciliation, and stale coordinator normalization must precede feed publication");
     Assert.Contains("four installer-required entries", script, StringComparison.Ordinal);
     Assert.Contains("if (-not $DryRun)", script, StringComparison.Ordinal);
     Assert.Contains("Normalize a verified terminal session before the GET-only physical", script, StringComparison.Ordinal);

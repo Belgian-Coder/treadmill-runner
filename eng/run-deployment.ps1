@@ -380,6 +380,183 @@ function Invoke-PendingActivationReconciliation {
     throw 'The protected update task did not reconcile the pending activation plan within 120 seconds.'
 }
 
+function Invoke-StaleActivatingCoordinatorNormalization {
+    param(
+        [Parameter(Mandatory)][string]$ResolvedInstallRoot,
+        [Parameter(Mandatory)][string]$ResolvedDataRoot,
+        [Parameter(Mandatory)][string]$ExpectedCurrentVersion,
+        [Parameter(Mandatory)][string]$ExpectedCurrentExecutable
+    )
+    $maintenanceMutex = [System.Threading.Mutex]::new($false, 'Global\TreadmillRunnerGateway.Maintenance')
+    $maintenanceMutexHeld = $false
+    try {
+        try { $maintenanceMutexAcquired = $maintenanceMutex.WaitOne(30000) }
+        catch [System.Threading.AbandonedMutexException] { $maintenanceMutexAcquired = $true }
+        if (-not $maintenanceMutexAcquired) { throw 'The update maintenance lock could not be acquired for stale coordinator normalization.' }
+        $maintenanceMutexHeld = $true
+
+        $status = Invoke-GetJson '/api/updates/status'
+        if ([string]$status.state -cne 'Activating') { return }
+        $staleStatusVersion = [string]$status.availableVersion
+        if ($staleStatusVersion -notmatch '^\d+\.\d+\.\d+$' -or
+            [string]$status.currentVersion -cne $ExpectedCurrentVersion) {
+            throw 'The Activating update status has no exact stale target or does not match the current service version.'
+        }
+        $liveBeforeRestart = Invoke-WebRequest -Method Get -Uri ($GatewayUrl.TrimEnd('/') + '/api/live/session') -UseBasicParsing -TimeoutSec 10
+        if ($liveBeforeRestart.StatusCode -ne 204) {
+            throw 'Stale coordinator normalization requires HTTP 204 live-session idle state before restart.'
+        }
+
+        $pendingPlanPath = Join-Path $ResolvedDataRoot 'updates\plans\pending-activation.json'
+        $maintenanceMarkerPath = Join-Path $ResolvedDataRoot 'updates\service-maintenance.lock'
+        foreach ($path in @($pendingPlanPath, $maintenanceMarkerPath)) {
+            if (Test-Path -LiteralPath $path) {
+                throw 'Stale coordinator normalization requires an absent pending plan and maintenance marker.'
+            }
+        }
+
+        $task = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        $taskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        if ([string]$task.State -cne 'Ready' -or [string]$task.Settings.MultipleInstances -ine 'IgnoreNew' -or
+            [uint32]$taskInfo.LastTaskResult -ne 0) {
+            throw 'Stale coordinator normalization requires the protected update task to be Ready with result 0 and IgnoreNew.'
+        }
+
+        $databaseStatus = Invoke-GetJson '/api/operations/database/status'
+        if ([string]$databaseStatus.state -notin @('Healthy', 'HealthyWithBackupWarning') -or
+            [bool]$databaseStatus.recoveryRequired) {
+            throw 'Stale coordinator normalization requires a healthy database operation state.'
+        }
+        $databaseIdentity = '{0}|{1}|{2}|{3}|{4}|{5}' -f [string]$databaseStatus.state,
+            [string]$databaseStatus.updatedAtUtc, [string]$databaseStatus.lastQuickCheckAtUtc,
+            [string]$databaseStatus.lastFullCheckAtUtc, [string]$databaseStatus.lastMaintenanceAtUtc,
+            [string]$databaseStatus.lastBackupAtUtc
+
+        $service = Get-CimInstance Win32_Service -Filter "Name='TreadmillRunnerGateway'" -ErrorAction Stop
+        if ($null -eq $service -or [string]$service.State -ne 'Running' -or [string]$service.StartMode -ne 'Auto') {
+            throw 'Stale coordinator normalization requires the gateway service to be Running with Automatic start.'
+        }
+        $currentRelease = Get-CurrentInstalledRelease
+        $expectedExecutable = [System.IO.Path]::GetFullPath($ExpectedCurrentExecutable)
+        if ([string]$currentRelease.Version -cne $ExpectedCurrentVersion -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$currentRelease.Executable, $expectedExecutable)) {
+            throw 'Stale coordinator normalization found an unexpected current service release or executable path.'
+        }
+
+        $planRoot = [System.IO.Path]::GetFullPath((Join-Path $ResolvedDataRoot 'updates\plans'))
+        if (-not (Test-Path -LiteralPath $planRoot -PathType Container) -or
+            ((Get-Item -LiteralPath $planRoot -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw 'The update plan root is not a regular protected directory.'
+        }
+        $matchingJournals = @()
+        foreach ($journalFile in @(Get-ChildItem -LiteralPath $planRoot -Filter 'transaction-*.json' -Force -ErrorAction Stop)) {
+            if ($journalFile.PSIsContainer -or ($journalFile.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                throw 'The update transaction journal set contains a non-regular entry.'
+            }
+            $journalTransactionId = [System.IO.Path]::GetFileNameWithoutExtension($journalFile.Name).Substring('transaction-'.Length)
+            if ($journalTransactionId -notmatch '^[0-9a-f]{32}$') { throw 'The update transaction journal set contains an invalid transaction identity.' }
+            $candidate = Get-Content -LiteralPath $journalFile.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
+            if ([int]$candidate.schemaVersion -ne 1 -or [string]$candidate.transactionId -cne $journalTransactionId -or
+                [string]$candidate.version -notmatch '^\d+\.\d+\.\d+$' -or
+                [string]$candidate.state -notin @('Activated', 'RolledBack', 'RollbackFailed')) {
+                throw "The update transaction journal is invalid: $($journalFile.Name)"
+            }
+            if ([string]$candidate.version -ceq $staleStatusVersion) {
+                if ([string]$candidate.state -cne 'RolledBack') {
+                    throw 'The Activating status target has a non-RolledBack terminal journal.'
+                }
+                $matchingJournals += [pscustomobject]@{
+                    Path = $journalFile.FullName
+                    TransactionId = $journalTransactionId
+                    Hash = Get-Sha256Hex -Path $journalFile.FullName
+                    Journal = $candidate
+                }
+            }
+        }
+        if ($matchingJournals.Count -ne 1) {
+            throw "The Activating status target does not have exactly one matching RolledBack journal ($($matchingJournals.Count))."
+        }
+
+        try {
+            $journalOccurredAtUtc = ([DateTimeOffset]::Parse([string]$matchingJournals[0].Journal.occurredAtUtc)).ToUniversalTime()
+            $statusCheckedAtUtc = ([DateTimeOffset]::Parse([string]$status.lastCheckedAtUtc)).ToUniversalTime()
+        }
+        catch { throw 'The stale Activating status or terminal RolledBack journal timestamp is invalid.' }
+        $serviceProcess = Get-Process -Id ([int]$service.ProcessId) -ErrorAction Stop
+        $serviceStartedAtUtc = ([DateTimeOffset]$serviceProcess.StartTime).ToUniversalTime()
+        if ($serviceStartedAtUtc -ge $journalOccurredAtUtc -or $serviceStartedAtUtc -ge $statusCheckedAtUtc) {
+            throw 'The current service process does not predate the stale status and terminal rollback journal.'
+        }
+
+        $databaseStatusRecheck = Invoke-GetJson '/api/operations/database/status'
+        $databaseIdentityRecheck = '{0}|{1}|{2}|{3}|{4}|{5}' -f [string]$databaseStatusRecheck.state,
+            [string]$databaseStatusRecheck.updatedAtUtc, [string]$databaseStatusRecheck.lastQuickCheckAtUtc,
+            [string]$databaseStatusRecheck.lastFullCheckAtUtc, [string]$databaseStatusRecheck.lastMaintenanceAtUtc,
+            [string]$databaseStatusRecheck.lastBackupAtUtc
+        if ([string]$databaseStatusRecheck.state -notin @('Healthy', 'HealthyWithBackupWarning') -or
+            [bool]$databaseStatusRecheck.recoveryRequired -or $databaseIdentityRecheck -cne $databaseIdentity) {
+            throw 'The database operation state changed during stale coordinator proof.'
+        }
+
+        Restart-Service -Name 'TreadmillRunnerGateway' -Force -ErrorAction Stop
+        $deadline = [DateTimeOffset]::UtcNow.AddSeconds(120)
+        $normalized = $false
+        do {
+            try {
+                $ready = Invoke-WebRequest -Method Get -Uri ($GatewayUrl.TrimEnd('/') + '/health/ready') -UseBasicParsing -TimeoutSec 3
+                $idle = Invoke-WebRequest -Method Get -Uri ($GatewayUrl.TrimEnd('/') + '/api/live/session') -UseBasicParsing -TimeoutSec 3
+                if ($ready.StatusCode -eq 200 -and $idle.StatusCode -eq 204) { $normalized = $true; break }
+            }
+            catch { }
+            Start-Sleep -Seconds 2
+        } while ([DateTimeOffset]::UtcNow -lt $deadline)
+        if (-not $normalized) {
+            throw 'The gateway did not return to readiness and HTTP 204 idle state after stale coordinator normalization.'
+        }
+        $afterStatus = Invoke-GetJson '/api/updates/status'
+        $afterLive = Invoke-WebRequest -Method Get -Uri ($GatewayUrl.TrimEnd('/') + '/api/live/session') -UseBasicParsing -TimeoutSec 10
+        if ([string]$afterLive.StatusCode -cne '204' -or [string]$afterStatus.state -ceq 'Activating' -or
+            [string]$afterStatus.currentVersion -cne $ExpectedCurrentVersion) {
+            throw 'The gateway did not reach a non-Activating HTTP 204 terminal state after stale coordinator normalization.'
+        }
+        $afterDatabaseStatus = Invoke-GetJson '/api/operations/database/status'
+        if ([string]$afterDatabaseStatus.state -notin @('Healthy', 'HealthyWithBackupWarning') -or
+            [bool]$afterDatabaseStatus.recoveryRequired) {
+            throw 'The database operation state was not healthy after stale coordinator normalization.'
+        }
+        if ((Test-Path -LiteralPath $pendingPlanPath) -or (Test-Path -LiteralPath $maintenanceMarkerPath)) {
+            throw 'A pending activation plan or maintenance marker reappeared during stale coordinator normalization.'
+        }
+        $afterTask = Get-ScheduledTask -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        $afterTaskInfo = Get-ScheduledTaskInfo -TaskName 'TreadmillRunnerUpdate' -TaskPath '\' -ErrorAction Stop
+        if ([string]$afterTask.State -cne 'Ready' -or [string]$afterTask.Settings.MultipleInstances -ine 'IgnoreNew' -or
+            [uint32]$afterTaskInfo.LastTaskResult -ne 0) {
+            throw 'The protected update task was not Ready with result 0 after stale coordinator normalization.'
+        }
+        $afterService = Get-CimInstance Win32_Service -Filter "Name='TreadmillRunnerGateway'" -ErrorAction Stop
+        $afterRelease = Get-CurrentInstalledRelease
+        if ($null -eq $afterService -or [string]$afterService.State -ne 'Running' -or [string]$afterService.StartMode -ne 'Auto' -or
+            [string]$afterRelease.Version -cne $ExpectedCurrentVersion -or
+            -not [System.StringComparer]::OrdinalIgnoreCase.Equals([string]$afterRelease.Executable, $expectedExecutable)) {
+            throw 'The gateway service release was not consistent after stale coordinator normalization.'
+        }
+        if (-not (Test-Path -LiteralPath $matchingJournals[0].Path -PathType Leaf) -or
+            ((Get-Item -LiteralPath $matchingJournals[0].Path -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -or
+            (Get-Sha256Hex -Path $matchingJournals[0].Path) -cne $matchingJournals[0].Hash) {
+            throw 'The exact terminal RolledBack journal changed during stale coordinator normalization.'
+        }
+        $afterJournal = Get-Content -LiteralPath $matchingJournals[0].Path -Raw -ErrorAction Stop | ConvertFrom-Json
+        if ([string]$afterJournal.transactionId -cne $matchingJournals[0].TransactionId -or
+            [string]$afterJournal.version -cne $staleStatusVersion -or [string]$afterJournal.state -cne 'RolledBack') {
+            throw 'The terminal RolledBack journal no longer matches the stale Activating status.'
+        }
+    }
+    finally {
+        if ($maintenanceMutexHeld) { $maintenanceMutex.ReleaseMutex() }
+        $maintenanceMutex.Dispose()
+    }
+}
+
 function Assert-InstalledState {
     param(
         [Parameter(Mandatory)][string] $ExpectedFingerprint,
@@ -565,6 +742,11 @@ try {
         Invoke-PendingActivationReconciliation `
             -ResolvedInstallRoot $resolvedInstallRoot `
             -ResolvedDataRoot $resolvedDataRoot
+        Invoke-StaleActivatingCoordinatorNormalization `
+            -ResolvedInstallRoot $resolvedInstallRoot `
+            -ResolvedDataRoot $resolvedDataRoot `
+            -ExpectedCurrentVersion ([string]$currentRelease.Version) `
+            -ExpectedCurrentExecutable ([string]$currentRelease.Executable)
 
         & (Join-Path $PSScriptRoot 'install-stable-update-feed.ps1') `
             -Version $ExpectedVersion `
