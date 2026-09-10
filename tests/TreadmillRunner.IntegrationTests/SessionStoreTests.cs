@@ -54,7 +54,8 @@ public sealed class SessionStoreTests : IAsyncLifetime
       "Easy Run",
       armedAt,
       "{\"heartRateController\":\"disabled\"}",
-      SessionMetricAlgorithms.EstimatedCaloriesV1));
+      SessionMetricAlgorithms.EstimatedCaloriesV1,
+      new WorkoutSessionSelection(WorkoutSelectionSource.Library, RecordPolarH10Memory: true)));
     await store.MarkRunningAsync(sessionId, armedAt.AddSeconds(3));
     await store.AppendSampleAsync(Sample(sessionId, 0, armedAt.AddSeconds(3), 0, 6.5, 6.4, 118));
     await store.AppendSampleAsync(Sample(sessionId, 1, armedAt.AddSeconds(4), 1, 6.5, 6.6, 120));
@@ -97,6 +98,7 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.Equal("simulator-note", Assert.IsType<SessionWarningEvent>(stored.Events[0]).Code);
     Assert.Equal(5, stored.Debrief?.PerceivedExertion);
     Assert.Equal("Comfortable finish.", stored.Debrief?.Note);
+    Assert.True(stored.Definition.Selection.RecordPolarH10Memory);
 
     SessionSummary summary = Assert.Single(await store.ListSummariesAsync(ids.ProfileId));
     Assert.Equal(sessionId, summary.SessionId);

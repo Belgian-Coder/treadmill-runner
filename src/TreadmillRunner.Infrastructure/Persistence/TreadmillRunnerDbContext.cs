@@ -38,6 +38,8 @@ public sealed class TreadmillRunnerDbContext(
   internal DbSet<GarminActivityUploadAccountEntity> GarminActivityUploadAccounts => Set<GarminActivityUploadAccountEntity>();
   internal DbSet<GarminActivityUploadJobEntity> GarminActivityUploadJobs => Set<GarminActivityUploadJobEntity>();
   internal DbSet<OperationReceiptEntity> OperationReceipts => Set<OperationReceiptEntity>();
+  internal DbSet<PolarH10RecordingEntity> PolarH10Recordings => Set<PolarH10RecordingEntity>();
+  internal DbSet<PolarH10RecordingSampleEntity> PolarH10RecordingSamples => Set<PolarH10RecordingSampleEntity>();
   internal DbSet<RunnerExperiencePreferenceEntity> RunnerExperiencePreferences => Set<RunnerExperiencePreferenceEntity>();
   internal DbSet<LocalGoalEntity> LocalGoals => Set<LocalGoalEntity>();
   internal DbSet<ProgressionRecommendationEntity> ProgressionRecommendations => Set<ProgressionRecommendationEntity>();
@@ -73,7 +75,43 @@ public sealed class TreadmillRunnerDbContext(
     ConfigureSessions(modelBuilder);
     ConfigureGarmin(modelBuilder);
     ConfigureOperationReceipts(modelBuilder);
+    ConfigurePolarH10(modelBuilder);
     ConfigureLocalFirstExperience(modelBuilder);
+  }
+
+  private static void ConfigurePolarH10(ModelBuilder modelBuilder)
+  {
+    var recording = modelBuilder.Entity<PolarH10RecordingEntity>();
+    recording.ToTable("PolarH10Recordings", table =>
+    {
+      table.HasCheckConstraint("CK_PolarH10Recordings_Status", "\"Status\" IN ('StartPending','Recording','StopPending','AwaitingDevice','Downloading','Downloaded','ReviewRequired','Merging','Merged','RemovalPending','Completed','Retained','Skipped','NotStarted','DiscardCleanupPending','Retryable')");
+      table.HasCheckConstraint("CK_PolarH10Recordings_Attempts", "\"AttemptCount\" >= 0");
+      table.HasCheckConstraint("CK_PolarH10Recordings_Exercise", "length(\"ExerciseId\") BETWEEN 1 AND 64");
+    });
+    recording.HasKey(entity => entity.Id);
+    recording.Property(entity => entity.Status).HasMaxLength(24);
+    recording.Property(entity => entity.Origin).HasMaxLength(12);
+    recording.Property(entity => entity.SampleType).HasMaxLength(16);
+    recording.Property(entity => entity.ExerciseId).HasMaxLength(64);
+    recording.Property(entity => entity.ExternalRecordingId).HasMaxLength(256);
+    recording.Property(entity => entity.RemotePath).HasMaxLength(512);
+    recording.Property(entity => entity.Payload).HasMaxLength(8388608);
+    recording.Property(entity => entity.PayloadSha256).HasMaxLength(64).IsFixedLength();
+    recording.Property(entity => entity.LastError).HasMaxLength(1000);
+    recording.Property(entity => entity.OperationFingerprint).HasMaxLength(64);
+    recording.HasIndex(entity => new { entity.DeviceEnrollmentId, entity.ExerciseId }).IsUnique();
+    recording.HasIndex(entity => entity.WorkoutSessionId).IsUnique().HasFilter("\"WorkoutSessionId\" IS NOT NULL");
+    recording.HasIndex(entity => new { entity.DeviceEnrollmentId, entity.RemotePath }).IsUnique().HasFilter("\"RemotePath\" IS NOT NULL");
+    recording.HasIndex(entity => new { entity.Status, entity.LeaseExpiresAtUtc });
+    recording.HasOne<WorkoutSessionEntity>().WithMany().HasForeignKey(entity => entity.WorkoutSessionId).OnDelete(DeleteBehavior.SetNull);
+    recording.HasOne<DeviceEnrollmentEntity>().WithMany().HasForeignKey(entity => entity.DeviceEnrollmentId).OnDelete(DeleteBehavior.Restrict);
+    recording.HasOne<UserProfileEntity>().WithMany().HasForeignKey(entity => entity.UserProfileId).OnDelete(DeleteBehavior.SetNull);
+
+    var sample = modelBuilder.Entity<PolarH10RecordingSampleEntity>();
+    sample.ToTable("PolarH10RecordingSamples");
+    sample.HasKey(entity => new { entity.PolarH10RecordingId, entity.Sequence });
+    sample.HasIndex(entity => new { entity.PolarH10RecordingId, entity.CapturedAtUtc });
+    sample.HasOne(entity => entity.Recording).WithMany().HasForeignKey(entity => entity.PolarH10RecordingId).OnDelete(DeleteBehavior.Cascade);
   }
 
   private static void ConfigureLocalFirstExperience(ModelBuilder modelBuilder)

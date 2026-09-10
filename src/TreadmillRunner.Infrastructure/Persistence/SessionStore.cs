@@ -53,6 +53,7 @@ public sealed class SessionStore(
       WorkoutProgramRunId = session.Selection.ProgramRunId,
       WorkoutProgramItemId = session.Selection.ProgramItemId,
       SelectionSource = session.Selection.Source.ToString(),
+      RecordPolarH10Memory = session.Selection.RecordPolarH10Memory,
       SessionOrigin = session.Origin.ToString(),
       WorkoutTitle = session.WorkoutTitle,
       State = SessionState.ArmedWaitingForPhysicalStart.ToString(),
@@ -555,7 +556,7 @@ public sealed class SessionStore(
           "DurationSeconds", "DistanceKilometers", "EstimatedCalories", "AverageHeartRateBpm",
           "MaximumHeartRateBpm", "AverageSpeedKph", "AverageInclinePercent", "MetricAlgorithmVersion",
           "ControllerConfigurationJson", "RecoveryCheckpointJson", "RecoveryCheckpointUpdatedAtUtc",
-          "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc", "ActiveSessionKey"
+          "PerceivedExertion", "DebriefNote", "DebriefUpdatedAtUtc", "RecordPolarH10Memory", "ActiveSessionKey"
         FROM "WorkoutSessions"
         WHERE "UserProfileId" = {0}
           AND "StartedAtUtc" IS NOT NULL
@@ -911,7 +912,8 @@ public sealed class SessionStore(
         new WorkoutSessionSelection(
           Enum.Parse<WorkoutSelectionSource>(entity.SelectionSource),
           entity.WorkoutProgramRunId,
-          entity.WorkoutProgramItemId),
+          entity.WorkoutProgramItemId,
+          entity.RecordPolarH10Memory),
         ParseOrigin(entity.SessionOrigin)),
       ParseState(entity.State),
       entity.StartedAtUtc,

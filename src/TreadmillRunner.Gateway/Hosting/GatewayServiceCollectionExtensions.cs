@@ -11,8 +11,10 @@ using TreadmillRunner.Gateway.Household;
 using TreadmillRunner.Gateway.Live;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Gateway.Planning;
+using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Gateway.Security;
 using TreadmillRunner.Gateway.Updates;
+using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Infrastructure.Bluetooth;
 using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Protocols.Imports;
@@ -89,6 +91,17 @@ public static class GatewayServiceCollectionExtensions
     services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
     services.AddScoped<IBleReliabilityStore, BleReliabilityStore>();
     services.AddScoped<ITreadmillMaintenanceStore, TreadmillMaintenanceStore>();
+    services.AddOptions<PolarH10MemoryOptions>()
+      .Bind(configuration.GetSection(PolarH10MemoryOptions.SectionName))
+      .Validate(options => options.LeaseSeconds is >= 30 and <= 900 && options.PollSeconds is >= 1 and <= 60, "Polar H10 memory worker intervals are out of bounds.")
+      .ValidateOnStart();
+    services.AddScoped<IPolarH10RecordingStore, PolarH10RecordingStore>();
+    services.AddScoped<IPolarPftpConnectionFactory, WindowsPolarPftpConnectionFactory>();
+    services.AddScoped<IPolarH10MemoryClient, PolarH10MemoryClient>();
+    services.AddSingleton<PolarH10OperationGate>();
+    services.AddTransient<PolarH10OperationFilter>();
+    services.AddSingleton<PolarH10MemoryWorker>();
+    services.AddHostedService(static provider => provider.GetRequiredService<PolarH10MemoryWorker>());
 
     services.AddSingleton<IGarminStore, GarminStore>();
     services.AddSingleton<IGarminWatchBindingStore, GarminWatchBindingStore>();
@@ -100,6 +113,7 @@ public static class GatewayServiceCollectionExtensions
     services.AddSingleton<IGarminActivityAdapterReadiness>(static provider => provider.GetRequiredService<PythonGarminActivityAdapter>());
     services.AddSingleton<GarminActivityConnectionService>();
     services.AddSingleton<GarminActivityUploadWorker>();
+    services.AddSingleton<IGarminActivityUploadWakeSignal>(static provider => provider.GetRequiredService<GarminActivityUploadWorker>());
     services.AddHostedService(static provider => provider.GetRequiredService<GarminActivityUploadWorker>());
     services.Configure<GarminOptions>(configuration.GetSection(GarminOptions.SectionName));
     services.AddSingleton<DisabledGarminProvider>();

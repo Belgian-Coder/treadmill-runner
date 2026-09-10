@@ -354,7 +354,7 @@ public sealed class GarminActivityUploadStore(
       if (remaining <= 0) break;
       string watermark = account.UploadFromUtc!.Value.ToString("yyyy-MM-dd HH:mm:ss.fffffffzzz", CultureInfo.InvariantCulture);
       WorkoutSessionEntity[] sessions = await context.WorkoutSessions
-        .FromSqlInterpolated($"SELECT s.* FROM WorkoutSessions AS s WHERE s.UserProfileId = {account.UserProfileId} AND s.SessionOrigin <> 'SystemTest' AND s.StartedAtUtc IS NOT NULL AND s.EndedAtUtc IS NOT NULL AND s.EndedAtUtc >= {watermark} AND (s.State = 'Completed' OR s.State = 'Stopped') AND NOT EXISTS (SELECT 1 FROM GarminActivityUploadJobs AS j WHERE j.WorkoutSessionId = s.Id) ORDER BY s.EndedAtUtc LIMIT {remaining}")
+        .FromSqlInterpolated($"SELECT s.* FROM WorkoutSessions AS s WHERE s.UserProfileId = {account.UserProfileId} AND s.SessionOrigin <> 'SystemTest' AND s.StartedAtUtc IS NOT NULL AND s.EndedAtUtc IS NOT NULL AND s.EndedAtUtc >= {watermark} AND (s.State = 'Completed' OR s.State = 'Stopped') AND NOT EXISTS (SELECT 1 FROM GarminActivityUploadJobs AS j WHERE j.WorkoutSessionId = s.Id) AND NOT EXISTS (SELECT 1 FROM PolarH10Recordings AS p WHERE p.WorkoutSessionId = s.Id AND p.Status NOT IN ('Merged','RemovalPending','Completed','Skipped','NotStarted')) ORDER BY s.EndedAtUtc LIMIT {remaining}")
         .AsNoTracking()
         .ToArrayAsync(cancellationToken);
       candidates.AddRange(sessions.Select(session => (session.Id, session.UserProfileId, account.Id, session.EndedAtUtc!.Value)));
@@ -465,6 +465,10 @@ public sealed class GarminActivityUploadStore(
               WHERE account.Id = job.GarminActivityUploadAccountId
                 AND account.Enabled = 1
                 AND account.State = 'Connected')
+            AND NOT EXISTS (
+              SELECT 1 FROM PolarH10Recordings AS p
+              WHERE p.WorkoutSessionId = job.WorkoutSessionId
+                AND p.Status NOT IN ('Merged','RemovalPending','Completed','Skipped','NotStarted'))
           ORDER BY julianday(job.AvailableAtUtc), julianday(job.CreatedAtUtc), job.Id
           LIMIT 1
           """)
@@ -488,6 +492,10 @@ public sealed class GarminActivityUploadStore(
             WHERE account.Id = GarminActivityUploadJobs.GarminActivityUploadAccountId
               AND account.Enabled = 1
               AND account.State = 'Connected')
+          AND NOT EXISTS (
+            SELECT 1 FROM PolarH10Recordings AS p
+            WHERE p.WorkoutSessionId = GarminActivityUploadJobs.WorkoutSessionId
+              AND p.Status NOT IN ('Merged','RemovalPending','Completed','Skipped','NotStarted'))
         """, cancellationToken);
       if (changed == 0) continue;
       candidate.Status = "InFlight";

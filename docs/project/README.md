@@ -23,6 +23,8 @@ Garmin's supported Training API path, unsupported per-profile completed-activity
 
 Metric session/workout export routes and their immutable-source guarantees are documented in [Session and workout exports](exports.md). The generated WalkingPad catalog's sanitized source boundary, content hash, generator hash, and regeneration command are documented in [WalkingPad plan provenance](walkingpad-plan-provenance.md).
 
+The [Polar H10 memory architecture](polar-h10-memory.md) documents lifecycle, recovery, persistence, Garmin ordering, and the manual archive. Its independently authored wire-contract boundary and unsupported physical claims are recorded in [Polar H10 PFTP memory protocol provenance](protocol-evidence/polar-h10/2026-09-10-pftp-memory-provenance.md).
+
 One-tap reuse, Screen Wake Lock behavior, local QR access, generated workout-set import, BLE reliability/battery reporting, and database integrity maintenance are documented in [Local reliability, access, and generated workout sets](local-daily-use-reliability.md).
 
 The [Bluetooth, reliability, and mobile usability audit](bluetooth-mobile-reliability-audit.md) records the recovery review, iPhone/iPad refinements, regression coverage, and physical-device evidence boundary.

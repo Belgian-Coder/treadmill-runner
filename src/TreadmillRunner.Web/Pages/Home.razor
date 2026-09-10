@@ -400,6 +400,13 @@
                     <div><dt>Expected</dt><dd>@(profileSelectionLoading ? "Loading…" : ExpectedDuration)</dd></div>
                     <div><dt>Intensity</dt><dd>@(profileSelectionLoading ? "Loading…" : preflight?.IntensityLabel ?? "Select a workout")</dd></div>
                 </dl>
+                <section class="run-memory-option" aria-labelledby="run-memory-title">
+                    <label class="run-memory-option__label"><input id="run-memory-checkbox" type="checkbox" @bind="recordPolarH10Memory" disabled="@(!polarH10MemoryAvailable)" /><span><strong id="run-memory-title">Record Polar H10 memory for this run</strong><small>Keep the H10 recording available for review after the run.</small></span></label>
+                    @if (!polarH10MemoryAvailable)
+                    {
+                        <p class="field-hint" role="note">Available only when the exact Polar H10 memory capability is connected. A live heart-rate sensor alone does not enable this option. <a href="/devices/polar-h10-memory">Review H10 memory status</a></p>
+                    }
+                </section>
                 <div class="preflight-actions">
                     <p>Only one screen can control the treadmill at a time.</p>
                     @if (preflight?.IsReady == true)
@@ -521,6 +528,8 @@
     private string controlStatus => lease is null ? "Observer" : "Controller";
     private string actionStatus = "Select a runner and workout.";
     private bool soundEnabled;
+    private bool polarH10MemoryAvailable;
+    private bool recordPolarH10Memory;
     private RunCuePreferences cuePreferences = RunCuePreferences.Default;
     private int liveSpeedAxisMaximum = 10;
     private int liveInclineAxisMaximum = 10;
@@ -707,6 +716,7 @@
         Task<ProfileView[]?> profilesTask = Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles");
         Task<WorkoutSummaryView[]?> workoutsTask = Http.GetFromJsonAsync<WorkoutSummaryView[]>("api/planning/workouts");
         Task<QuickStartView?> quickStartTask = Http.GetFromJsonAsync<QuickStartView>("api/local-first/quick-start");
+        Task<PolarMemoryCapability?> polarMemoryTask = LoadPolarMemoryCapabilityAsync();
         Task<Guid?> activeProfileTask = ActiveProfile.GetAsync().AsTask();
 
         // Ensure all started requests settle before replaying the original await order. This
@@ -714,7 +724,7 @@
         // preserve the previous exception type and maintenance JSON fallback.
         try
         {
-            await Task.WhenAll(maintenanceTask, profilesTask, workoutsTask, quickStartTask, activeProfileTask);
+            await Task.WhenAll(maintenanceTask, profilesTask, workoutsTask, quickStartTask, polarMemoryTask, activeProfileTask);
         }
         catch (Exception)
         {
@@ -731,6 +741,9 @@
         profiles = await profilesTask ?? Array.Empty<ProfileView>();
         workouts = await workoutsTask ?? Array.Empty<WorkoutSummaryView>();
         quickStart = await quickStartTask;
+        PolarMemoryCapability? polarCapability = await polarMemoryTask;
+        polarH10MemoryAvailable = polarCapability?.IsAvailable == true;
+        if (!polarH10MemoryAvailable) recordPolarH10Memory = false;
         selectedProfileId = await activeProfileTask;
         await ApplyProfileSelectionAsync(selectedProfileId, announce: false);
     }
@@ -741,6 +754,16 @@
         return maintenanceResponse.StatusCode == System.Net.HttpStatusCode.NoContent
             ? null
             : await maintenanceResponse.Content.ReadFromJsonAsync<TreadmillMaintenanceSnapshot>();
+    }
+
+    private async Task<PolarMemoryCapability?> LoadPolarMemoryCapabilityAsync()
+    {
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/status");
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<PolarMemoryCapability>() : null;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { return null; }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -888,6 +911,7 @@
         selectedWorkoutSource = choice.SelectionSource;
         selectedProgramRunId = choice.ProgramRunId;
         selectedProgramItemId = choice.ProgramItemId;
+        recordPolarH10Memory = false;
         preflight = null;
         actionStatus = "Checking readiness in the background…";
         await InvokeAsync(StateHasChanged);
@@ -1190,6 +1214,10 @@
     private sealed record ExperienceView(Guid ProfileId, RunnerExperiencePreferences Preferences, int Version, DateTimeOffset UpdatedAtUtc);
     private sealed record QuickStartSuggestionView(Guid? SuggestedProfileId, string Reason, bool RequiresConfirmation);
     private sealed record QuickStartView(QuickStartSuggestionView Suggestion, string? ProfileName);
+    private sealed record PolarMemoryCapability(bool Available, bool MemoryCapability = false)
+    {
+        public bool IsAvailable => Available || MemoryCapability;
+    }
 
     private async Task RefreshPreflightAsync()
     {
@@ -1362,6 +1390,7 @@
             selectionSource = selectedWorkoutSource,
             programRunId = selectedProgramRunId,
             programItemId = selectedProgramItemId,
+            recordPolarH10Memory,
         });
         if (response.IsSuccessStatusCode)
         {

@@ -24,7 +24,8 @@ public enum SessionOrigin
 public sealed record WorkoutSessionSelection(
   WorkoutSelectionSource Source,
   Guid? ProgramRunId = null,
-  Guid? ProgramItemId = null)
+  Guid? ProgramItemId = null,
+  bool RecordPolarH10Memory = false)
 {
   public static WorkoutSessionSelection Library { get; } = new(WorkoutSelectionSource.Library);
 }

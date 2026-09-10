@@ -13,6 +13,8 @@ using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Protocols.Imports;
 using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Operations;
+using TreadmillRunner.Gateway.Polar;
+using Microsoft.Extensions.Options;
 
 namespace TreadmillRunner.Gateway.Live;
 
@@ -2131,6 +2133,8 @@ public sealed class LiveSessionCoordinator(
 
       if (finalized) return;
       await store.FinalizeAsync(summary, cancellationToken);
+      await scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>()
+        .QueueStopAsync(sessionId, timeProvider.GetUtcNow(), cancellationToken);
       finalized = true;
     };
   }
@@ -2694,6 +2698,22 @@ public sealed class LiveSessionCoordinator(
         using IServiceScope scope = scopeFactory.CreateScope();
         ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
         await store.MarkRunningAsync(metadata.SessionId, now, token);
+        if (active.HardwareMode && active.Definition.Selection.RecordPolarH10Memory && active.HeartRateEnrollmentId is { } h10Id)
+        {
+          IOptions<PolarH10MemoryOptions> polar = scope.ServiceProvider.GetRequiredService<IOptions<PolarH10MemoryOptions>>();
+          if (polar.Value.Enabled)
+          {
+            VersionedDeviceEnrollment? h10 = (await scope.ServiceProvider.GetRequiredService<IDeviceEnrollmentStore>()
+              .ListActiveAsync(token)).SingleOrDefault(candidate => candidate.Enrollment.Id == h10Id);
+            if (h10?.Enrollment.HeartRateDeviceFamily != HeartRateDeviceFamily.Polar ||
+                (!h10.Enrollment.DisplayName.Contains("polar h10", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(h10.Enrollment.ModelNumber?.Trim(), "H10", StringComparison.OrdinalIgnoreCase)))
+              throw new InvalidOperationException("The selected per-run memory device is not the exact enrolled Polar sensor.");
+            IPolarH10RecordingStore memory = scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>();
+            await memory.EnqueueAsync(metadata.SessionId, active.Definition.UserProfileId, $"tr-{metadata.SessionId:N}", h10Id,
+              "Automatic", PolarH10SampleType.HeartRate, 1, now, token);
+          }
+        }
         await store.AppendEventAsync(metadata.SessionId, warning, token);
       });
     }

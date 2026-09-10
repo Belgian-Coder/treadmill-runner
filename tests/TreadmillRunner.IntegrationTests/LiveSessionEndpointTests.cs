@@ -18,6 +18,24 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
   private static readonly Guid HeartRateService = Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
 
   [Fact]
+  public async Task Arm_operation_fingerprint_includes_per_run_h10_opt_in()
+  {
+    using HttpClient client = factory.CreateClient();
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client);
+    string holderId = $"h10-arm-{Guid.NewGuid():N}";
+    ControlLease lease = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync("/api/live/lease/acquire", new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+    Guid operationId = Guid.NewGuid();
+    object Request(bool enabled) => new { profileId, workoutRevisionId = revisionId, holderId, leaseId = lease.Id, operationId, selectionSource = "Library", recordPolarH10Memory = enabled };
+
+    using HttpResponseMessage first = await client.PostAsJsonAsync("/api/live/sessions/arm", Request(false));
+    Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+    using HttpResponseMessage changedReplay = await client.PostAsJsonAsync("/api/live/sessions/arm", Request(true));
+    Assert.Equal(HttpStatusCode.Conflict, changedReplay.StatusCode);
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+  }
+
+  [Fact]
   public async Task Prepared_non_heart_rate_session_allows_heart_rate_enrollment_but_not_treadmill_replacement()
   {
     using HttpClient client = factory.CreateClient();

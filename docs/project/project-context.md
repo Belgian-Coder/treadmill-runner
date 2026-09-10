@@ -67,6 +67,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 - No real BLE command before its explicit hardware gate.
 - Browser is not in the live control loop.
 - No WinRT outside Infrastructure and no GATT write outside the device coordinator.
+- H10 PFTP writes use a dedicated serialized Polar coordinator with fixed characteristics and cannot acquire treadmill command authority. Automatic H10 memory backup remains disabled until device-specific physical acceptance proves the one-second HR timeline and recovery path.
 - No Start or command replay after disconnect, restart, update, or browser reload. A healthy browser-only interruption does not own or suspend the gateway workout. BLE recovery may generate fresh current-position commands only after guarded reconciliation; a service restart always requires explicit planned-control resume.
 - Calendar cannot create training. Plan owns workout scheduling and training-plan start/restart; already-installed premade template versions are idempotent and expose one open action.
 - External QDomyos code is not copied or translated.

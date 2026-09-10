@@ -65,28 +65,31 @@ foreach ($call in $prohibitedPlatformCalls) {
 
 $commandOwner = [System.IO.Path]::GetFullPath(
     (Join-Path $infrastructure 'Bluetooth\WindowsBleCommandConnection.cs'))
+$polarPftpOwner = [System.IO.Path]::GetFullPath(
+    (Join-Path $infrastructure 'Bluetooth\WindowsPolarPftpConnection.cs'))
+$characteristicWriteOwners = @($commandOwner, $polarPftpOwner)
 foreach ($writeCall in @('WriteValueAsync', 'WriteValueWithResultAsync')) {
     $writeMatches = @(Find-CSharpMatches -Files $infrastructureFiles -Pattern $writeCall -SimpleMatch)
     foreach ($match in @($writeMatches | ForEach-Object { $_.Path } | Sort-Object -Unique)) {
-        if ([System.IO.Path]::GetFullPath($match) -ne $commandOwner) {
-            throw "BLE command boundary violation: characteristic writes must remain in '$commandOwner'."
+        if ([System.IO.Path]::GetFullPath($match) -notin $characteristicWriteOwners) {
+            throw 'BLE command boundary violation: characteristic writes must remain in the treadmill command or Polar PFTP connection owners.'
         }
     }
 }
 
 # Enabling notifications necessarily writes the standard Client Characteristic
 # Configuration Descriptor. Keep that narrowly owned by the read-only connection;
-# characteristic-value writes remain prohibited everywhere above.
+# characteristic-value writes remain limited to the two explicit owners above.
 $subscriptionOwner = [System.IO.Path]::GetFullPath(
     (Join-Path $infrastructure 'Bluetooth\WindowsBleReadOnlyConnection.cs'))
-$descriptorOwners = @($subscriptionOwner, $commandOwner)
+$descriptorOwners = @($subscriptionOwner, $commandOwner, $polarPftpOwner)
 $descriptorMatches = @(Find-CSharpMatches `
     -Files $infrastructureFiles `
     -Pattern 'WriteClientCharacteristicConfigurationDescriptorAsync' `
     -SimpleMatch)
 foreach ($match in @($descriptorMatches | ForEach-Object { $_.Path } | Sort-Object -Unique)) {
     if ([System.IO.Path]::GetFullPath($match) -notin $descriptorOwners) {
-        throw "BLE boundary violation: notification descriptor writes must remain in the read-only or command connection owners."
+        throw 'BLE boundary violation: notification descriptor writes must remain in the read-only, treadmill command, or Polar PFTP connection owners.'
     }
 }
 
@@ -98,4 +101,4 @@ if ($winRtMatches.Count -gt 0) {
     throw 'WinRT Bluetooth types must remain inside TreadmillRunner.Infrastructure.'
 }
 
-Write-Host 'BLE read-only, serialized command-write, and WinRT ownership boundaries passed.'
+Write-Host 'BLE read-only, serialized command/PFTP write, and WinRT ownership boundaries passed.'

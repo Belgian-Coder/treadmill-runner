@@ -9,7 +9,7 @@ updated: 2026-08-29
 
 # Architecture
 
-The TR-003 planning schema and preview/confirm sequence are documented in [Planning data and import flow](planning-data.md). The profile-scoped catalog and immutable materialization rules are documented in [Premade training plans](premade-plans.md). The TR-004 runtime sequence and recovery rules are documented in [Simulated live session](live-session.md). Official Garmin OAuth/training publication, the separately isolated unsupported FIT uploader, and the read-only Connect IQ watch binding are documented in [Garmin integrations](garmin-connect.md).
+The TR-003 planning schema and preview/confirm sequence are documented in [Planning data and import flow](planning-data.md). The profile-scoped catalog and immutable materialization rules are documented in [Premade training plans](premade-plans.md). The TR-004 runtime sequence and recovery rules are documented in [Simulated live session](live-session.md). [Polar H10 memory recording and recovery](polar-h10-memory.md) documents its separate durable payload, null-only merge, and Garmin gate. Official Garmin OAuth/training publication, the separately isolated unsupported FIT uploader, and the read-only Connect IQ watch binding are documented in [Garmin integrations](garmin-connect.md).
 
 ![Windows-local runtime](diagrams/project-context-architecture.svg)
 

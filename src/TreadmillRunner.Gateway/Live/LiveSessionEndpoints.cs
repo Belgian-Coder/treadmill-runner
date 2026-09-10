@@ -21,7 +21,8 @@ public sealed record ArmSessionRequest(
   Guid OperationId,
   string SelectionSource = "Library",
   Guid? ProgramRunId = null,
-  Guid? ProgramItemId = null);
+  Guid? ProgramItemId = null,
+  bool RecordPolarH10Memory = false);
 public sealed record PhysicalMotionRequest(bool IsMoving, double MeasuredSpeedKph, double MeasuredInclinePercent);
 public sealed record SimulatedHeartRateRequest(ushort? BeatsPerMinute);
 public sealed record SpeedOverrideRequest(
@@ -293,6 +294,7 @@ public static class LiveSessionEndpoints
       request.SelectionSource,
       request.ProgramRunId,
       request.ProgramItemId,
+      request.RecordPolarH10Memory,
     });
     try
     {
@@ -320,7 +322,7 @@ public static class LiveSessionEndpoints
         });
       }
 
-      var selection = new WorkoutSessionSelection(source, request.ProgramRunId, request.ProgramItemId);
+      var selection = new WorkoutSessionSelection(source, request.ProgramRunId, request.ProgramItemId, request.RecordPolarH10Memory);
       if (source == WorkoutSelectionSource.Program)
       {
         if (request.ProgramRunId is not { } runId || request.ProgramItemId is not { } itemId ||
@@ -526,6 +528,7 @@ public static class LiveSessionEndpoints
     TreadmillCommandRequest request,
     ILiveSessionCoordinator coordinator,
     ISessionStore store,
+    IPolarH10RecordingStore polarMemory,
     TimeProvider timeProvider,
     CancellationToken cancellationToken)
   {
@@ -536,6 +539,7 @@ public static class LiveSessionEndpoints
       HistoryDeletionPreview preview = await store.PreviewDeletionAsync(
         snapshot.SessionId, snapshot.UserProfileId, cancellationToken)
         ?? throw new InvalidOperationException("The stopped session could not be prepared for deletion.");
+      await polarMemory.QueueDiscardCleanupAsync(snapshot.SessionId, timeProvider.GetUtcNow(), cancellationToken);
       string fingerprint = PlanningOperationFingerprint.Compute(new
       {
         snapshot.UserProfileId,
@@ -812,6 +816,7 @@ public static class LiveSessionEndpoints
     Guid sessionId,
     DeleteHistorySessionRequest request,
     ISessionStore store,
+    IPolarH10RecordingStore polarMemory,
     TimeProvider timeProvider,
     CancellationToken cancellationToken)
   {
@@ -831,6 +836,7 @@ public static class LiveSessionEndpoints
     });
     try
     {
+      await polarMemory.QueueDiscardCleanupAsync(sessionId, timeProvider.GetUtcNow(), cancellationToken);
       HistoryDeletionResult result = await store.DeleteAsync(new DeleteHistorySessionOperation(
         request.OperationId,
         sessionId,

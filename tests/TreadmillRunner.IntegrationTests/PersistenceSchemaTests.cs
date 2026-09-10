@@ -109,7 +109,7 @@ public sealed class PersistenceSchemaTests : IAsyncLifetime
     Guid olderSessionId = Guid.NewGuid();
     Guid newerSessionId = Guid.NewGuid();
     const string predecessor = "20260821222435_AddGarminWatchDuplicateHandling";
-    const string latest = "20260823111127_MetricOnlySessionAndLeaseHardening";
+    const string latest = "20260910163254_AddPolarH10Memory";
     const string olderArmed = "2026-08-22 08:00:00+00:00";
     const string newerArmed = "2026-08-22 09:00:00+00:00";
 

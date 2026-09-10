@@ -6,6 +6,11 @@ using TreadmillRunner.Protocols.Exports;
 
 namespace TreadmillRunner.Gateway.Garmin;
 
+public interface IGarminActivityUploadWakeSignal
+{
+  void Wake();
+}
+
 public sealed class GarminActivityUploadWorker(
   IServiceScopeFactory scopeFactory,
   IGarminActivityUploadStore store,
@@ -14,7 +19,7 @@ public sealed class GarminActivityUploadWorker(
   GarminActivityConnectionService connections,
   TimeProvider timeProvider,
   IApplicationMaintenanceState maintenanceState,
-  ILogger<GarminActivityUploadWorker> logger) : BackgroundService
+  ILogger<GarminActivityUploadWorker> logger) : BackgroundService, IGarminActivityUploadWakeSignal
 {
   private readonly SemaphoreSlim _wake = new(0, 1);
 

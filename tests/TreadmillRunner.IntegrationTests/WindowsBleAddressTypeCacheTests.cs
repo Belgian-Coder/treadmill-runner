@@ -74,4 +74,17 @@ public sealed class WindowsBleAddressTypeCacheTests
 
     Assert.Null(cache.TryGet("A1B2C3D4E5F6", observedAt.AddSeconds(1)));
   }
+
+  [Fact]
+  public async Task Polar_factory_reuses_the_recent_scan_address_type()
+  {
+    var cache = new BluetoothAddressTypeCache(ttl: TimeSpan.FromMinutes(1));
+    cache.Observe("A1B2C3D4E5F6", BluetoothAddressType.Random);
+    var factory = new WindowsPolarPftpConnectionFactory(new WindowsBleCentralTransport(cache));
+
+    await using var connection = Assert.IsType<WindowsPolarPftpConnection>(
+      await factory.ConnectAsync("A1B2C3D4E5F6"));
+
+    Assert.Equal(BluetoothAddressType.Random, connection.AddressType);
+  }
 }

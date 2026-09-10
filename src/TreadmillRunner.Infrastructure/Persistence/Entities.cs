@@ -303,6 +303,7 @@ internal sealed class WorkoutSessionEntity
   public Guid? WorkoutProgramRunId { get; set; }
   public Guid? WorkoutProgramItemId { get; set; }
   public string SelectionSource { get; set; } = "Legacy";
+  public bool RecordPolarH10Memory { get; set; }
   public string SessionOrigin { get; set; } = "Legacy";
   public string WorkoutTitle { get; set; } = string.Empty;
   public string State { get; set; } = string.Empty;
@@ -473,6 +474,50 @@ internal sealed class OperationReceiptEntity
   public string OutcomeJson { get; set; } = string.Empty;
   public DateTimeOffset CreatedAtUtc { get; set; }
   public string RequestFingerprint { get; set; } = string.Empty;
+}
+
+internal sealed class PolarH10RecordingEntity
+{
+  public Guid Id { get; set; }
+  public Guid? WorkoutSessionId { get; set; }
+  public Guid? UserProfileId { get; set; }
+  public Guid DeviceEnrollmentId { get; set; }
+  public string ExerciseId { get; set; } = string.Empty;
+  public string Status { get; set; } = "StartPending";
+  public string Origin { get; set; } = "Automatic";
+  public string SampleType { get; set; } = "HeartRate";
+  public int SampleIntervalSeconds { get; set; }
+  public DateTimeOffset? StartRequestedAtUtc { get; set; }
+  public DateTimeOffset? StartConfirmedAtUtc { get; set; }
+  public DateTimeOffset? StopRequestedAtUtc { get; set; }
+  public DateTimeOffset? StopConfirmedAtUtc { get; set; }
+  public string? ExternalRecordingId { get; set; }
+  public string? RemotePath { get; set; }
+  public byte[]? Payload { get; set; }
+  public string? PayloadSha256 { get; set; }
+  public int PayloadBytes { get; set; }
+  public DateTimeOffset QueuedAtUtc { get; set; }
+  public DateTimeOffset UpdatedAtUtc { get; set; }
+  public DateTimeOffset? StartedAtUtc { get; set; }
+  public DateTimeOffset? EndedAtUtc { get; set; }
+  public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+  public int AttemptCount { get; set; }
+  public string? LastError { get; set; }
+  public int MergeCount { get; set; }
+  public int RemovalCount { get; set; }
+  public int Version { get; set; } = 1;
+  public DateTimeOffset AvailableAtUtc { get; set; }
+  public string? OperationFingerprint { get; set; }
+}
+
+internal sealed class PolarH10RecordingSampleEntity
+{
+  public Guid PolarH10RecordingId { get; set; }
+  public long Sequence { get; set; }
+  public DateTimeOffset CapturedAtUtc { get; set; }
+  public ushort? BeatsPerMinute { get; set; }
+  public uint? RrIntervalMilliseconds { get; set; }
+  public PolarH10RecordingEntity Recording { get; set; } = null!;
 }
 
 internal sealed class RunnerExperiencePreferenceEntity

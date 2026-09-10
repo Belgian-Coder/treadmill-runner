@@ -113,6 +113,23 @@ else
         {
             <p class="action-status" role="status" aria-live="polite">@shareMessage</p>
         }
+        @if (polarMemoryJob is { } polarJob)
+        {
+            <section class="panel-card polar-history-status" aria-labelledby="polar-history-title">
+                <div class="panel-heading"><div><p class="eyebrow">Polar H10 memory</p><h2 id="polar-history-title">Recording review</h2></div><span class="status-chip">@polarJob.Outcome</span></div>
+                <p>@PolarOutcomeMessage(polarJob.Outcome, polarJob.LastError)</p>
+                @if (polarJob.Outcome is "Retryable" or "ReviewRequired" or "RemovalPending" or "Error")
+                {
+                    <button class="secondary-action touch-action" type="button" disabled="@polarActionBusy" @onclick="RetryPolarMemoryAsync">@(polarActionBusy ? "Retrying…" : "Retry H10 reconciliation")</button>
+                }
+                @if (polarJob.Outcome is not "Merged" and not "RemovalPending" and not "Skipped" and not "NotStarted" and not "Completed")
+                {
+                    <button class="danger-action touch-action" type="button" disabled="@polarActionBusy" @onclick="SkipPolarMemoryAsync">Skip H10 memory for this run</button>
+                }
+                @if (!string.IsNullOrWhiteSpace(polarActionMessage)) { <p class="action-status" role="status">@polarActionMessage</p> }
+                <p class="field-hint">H10 memory remains separate from workout History. Archiving a verified local copy does not rewrite this workout.</p>
+            </section>
+        }
         @if (session.Garmin is { } garmin)
         {
             <section class="panel-card garmin-status-card" aria-labelledby="garmin-reconciliation-title">
@@ -434,6 +451,9 @@ else
     private string garminActionMessage = string.Empty;
     private GarminHistoricalRecoveryView? garminRecovery;
     private string garminRecoveryChoice = string.Empty;
+    private PolarMemoryJob? polarMemoryJob;
+    private bool polarActionBusy;
+    private string polarActionMessage = string.Empty;
     private string GarminRecoveryConfirmationText => garminRecoveryChoice == "UndoMerge"
         ? "Restore two Garmin activities? The app will restore the original watch activity and one verified TreadmillRunner activity, then remove only proven merged or duplicate copies. Your local History remains unchanged."
         : "Keep one Garmin activity? The app will keep the verified combined activity in Garmin and remove only the backed-up original and proven duplicates. Your local History remains unchanged.";
@@ -498,6 +518,8 @@ else
         session = null;
         garminRecovery = null;
         garminRecoveryChoice = string.Empty;
+        polarMemoryJob = null;
+        polarActionMessage = string.Empty;
         comparison = null;
         debriefPerceivedExertion = null;
         debriefNote = string.Empty;
@@ -529,9 +551,44 @@ else
 
         if (session is not null)
         {
-            await Task.WhenAll(LoadComparisonAsync(), LoadGarminRecoveryAsync());
+            await Task.WhenAll(LoadComparisonAsync(), LoadGarminRecoveryAsync(), LoadPolarMemoryAsync());
         }
     }
+
+    private async Task LoadPolarMemoryAsync()
+    {
+        try { polarMemoryJob = await Http.GetFromJsonAsync<PolarMemoryJob>($"api/polar-h10/sessions/{SessionId}"); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { polarMemoryJob = null; }
+    }
+
+    private async Task RetryPolarMemoryAsync() => await PolarActionAsync("retry", "H10 reconciliation queued again.");
+    private async Task SkipPolarMemoryAsync() => await PolarActionAsync("skip", "H10 memory explicitly skipped. Workout History was unchanged.");
+    private async Task PolarActionAsync(string action, string success)
+    {
+        if (polarActionBusy) return;
+        polarActionBusy = true; polarActionMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync($"api/polar-h10/sessions/{SessionId}/{action}", null);
+            polarActionMessage = response.IsSuccessStatusCode ? success : response.StatusCode == System.Net.HttpStatusCode.Conflict ? "The H10 recording changed. Refresh before trying again." : "The H10 action was rejected. Review access and try again.";
+            if (response.IsSuccessStatusCode) await LoadPolarMemoryAsync();
+        }
+        catch (HttpRequestException) { polarActionMessage = "The local gateway could not update H10 recording status."; }
+        finally { polarActionBusy = false; }
+    }
+
+    private static string PolarOutcomeMessage(string outcome, string? error) => outcome switch
+    {
+        "StartPending" or "Recording" or "StopPending" or "AwaitingDevice" or "Downloading" or "Downloaded" or "Merging" => "The exact H10 recording is pending reconciliation. Garmin export waits for this step.",
+        "Merged" => "The verified H10 data was merged into missing heart-rate samples. Garmin export may continue while exact remote cleanup runs.",
+        "RemovalPending" => error ?? "History recovery is complete, but exact remote cleanup needs a retry. Garmin export may continue.",
+        "ReviewRequired" => error ?? "The recording could not be aligned unambiguously. Review it before retrying or explicitly skipping recovery.",
+        "Retryable" or "Error" => error ?? "Reconciliation needs attention and can be retried.",
+        "Completed" => "Missing heart-rate samples were recovered from the verified H10 copy; the exact remote recording was removed.",
+        "Skipped" => "H10 recovery was explicitly skipped. Any remote recording was retained and Garmin export may continue.",
+        "NotStarted" => "The optional H10 recording did not start. Workout History was unchanged and Garmin export may continue.",
+        _ => error ?? "H10 memory status is pending review.",
+    };
 
     private void EditDebrief()
     {
@@ -615,6 +672,7 @@ else
         string State,
         string Message);
     private sealed record GarminRecoveryErrorView(string Error);
+    private sealed record PolarMemoryJob(Guid Id, Guid SessionId, Guid UserProfileId, string Outcome, int AttemptCount, DateTimeOffset? LeaseExpiresAtUtc, string? ExternalRecordingId, string? LastError);
     private static string FormatDelta(TimeSpan value) =>
         $"{(value < TimeSpan.Zero ? "−" : value > TimeSpan.Zero ? "+" : string.Empty)}{value.Duration().ToString(@"hh\:mm\:ss")}";
 

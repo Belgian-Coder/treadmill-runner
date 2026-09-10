@@ -1,0 +1,219 @@
+@page "/devices/polar-h10-memory"
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject HttpClient Http
+
+<PageTitle>Polar H10 memory · TreadmillRunner</PageTitle>
+
+<section class="page-stack polar-memory-page" aria-labelledby="polar-memory-title">
+    <header class="page-heading">
+        <div><p class="eyebrow">Polar H10</p><h1 id="polar-memory-title">H10 memory</h1></div>
+        <p>Read recordings stored on the exact H10, download a verified local copy, and review the alignment before the gateway merges heart rate into this run. Memory recordings never become a second workout History item.</p>
+    </header>
+
+    <section class="safety-banner" aria-label="Polar H10 memory safety notice">
+        <span class="safety-icon"><AppIcon Name="alert" /></span>
+        <p><strong>Memory actions do not control the treadmill.</strong> Stop the H10 recording before download. A verified recording may merge missing heart rate into its matching run; it never creates a second workout History item.</p>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p class="field-error polar-memory-error" role="alert">@errorMessage</p>
+    }
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <p class="action-status" role="status" aria-live="polite">@statusMessage</p>
+    }
+
+    <section class="panel-card" aria-labelledby="polar-status-title" aria-busy="@loading">
+        <div class="panel-heading">
+            <div><p class="eyebrow">Connection and capability</p><h2 id="polar-status-title">Status</h2></div>
+            <button class="secondary-action compact-action" type="button" @onclick="LoadAsync" disabled="@loading">@(loading ? "Refreshing…" : "Refresh")</button>
+        </div>
+        @if (loading && status is null)
+        {
+            <p class="empty-state" role="status">Checking the H10 memory capability…</p>
+        }
+        else if (status is null)
+        {
+            <p class="empty-state">The H10 memory status is unavailable. Keep the H10 nearby and powered, then refresh.</p>
+        }
+        else
+        {
+            <dl class="device-facts polar-status-facts">
+                <div><dt>Device</dt><dd>@(status.DisplayName ?? "Polar H10")</dd></div>
+                <div><dt>Connection</dt><dd>@(status.Connection ?? "Unknown")</dd></div>
+                <div><dt>Memory capability</dt><dd>@(status.IsAvailable ? "Available" : "Unavailable")</dd></div>
+                <div><dt>Last seen</dt><dd>@(status.LastSeenUtc is { } seen ? seen.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss") : "Not reported")</dd></div>
+            </dl>
+            @if (!status.IsAvailable)
+            {
+                <p class="field-hint" role="note">The recording-memory feature is enabled only for the exact H10 memory capability. A regular live heart-rate connection is not enough.</p>
+            }
+        }
+    </section>
+
+    <section class="panel-card" aria-labelledby="manual-recording-title">
+        <div class="panel-heading"><div><p class="eyebrow">Manual recording</p><h2 id="manual-recording-title">Record heart rate</h2></div></div>
+        <div class="form-grid polar-memory-controls">
+            <label class="field">Heart-rate interval
+                <select @bind="manualIntervalSeconds" disabled="@(!CanRecord)"><option value="1">1 second</option><option value="5">5 seconds</option></select>
+            </label>
+            <div class="field"><span>Recording</span><strong class="polar-recording-state" role="status">@(recording ? "Running" : manualStartPending ? "Starting…" : "Stopped")</strong></div>
+        </div>
+        <div class="form-actions">
+            <button class="primary-action touch-action" type="button" @onclick="StartManualAsync" disabled="@(!CanRecord || recording || manualStartPending || busy)">@(busy && !recording ? "Starting…" : "Start manual HR")</button>
+            <button class="danger-action touch-action" type="button" @onclick="StopManualAsync" disabled="@((!recording && !manualStartPending) || busy)">@(busy && (recording || manualStartPending) ? "Stopping…" : "Stop recording")</button>
+        </div>
+        <details class="advanced-settings">
+            <summary>Advanced RR recording</summary>
+            <p class="field-hint">RR intervals are raw beat-to-beat values. Use this only when a downstream review explicitly requires them.</p>
+            <div class="form-actions"><button class="secondary-action touch-action" type="button" @onclick="StartRrAsync" disabled="@(!CanRecord || recording || manualStartPending || busy)">Start RR recording</button><button class="secondary-action touch-action" type="button" @onclick="StopManualAsync" disabled="@((!recording && !manualStartPending) || busy)">Stop RR recording</button></div>
+        </details>
+    </section>
+
+    <section class="panel-card" aria-labelledby="memory-recordings-title">
+        <div class="panel-heading"><div><p class="eyebrow">Recordings</p><h2 id="memory-recordings-title">Remote and local memory</h2></div><button class="secondary-action compact-action" type="button" @onclick="LoadRecordingsAsync" disabled="@listBusy">@(listBusy ? "Loading…" : "Refresh list")</button></div>
+        <div class="polar-source-tabs" role="group" aria-label="Recording source"><button type="button" class="@(source == "remote" ? "is-selected" : null)" aria-pressed="@(source == "remote")" @onclick='() => ChangeSourceAsync("remote")'>Remote H10</button><button type="button" class="@(source == "local" ? "is-selected" : null)" aria-pressed="@(source == "local")" @onclick='() => ChangeSourceAsync("local")'>Verified local copies</button></div>
+        @if (listBusy)
+        {
+            <p class="empty-state" role="status">Loading recordings…</p>
+        }
+        else if (recordings.Count == 0)
+        {
+            <p class="empty-state">No recordings are available in this list.</p>
+        }
+        else
+        {
+            <div class="polar-recording-list">
+                @foreach (PolarRecording recordingItem in recordings)
+                {
+                    <article class="polar-recording-card">
+                        <div><h3>@(recordingItem.Title ?? $"Recording {recordingItem.Id}")</h3><p>@FormatRange(recordingItem)</p><span class="status-chip">@(recordingItem.Status ?? "Available")</span></div>
+                        <div class="polar-recording-actions">@if (source == "remote") { <button class="secondary-action compact-action" type="button" @onclick="() => DownloadAsync(recordingItem)" disabled="@busy">Download verified copy</button> } else { <a class="secondary-action compact-action" href="@($"api/polar-h10/recordings/{recordingItem.Id}/export.csv")" download>Download CSV</a> }@if (source == "local" && recordingItem.CanDeleteRemote) { <button class="danger-action compact-action" type="button" @onclick="() => AskDelete(recordingItem)">Delete from H10</button> }</div>
+                        @if (selectedRecording?.Id == recordingItem.Id && confirmDelete)
+                        {
+                            <div class="inline-confirmation" role="alertdialog" aria-label="Confirm remote recording deletion"><p><strong>Delete this recording from the H10?</strong> The verified local copy stays available, and workout History remains unchanged.</p><div class="form-actions"><button class="danger-action compact-action" type="button" @onclick="DeleteLocalAsync" disabled="@busy">Confirm delete from H10</button><button class="secondary-action compact-action" type="button" @onclick="CancelDelete">Cancel</button></div></div>
+                        }
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    @if (selectedRecording is { } selected)
+    {
+        <section class="panel-card polar-chart-card" aria-labelledby="polar-chart-title">
+            <div class="panel-heading"><div><p class="eyebrow">Review before archive</p><h2 id="polar-chart-title">@(selected.Title ?? "Heart-rate recording")</h2></div><span class="status-chip">@(selected.Samples?.Count ?? 0) samples</span></div>
+            <svg class="polar-memory-chart" viewBox="0 0 720 220" role="img" aria-label="Heart rate over elapsed time"><path class="chart-current" d="@BuildChartPath(selected)" /></svg>
+            <div class="form-actions"><a class="secondary-action" href="@($"api/polar-h10/recordings/{selected.Id}/export.csv")" download>Download CSV</a>@if (source == "local" && selected.CanDeleteRemote) { <button class="danger-action" type="button" @onclick="() => AskDelete(selected)">Delete from H10</button> }</div>
+        </section>
+    }
+</section>
+
+@code {
+    private PolarStatus? status;
+    private List<PolarRecording> recordings = [];
+    private PolarRecording? selectedRecording;
+    private string source = "remote";
+    private string errorMessage = string.Empty;
+    private string statusMessage = string.Empty;
+    private bool loading;
+    private bool listBusy;
+    private bool busy;
+    private bool recording;
+    private bool manualStartPending;
+    private bool confirmDelete;
+    private int manualIntervalSeconds = 1;
+
+    private bool CanRecord => status?.IsAvailable == true;
+
+    protected override async Task OnInitializedAsync() { await LoadAsync(); }
+
+    private async Task LoadAsync()
+    {
+        loading = true; errorMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/status");
+            if (response.IsSuccessStatusCode) { status = await response.Content.ReadFromJsonAsync<PolarStatus>(); recording = status?.IsRecording == true; manualStartPending = !recording && status?.ManualOperationPending == true; }
+            else if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden) status = new(false, "Unavailable", "Polar H10 memory is not enabled.", null);
+            else errorMessage = "The H10 status could not be read. Review access and refresh.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { errorMessage = "The local gateway could not read H10 status. Review the connection and refresh."; }
+        finally { loading = false; }
+        await LoadRecordingsAsync();
+    }
+
+    private async Task ChangeSourceAsync(string next) { source = next; await LoadRecordingsAsync(); }
+    private async Task LoadRecordingsAsync()
+    {
+        listBusy = true; errorMessage = string.Empty;
+        try
+        {
+            PolarRecordingList? payload = await Http.GetFromJsonAsync<PolarRecordingList>($"api/polar-h10/recordings?source={source}");
+            recordings = payload?.Items ?? [];
+            selectedRecording = recordings.FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { recordings = []; errorMessage = "The recording list could not be loaded. Review H10 access and try again."; }
+        finally { listBusy = false; }
+    }
+
+    private async Task StartManualAsync() => await StartRecordingAsync(false);
+    private async Task StartRrAsync() => await StartRecordingAsync(true);
+    private async Task StartRecordingAsync(bool rr)
+    {
+        if (!CanRecord || busy) return;
+        busy = true; errorMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsJsonAsync("api/polar-h10/recordings/start", new { intervalSeconds = manualIntervalSeconds, rrIntervals = rr });
+            if (!response.IsSuccessStatusCode) { errorMessage = response.StatusCode == HttpStatusCode.Conflict ? "The H10 is already recording or another client owns it." : "The H10 recording could not start. Check access and try again."; return; }
+            manualStartPending = true; statusMessage = rr ? "RR recording start queued." : $"Heart-rate recording start queued at {manualIntervalSeconds}s.";
+        }
+        catch (HttpRequestException) { errorMessage = "The local gateway could not start H10 recording."; }
+        finally { busy = false; }
+    }
+
+    private async Task StopManualAsync()
+    {
+        if ((!recording && !manualStartPending) || busy) return;
+        busy = true;
+        try { using HttpResponseMessage response = await Http.PostAsync("api/polar-h10/recordings/stop", null); if (!response.IsSuccessStatusCode) { errorMessage = "The H10 recording could not stop. Keep the H10 nearby and retry."; return; } manualStartPending = false; statusMessage = "Stop queued. Keep the H10 nearby while the recording is verified and archived."; await LoadRecordingsAsync(); }
+        catch (HttpRequestException) { errorMessage = "The local gateway could not stop H10 recording."; }
+        finally { busy = false; }
+    }
+
+    private async Task DownloadAsync(PolarRecording item) { await RunRecordingActionAsync(item, "download", "Recording download queued. It will remain separate from workout History."); }
+    private async Task RunRecordingActionAsync(PolarRecording item, string action, string success)
+    {
+        busy = true; errorMessage = string.Empty; selectedRecording = item;
+        try { using HttpResponseMessage response = await Http.PostAsync($"api/polar-h10/recordings/{Uri.EscapeDataString(item.Id)}/{action}", null); if (!response.IsSuccessStatusCode) { errorMessage = response.StatusCode == HttpStatusCode.Conflict ? "The recording changed on the H10. Refresh the list before retrying." : "The recording action was denied. Review access and try again."; return; } statusMessage = success; await LoadRecordingsAsync(); }
+        catch (HttpRequestException) { errorMessage = "The local gateway could not complete that H10 action."; }
+        finally { busy = false; }
+    }
+
+    private void AskDelete(PolarRecording item) { selectedRecording = item; confirmDelete = true; }
+    private void CancelDelete() { confirmDelete = false; }
+    private async Task DeleteLocalAsync() { if (selectedRecording is null || !selectedRecording.CanDeleteRemote) return; confirmDelete = false; await RunRecordingActionAsync(selectedRecording, "delete-remote", "Remote H10 recording deleted. The verified local copy and workout History were retained."); }
+    private string FormatRange(PolarRecording item) => item.StartedAtUtc is { } start && item.EndedAtUtc is { } end ? $"{start.ToLocalTime():d MMM yyyy · HH:mm} · {(end - start):hh\\:mm\\:ss}" : "Time range unavailable";
+    private static string BuildChartPath(PolarRecording item)
+    {
+        if (item.Samples is not { Count: > 0 } samples) return string.Empty;
+        var path = new System.Text.StringBuilder(); double max = Math.Max(180d, samples.Max(sample => (double)(sample.BeatsPerMinute ?? 0)));
+        for (int i = 0; i < samples.Count; i++) { double x = 10 + (700d * i / Math.Max(1, samples.Count - 1)); double y = 210 - (Math.Clamp((samples[i].BeatsPerMinute ?? 0) / max, 0, 1) * 200); path.Append(i == 0 ? "M" : " L").Append(x.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)).Append(' ').Append(y.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)); }
+        return path.ToString();
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private sealed record PolarStatus(bool MemoryCapability, string? Connection, string? DisplayName, DateTimeOffset? LastSeenUtc, bool Available = false, bool IsRecording = false, bool ManualOperationPending = false)
+    {
+        public bool IsAvailable => MemoryCapability || Available;
+    }
+    private sealed record PolarRecordingList(List<PolarRecording> Items);
+    private sealed record PolarRecording(string Id, string? Title, string? Status, DateTimeOffset? StartedAtUtc, DateTimeOffset? EndedAtUtc, List<PolarSample>? Samples, bool CanDeleteRemote = false);
+    private sealed record PolarSample(DateTimeOffset CapturedAtUtc, ushort? BeatsPerMinute);
+}

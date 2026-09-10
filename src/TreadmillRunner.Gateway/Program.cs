@@ -16,6 +16,7 @@ using System.Globalization;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Gateway.Updates;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Gateway.Household;
 using Microsoft.AspNetCore.DataProtection;
 using TreadmillRunner.Core.System;
@@ -120,6 +121,7 @@ app.MapUpdates();
 app.MapGarmin();
 app.MapGarminWatch();
 app.MapGarminActivityUpload();
+app.MapPolarH10Memory();
 app.MapHub<LiveHub>("/hubs/live");
 app.MapRazorComponents<App>()
     .AddInteractiveWebAssemblyRenderMode()
