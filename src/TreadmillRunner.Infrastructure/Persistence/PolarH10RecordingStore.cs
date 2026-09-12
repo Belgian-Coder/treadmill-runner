@@ -154,11 +154,14 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
   public async Task<PolarH10RecordingJob?> FindActiveManualAsync(CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-    PolarH10RecordingEntity? row = await context.PolarH10Recordings.AsNoTracking()
-      .Where(candidate => candidate.Origin == "Manual" && candidate.Status != "Completed" && candidate.Status != "Retained" &&
-        candidate.Status != "Skipped" && candidate.Status != "NotStarted")
-      .OrderByDescending(candidate => candidate.QueuedAtUtc)
-      .FirstOrDefaultAsync(cancellationToken);
+    PolarH10RecordingEntity? row = await context.PolarH10Recordings
+      .FromSqlRaw("""
+        SELECT * FROM PolarH10Recordings
+        WHERE Origin = 'Manual' AND Status NOT IN ('Completed','Retained','Skipped','NotStarted')
+        ORDER BY julianday(QueuedAtUtc) DESC, Id DESC LIMIT 1
+        """)
+      .AsNoTracking()
+      .SingleOrDefaultAsync(cancellationToken);
     return row is null ? null : Map(row);
   }
 

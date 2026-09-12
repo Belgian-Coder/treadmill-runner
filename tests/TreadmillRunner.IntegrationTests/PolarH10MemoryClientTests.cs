@@ -32,6 +32,56 @@ public sealed class PolarH10MemoryClientTests
     Assert.False(status.IsRecording);
   }
 
+  [Fact]
+  public async Task Memory_status_reopens_a_fresh_connection_after_transient_response_timeouts()
+  {
+    DeviceEnrollment enrollment = HeartRate("102030405060", "Polar H10");
+    var store = new EnrollmentStore(enrollment);
+    var factory = new ConnectionFactory(transientTimeouts: 3);
+    var broker = new AdvertisementBroker(
+      new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService]));
+    var locator = new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25));
+    var client = new PolarH10MemoryClient(store, factory, locator);
+
+    PolarH10DeviceRecordingStatus status = await client.GetStatusAsync(enrollment.Id);
+
+    Assert.False(status.IsRecording);
+    Assert.Equal(4, factory.DeviceIds.Count);
+    Assert.Equal(4, factory.DisposedConnections);
+  }
+
+  [Fact]
+  public async Task Memory_status_stops_after_the_bounded_number_of_transient_attempts()
+  {
+    DeviceEnrollment enrollment = HeartRate("102030405060", "Polar H10");
+    var factory = new ConnectionFactory(transientTimeouts: 4);
+    var locator = new PolarH10ConnectionLocator(
+      new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
+      TimeSpan.FromMilliseconds(25));
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+
+    await Assert.ThrowsAsync<TimeoutException>(() => client.GetStatusAsync(enrollment.Id));
+
+    Assert.Equal(4, factory.DeviceIds.Count);
+    Assert.Equal(4, factory.DisposedConnections);
+  }
+
+  [Fact]
+  public async Task Memory_status_does_not_retry_a_device_protocol_rejection()
+  {
+    DeviceEnrollment enrollment = HeartRate("102030405060", "Polar H10");
+    var factory = new ConnectionFactory(terminalException: new PolarPftpProtocolException(106));
+    var locator = new PolarH10ConnectionLocator(
+      new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
+      TimeSpan.FromMilliseconds(25));
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+
+    await Assert.ThrowsAsync<PolarPftpProtocolException>(() => client.GetStatusAsync(enrollment.Id));
+
+    Assert.Single(factory.DeviceIds);
+    Assert.Equal(1, factory.DisposedConnections);
+  }
+
   private static DeviceEnrollment HeartRate(string deviceId, string displayName) => new(
     Guid.NewGuid(),
     DeviceRole.HeartRate,
@@ -106,9 +156,11 @@ public sealed class PolarH10MemoryClientTests
     }
   }
 
-  private sealed class ConnectionFactory : IPolarPftpConnectionFactory
+  private sealed class ConnectionFactory(int transientTimeouts = 0, Exception? terminalException = null) : IPolarPftpConnectionFactory
   {
+    private int remainingTimeouts = transientTimeouts;
     public List<string> DeviceIds { get; } = [];
+    public int DisposedConnections { get; private set; }
 
     public ValueTask<IPolarPftpConnection> ConnectAsync(
       string deviceId,
@@ -116,11 +168,13 @@ public sealed class PolarH10MemoryClientTests
       CancellationToken cancellationToken = default)
     {
       DeviceIds.Add(deviceId);
-      return ValueTask.FromResult<IPolarPftpConnection>(new Connection(deviceId));
+      bool shouldTimeout = Interlocked.Decrement(ref remainingTimeouts) >= 0;
+      return ValueTask.FromResult<IPolarPftpConnection>(new Connection(
+        deviceId, shouldTimeout, terminalException, () => DisposedConnections++));
     }
   }
 
-  private sealed class Connection(string deviceId) : IPolarPftpConnection
+  private sealed class Connection(string deviceId, bool shouldTimeout, Exception? terminalException, Action disposed) : IPolarPftpConnection
   {
     public string DeviceId { get; } = deviceId;
 
@@ -129,8 +183,12 @@ public sealed class PolarH10MemoryClientTests
       TimeSpan responseTimeout,
       int maximumResponseBytes,
       CancellationToken cancellationToken = default) =>
-      ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
+      shouldTimeout
+        ? ValueTask.FromException<ReadOnlyMemory<byte>>(new TimeoutException("transient test timeout"))
+        : terminalException is not null
+          ? ValueTask.FromException<ReadOnlyMemory<byte>>(terminalException)
+          : ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync() { disposed(); return ValueTask.CompletedTask; }
   }
 }

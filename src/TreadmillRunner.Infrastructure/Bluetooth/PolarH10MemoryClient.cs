@@ -10,12 +10,28 @@ public sealed class PolarH10MemoryClient(
   IPolarPftpConnectionFactory connections,
   PolarH10ConnectionLocator connectionLocator) : IPolarH10MemoryClient
 {
+  private const int MaximumStatusAttempts = 4;
+
   public async Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
   {
     PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    PolarRecordingStatus status = await new PolarPftpClient(connection).GetStatusAsync(cancellationToken).ConfigureAwait(false);
-    return new(target.Enrollment.Id, target.Enrollment.DeviceId, target.Enrollment.DisplayName, status.IsRecording, status.EntryId);
+    for (var attempt = 1; ; attempt++)
+    {
+      try
+      {
+        await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
+        PolarRecordingStatus status = await new PolarPftpClient(connection).GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        return new(target.Enrollment.Id, target.Enrollment.DeviceId, target.Enrollment.DisplayName, status.IsRecording, status.EntryId);
+      }
+      catch (Exception exception) when (
+        attempt < MaximumStatusAttempts &&
+        !cancellationToken.IsCancellationRequested &&
+        (exception is TimeoutException or WindowsBleException ||
+          exception is IOException and not PolarPftpProtocolException))
+      {
+        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+      }
+    }
   }
 
   public async Task StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)

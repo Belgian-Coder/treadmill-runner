@@ -37,6 +37,22 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Active_manual_lookup_uses_SQLite_compatible_timestamp_ordering()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob older = await store.EnqueueAsync(null, null, "manual-older", seed.EnrollmentId,
+      "Manual", PolarH10SampleType.HeartRate, 1, seed.Start);
+    PolarH10RecordingJob newer = await store.EnqueueAsync(null, null, "manual-newer", seed.EnrollmentId,
+      "Manual", PolarH10SampleType.HeartRate, 1, seed.Start.AddSeconds(1));
+
+    Assert.Equal(newer.Id, (await store.FindActiveManualAsync())?.Id);
+
+    await store.MarkOutcomeAsync(newer.Id, PolarH10RecordingOutcome.NotStarted, null, seed.Start.AddSeconds(2));
+    Assert.Equal(older.Id, (await store.FindActiveManualAsync())?.Id);
+  }
+
+  [Fact]
   public async Task Verified_payload_fills_only_null_hr_and_recalculates_aggregates()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
