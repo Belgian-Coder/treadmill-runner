@@ -4,12 +4,16 @@ type: architecture
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # Polar H10 memory recording and recovery
 
 Polar H10 memory is a feature-gated adjunct to the existing read-only live heart-rate path. It uses a Polar-only PFTP connection in Infrastructure and portable bounded codecs in Protocols. The general BLE read interface and treadmill command interface remain unchanged. The feature is disabled by default until a named H10 and firmware pass the physical acceptance sequence.
+
+Before each PFTP operation, the memory client performs one bounded scan through the shared advertisement broker. It keeps the enrolled locator when that locator is observed; otherwise it may adopt a replacement only when advertisements establish one unique heart-rate-capable match by exact name or by the enrollment's unique device family and kind. Ambiguous candidates never rebind. The fresh advertisement also supplies Windows with the current public/random address type before the PFTP connection opens, which matters when a Polar private address has rotated since enrollment.
+
+Live heart-rate and PFTP response subscriptions request `GattSession.MaintainConnection` when Windows reports that capability. This is a best-effort Windows connection policy, not a guarantee against radio, contact, battery, firmware, or adapter disconnects. Existing bounded reconnect, stale-value removal, source fallback, and preserved-gap behavior remain authoritative.
 
 Each workout starts with the memory option unchecked. When an opted-in hardware session first reaches physical `Running`, the gateway persists an automatic job for exercise `tr-{sessionId:N}`. A worker checks the exact enrolled device and current recording identifier before every start or stop. Session finalization only queues recovery: it does not wait for BLE. Recovery stops that exact recording, lists and fetches its exact `/tr-{sessionId:N}/SAMPLES.BPB` path, stores an 8 MiB-bounded raw payload and SHA-256, and aligns it against matching live H10 values. A transaction fills null heart-rate values, recalculates aggregates, and records a warning event. Existing heart-rate values are never replaced.
 
@@ -64,4 +68,4 @@ erDiagram
     }
 ```
 
-The wire facts and clean-room boundary are recorded in [Polar H10 PFTP memory protocol provenance](protocol-evidence/polar-h10/2026-09-10-pftp-memory-provenance.md). Automated tests establish codec, persistence, worker, Garmin-ordering, API-fingerprint, and responsive-browser behavior. They do not establish Windows pairing, physical H10 service access, recording continuity, sample timing, RR/5-second firmware support, or deletion on a real device.
+The wire facts and clean-room boundary are recorded in [Polar H10 PFTP memory protocol provenance](protocol-evidence/polar-h10/2026-09-10-pftp-memory-provenance.md). The current source and hardware evidence boundary is recorded in [Polar H10 live memory and continuity validation](protocol-evidence/polar-h10/2026-09-12-live-memory-and-continuity-validation.md). Automated tests establish codec, locator disambiguation, memory-client routing, persistence, worker, Garmin-ordering, API-fingerprint, and responsive-browser behavior. They do not establish Windows pairing, physical H10 service access, recording continuity, sample timing, RR/5-second firmware support, or deletion on a real device.

@@ -1,16 +1,15 @@
 using TreadmillRunner.Core.Bluetooth;
-using TreadmillRunner.Core.Devices;
 
-namespace TreadmillRunner.Gateway.Devices;
+namespace TreadmillRunner.Core.Devices;
 
-internal enum HeartRateReconnectMatch
+public enum HeartRateReconnectMatch
 {
   ExactDeviceId,
   ExactDisplayName,
   UniqueFamilyAndKind,
 }
 
-internal sealed record HeartRateReconnectResolution(
+public sealed record HeartRateReconnectResolution(
   string DeviceId,
   HeartRateReconnectMatch Match);
 
@@ -18,7 +17,7 @@ internal sealed record HeartRateReconnectResolution(
 /// Aggregates split BLE advertisement packets and resolves only a unique,
 /// recognizable replacement locator for an enrolled heart-rate source.
 /// </summary>
-internal sealed class HeartRateReconnectResolver
+public sealed class HeartRateReconnectResolver
 {
   private readonly Dictionary<string, Candidate> _candidates =
     new(StringComparer.OrdinalIgnoreCase);
@@ -105,7 +104,7 @@ internal sealed class HeartRateReconnectResolver
       : null;
   }
 
-  internal static HeartRateDeviceFamily EffectiveFamily(DeviceEnrollment enrollment)
+  public static HeartRateDeviceFamily EffectiveFamily(DeviceEnrollment enrollment)
   {
     HeartRateDeviceFamily stored = enrollment.HeartRateDeviceFamily ?? HeartRateDeviceFamily.Other;
     return stored != HeartRateDeviceFamily.Other
@@ -113,7 +112,7 @@ internal sealed class HeartRateReconnectResolver
       : HeartRateDeviceClassifier.Family(enrollment.DisplayName);
   }
 
-  internal static HeartRateDeviceKind EffectiveKind(DeviceEnrollment enrollment)
+  public static HeartRateDeviceKind EffectiveKind(DeviceEnrollment enrollment)
   {
     HeartRateDeviceKind stored = enrollment.HeartRateDeviceKind ?? HeartRateDeviceKind.Sensor;
     return stored != HeartRateDeviceKind.Sensor

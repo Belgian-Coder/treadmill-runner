@@ -4,7 +4,7 @@ type: protocol-evidence
 status: active
 owner: project
 audience: agent-and-developer
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # Polar H10 PFTP memory protocol provenance
@@ -17,6 +17,7 @@ Can TreadmillRunner independently implement the bounded Polar H10 operations nee
 
 - Capture identifier: `polar-h10-pftp-public-contract-2026-09-10`.
 - Source type: Polar's public [H10 product documentation](https://github.com/polarofficial/polar-ble-sdk/blob/master/documentation/products/PolarH10.md), [H10 offline-exercise API contract](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/java/com/polar/sdk/api/PolarH10OfflineExerciseApi.kt), and public protobuf declarations for [PFTP requests](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/pftp_request.proto), [PFTP responses](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/pftp_response.proto), [exercise samples](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/exercise_samples.proto), and [shared types](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/types.proto), plus the owner-approved feature plan.
+- Transport routing was rechecked on 2026-09-12 against Polar's public Android [`BlePsFtpClient`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpClient.kt), its [`BlePsFtpUtils`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpUtils.kt), and a public [H10 interaction trace](https://github.com/polarofficial/polar-ble-sdk/issues/778).
 - Collection date: 2026-09-10.
 - Device/firmware: no physical device or firmware observation is claimed by this record.
 - Collection method: read-only review performed before implementation. No live Bluetooth access, packet capture, account access, pairing, or device mutation was used.
@@ -26,6 +27,7 @@ Can TreadmillRunner independently implement the bounded Polar H10 operations nee
 ## Minimal protocol facts allowed for implementation
 
 - The Polar PFTP service uses UUID `0000feee-0000-1000-8000-00805f9b34fb` and the published MTU, device-to-host, and host-to-device characteristic UUIDs.
+- RFC60/RFC76 request/query frames are written to the MTU characteristic and their responses arrive through MTU notifications. H2D/D2H carry asynchronous notification messages; they are not replacements for the request/response channel.
 - H10 recording exposes one active exercise at a time and accepts an exercise identifier bounded to 1 through 64 characters.
 - The public API contract identifies heart-rate and RR sample types; heart-rate supports 1- and 5-second intervals, while RR ignores the interval.
 - The required high-level operations are status, start, stop, recursive list, GET of `SAMPLES.BPB`, and REMOVE of the exact recording path.

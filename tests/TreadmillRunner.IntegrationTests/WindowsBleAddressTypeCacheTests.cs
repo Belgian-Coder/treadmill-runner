@@ -6,6 +6,12 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class WindowsBleAddressTypeCacheTests
 {
   [Fact]
+  public void Active_notification_sessions_request_a_maintained_Windows_connection()
+  {
+    Assert.True(WindowsGattSessionPolicy.MaintainConnectionForActiveNotifications);
+  }
+
+  [Fact]
   public void Cache_evicts_oldest_observation_at_strict_capacity_bound()
   {
     var cache = new BluetoothAddressTypeCache(

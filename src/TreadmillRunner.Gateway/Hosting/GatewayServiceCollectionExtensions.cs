@@ -97,6 +97,7 @@ public static class GatewayServiceCollectionExtensions
       .ValidateOnStart();
     services.AddScoped<IPolarH10RecordingStore, PolarH10RecordingStore>();
     services.AddScoped<IPolarPftpConnectionFactory, WindowsPolarPftpConnectionFactory>();
+    services.AddScoped<PolarH10ConnectionLocator>();
     services.AddScoped<IPolarH10MemoryClient, PolarH10MemoryClient>();
     services.AddSingleton<PolarH10OperationGate>();
     services.AddTransient<PolarH10OperationFilter>();

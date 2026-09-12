@@ -259,6 +259,7 @@ internal sealed class WindowsBleReadOnlyConnection :
     GattSession? session = await GetOrCreateGattSessionAsync(
       handle.Device,
       operationCancellation).ConfigureAwait(false);
+    WindowsGattSessionPolicy.ApplyForActiveNotifications(session);
 
     TypedEventHandler<GattCharacteristic, GattValueChangedEventArgs> handler = (_, args) =>
     {

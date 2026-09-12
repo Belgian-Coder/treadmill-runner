@@ -1,11 +1,13 @@
 using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Core.Devices;
-using TreadmillRunner.Gateway.Devices;
+using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.IntegrationTests;
 
 public sealed class HeartRateReconnectResolverTests
 {
+  private static readonly Guid PolarService =
+    Guid.Parse("0000feee-0000-1000-8000-00805f9b34fb");
   private static readonly Guid HeartRateService =
     Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
 
@@ -212,6 +214,46 @@ public sealed class HeartRateReconnectResolverTests
     Assert.Equal(HeartRateReconnectMatch.ExactDisplayName, resolution.Match);
   }
 
+  [Fact]
+  public async Task Polar_memory_locator_adopts_a_unique_fresh_rotating_address()
+  {
+    DeviceEnrollment enrollment = HeartRate(
+      "102030405060",
+      "Polar heart-rate sensor",
+      HeartRateDeviceKind.ChestStrap,
+      HeartRateDeviceFamily.Polar);
+    var broker = new AdvertisementBroker(
+      new BleAdvertisement("AABBCCDDEEFF", null, -45, [PolarService]),
+      new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -44, [HeartRateService]));
+    var locator = new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25));
+
+    string resolved = await locator.ResolveAsync(enrollment, [enrollment]);
+
+    Assert.Equal("AABBCCDDEEFF", resolved);
+  }
+
+  [Fact]
+  public async Task Polar_memory_locator_fails_closed_when_another_enrolled_Polar_strap_makes_family_ambiguous()
+  {
+    DeviceEnrollment enrollment = HeartRate(
+      "102030405060",
+      "Primary chest strap",
+      HeartRateDeviceKind.ChestStrap,
+      HeartRateDeviceFamily.Polar);
+    DeviceEnrollment peer = HeartRate(
+      "112233445566",
+      "Spare chest strap",
+      HeartRateDeviceKind.ChestStrap,
+      HeartRateDeviceFamily.Polar);
+    var broker = new AdvertisementBroker(
+      new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -44, [HeartRateService, PolarService]));
+    var locator = new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25));
+
+    string resolved = await locator.ResolveAsync(enrollment, [enrollment, peer]);
+
+    Assert.Equal(enrollment.DeviceId, resolved);
+  }
+
   private static BleAdvertisement Advertisement(string deviceId, string name) =>
     new(deviceId, name, -42, [HeartRateService]);
 
@@ -234,4 +276,18 @@ public sealed class HeartRateReconnectResolverTests
       null,
       kind,
       family);
+
+  private sealed class AdvertisementBroker(params BleAdvertisement[] advertisements) : IBleAdvertisementBroker
+  {
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      foreach (BleAdvertisement advertisement in advertisements)
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        yield return advertisement;
+      }
+      await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+    }
+  }
 }
