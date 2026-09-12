@@ -108,6 +108,9 @@
       "treadmillrunner.core": {
         "type": "Project"
       },
+      "treadmillrunner.polarh10simulator": {
+        "type": "Project"
+      },
       "treadmillrunner.protocols": {
         "type": "Project",
         "dependencies": {

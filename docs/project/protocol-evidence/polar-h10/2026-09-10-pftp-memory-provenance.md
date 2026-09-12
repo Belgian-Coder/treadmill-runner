@@ -17,7 +17,7 @@ Can TreadmillRunner independently implement the bounded Polar H10 operations nee
 
 - Capture identifier: `polar-h10-pftp-public-contract-2026-09-10`.
 - Source type: Polar's public [H10 product documentation](https://github.com/polarofficial/polar-ble-sdk/blob/master/documentation/products/PolarH10.md), [H10 offline-exercise API contract](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/java/com/polar/sdk/api/PolarH10OfflineExerciseApi.kt), and public protobuf declarations for [PFTP requests](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/pftp_request.proto), [PFTP responses](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/pftp_response.proto), [exercise samples](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/exercise_samples.proto), and [shared types](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/Android/android-communications/library/src/sdk/proto/types.proto), plus the owner-approved feature plan.
-- Transport routing was rechecked on 2026-09-12 against Polar's public Android [`BlePsFtpClient`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpClient.kt), its [`BlePsFtpUtils`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpUtils.kt), and a public [H10 interaction trace](https://github.com/polarofficial/polar-ble-sdk/issues/778).
+- Transport routing was rechecked on 2026-09-12 against Polar's public Android [`BlePsFtpClient`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpClient.kt), its [`BlePsFtpUtils`](https://github.com/polarofficial/polar-ble-sdk/blob/8.1.0/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/psftp/BlePsFtpUtils.kt), the public iOS [`BlePsFtpClient`](https://github.com/polarofficial/polar-ble-sdk/blob/master/sources/iOS/ios-communications/Sources/iOSCommunications/ble/api/model/gatt/client/psftp/BlePsFtpClient.swift), and public H10 interaction traces [#259](https://github.com/polarofficial/polar-ble-sdk/issues/259) and [#778](https://github.com/polarofficial/polar-ble-sdk/issues/778).
 - Collection date: 2026-09-10.
 - Device/firmware: no physical device or firmware observation is claimed by this record.
 - Collection method: read-only review performed before implementation. No live Bluetooth access, packet capture, account access, pairing, or device mutation was used.
@@ -32,6 +32,7 @@ Can TreadmillRunner independently implement the bounded Polar H10 operations nee
 - The public API contract identifies heart-rate and RR sample types; heart-rate supports 1- and 5-second intervals, while RR ignores the interval.
 - The required high-level operations are status, start, stop, recursive list, GET of `SAMPLES.BPB`, and REMOVE of the exact recording path.
 - Frames carry bounded sequence/continuation/status metadata and protobuf-compatible request/response payloads. Project code must reject malformed, oversized, out-of-order, incomplete, or unknown-status data.
+- Both MTU and D2H notification descriptors are enabled before the request path is treated as ready. Requests use an acknowledged characteristic write when that mode is exposed, while still allowing the published write-without-response fallback.
 
 These facts are a protocol contract, not an authorization to contact a device. Any live connection or write requires a separate stage-specific owner approval naming the H10, command class, observer, and time window.
 
@@ -39,12 +40,13 @@ These facts are a protocol contract, not an authorization to contact a device. A
 
 There is no captured personal telemetry. Golden fixtures must contain synthetic exercise identifiers, synthetic HR/RR values, fixed non-personal timestamps, and no Bluetooth address, device name, pairing material, account identifier, location, or owner data. Raw live captures must not be added under this record.
 
-## Planned deterministic evidence
+## Deterministic evidence
 
 - Project-authored golden request/response fixtures for start, status, stop, list, HR samples, RR samples, and remove.
 - Negative fixtures for sequence mismatch, continuation mismatch, error status, invalid paths, oversized payloads, traversal limits, timeout, and cancellation.
 - Explicit expected bytes for each frame header and protobuf field used by the codec; decoder-only assertions are insufficient.
-- Focused protocol and Windows transport contract tests recorded in the story validation evidence.
+- Windows transport contract tests cover notification-mode selection, acknowledged-write preference, the readiness barrier, a response delivered during the write, setup-packet removal, multi-frame reassembly, bounded timeout, caller cancellation, malformed response rejection, and forced fresh-connection use after an incomplete exchange.
+- A standalone project-authored Windows GATT simulator publishes synthetic Heart Rate Service and Polar PFTP characteristics. Its state scenarios can delay or drop a response, disconnect, and expose a write-without-response-only MTU without retaining addresses or personal telemetry. A cross-codec lifecycle test drives this independent state machine through the production `PolarPftpClient`, covering status, start, stop, list, fetch, and remove. This is deterministic software evidence only.
 
 ## Current conclusion and unsupported claims
 

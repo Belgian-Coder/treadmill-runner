@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TreadmillRunner.Core\TreadmillRunner.Core.csproj" />
     <ProjectReference Include="..\..\src\TreadmillRunner.Protocols\TreadmillRunner.Protocols.csproj" />
+    <ProjectReference Include="..\..\tools\PolarH10Simulator\TreadmillRunner.PolarH10Simulator.csproj" />
   </ItemGroup>
 
 </Project>

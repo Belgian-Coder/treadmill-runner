@@ -15,4 +15,7 @@
     <Project Path="tests/TreadmillRunner.IntegrationTests/TreadmillRunner.IntegrationTests.csproj" />
     <Project Path="tests/TreadmillRunner.Protocols.Tests/TreadmillRunner.Protocols.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/PolarH10Simulator/TreadmillRunner.PolarH10Simulator.csproj" />
+  </Folder>
 </Solution>
