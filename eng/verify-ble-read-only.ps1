@@ -65,9 +65,9 @@ foreach ($call in $prohibitedPlatformCalls) {
 
 $commandOwner = [System.IO.Path]::GetFullPath(
     (Join-Path $infrastructure 'Bluetooth\WindowsBleCommandConnection.cs'))
-$polarPftpOwner = [System.IO.Path]::GetFullPath(
-    (Join-Path $infrastructure 'Bluetooth\WindowsPolarPftpConnection.cs'))
-$characteristicWriteOwners = @($commandOwner, $polarPftpOwner)
+$polarPftpTransportOwner = [System.IO.Path]::GetFullPath(
+    (Join-Path $infrastructure 'Bluetooth\PolarPftpGattTransport.cs'))
+$characteristicWriteOwners = @($commandOwner, $polarPftpTransportOwner)
 foreach ($writeCall in @('WriteValueAsync', 'WriteValueWithResultAsync')) {
     $writeMatches = @(Find-CSharpMatches -Files $infrastructureFiles -Pattern $writeCall -SimpleMatch)
     foreach ($match in @($writeMatches | ForEach-Object { $_.Path } | Sort-Object -Unique)) {
@@ -82,7 +82,7 @@ foreach ($writeCall in @('WriteValueAsync', 'WriteValueWithResultAsync')) {
 # characteristic-value writes remain limited to the two explicit owners above.
 $subscriptionOwner = [System.IO.Path]::GetFullPath(
     (Join-Path $infrastructure 'Bluetooth\WindowsBleReadOnlyConnection.cs'))
-$descriptorOwners = @($subscriptionOwner, $commandOwner, $polarPftpOwner)
+$descriptorOwners = @($subscriptionOwner, $commandOwner, $polarPftpTransportOwner)
 $descriptorMatches = @(Find-CSharpMatches `
     -Files $infrastructureFiles `
     -Pattern 'WriteClientCharacteristicConfigurationDescriptorAsync' `
