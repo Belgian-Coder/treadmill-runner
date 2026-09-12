@@ -134,7 +134,9 @@ public sealed class WindowsPolarPftpConnection : IPolarPftpConnection
       ? await BluetoothLEDevice.FromBluetoothAddressAsync(_bluetoothAddress, type).AsTask(cancellationToken).ConfigureAwait(false)
       : await BluetoothLEDevice.FromBluetoothAddressAsync(_bluetoothAddress).AsTask(cancellationToken).ConfigureAwait(false))
       ?? throw new InvalidOperationException("Windows could not open the Polar BLE device. Confirm that Windows already has access to the sensor.");
-    _session = await GattSession.FromDeviceIdAsync(_device.BluetoothDeviceId).AsTask(cancellationToken).ConfigureAwait(false);
+    _session = await WindowsGattSessionPolicy.TryOpenOptionalAsync(
+      token => GattSession.FromDeviceIdAsync(_device.BluetoothDeviceId).AsTask(token),
+      cancellationToken).ConfigureAwait(false);
     WindowsGattSessionPolicy.ApplyForActiveNotifications(_session);
     GattDeviceServicesResult services = await _device.GetGattServicesForUuidAsync(PolarPftpConstants.ServiceUuid, BluetoothCacheMode.Uncached)
       .AsTask(cancellationToken).ConfigureAwait(false);

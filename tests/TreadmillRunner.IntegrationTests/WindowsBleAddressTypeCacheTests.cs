@@ -1,5 +1,6 @@
 using TreadmillRunner.Infrastructure.Bluetooth;
 using Windows.Devices.Bluetooth;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -9,6 +10,28 @@ public sealed class WindowsBleAddressTypeCacheTests
   public void Active_notification_sessions_request_a_maintained_Windows_connection()
   {
     Assert.True(WindowsGattSessionPolicy.MaintainConnectionForActiveNotifications);
+  }
+
+  [Fact]
+  public async Task Optional_GATT_session_failure_does_not_block_service_hosted_GATT()
+  {
+    GattSession? session = await WindowsGattSessionPolicy.TryOpenOptionalAsync(
+      _ => Task.FromException<GattSession?>(new InvalidOperationException("WinRT session unavailable.")),
+      CancellationToken.None);
+
+    Assert.Null(session);
+  }
+
+  [Fact]
+  public async Task Optional_GATT_session_preserves_caller_cancellation()
+  {
+    using var cancellation = new CancellationTokenSource();
+    cancellation.Cancel();
+
+    await Assert.ThrowsAsync<OperationCanceledException>(() =>
+      WindowsGattSessionPolicy.TryOpenOptionalAsync(
+        token => Task.FromCanceled<GattSession?>(token),
+        cancellation.Token));
   }
 
   [Fact]
