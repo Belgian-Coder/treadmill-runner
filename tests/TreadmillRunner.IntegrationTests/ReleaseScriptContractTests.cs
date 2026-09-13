@@ -98,9 +98,15 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("sourceRevision -eq $head", release, StringComparison.Ordinal);
     Assert.Contains("FromHours(8)", release, StringComparison.Ordinal);
     Assert.Contains("browserAcceptanceRequired", release, StringComparison.Ordinal);
-    Assert.Contains("browserAccepted", release, StringComparison.Ordinal);
+    Assert.Contains("src/TreadmillRunner\\.Gateway/wwwroot/", release, StringComparison.Ordinal);
+    Assert.Contains("acceptanceLevel", release, StringComparison.Ordinal);
+    Assert.Contains("browserScope", release, StringComparison.Ordinal);
+    Assert.Contains("schemaVersion -eq 3", release, StringComparison.Ordinal);
     Assert.Contains("-NoBrowser:(-not $browserAcceptanceRequired)", release, StringComparison.Ordinal);
-    Assert.Contains("verify-change.ps1') -Configuration Release -Full", release, StringComparison.Ordinal);
+    Assert.Contains("verify-change.ps1') -Configuration Release -Release", release, StringComparison.Ordinal);
+    Assert.Contains("BudgetMinutes = 10", release, StringComparison.Ordinal);
+    Assert.Contains("Assert-ReleaseBudget -Stage 'tag creation'", release, StringComparison.Ordinal);
+    Assert.Contains("the verified draft remains resumable", release, StringComparison.Ordinal);
     Assert.DoesNotContain("playwright.ps1') -Configuration Release -TimeoutMinutes 7", release, StringComparison.Ordinal);
     Assert.Contains("Release validation changed tracked or untracked files", release, StringComparison.Ordinal);
     Assert.Contains("origin/main changed during release validation", release, StringComparison.Ordinal);
@@ -183,11 +189,37 @@ public sealed class ReleaseScriptContractTests
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "playwright.ps1"));
     int cleanup = script.IndexOf("& $wasmCleaner -Configuration $Configuration", StringComparison.Ordinal);
     int restore = script.IndexOf("dotnet restore $gatewayProject --locked-mode", StringComparison.Ordinal);
-    int publish = script.IndexOf("dotnet publish $gatewayProject", StringComparison.Ordinal);
+    int publishArguments = script.IndexOf("$publishArguments = @(", StringComparison.Ordinal);
+    int publish = script.IndexOf("& dotnet @publishArguments", StringComparison.Ordinal);
 
     Assert.True(cleanup >= 0, "The focused browser build must clean stale WebAssembly publish state.");
     Assert.True(restore > cleanup, "The Gateway graph must be restored after WebAssembly cleanup.");
-    Assert.True(publish > restore, "The no-restore Gateway publish must follow the post-clean restore.");
+    Assert.True(publishArguments > restore && publish > publishArguments,
+      "The no-restore Gateway publish must follow the post-clean restore.");
+  }
+
+  [Fact]
+  [Trait("Category", "ReleaseSmoke")]
+  public void Routine_release_acceptance_is_risk_selected_and_keeps_exhaustive_browser_coverage_explicit()
+  {
+    string verify = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "verify-change.ps1"));
+    string validate = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "validate.ps1"));
+    string browser = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "playwright.ps1"));
+
+    Assert.Contains("[switch] $Release", verify, StringComparison.Ordinal);
+    Assert.Contains("if ($Full) { 'exhaustive' } else { 'release' }", verify, StringComparison.Ordinal);
+    Assert.Contains("Category=Browser&Category=ReleaseSmoke", verify, StringComparison.Ordinal);
+    Assert.Contains("FullyQualifiedName~TreadmillRunner.Core.Tests", verify, StringComparison.Ordinal);
+    Assert.Contains("FullyQualifiedName~TreadmillRunner.Protocols.Tests", verify, StringComparison.Ordinal);
+    Assert.Contains("Category!=Browser&Category!=Soak", verify, StringComparison.Ordinal);
+    Assert.Contains("& $browserScript -Configuration $Configuration", verify, StringComparison.Ordinal);
+    Assert.Contains("-SkipNativeWeb", verify, StringComparison.Ordinal);
+    Assert.Contains("[string] $TestFilter", validate, StringComparison.Ordinal);
+    Assert.Contains("-Filter $TestFilter", validate, StringComparison.Ordinal);
+    Assert.Contains("[switch] $SkipNativeWeb", browser, StringComparison.Ordinal);
+    Assert.Contains("if ($SkipNativeWeb)", browser, StringComparison.Ordinal);
+    Assert.Contains("-p:WasmBuildNative=false", browser, StringComparison.Ordinal);
+    Assert.Contains("-p:InvariantGlobalization=false", browser, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -1210,6 +1242,14 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("Expand-VerifiedRepairSource", script, StringComparison.Ordinal);
     Assert.Contains("Repair-ProtectedInfrastructure", script, StringComparison.Ordinal);
     Assert.Contains("protected-infrastructure-repair", script, StringComparison.Ordinal);
+    Assert.Contains("[switch] $ForceDownload", script, StringComparison.Ordinal);
+    Assert.Contains("artifacts\\releases\\$ExpectedVersion", script, StringComparison.Ordinal);
+    Assert.Contains("if (-not $usedLocalAssets)", script, StringComparison.Ordinal);
+    Assert.Contains("gh release download", script, StringComparison.Ordinal);
+    Assert.Contains("every checksum remain authoritative", script, StringComparison.Ordinal);
+    Assert.Contains("$protectedInfrastructureCurrent", script, StringComparison.Ordinal);
+    Assert.Contains("(Get-Sha256Hex -Path $protectedHelper) -ceq $helperHash", script, StringComparison.Ordinal);
+    Assert.Contains("skipping service repair", script, StringComparison.Ordinal);
     Assert.Contains("-RepairUpdateInfrastructureOnly", script, StringComparison.Ordinal);
     Assert.Contains("Invoke-PendingActivationReconciliation", script, StringComparison.Ordinal);
     Assert.Contains("Invoke-StaleActivatingCoordinatorNormalization", script, StringComparison.Ordinal);
@@ -1292,6 +1332,7 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
   }
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public void Release_retention_is_terminal_only_and_fails_closed_on_ambiguous_paths()
   {
     string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
@@ -1327,6 +1368,7 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
   }
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public void Service_installer_supports_in_place_update_infrastructure_hardening()
   {
     string script = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-gateway-service.ps1"));

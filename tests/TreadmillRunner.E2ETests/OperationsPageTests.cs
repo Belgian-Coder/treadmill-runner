@@ -160,6 +160,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
 
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Operations_page_progresses_available_stage_and_two_step_activation()
   {
     await InstallAccessRoutesAsync();

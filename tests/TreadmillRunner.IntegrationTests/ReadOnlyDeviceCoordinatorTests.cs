@@ -439,6 +439,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Temporary_suspension_releases_the_heart_rate_connection_and_resume_restores_demand()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;

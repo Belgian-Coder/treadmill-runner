@@ -47,6 +47,7 @@ public sealed class GatewayHostTests(WebApplicationFactory<TreadmillRunner.Gatew
     Assert.Equal(expected, OperationalTelemetry.NormalizeRoute(new PathString(path)));
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Health_endpoints_are_healthy()
   {
     using var client = factory.CreateClient();

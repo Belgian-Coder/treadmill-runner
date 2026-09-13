@@ -11,6 +11,7 @@ param(
     [string] $ExpectedTreadmillModel = 'OMEGA Z',
     [string] $ExpectedTreadmillFirmware = 'V10.23.17',
     [string] $ExpectedHeartRateDisplayName = 'Polar heart-rate sensor',
+    [switch] $ForceDownload,
     [switch] $Activate,
     [ValidateSet('ACTIVATE')][string] $Confirmation,
     [switch] $DryRun
@@ -722,6 +723,7 @@ $gatewayUri = [Uri]$GatewayUrl
 if (-not $gatewayUri.IsLoopback -or $gatewayUri.Scheme -ne 'http') { throw 'GatewayUrl must be loopback HTTP.' }
 $resolvedInstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $resolvedDataRoot = [System.IO.Path]::GetFullPath($DataRoot)
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $workRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("TreadmillRunner.Deployment-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
 try {
@@ -746,8 +748,34 @@ try {
         throw 'The GitHub release asset set is not the exact signed release contract.'
     }
 
-    & gh release download $ExpectedRelease --repo $Repository --dir $workRoot
-    if ($LASTEXITCODE -ne 0) { throw 'The exact GitHub release assets could not be downloaded.' }
+    $localReleaseRoot = Join-Path $projectRoot "artifacts\releases\$ExpectedVersion"
+    $localSignerMetadata = Join-Path $projectRoot 'artifacts\release-signing\signer-metadata.json'
+    $usedLocalAssets = $false
+    if (-not $ForceDownload -and
+        (Test-Path -LiteralPath $localReleaseRoot -PathType Container) -and
+        (Test-Path -LiteralPath $localSignerMetadata -PathType Leaf)) {
+        $localSigner = Get-Content -LiteralPath $localSignerMetadata -Raw | ConvertFrom-Json
+        $localCertificate = [System.IO.Path]::GetFullPath([string]$localSigner.publicCertificatePath)
+        $localAssets = @{
+            $manifestName = Join-Path $localReleaseRoot "stable-feed\$manifestName"
+            $packageName = Join-Path $localReleaseRoot "stable-feed\$packageName"
+            $offlineName = Join-Path $localReleaseRoot "stable-feed\$offlineName"
+            $certificateName = $localCertificate
+            $installerName = Join-Path $localReleaseRoot $installerName
+            'SHA256SUMS.txt' = Join-Path $localReleaseRoot 'SHA256SUMS.txt'
+        }
+        if (@($expectedAssetNames | Where-Object { -not (Test-Path -LiteralPath $localAssets[$_] -PathType Leaf) }).Count -eq 0) {
+            foreach ($name in $expectedAssetNames) {
+                Copy-Item -LiteralPath $localAssets[$name] -Destination (Join-Path $workRoot $name) -ErrorAction Stop
+            }
+            $usedLocalAssets = $true
+            Write-Host "Reusing exact local assets for $ExpectedRelease; GitHub metadata and every checksum remain authoritative."
+        }
+    }
+    if (-not $usedLocalAssets) {
+        & gh release download $ExpectedRelease --repo $Repository --dir $workRoot
+        if ($LASTEXITCODE -ne 0) { throw 'The exact GitHub release assets could not be downloaded.' }
+    }
     foreach ($name in $expectedAssetNames) {
         if (-not (Test-Path -LiteralPath (Join-Path $workRoot $name) -PathType Leaf)) { throw "Downloaded release asset is missing: $name" }
     }
@@ -839,14 +867,26 @@ try {
         # four installer-required entries before feed publication or any update
         # API request.
         $currentRelease = Get-CurrentInstalledRelease
-        $repairRoot = Join-Path $workRoot 'protected-infrastructure-repair'
-        Repair-ProtectedInfrastructure `
-            -PackagePath $packagePath `
-            -CertificatePath $certificatePath `
-            -ExpectedHelperHash $helperHash `
-            -ExpectedGuardianHash $guardianHash `
-            -CurrentVersion ([string]$currentRelease.Version) `
-            -RepairRoot $repairRoot
+        $protectedHelper = Join-Path $resolvedInstallRoot 'updater\update-helper.ps1'
+        $protectedGuardian = Join-Path $resolvedInstallRoot 'updater\service-guardian.ps1'
+        $protectedInfrastructureCurrent =
+            (Test-Path -LiteralPath $protectedHelper -PathType Leaf) -and
+            (Test-Path -LiteralPath $protectedGuardian -PathType Leaf) -and
+            ((Get-Sha256Hex -Path $protectedHelper) -ceq $helperHash) -and
+            ((Get-Sha256Hex -Path $protectedGuardian) -ceq $guardianHash)
+        if ($protectedInfrastructureCurrent) {
+            Write-Host 'Protected updater scripts already match the verified package; skipping service repair.'
+        }
+        else {
+            $repairRoot = Join-Path $workRoot 'protected-infrastructure-repair'
+            Repair-ProtectedInfrastructure `
+                -PackagePath $packagePath `
+                -CertificatePath $certificatePath `
+                -ExpectedHelperHash $helperHash `
+                -ExpectedGuardianHash $guardianHash `
+                -CurrentVersion ([string]$currentRelease.Version) `
+                -RepairRoot $repairRoot
+        }
         Invoke-PendingActivationReconciliation `
             -ResolvedInstallRoot $resolvedInstallRoot `
             -ResolvedDataRoot $resolvedDataRoot

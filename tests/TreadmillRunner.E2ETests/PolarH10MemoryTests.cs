@@ -8,6 +8,7 @@ public sealed class PolarH10MemoryTests(GatewayFixture gateway) : PageTest, ICla
 {
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Per_run_h10_backup_is_available_but_unchecked_by_default()
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();

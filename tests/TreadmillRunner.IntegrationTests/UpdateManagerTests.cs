@@ -35,6 +35,7 @@ public sealed class UpdateManagerTests : IDisposable
   }
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Signed_release_checks_and_stages_to_verified_version_directory()
   {
     string feed = Path.Combine(root, "feed");

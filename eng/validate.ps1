@@ -3,7 +3,9 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
     [switch] $IncludeConnectIq,
-    [switch] $SkipNativeWeb
+    [switch] $SkipNativeWeb,
+    [ValidateNotNullOrEmpty()]
+    [string] $TestFilter = 'Category!=Browser&Category!=Soak'
 )
 
 Set-StrictMode -Version Latest
@@ -31,7 +33,7 @@ try {
     }
     & (Join-Path $PSScriptRoot 'verify-ble-read-only.ps1')
     & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration -SkipNativeWeb:$SkipNativeWeb
-    & (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration
+    & (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration -Filter $TestFilter
 
     Write-Host 'TreadmillRunner deterministic validation passed.'
 }

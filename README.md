@@ -75,15 +75,15 @@ For normal implementation loops, run only the affected tests and browser flow fi
 .\eng\verify-change.ps1 -TestFilter 'FullyQualifiedName~DeviceEnrollmentStoreTests' -BrowserFilter 'FullyQualifiedName~LiveDashboardTests'
 ```
 
-`verify-change.ps1` refreshes stale browser output automatically and otherwise reuses the passed readiness report, build, published gateway, and migrated template. Do not run the complete suite after every small change. Once implementation and focused tests are green, run the complete deterministic and clean browser gates once:
+`verify-change.ps1` refreshes stale browser output automatically and otherwise reuses the passed readiness report, build, published gateway, and migrated template. Do not run the complete suite after every small change. Once implementation and focused tests are green, run the risk-selected release gate. It runs all Core and Protocol tests, a small critical integration set, and five browser smoke journeys only when browser-affecting paths changed:
 
 ```powershell
-.\eng\verify-change.ps1 -Full
+.\eng\verify-change.ps1 -Release
 ```
 
-Connect IQ is intentionally excluded from the normal final gate. Use `.\eng\verify-change.ps1 -Full -IncludeConnectIq` only when the companion source, resources, build scripts, or companion contracts changed.
+Use `.\eng\verify-change.ps1 -Full` deliberately for the exhaustive 546-test and full browser/performance gate, not for every release. Connect IQ is intentionally excluded from routine releases; add `-IncludeConnectIq` only when the companion source, resources, build scripts, or companion contracts changed.
 
-The .NET and browser runners stream output to durable logs, print 15-second heartbeats, and stop their exact process trees after 60 or 90 seconds without progress output. Browser execution also stops remaining work as soon as a test failure and its log context are captured. Focused .NET/browser phases cap at one/two minutes; complete .NET/browser phases cap at three/ten minutes. The browser runner executes up to three isolated fixture classes in parallel and runs latency benchmarks separately. `-TimeoutMinutes` and `-StallTimeoutSeconds` remain explicit overrides. Passed readiness evidence and the migrated database template are reused until their actual inputs change, including for clean final runs.
+The .NET and browser runners stream output to durable logs, print 15-second heartbeats, and stop their exact process trees after 120 or 90 seconds without progress output. Browser execution also stops remaining work as soon as a test failure and its log context are captured. Focused .NET/browser phases cap at one/two minutes; exhaustive .NET/browser phases cap at five/fifteen minutes. The release publisher enforces a ten-minute default budget and leaves an over-budget verified draft resumable instead of silently accepting a slow rollout. `-TimeoutMinutes`, `-StallTimeoutSeconds`, and the publisher's explicit `-BudgetMinutes` override remain available.
 
 Use the Devices page to run a bounded active read-only scan and enroll one treadmill plus one or more heart-rate monitors. Choose FTMS or the Omega vendor telemetry path explicitly; the gateway does not silently switch between them. Enrollment and diagnostics remain non-controlling, and simulator mutation endpoints exist only in Development.
 

@@ -65,6 +65,7 @@ public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, ICl
 
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Mobile_header_disclosures_close_outside_on_escape_and_after_navigation()
   {
     await Page.SetViewportSizeAsync(390, 844);

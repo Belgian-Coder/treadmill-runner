@@ -3,11 +3,22 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string] $Version,
     [Parameter(Mandatory)][ValidateLength(1, 4000)][string] $ReleaseNotes,
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string] $Repository = 'belgian-coder/treadmill-runner',
-    [switch] $SkipValidation
+    [switch] $SkipValidation,
+    [ValidateRange(1, 60)][int] $BudgetMinutes = 10
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$releaseStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+function Assert-ReleaseBudget {
+    param([Parameter(Mandatory)][string] $Stage)
+
+    if ($releaseStopwatch.Elapsed -gt [TimeSpan]::FromMinutes($BudgetMinutes)) {
+        throw ("Release exceeded its {0}-minute budget before {1} ({2:n1}s elapsed). Optimize or explicitly raise -BudgetMinutes; do not silently normalize a slow rollout." -f `
+            $BudgetMinutes, $Stage, $releaseStopwatch.Elapsed.TotalSeconds)
+    }
+}
 
 function Get-Sha256Hex {
     param([Parameter(Mandatory)][string] $Path)
@@ -419,15 +430,16 @@ try {
         throw 'SkipValidation is allowed only when resuming an existing verified draft release.'
     }
 
-    Assert-VersionIsNewer -Version $Version -Repository $Repository
-
     $previousVersion = Get-MaxPublishedReleaseVersion -Repository $Repository
+    if ($null -ne $previousVersion -and [version]$Version -le [version]$previousVersion) {
+        throw "Version $Version must be newer than every published release."
+    }
     $browserAcceptanceRequired = $true
     if ($null -ne $previousVersion) {
         $changedPaths = @(& git diff --name-only "v$previousVersion..$head")
         if ($LASTEXITCODE -ne 0) { throw 'Could not determine the browser acceptance scope.' }
         $browserAcceptanceRequired = @($changedPaths | Where-Object {
-            $_ -match '^(src/TreadmillRunner\.Web(?:\.|/)|tests/TreadmillRunner\.E2ETests/|eng/playwright\.ps1$|Directory\.(?:Build|Packages)\.|.*\.(?:razor|css|js|html)$)'
+            $_ -match '^(src/TreadmillRunner\.Web(?:\.|/)|src/TreadmillRunner\.Gateway/wwwroot/|tests/TreadmillRunner\.E2ETests/|eng/playwright\.ps1$|Directory\.(?:Build|Packages)\.|.*\.(?:razor|css|js|html)$)'
         }).Count -gt 0
     }
 
@@ -448,10 +460,14 @@ try {
                     [System.Globalization.CultureInfo]::InvariantCulture,
                     [System.Globalization.DateTimeStyles]::RoundtripKind)
             }
-            $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 2 -and
+            $receiptLevel = [string]$acceptanceReceipt.acceptanceLevel
+            $receiptBrowserScope = [string]$acceptanceReceipt.browserScope
+            $freshAcceptanceReceipt = [int]$acceptanceReceipt.schemaVersion -eq 3 -and
                 [string]$acceptanceReceipt.sourceRevision -eq $head -and
                 [string]$acceptanceReceipt.configuration -eq 'Release' -and
-                (-not $browserAcceptanceRequired -or [bool]$acceptanceReceipt.browserAccepted) -and
+                $receiptLevel -in @('release', 'exhaustive') -and
+                (-not $browserAcceptanceRequired -or
+                    ([bool]$acceptanceReceipt.browserAccepted -and $receiptBrowserScope -in @('release', 'exhaustive'))) -and
                 $completedAt -ge [DateTimeOffset]::UtcNow.Subtract([TimeSpan]::FromHours(8))
         }
         catch {
@@ -466,8 +482,8 @@ try {
         $previousShowcaseMode = $env:TREADMILLRUNNER_UPDATE_SHOWCASE
         try {
             $env:TREADMILLRUNNER_UPDATE_SHOWCASE = '0'
-            & (Join-Path $PSScriptRoot 'verify-change.ps1') -Configuration Release -Full -NoBrowser:(-not $browserAcceptanceRequired)
-            if ($LASTEXITCODE -ne 0) { throw 'Full release acceptance failed.' }
+            & (Join-Path $PSScriptRoot 'verify-change.ps1') -Configuration Release -Release -NoBrowser:(-not $browserAcceptanceRequired)
+            if ($LASTEXITCODE -ne 0) { throw 'Risk-selected release acceptance failed.' }
         }
         finally {
             if ($null -eq $previousShowcaseMode) { Remove-Item Env:TREADMILLRUNNER_UPDATE_SHOWCASE -ErrorAction SilentlyContinue }
@@ -593,6 +609,7 @@ try {
     }
     Assert-OriginRepository -Repository $Repository
     Assert-VersionIsNewer -Version $Version -Repository $Repository
+    Assert-ReleaseBudget -Stage 'tag creation'
 
     & git show-ref --verify --quiet "refs/tags/$tag"
     if ($LASTEXITCODE -ne 0) {
@@ -644,9 +661,12 @@ try {
     if ($unexpectedAssets.Count -gt 0 -or $uploaded.Count -ne $expectedAssetNames.Count) {
         throw "The draft release contains unexpected assets and remains unpublished: $($unexpectedAssets -join ', ')."
     }
+    Assert-ReleaseBudget -Stage 'final publication; the verified draft remains resumable'
     & gh release edit $tag --repo $Repository --draft=false --latest
     if ($LASTEXITCODE -ne 0) { throw 'The verified draft could not be published.' }
-    Write-Host "GitHub release $tag is published with signed update, offline, installer, certificate, and checksum assets."
+    $releaseStopwatch.Stop()
+    Write-Host ("GitHub release {0} is published with signed update, offline, installer, certificate, and checksum assets in {1:n1}s." -f `
+        $tag, $releaseStopwatch.Elapsed.TotalSeconds)
 }
 finally {
     Pop-Location

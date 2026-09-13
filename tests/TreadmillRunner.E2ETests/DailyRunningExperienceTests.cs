@@ -92,6 +92,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
 
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Manual_run_is_created_once_and_selected_from_the_run_picker()
   {
     SeededPlan plan = await SeedPlanAsync("manual-picker", heartRateTarget: false);

@@ -189,6 +189,7 @@ public sealed class PwaShellTests(GatewayFixture gateway) : PageTest, IClassFixt
 
   [Fact]
   [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Offline_worker_shows_only_safety_guidance_and_recovers_to_the_live_application()
   {
     await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });

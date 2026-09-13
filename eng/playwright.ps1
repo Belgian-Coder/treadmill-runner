@@ -6,6 +6,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $Filter = 'Category=Browser',
     [switch] $ReuseBuild,
+    [switch] $SkipNativeWeb,
     [ValidateRange(0, 15)]
     [int] $TimeoutMinutes = 0,
     [ValidateRange(30, 300)]
@@ -227,7 +228,17 @@ try {
         if (Test-Path -LiteralPath $resolvedArtifacts) {
             Remove-GeneratedDirectory -Path $resolvedArtifacts
         }
-        & dotnet publish $gatewayProject --configuration $Configuration --no-restore --disable-build-servers --output $resolvedArtifacts -m:1
+        $publishArguments = @(
+            'publish', $gatewayProject,
+            '--configuration', $Configuration,
+            '--no-restore', '--disable-build-servers',
+            '--output', $resolvedArtifacts,
+            '-m:1'
+        )
+        if ($SkipNativeWeb) {
+            $publishArguments += @('-p:WasmBuildNative=false', '-p:InvariantGlobalization=false')
+        }
+        & dotnet @publishArguments
         if ($LASTEXITCODE -ne 0) { throw 'Published E2E gateway build failed.' }
         [System.IO.File]::WriteAllText(
             $publishStamp,

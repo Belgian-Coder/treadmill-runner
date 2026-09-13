@@ -301,6 +301,7 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  [Trait("Category", "ReleaseSmoke")]
   public async Task Stale_success_transitions_cannot_overwrite_a_concurrent_discard()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
