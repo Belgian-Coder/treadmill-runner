@@ -110,11 +110,14 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     public Task<IReadOnlyList<PolarH10LocalRecording>> ListLocalAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task MarkRecordingAsync(Guid id, DateTimeOffset confirmedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task QueueStopByIdAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<bool> QueueStopByIdIfVersionAsync(Guid id, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task StoreDownloadedAsync(Guid id, PolarH10MemoryRecord recording, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<PolarH10RecordingOutcome> MergeDownloadedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task MarkRemoteRemovedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<bool> MarkRemoteRemovedIfVersionAsync(Guid id, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task CompleteDiscardCleanupAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task RetryAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task MarkOutcomeAsync(Guid id, PolarH10RecordingOutcome outcome, string? error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<bool> MarkOutcomeIfVersionAsync(Guid id, int expectedVersion, int attemptCount, PolarH10RecordingOutcome outcome, string? error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
   }
 }

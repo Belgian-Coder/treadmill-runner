@@ -439,6 +439,93 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Temporary_suspension_releases_the_heart_rate_connection_and_resume_restores_demand()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-PFTP-LEASE", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.True(await coordinator.SuspendConnectionAsync(heartRate.Id));
+      Assert.Equal(DeviceConnectionState.Disconnected, coordinator.Current.HeartRate.State);
+      int connectionsWhileSuspended = transport.ConnectionDeviceIds.Count;
+      await coordinator.RefreshAsync(timeout.Token);
+      Assert.Equal(connectionsWhileSuspended, transport.ConnectionDeviceIds.Count);
+
+      await coordinator.ResumeConnectionAsync(heartRate.Id, timeout.Token);
+      while (transport.ConnectionDeviceIds.Count == connectionsWhileSuspended ||
+             coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Suspension_cleanup_ignores_caller_cancellation_and_cannot_restart_after_shutdown()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-PFTP-CLEANUP", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.True(await coordinator.SuspendConnectionAsync(heartRate.Id));
+      using var cancelled = new CancellationTokenSource();
+      cancelled.Cancel();
+      await coordinator.ResumeConnectionAsync(heartRate.Id, cancelled.Token);
+      int connectionsBeforeRefresh = transport.ConnectionDeviceIds.Count;
+      await coordinator.RefreshAsync(timeout.Token);
+      while (transport.ConnectionDeviceIds.Count == connectionsBeforeRefresh ||
+             coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      await coordinator.StopAsync(CancellationToken.None);
+      int connectionsAfterStop = transport.ConnectionDeviceIds.Count;
+      await coordinator.ResumeConnectionAsync(heartRate.Id, CancellationToken.None);
+      await coordinator.RefreshAsync(CancellationToken.None);
+      Assert.Equal(connectionsAfterStop, transport.ConnectionDeviceIds.Count);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Short_and_sparse_flaps_escalate_but_continuous_stability_resets_backoff_after_delayed_failure_detection()
   {
     DateTimeOffset began = DateTimeOffset.UtcNow;

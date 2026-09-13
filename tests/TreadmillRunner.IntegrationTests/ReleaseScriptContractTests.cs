@@ -143,12 +143,12 @@ public sealed class ReleaseScriptContractTests
   {
     string workflows = Path.Combine(ProjectRoot, ".github", "workflows");
     string dependabot = Path.Combine(ProjectRoot, ".github", "dependabot.yml");
-    string instructions = File.ReadAllText(Path.Combine(ProjectRoot, "AGENTS.md"));
+    string release = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "create-github-release.ps1"));
 
     Assert.False(Directory.Exists(workflows) && Directory.EnumerateFiles(workflows, "*", SearchOption.AllDirectories).Any());
     Assert.False(File.Exists(dependabot));
-    Assert.Contains("GitHub Actions is disabled", instructions, StringComparison.Ordinal);
-    Assert.Contains("all validation, building, signing, and packaging runs on the release workstation", instructions, StringComparison.Ordinal);
+    Assert.Contains("publish-release.ps1", release, StringComparison.Ordinal);
+    Assert.Contains("gh release create", release, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -1289,6 +1289,41 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("The update maintenance lock could not be acquired", manager, StringComparison.Ordinal);
     Assert.Contains("The signed update task was queued", manager, StringComparison.Ordinal);
     Assert.Contains("if (!activationAccepted) await live.CancelMaintenanceAsync", endpoints, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Release_retention_is_terminal_only_and_fails_closed_on_ambiguous_paths()
+  {
+    string helper = File.ReadAllText(Path.Combine(ProjectRoot, "src", "TreadmillRunner.Gateway", "Updates", "update-helper.ps1"));
+    string installer = File.ReadAllText(Path.Combine(ProjectRoot, "eng", "install-gateway-service.ps1"));
+
+    foreach (string script in new[] { helper, installer })
+    {
+      Assert.Contains("Remove-Superseded", script, StringComparison.Ordinal);
+      Assert.Contains("ReparsePoint", script, StringComparison.Ordinal);
+      Assert.Contains("non-version artifact", script, StringComparison.Ordinal);
+      Assert.Contains("TreadmillRunner.Gateway.exe", script, StringComparison.Ordinal);
+      Assert.Contains("current service release", script, StringComparison.OrdinalIgnoreCase);
+      Assert.Contains("current service release as superseded", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    int helperActivation = helper.IndexOf(
+      "Write-JournalPayload -Path $JournalPath -TransactionId $TransactionId -Version $ExpectedVersion -State 'Activated'",
+      StringComparison.Ordinal);
+    int helperCompletion = helper.IndexOf("Complete-ActivatedParentCleanup", helperActivation, StringComparison.Ordinal);
+    int helperCleanupFunction = helper.IndexOf("function Complete-ActivatedParentCleanup", StringComparison.Ordinal);
+    int helperRetention = helper.IndexOf("Remove-SupersededReleases -InstallRoot", StringComparison.Ordinal);
+    Assert.True(helperActivation >= 0 && helperCompletion > helperActivation &&
+      helperCleanupFunction >= 0 && helperRetention > helperCleanupFunction,
+      "Protected updater retention must be reachable only after the authoritative Activated journal write.");
+
+    int installerCommit = installer.LastIndexOf("Write-InstallerState -Phase 'Committed'", StringComparison.Ordinal);
+    int migrationCommit = installer.LastIndexOf("Commit-InstallerMigrationBackup", StringComparison.Ordinal);
+    int postCommit = installer.LastIndexOf("Set-PostCommitOperationalInfrastructure", StringComparison.Ordinal);
+    int installerRetention = installer.LastIndexOf("Remove-SupersededInstallerReleases", StringComparison.Ordinal);
+    Assert.True(installerCommit >= 0 && migrationCommit > installerCommit && postCommit > migrationCommit &&
+      installerRetention > postCommit,
+      "Installer retention must run only after the durable commit and post-commit infrastructure succeed.");
   }
 
   [Fact]

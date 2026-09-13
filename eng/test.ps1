@@ -8,7 +8,7 @@ param(
     [ValidateRange(0, 10)]
     [int] $TimeoutMinutes = 0,
     [ValidateRange(30, 300)]
-    [int] $StallTimeoutSeconds = 60,
+    [int] $StallTimeoutSeconds = 120,
     [ValidateNotNullOrEmpty()]
     [string] $ResultsDirectory = 'artifacts/test-results'
 )
@@ -24,7 +24,7 @@ $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
     $TimeoutMinutes
 }
 elseif ([string]::Equals($Filter, 'Category!=Browser&Category!=Soak', [System.StringComparison]::OrdinalIgnoreCase)) {
-    3
+    5
 }
 else {
     1

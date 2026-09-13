@@ -25,7 +25,6 @@ TR-031 keeps household improvements local: profile-owned display/cue/goal settin
 - Read-only Windows BLE operator procedure: [`docs/project/windows-ble-operations.md`](docs/project/windows-ble-operations.md)
 - Polar H10 memory protocol provenance: [`docs/project/protocol-evidence/polar-h10/2026-09-10-pftp-memory-provenance.md`](docs/project/protocol-evidence/polar-h10/2026-09-10-pftp-memory-provenance.md)
 - Append-only AI harness findings: [`docs/project/ai-harness-findings.md`](docs/project/ai-harness-findings.md)
-- Project task responsibilities and ordered Codex/Copilot/Claude model fallbacks: [`.agents/orchestration.json`](.agents/orchestration.json); portable rules: [`orchestration.md`](orchestration.md)
 - Planning data model and import flow: [`docs/project/planning-data.md`](docs/project/planning-data.md)
 - Authoritative simulated runner flow and recovery: [`docs/project/live-session.md`](docs/project/live-session.md)
 - End-user Windows installation and updates: [`docs/installation.md`](docs/installation.md)

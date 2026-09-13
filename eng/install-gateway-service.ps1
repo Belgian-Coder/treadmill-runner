@@ -218,9 +218,127 @@ function Restore-InstallerScheduledTask {
 
 function Get-InstallerServiceExecutablePath {
     param([Parameter(Mandatory)][string]$ImagePath)
-    if ($ImagePath -match '^\s*"([^"]+)"\s*$') { return [System.IO.Path]::GetFullPath($Matches[1]) }
-    if ($ImagePath -match '^\s*(\S+)\s*$') { return [System.IO.Path]::GetFullPath($Matches[1]) }
-    throw 'The gateway service image path is not an exact executable path.'
+    $candidate = $ImagePath.Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) { throw 'The gateway service image path is empty.' }
+    $executable = if ($candidate -match '^"([^"]+)"$') {
+        $Matches[1]
+    }
+    elseif ($candidate -match '^[^"]+\.exe$') {
+        $candidate
+    }
+    else {
+        throw 'The gateway service image path is not an exact executable path.'
+    }
+    $canonical = [System.IO.Path]::GetFullPath($executable)
+    if (-not $executable.Equals($canonical, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The gateway service image path is not canonical.'
+    }
+    return $canonical
+}
+
+function Assert-InstallerUnderRoot {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Root)
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $resolvedRoot = [System.IO.Path]::GetFullPath($Root)
+    $prefix = $resolvedRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'An installer release path escapes its configured root.'
+    }
+    return $resolvedPath
+}
+
+function Assert-InstallerNoReparsePoint {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$StopAt)
+    $cursor = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetFullPath($StopAt)
+    while ($cursor.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Reparse points are not allowed in installer release paths.'
+            }
+        }
+        if ($cursor -eq $root) { break }
+        $cursor = Split-Path -Parent $cursor
+    }
+}
+
+function Remove-SupersededInstallerReleases {
+    param(
+        [Parameter(Mandatory)][string]$InstallRoot,
+        [Parameter(Mandatory)][string]$ReleaseRoot,
+        [Parameter(Mandatory)][string]$ExpectedVersion
+    )
+    if ($ExpectedVersion -notmatch '^\d+\.\d+\.\d+$') {
+        throw 'The active release version is invalid for installer retention cleanup.'
+    }
+    $resolvedInstallRootForRetention = [System.IO.Path]::GetFullPath($InstallRoot)
+    $resolvedReleaseRootForRetention = Assert-InstallerUnderRoot -Path $ReleaseRoot -Root $resolvedInstallRootForRetention
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals(
+            $resolvedReleaseRootForRetention,
+            [System.IO.Path]::GetFullPath((Join-Path $resolvedInstallRootForRetention 'releases')))) {
+        throw 'The installer release root is outside its fixed install path contract.'
+    }
+    Assert-InstallerNoReparsePoint -Path $resolvedReleaseRootForRetention -StopAt $resolvedInstallRootForRetention
+    if (-not (Test-Path -LiteralPath $resolvedReleaseRootForRetention -PathType Container)) {
+        throw 'The installer release root is missing for retention cleanup.'
+    }
+
+    $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop
+    if ($null -eq $service) { throw 'The gateway service could not be inspected for installer retention cleanup.' }
+    $currentExecutable = Get-InstallerServiceExecutablePath -ImagePath ([string]$service.PathName)
+    if (-not (Test-Path -LiteralPath $currentExecutable -PathType Leaf)) {
+        throw 'The current gateway service executable is missing for installer retention cleanup.'
+    }
+    Assert-InstallerNoReparsePoint -Path $currentExecutable -StopAt $resolvedInstallRootForRetention
+    $currentExecutable = Assert-InstallerUnderRoot -Path $currentExecutable -Root $resolvedReleaseRootForRetention
+    if ([System.IO.Path]::GetFileName($currentExecutable) -ne 'TreadmillRunner.Gateway.exe') {
+        throw 'The current gateway service executable is outside the immutable release contract.'
+    }
+    $currentReleasePath = Split-Path -Parent $currentExecutable
+    if ((Split-Path -Leaf $currentReleasePath) -ne $ExpectedVersion) {
+        throw 'The current gateway service release does not match the committed version.'
+    }
+    $expectedExecutable = [System.IO.Path]::GetFullPath((Join-Path (Join-Path $resolvedReleaseRootForRetention $ExpectedVersion) 'TreadmillRunner.Gateway.exe'))
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($currentExecutable, $expectedExecutable)) {
+        throw 'The current gateway service executable does not resolve to the committed release.'
+    }
+
+    # Validate the complete retention set before deleting any superseded
+    # directory. Unexpected files/directories and reparse points are ambiguous;
+    # fail closed while leaving rollback and release evidence intact.
+    $entries = @(Get-ChildItem -LiteralPath $resolvedReleaseRootForRetention -Force -ErrorAction Stop)
+    $superseded = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in $entries) {
+        $entryPath = Assert-InstallerUnderRoot -Path ([string]$entry.FullName) -Root $resolvedReleaseRootForRetention
+        Assert-InstallerNoReparsePoint -Path $entryPath -StopAt $resolvedInstallRootForRetention
+        if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "The installer release root contains a reparse point: $entryPath"
+        }
+        if (-not $entry.PSIsContainer -or $entry.Name -notmatch '^\d+\.\d+\.\d+$') {
+            throw "The installer release root contains a non-version artifact: $entryPath"
+        }
+        [void][Version]::Parse($entry.Name)
+        foreach ($nested in @(Get-ChildItem -LiteralPath $entryPath -Force -Recurse -ErrorAction Stop)) {
+            Assert-InstallerNoReparsePoint -Path ([string]$nested.FullName) -StopAt $resolvedInstallRootForRetention
+            if (($nested.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "The installer release contains a reparse point: $($nested.FullName)"
+            }
+        }
+        if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($entryPath, $currentReleasePath)) {
+            [void]$superseded.Add($entryPath)
+        }
+    }
+
+    foreach ($releasePath in $superseded) {
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($releasePath, $currentReleasePath)) {
+            throw 'Installer retention cleanup resolved the current service release as superseded.'
+        }
+        Remove-Item -LiteralPath $releasePath -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $releasePath) {
+            throw "The installer superseded release could not be removed: $releasePath"
+        }
+    }
 }
 
 function Restore-InstallerServiceImageSafely {
@@ -1235,6 +1353,7 @@ do {
             $installationCommitted = $true
             Commit-InstallerMigrationBackup
             Set-PostCommitOperationalInfrastructure
+            Remove-SupersededInstallerReleases -InstallRoot $resolvedInstallRoot -ReleaseRoot $releaseRoot -ExpectedVersion $Version
             Write-Host "TreadmillRunnerGateway $Version is ready at http://127.0.0.1:5180"
             return
         }

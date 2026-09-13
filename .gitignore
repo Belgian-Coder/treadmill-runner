@@ -96,31 +96,4 @@ screenshots/**/*.webp
 !screenshots/showcase/**/*.jpeg
 !screenshots/showcase/**/*.webp
 
-# Workflow runs contain machine-local evidence and owner conversation context.
-automations/**/runs/
-
-# Harness local working data
 external references/
-automations/reference-refresh/References/repositories/
-automations/**/Scripts/output/
-.agents/harness-install.json
-.agents/harness-install-plan.json
-.agents/harness-install-plan.md
-.agents/harness-update/
-
-# Local AI helper payloads. Keep config, docs, licenses, and manifests visible;
-# reproduce local downloads, cache files, model binaries, and runtimes with
-# local-ai bootstrap/download.
-.agents/local-ai/downloads/
-.agents/local-ai/cache/
-.agents/local-ai/bundle/models/*.gguf
-.agents/local-ai/bundle/runtimes/
-.agents/local-ai/secrets.local.json
-.agents/local-ai/local.settings.json
-
-# Repo-local portable tool downloads. Keep manifests tracked; reproduce binaries
-# with setup --install-rg-portable or an approved portable Python runtime source.
-.agents/tools/cache/
-
-# Repo-local Python dependency bootstrap targets for optional document helpers.
-.agents/.deps/

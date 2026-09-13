@@ -33,6 +33,10 @@ public interface IReadOnlyDeviceCoordinator
     Task.FromResult(false);
   Task<bool> DisconnectAsync(Guid enrollmentId, CancellationToken cancellationToken = default) =>
     Task.FromResult(false);
+  Task<bool> SuspendConnectionAsync(Guid enrollmentId, CancellationToken cancellationToken = default) =>
+    Task.FromResult(false);
+  Task ResumeConnectionAsync(Guid enrollmentId, CancellationToken cancellationToken = default) =>
+    Task.CompletedTask;
 }
 
 public sealed class ReadOnlyDeviceCoordinator(
@@ -65,6 +69,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   private readonly Dictionary<Guid, ReliabilityIncidentRuntime> _reliabilityIncidents = [];
   private readonly HashSet<Guid> _manualConnectionDemandIds = [];
   private readonly HashSet<Guid> _explicitlyDisconnectedEnrollmentIds = [];
+  private readonly HashSet<Guid> _temporarilySuspendedEnrollmentIds = [];
   private readonly BleReconnectPolicy _reconnectPolicy = new();
   private readonly Channel<ReliabilityWriteEnvelope> _reliabilityWrites = Channel.CreateUnbounded<ReliabilityWriteEnvelope>(
     new UnboundedChannelOptions
@@ -87,6 +92,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   private RunConnectionDemand? _runConnectionDemand;
   private DateTimeOffset? _lastReliabilityPruneAtUtc;
   private DateTimeOffset? _lastReliabilityPressureLogAtUtc;
+  private bool _isStopping;
   private long _reliabilityDroppedCount;
   private long _reliabilityLaggedCount;
   private DeviceTelemetrySnapshot _snapshot = EmptySnapshot(timeProvider.GetUtcNow());
@@ -272,6 +278,60 @@ public sealed class ReadOnlyDeviceCoordinator(
     return true;
   }
 
+  public async Task<bool> SuspendConnectionAsync(
+    Guid enrollmentId,
+    CancellationToken cancellationToken = default)
+  {
+    if (enrollmentId == Guid.Empty) return false;
+    cancellationToken.ThrowIfCancellationRequested();
+    if (!await EnrollmentExistsAsync(enrollmentId, cancellationToken)) return false;
+    DeviceWorker? worker = null;
+    await _reconcileGate.WaitAsync(cancellationToken);
+    try
+    {
+      lock (_sync)
+      {
+        if (_isStopping) return false;
+        _temporarilySuspendedEnrollmentIds.Add(enrollmentId);
+        if (_workers.Remove(enrollmentId, out DeviceWorker? existing))
+        {
+          worker = existing;
+          existing.Cancellation.Cancel();
+        }
+      }
+
+      if (worker is not null)
+      {
+        await worker.Task;
+        worker.Cancellation.Dispose();
+      }
+    }
+    finally
+    {
+      _reconcileGate.Release();
+    }
+    return true;
+  }
+
+  public async Task ResumeConnectionAsync(
+    Guid enrollmentId,
+    CancellationToken cancellationToken = default)
+  {
+    if (enrollmentId == Guid.Empty) return;
+    lock (_sync)
+    {
+      _temporarilySuspendedEnrollmentIds.Remove(enrollmentId);
+      if (_isStopping || cancellationToken.IsCancellationRequested) return;
+    }
+    await ReconcileWorkersAsync(cancellationToken);
+  }
+
+  public override Task StopAsync(CancellationToken cancellationToken)
+  {
+    lock (_sync) _isStopping = true;
+    return base.StopAsync(cancellationToken);
+  }
+
   private async Task<bool> EnrollmentExistsAsync(Guid enrollmentId, CancellationToken cancellationToken)
   {
     using IServiceScope scope = scopeFactory.CreateScope();
@@ -326,9 +386,17 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   private async Task ReconcileWorkersAsync(CancellationToken stoppingToken)
   {
+    lock (_sync)
+    {
+      if (_isStopping) return;
+    }
     await _reconcileGate.WaitAsync(stoppingToken);
     try
     {
+      lock (_sync)
+      {
+        if (_isStopping) return;
+      }
       IReadOnlyList<VersionedDeviceEnrollment> enrollments;
       IReadOnlyList<HeartRateDeviceAssignment> assignments;
       try
@@ -348,6 +416,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       RunConnectionDemand? runDemand;
       HashSet<Guid> manuallyDemandedIds;
       HashSet<Guid> explicitlyDisconnectedIds;
+      HashSet<Guid> temporarilySuspendedIds;
       lock (_sync)
       {
         if (_runConnectionDemand?.ExpiresAtUtc is { } expiresAt && expiresAt <= now)
@@ -355,6 +424,7 @@ public sealed class ReadOnlyDeviceCoordinator(
         runDemand = _runConnectionDemand;
         manuallyDemandedIds = _manualConnectionDemandIds.ToHashSet();
         explicitlyDisconnectedIds = _explicitlyDisconnectedEnrollmentIds.ToHashSet();
+        temporarilySuspendedIds = _temporarilySuspendedEnrollmentIds.ToHashSet();
       }
 
       var desiredIds = new HashSet<Guid>(manuallyDemandedIds);
@@ -401,6 +471,7 @@ public sealed class ReadOnlyDeviceCoordinator(
       }
 
       desiredIds.ExceptWith(explicitlyDisconnectedIds);
+      desiredIds.ExceptWith(temporarilySuspendedIds);
       lock (_sync)
       {
         foreach ((Guid enrollmentId, HeartRateRuntime runtime) in _heartRateSources.ToArray())
@@ -462,6 +533,7 @@ public sealed class ReadOnlyDeviceCoordinator(
 
       lock (_sync)
       {
+        if (_isStopping) return;
         foreach (VersionedDeviceEnrollment enrollment in added)
         {
           if (_workers.ContainsKey(enrollment.Enrollment.Id)) continue;

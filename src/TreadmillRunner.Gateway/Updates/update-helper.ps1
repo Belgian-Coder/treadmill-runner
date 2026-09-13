@@ -617,7 +617,10 @@ function Complete-ActivatedParentCleanup {
     [Parameter(Mandatory)][string]$ExpectedVersion,
     [Parameter(Mandatory)][string]$PlanPath,
     [Parameter(Mandatory)][string]$MaintenanceMarkerPath,
-    [Parameter(Mandatory)][string[]]$OwnedArtifactPaths
+    [Parameter(Mandatory)][string[]]$OwnedArtifactPaths,
+    [Parameter(Mandatory)][string]$InstallRoot,
+    [Parameter(Mandatory)][string]$ReleaseRoot,
+    [Parameter(Mandatory)][string]$ServiceName
   )
   $cleanupMutex = New-MaintenanceMutex
   $cleanupMutexHeld = $false
@@ -654,6 +657,8 @@ function Complete-ActivatedParentCleanup {
         }
       }
     }
+    Remove-SupersededReleases -InstallRoot $InstallRoot -ReleaseRoot $ReleaseRoot `
+      -ExpectedVersion $ExpectedVersion -ServiceName $ServiceName
   }
   finally {
     if ($cleanupMutexHeld) { $cleanupMutex.ReleaseMutex() }
@@ -678,6 +683,81 @@ function Remove-FailedRelease {
   }
   if (Test-Path -LiteralPath $resolvedNew) {
     throw 'The failed promoted release could not be removed after rollback.'
+  }
+}
+
+function Remove-SupersededReleases {
+  param(
+    [Parameter(Mandatory)][string]$InstallRoot,
+    [Parameter(Mandatory)][string]$ReleaseRoot,
+    [Parameter(Mandatory)][string]$ExpectedVersion,
+    [Parameter(Mandatory)][string]$ServiceName
+  )
+  if ($ExpectedVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw 'The active release version is invalid for retention cleanup.'
+  }
+  $resolvedInstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+  $resolvedReleaseRoot = Assert-ExactPath -Actual $ReleaseRoot -Expected (Join-Path $resolvedInstallRoot 'releases') -Name 'Release root'
+  Assert-NoReparsePoint -Path $resolvedReleaseRoot -StopAt $resolvedInstallRoot
+  if (-not (Test-Path -LiteralPath $resolvedReleaseRoot -PathType Container)) {
+    throw 'The release root is missing for retention cleanup.'
+  }
+
+  $service = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction Stop
+  if ($null -eq $service) { throw "The $ServiceName service could not be inspected for retention cleanup." }
+  $currentExecutable = Get-ServiceExecutablePath -ImagePath ([string]$service.PathName)
+  if (-not (Test-Path -LiteralPath $currentExecutable -PathType Leaf)) {
+    throw 'The current gateway service executable is missing for retention cleanup.'
+  }
+  Assert-NoReparsePoint -Path $currentExecutable -StopAt $resolvedInstallRoot
+  $currentExecutable = Assert-UnderRoot -Path $currentExecutable -Root $resolvedReleaseRoot
+  if ([System.IO.Path]::GetFileName($currentExecutable) -ne 'TreadmillRunner.Gateway.exe') {
+    throw 'The current gateway service executable is outside the immutable release contract.'
+  }
+  $currentReleasePath = Split-Path -Parent $currentExecutable
+  $currentVersion = Split-Path -Leaf $currentReleasePath
+  if ($currentVersion -ne $ExpectedVersion) {
+    throw 'The current gateway service release does not match the activated version.'
+  }
+  $expectedExecutable = Join-Path (Join-Path $resolvedReleaseRoot $ExpectedVersion) 'TreadmillRunner.Gateway.exe'
+  if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($currentExecutable, [System.IO.Path]::GetFullPath($expectedExecutable))) {
+    throw 'The current gateway service executable does not resolve to the activated release.'
+  }
+
+  # Validate every top-level entry before deleting any superseded release. A
+  # non-version artifact or reparse point makes the retention set ambiguous;
+  # fail closed and leave all release directories available for recovery.
+  $entries = @(Get-ChildItem -LiteralPath $resolvedReleaseRoot -Force -ErrorAction Stop)
+  $superseded = [System.Collections.Generic.List[string]]::new()
+  foreach ($entry in $entries) {
+    $entryPath = Assert-UnderRoot -Path ([string]$entry.FullName) -Root $resolvedReleaseRoot
+    Assert-NoReparsePoint -Path $entryPath -StopAt $resolvedInstallRoot
+    if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw "The release root contains a reparse point: $entryPath"
+    }
+    if (-not $entry.PSIsContainer -or $entry.Name -notmatch '^\d+\.\d+\.\d+$') {
+      throw "The release root contains a non-version artifact: $entryPath"
+    }
+    [void][Version]::Parse($entry.Name)
+    foreach ($nested in @(Get-ChildItem -LiteralPath $entryPath -Force -Recurse -ErrorAction Stop)) {
+      Assert-NoReparsePoint -Path ([string]$nested.FullName) -StopAt $resolvedInstallRoot
+      if (($nested.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "The release contains a reparse point: $($nested.FullName)"
+      }
+    }
+    if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($entryPath, $currentReleasePath)) {
+      [void]$superseded.Add($entryPath)
+    }
+  }
+
+  foreach ($releasePath in $superseded) {
+    if ([System.StringComparer]::OrdinalIgnoreCase.Equals($releasePath, $currentReleasePath)) {
+      throw 'Retention cleanup resolved the current service release as superseded.'
+    }
+    Remove-Item -LiteralPath $releasePath -Recurse -Force -ErrorAction Stop
+    if (Test-Path -LiteralPath $releasePath) {
+      throw "The superseded release could not be removed: $releasePath"
+    }
   }
 }
 
@@ -1718,7 +1798,8 @@ try {
       ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
       ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
       ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
-      ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
+      ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup")) `
+    -InstallRoot $installRoot -ReleaseRoot $releaseRoot -ServiceName $serviceName
   return
 }
 catch {
@@ -1766,7 +1847,8 @@ catch {
             ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
             ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
             ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
-            ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
+            ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup")) `
+          -InstallRoot $installRoot -ReleaseRoot $releaseRoot -ServiceName $serviceName
         return
       }
       if ($finalChildState -eq 'RolledBack') {
@@ -1858,7 +1940,8 @@ finally {
           ("$resolvedPlan.replace-backup"), ("$preconditionPath.replace-backup"),
           ("$refreshReadyPath.replace-backup"), ("$refreshStartPath.replace-backup"),
           ("$refreshCompletionPath.replace-backup"), ("$refreshOwnershipPath.replace-backup"),
-          ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup"))
+          ("$databaseMutationPath.replace-backup"), ("$journalPath.replace-backup")) `
+        -InstallRoot $installRoot -ReleaseRoot $releaseRoot -ServiceName $serviceName
     }
     catch { }
   }

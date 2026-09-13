@@ -1,13 +1,15 @@
 ---
 title: Agent Start
 type: guide
-status: active
+status: retired
 owner: skill-manager
 audience: agent
 updated: 2026-07-10
 ---
 
 # Agent Start
+
+> Historical reference only. The repository-local AI harness described here was removed on 2026-09-13 so a new harness can be created from a clean slate.
 
 Use this page as the first low-context read in a copied project.
 

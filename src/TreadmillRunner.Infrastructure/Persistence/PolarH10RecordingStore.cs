@@ -25,7 +25,8 @@ public sealed record PolarH10RecordingJob(
   int PayloadBytes,
   int MergeCount,
   int RemovalCount,
-  string? LastError);
+  string? LastError,
+  int Version);
 
 public sealed record PolarH10LocalRecording(
   PolarH10RecordingJob Job,
@@ -48,12 +49,15 @@ public interface IPolarH10RecordingStore
   Task<PolarH10RecordingJob?> LeaseNextAsync(DateTimeOffset nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
   Task MarkRecordingAsync(Guid id, DateTimeOffset confirmedAtUtc, CancellationToken cancellationToken = default);
   Task QueueStopByIdAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<bool> QueueStopByIdIfVersionAsync(Guid id, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task StoreDownloadedAsync(Guid id, PolarH10MemoryRecord recording, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<PolarH10RecordingOutcome> MergeDownloadedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkRemoteRemovedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<bool> MarkRemoteRemovedIfVersionAsync(Guid id, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task CompleteDiscardCleanupAsync(Guid id, CancellationToken cancellationToken = default);
   Task RetryAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkOutcomeAsync(Guid id, PolarH10RecordingOutcome outcome, string? error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<bool> MarkOutcomeIfVersionAsync(Guid id, int expectedVersion, int attemptCount, PolarH10RecordingOutcome outcome, string? error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
 }
 
 public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbContext> contextFactory) : IPolarH10RecordingStore
@@ -122,7 +126,7 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     {
       row.Status = PolarH10RecordingOutcome.DiscardCleanupPending.ToString();
       row.StopRequestedAtUtc ??= nowUtc; row.AvailableAtUtc = nowUtc;
-      row.LeaseExpiresAtUtc = null; row.AttemptCount = 0; row.UpdatedAtUtc = nowUtc;
+      row.LeaseExpiresAtUtc = null; row.AttemptCount = 0; row.Version++; row.UpdatedAtUtc = nowUtc;
     }
     await context.SaveChangesAsync(cancellationToken);
     return true;
@@ -244,8 +248,30 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     PolarH10RecordingEntity row = await RequiredAsync(context, id, cancellationToken);
     row.Status = PolarH10RecordingOutcome.StopPending.ToString(); row.StopRequestedAtUtc = nowUtc;
+    row.AttemptCount = 0; row.LastError = null; row.Version++;
     row.AvailableAtUtc = nowUtc; row.LeaseExpiresAtUtc = null; row.UpdatedAtUtc = nowUtc;
     await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task<bool> QueueStopByIdIfVersionAsync(
+    Guid id,
+    int expectedVersion,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    int changed = await context.PolarH10Recordings
+      .Where(row => row.Id == id && row.Version == expectedVersion)
+      .ExecuteUpdateAsync(setters => setters
+        .SetProperty(row => row.Status, PolarH10RecordingOutcome.StopPending.ToString())
+        .SetProperty(row => row.StopRequestedAtUtc, nowUtc)
+        .SetProperty(row => row.AttemptCount, 0)
+        .SetProperty(row => row.LastError, (string?)null)
+        .SetProperty(row => row.Version, expectedVersion + 1)
+        .SetProperty(row => row.AvailableAtUtc, nowUtc)
+        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null)
+        .SetProperty(row => row.UpdatedAtUtc, nowUtc), cancellationToken);
+    return changed == 1;
   }
 
   public async Task StoreDownloadedAsync(Guid id, PolarH10MemoryRecord recording, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
@@ -345,6 +371,25 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     await context.SaveChangesAsync(cancellationToken);
   }
 
+  public async Task<bool> MarkRemoteRemovedIfVersionAsync(
+    Guid id,
+    int expectedVersion,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    int changed = await context.PolarH10Recordings
+      .Where(row => row.Id == id && row.Version == expectedVersion)
+      .ExecuteUpdateAsync(setters => setters
+        .SetProperty(row => row.Status, PolarH10RecordingOutcome.Completed.ToString())
+        .SetProperty(row => row.RemovalCount, row => row.RemovalCount + 1)
+        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null)
+        .SetProperty(row => row.LastError, (string?)null)
+        .SetProperty(row => row.Version, expectedVersion + 1)
+        .SetProperty(row => row.UpdatedAtUtc, nowUtc), cancellationToken);
+    return changed == 1;
+  }
+
   public async Task CompleteDiscardCleanupAsync(Guid id, CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -368,7 +413,7 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
         ? PolarH10RecordingOutcome.Downloaded.ToString()
         : PolarH10RecordingOutcome.Retryable.ToString();
     row.AttemptCount = 0; row.LeaseExpiresAtUtc = null; row.AvailableAtUtc = nowUtc;
-    row.LastError = null; row.UpdatedAtUtc = nowUtc;
+    row.LastError = null; row.Version++; row.UpdatedAtUtc = nowUtc;
     await context.SaveChangesAsync(cancellationToken);
   }
 
@@ -380,7 +425,46 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     row.LeaseExpiresAtUtc = null; row.UpdatedAtUtc = nowUtc;
     row.AvailableAtUtc = outcome == PolarH10RecordingOutcome.Retryable ? nowUtc.AddSeconds(Math.Min(60, Math.Max(2, row.AttemptCount * 5))) : row.AvailableAtUtc;
     if (outcome == PolarH10RecordingOutcome.Skipped) row.AttemptCount = 0;
+    row.Version++;
     await context.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task<bool> MarkOutcomeIfVersionAsync(
+    Guid id,
+    int expectedVersion,
+    int attemptCount,
+    PolarH10RecordingOutcome outcome,
+    string? error,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken = default)
+  {
+    string? boundedError = error is { Length: > 1000 } ? error[..1000] : error;
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    IQueryable<PolarH10RecordingEntity> matching = context.PolarH10Recordings
+      .Where(row => row.Id == id && row.Version == expectedVersion);
+    int changed;
+    if (outcome == PolarH10RecordingOutcome.Retryable)
+    {
+      DateTimeOffset availableAt = nowUtc.AddSeconds(Math.Min(60, Math.Max(2, attemptCount * 5)));
+      changed = await matching.ExecuteUpdateAsync(set => set
+        .SetProperty(row => row.Status, outcome.ToString())
+        .SetProperty(row => row.LastError, boundedError)
+        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null)
+        .SetProperty(row => row.AvailableAtUtc, availableAt)
+        .SetProperty(row => row.UpdatedAtUtc, nowUtc)
+        .SetProperty(row => row.Version, row => row.Version + 1), cancellationToken);
+    }
+    else
+    {
+      changed = await matching.ExecuteUpdateAsync(set => set
+        .SetProperty(row => row.Status, outcome.ToString())
+        .SetProperty(row => row.LastError, boundedError)
+        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null)
+        .SetProperty(row => row.AttemptCount, row => outcome == PolarH10RecordingOutcome.Skipped ? 0 : row.AttemptCount)
+        .SetProperty(row => row.UpdatedAtUtc, nowUtc)
+        .SetProperty(row => row.Version, row => row.Version + 1), cancellationToken);
+    }
+    return changed == 1;
   }
 
   private async Task<bool> QueueSessionStatusAsync(Guid sessionId, PolarH10RecordingOutcome outcome, DateTimeOffset nowUtc, CancellationToken cancellationToken)
@@ -390,7 +474,9 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
       .Where(row => row.WorkoutSessionId == sessionId && row.Status != "Completed" && row.Status != "Skipped" && row.Status != "NotStarted")
       .ExecuteUpdateAsync(set => set.SetProperty(row => row.Status, outcome.ToString())
         .SetProperty(row => row.StopRequestedAtUtc, nowUtc).SetProperty(row => row.AvailableAtUtc, nowUtc)
-        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null).SetProperty(row => row.UpdatedAtUtc, nowUtc), cancellationToken);
+        .SetProperty(row => row.AttemptCount, 0).SetProperty(row => row.LastError, (string?)null)
+        .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null).SetProperty(row => row.UpdatedAtUtc, nowUtc)
+        .SetProperty(row => row.Version, row => row.Version + 1), cancellationToken);
     return changed == 1;
   }
 
@@ -434,5 +520,5 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     row.Id, row.WorkoutSessionId, row.UserProfileId, row.DeviceEnrollmentId, row.ExerciseId, row.Origin,
     Enum.Parse<PolarH10SampleType>(row.SampleType), row.SampleIntervalSeconds, Enum.Parse<PolarH10RecordingOutcome>(row.Status),
     row.AttemptCount, row.LeaseExpiresAtUtc, row.StartRequestedAtUtc, row.StartConfirmedAtUtc, row.StopRequestedAtUtc,
-    row.RemotePath, row.PayloadSha256, row.PayloadBytes, row.MergeCount, row.RemovalCount, row.LastError);
+    row.RemotePath, row.PayloadSha256, row.PayloadBytes, row.MergeCount, row.RemovalCount, row.LastError, row.Version);
 }

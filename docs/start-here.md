@@ -1,13 +1,15 @@
 ---
 title: Start Here
 type: guide
-status: active
+status: retired
 owner: skill-manager
 audience: both
 updated: 2026-07-22
 ---
 
 # Start Here
+
+> Historical reference only. The repository-local AI harness described here was removed on 2026-09-13 so a new harness can be created from a clean slate.
 
 This is the short entry point. Use the linked docs when you need detail.
 

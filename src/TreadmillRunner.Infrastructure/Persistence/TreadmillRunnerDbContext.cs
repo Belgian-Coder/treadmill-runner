@@ -90,6 +90,7 @@ public sealed class TreadmillRunnerDbContext(
     });
     recording.HasKey(entity => entity.Id);
     recording.Property(entity => entity.Status).HasMaxLength(24);
+    recording.Property(entity => entity.Version).IsConcurrencyToken();
     recording.Property(entity => entity.Origin).HasMaxLength(12);
     recording.Property(entity => entity.SampleType).HasMaxLength(16);
     recording.Property(entity => entity.ExerciseId).HasMaxLength(64);

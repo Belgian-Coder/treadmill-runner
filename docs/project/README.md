@@ -11,7 +11,7 @@ updated: 2026-08-23
 
 Use this folder in consumer projects for project-specific architecture, domain, operations, and decision records.
 
-Start with `project-context.md`. It is the human-owned project profile that story, bug, migration, and upgrade workflows should read before planning implementation. In a copied target project, run `python -B .agents/manage.py setup` first; setup uses `repo-navigation` to create navigation maps and `project-context-generator` to create this project's context package when missing. Generate or refresh it directly with `python -B .agents/skills/project-context-generator/scripts/generate_project_context.py --target <project-root> --write` when it is stale or still a draft. Keep baseline technologies, commands, folder rules, generated-file boundaries, external systems, persistence ownership, validation expectations, and planning inputs there. Change its context status from `draft` to `reviewed` only after those facts are confirmed. Keep story- or bug-specific impacted entities and ERDs in the generated workflow plan.
+Start with `project-context.md`. It is the human-owned project profile for implementation and review. Keep baseline technologies, commands, folder rules, generated-file boundaries, external systems, persistence ownership, validation expectations, and planning inputs there. The previous repository-local AI harness was retired on 2026-09-13; its generator commands in older reference documents are no longer available.
 
 The [installation guide](../installation.md) is the user/operator starting point for Windows setup, first run, online and offline updates, repair, and household-network safety.
 
@@ -29,9 +29,9 @@ One-tap reuse, Screen Wake Lock behavior, local QR access, generated workout-set
 
 The [Bluetooth, reliability, and mobile usability audit](bluetooth-mobile-reliability-audit.md) records the recovery review, iPhone/iPad refinements, regression coverage, and physical-device evidence boundary.
 
-Use `python -B .agents/manage.py project-context-review --target . --write-review` to create `docs/project/review/project-context-review.md` and `.json` when facts need answers. Those files are intermediate review artifacts; they help collect answers but do not replace the canonical `project-context.md`. After answers are approved in the JSON artifact, run `python -B .agents/manage.py project-context-apply-review --target .` to preview the managed canonical section, then add `--apply` to write it.
+Files under `docs/project/review/` are intermediate review artifacts; they can help collect answers but do not replace the canonical `project-context.md`.
 
-For .NET projects, `python -B .agents/manage.py dotnet-context --target . --write-evidence` can write `docs/project/dotnet-context/dotnet-context.json` and `.md` with read-only SDK/runtime, build-policy, CI, config-key, persistence, and NuGet/feed facts. Treat those files as project-local evidence or baselines for drift review; they are not promotable harness source by default.
+Files under `docs/project/dotnet-context/` are retained project-local evidence or baselines for drift review; they are not current generated instructions.
 Use `--dotnet-executable <path-to-dotnet>` when the repo requires a trusted local SDK that is not first on `PATH`; this still does not run restore, build, test, package, or tool commands.
 Use `--solution <solution.sln>` and `--project <project.csproj>` to narrow the report in large .NET repositories without changing the read-only/no-restore policy.
 

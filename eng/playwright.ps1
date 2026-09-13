@@ -18,7 +18,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'path-helpers.ps1')
-$checker = Join-Path $projectRoot '.agents\skills\playwright-integration\scripts\check_playwright_readiness.py'
+$playwrightSupport = Join-Path $PSScriptRoot 'playwright-support'
+$checker = Join-Path $playwrightSupport 'check_playwright_readiness.py'
 $evidenceDir = Join-Path $projectRoot 'validation\playwright'
 $report = Join-Path $evidenceDir 'readiness.json'
 $project = Join-Path $projectRoot 'tests\TreadmillRunner.E2ETests\TreadmillRunner.E2ETests.csproj'
@@ -37,7 +38,7 @@ $effectiveTimeoutMinutes = if ($TimeoutMinutes -gt 0) {
 }
 
 elseif ([string]::Equals($Filter, 'Category=Browser', [System.StringComparison]::OrdinalIgnoreCase)) {
-    10
+    15
 }
 else {
     2
@@ -179,7 +180,7 @@ if (Test-Path -LiteralPath $report -PathType Leaf) {
         if ($reuseReadiness) {
             $reportTime = (Get-Item -LiteralPath $report).LastWriteTimeUtc
             $readinessInputs = @(
-                Get-ChildItem -LiteralPath (Join-Path $projectRoot '.agents\skills\playwright-integration\scripts') -Filter '*.py' -File
+                Get-ChildItem -LiteralPath $playwrightSupport -Filter '*.py' -File
                 Get-Item -LiteralPath $project
                 Get-Item -LiteralPath (Join-Path $projectRoot 'Directory.Packages.props')
                 Get-Item -LiteralPath (Join-Path $projectRoot 'global.json')

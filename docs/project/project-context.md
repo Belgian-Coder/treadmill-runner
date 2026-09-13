@@ -80,7 +80,7 @@ Release publishing requires the .NET 10 `wasm-tools` workload. `eng/publish-rele
 Source: [Mermaid](diagrams/project-context-structure.mmd)
 
 - `../qdomyos-zwift` is read-only research evidence outside this repository.
-- Harness routing, registries, and adapters are generated through `.agents/manage.py` and are not hand-edited.
+- The previous repository-local AI harness was retired on 2026-09-13; this project context remains as human-maintained reference for its replacement.
 - Application code lives under `src/`; tests under `tests/`; deterministic entry points under `eng/`.
 
 ## Current verification status

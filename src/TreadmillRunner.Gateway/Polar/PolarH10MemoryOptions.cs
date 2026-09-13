@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Polar;
@@ -19,6 +20,7 @@ public sealed class PolarH10MemoryWorker(
   TimeProvider timeProvider,
   IGarminActivityUploadWakeSignal garminWorker,
   PolarH10OperationGate operationGate,
+  IReadOnlyDeviceCoordinator deviceCoordinator,
   ILogger<PolarH10MemoryWorker> logger) : BackgroundService
 {
   private readonly SemaphoreSlim _wake = new(0, 1);
@@ -53,8 +55,11 @@ public sealed class PolarH10MemoryWorker(
     DateTimeOffset now = timeProvider.GetUtcNow();
     PolarH10RecordingJob? job = await store.LeaseNextAsync(now, TimeSpan.FromSeconds(Math.Clamp(options.CurrentValue.LeaseSeconds, 30, 900)), cancellationToken).ConfigureAwait(false);
     if (job is null) return;
+    bool connectionSuspended = false;
     try
     {
+      connectionSuspended = await deviceCoordinator.SuspendConnectionAsync(job.DeviceEnrollmentId, cancellationToken).ConfigureAwait(false);
+      if (!connectionSuspended) return;
       if (job.Outcome == PolarH10RecordingOutcome.Downloaded)
       {
         PolarH10RecordingOutcome merged = await store.MergeDownloadedAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
@@ -83,7 +88,12 @@ public sealed class PolarH10MemoryWorker(
           : job.Outcome == PolarH10RecordingOutcome.DiscardCleanupPending
             ? job.Outcome
             : PolarH10RecordingOutcome.Retryable;
-      await store.MarkOutcomeAsync(job.Id, outcome, "The exact H10 recording could not be reconciled. Keep the sensor nearby and retry.", timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+      await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, outcome, "The exact H10 recording could not be reconciled. Keep the sensor nearby and retry.", timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+    }
+    finally
+    {
+      if (connectionSuspended)
+        await deviceCoordinator.ResumeConnectionAsync(job.DeviceEnrollmentId, CancellationToken.None).ConfigureAwait(false);
     }
   }
 
@@ -97,17 +107,17 @@ public sealed class PolarH10MemoryWorker(
     PolarH10DeviceRecordingStatus status = await client.GetStatusAsync(job.DeviceEnrollmentId, cancellationToken).ConfigureAwait(false);
     if (status.IsRecording && string.Equals(status.ExerciseId, job.ExerciseId, StringComparison.Ordinal))
     {
-      await store.QueueStopByIdAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+      await store.QueueStopByIdIfVersionAsync(job.Id, job.Version, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
       Wake();
       return;
     }
     if (status.IsRecording)
     {
-      await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.ReviewRequired,
+      await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.ReviewRequired,
         "The H10 is recording a different exercise. It was left untouched.", timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
       return;
     }
-    await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.NotStarted,
+    await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.NotStarted,
       featureEnabled
         ? "The workout ended before the H10 recording start could be confirmed."
         : "The memory feature was disabled before the H10 recording started.",
@@ -122,7 +132,7 @@ public sealed class PolarH10MemoryWorker(
     {
       if (!string.Equals(status.ExerciseId, job.ExerciseId, StringComparison.Ordinal))
       {
-        await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.ReviewRequired,
+        await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.ReviewRequired,
           "The H10 is recording a different exercise. It was left untouched.", timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
         return;
       }
@@ -145,7 +155,7 @@ public sealed class PolarH10MemoryWorker(
     {
       if (!string.Equals(status.ExerciseId, job.ExerciseId, StringComparison.Ordinal))
       {
-        await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.ReviewRequired,
+        await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.ReviewRequired,
           "The H10 is recording a different exercise. It was left untouched.", timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
         return;
       }
@@ -160,8 +170,9 @@ public sealed class PolarH10MemoryWorker(
       if ((await client.ListAsync(job.DeviceEnrollmentId, cancellationToken).ConfigureAwait(false))
         .Any(recording => string.Equals(recording.RemotePath, exactPath, StringComparison.Ordinal)))
         throw new InvalidOperationException("The exact H10 recording still exists after removal.");
-      await store.MarkRemoteRemovedAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-      garminWorker.Wake();
+      bool removed = await store.MarkRemoteRemovedIfVersionAsync(job.Id, job.Version, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+      if (removed) garminWorker.Wake();
+      else Wake();
       return;
     }
     if (job.Outcome == PolarH10RecordingOutcome.DiscardCleanupPending)
@@ -180,7 +191,7 @@ public sealed class PolarH10MemoryWorker(
     if (exact is null)
     {
       PolarH10RecordingOutcome missing = job.StartConfirmedAtUtc is null ? PolarH10RecordingOutcome.NotStarted : PolarH10RecordingOutcome.Retryable;
-      await store.MarkOutcomeAsync(job.Id, missing,
+      await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, missing,
         missing == PolarH10RecordingOutcome.NotStarted ? "The H10 recording was never started." : "The exact recording is not yet visible on the H10.",
         timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
       if (missing == PolarH10RecordingOutcome.NotStarted) garminWorker.Wake();
@@ -199,7 +210,7 @@ public sealed class PolarH10MemoryWorker(
     }
     if (job.Origin == "Manual")
     {
-      await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.Retained, null, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+      await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.Retained, null, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
       return;
     }
     PolarH10RecordingOutcome merge = await store.MergeDownloadedAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
