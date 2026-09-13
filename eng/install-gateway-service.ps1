@@ -1080,11 +1080,12 @@ if (-not $PSCmdlet.ShouldProcess($serviceName, $(if ($RepairUpdateInfrastructure
 foreach ($directory in @($releaseRoot, $updaterRoot, (Split-Path -Parent $databasePath), $dataProtectionKeyPath, $backupRoot, $feedRoot, $stagingRoot, $planRoot)) {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
 }
+$maintenanceMutex = $null
+$maintenanceMutexHeld = $false
+$maintenanceMarkerCreated = $false
 try {
 $maintenanceMutex = [System.Threading.Mutex]::new($false, 'Global\TreadmillRunnerGateway.Maintenance')
-$maintenanceMutexHeld = $false
 $maintenanceMutexAbandoned = $false
-$maintenanceMarkerCreated = $false
 try { $maintenanceMutexAcquired = $maintenanceMutex.WaitOne(30000) }
 catch [System.Threading.AbandonedMutexException] { $maintenanceMutexAcquired = $true; $maintenanceMutexAbandoned = $true }
 if (-not $maintenanceMutexAcquired) { throw 'The update maintenance lock could not be acquired.' }
@@ -1439,7 +1440,7 @@ finally {
     if ($installationCommitted -or $cleanupSucceeded) {
         Remove-InstallerStateAndMarker
     }
-    if ($maintenanceMutexHeld) {
+    if ($maintenanceMutexHeld -and $null -ne $maintenanceMutex) {
         $maintenanceMutex.ReleaseMutex()
         $maintenanceMutex.Dispose()
     }

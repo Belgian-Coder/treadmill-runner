@@ -1353,6 +1353,11 @@ if (-not $normalizingSuffixRejected) { throw 'A normalizing service argument suf
     Assert.Contains("failureflag $serviceName 1", script, StringComparison.Ordinal);
     Assert.Contains("pending activation or refresh workspace", script, StringComparison.Ordinal);
     Assert.Contains("Global\\TreadmillRunnerGateway.Maintenance", script, StringComparison.Ordinal);
+    int maintenanceInitialization = script.IndexOf("$maintenanceMutexHeld = $false", StringComparison.Ordinal);
+    int maintenanceAcquisition = script.IndexOf("$maintenanceMutex = [System.Threading.Mutex]::new", StringComparison.Ordinal);
+    Assert.True(maintenanceInitialization >= 0 && maintenanceInitialization < maintenanceAcquisition,
+      "Installer cleanup state must be initialized before mutex construction can fail.");
+    Assert.Contains("if ($maintenanceMutexHeld -and $null -ne $maintenanceMutex)", script, StringComparison.Ordinal);
     Assert.Contains("if ([string]$state.phase -eq 'Committed')", script, StringComparison.Ordinal);
     Assert.Contains("processStartTimeUtc", script, StringComparison.Ordinal);
     Assert.Contains("processPath", script, StringComparison.Ordinal);
