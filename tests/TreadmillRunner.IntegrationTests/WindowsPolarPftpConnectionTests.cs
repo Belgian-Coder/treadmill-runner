@@ -8,19 +8,23 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class WindowsPolarPftpConnectionTests
 {
   [Fact]
-  public void Pftp_requests_prefer_acknowledged_writes_when_both_modes_are_available()
+  public void Pftp_requests_prefer_the_unacknowledged_write_mode_used_by_the_Polar_Android_SDK()
   {
     GattCharacteristicProperties properties =
       GattCharacteristicProperties.Write |
       GattCharacteristicProperties.WriteWithoutResponse;
 
     Assert.Equal(
-      GattWriteOption.WriteWithResponse,
+      GattWriteOption.WriteWithoutResponse,
       WindowsPolarPftpGattTransport.SelectWriteOption(properties));
     Assert.Equal(
       GattWriteOption.WriteWithoutResponse,
       WindowsPolarPftpGattTransport.SelectWriteOption(
         GattCharacteristicProperties.WriteWithoutResponse));
+    Assert.Equal(
+      GattWriteOption.WriteWithResponse,
+      WindowsPolarPftpGattTransport.SelectWriteOption(
+        GattCharacteristicProperties.Write));
   }
 
   [Fact]

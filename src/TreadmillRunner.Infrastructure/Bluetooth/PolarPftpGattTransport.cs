@@ -231,10 +231,10 @@ internal sealed class WindowsPolarPftpGattTransport : IPolarPftpGattTransport
 
   internal static GattWriteOption SelectWriteOption(GattCharacteristicProperties properties)
   {
-    if (properties.HasFlag(GattCharacteristicProperties.Write))
-      return GattWriteOption.WriteWithResponse;
     if (properties.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
       return GattWriteOption.WriteWithoutResponse;
+    if (properties.HasFlag(GattCharacteristicProperties.Write))
+      return GattWriteOption.WriteWithResponse;
     throw new InvalidOperationException("Polar PFTP MTU characteristic is not writable.");
   }
 
