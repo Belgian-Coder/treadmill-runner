@@ -27,7 +27,9 @@ public sealed class PolarH10OperationFilter(PolarH10OperationGate gate) : IEndpo
 {
   public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
   {
-    await using IAsyncDisposable lease = await gate.EnterAsync(context.HttpContext.RequestAborted);
+    using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(context.HttpContext.RequestAborted);
+    waitCancellation.CancelAfter(TimeSpan.FromSeconds(30));
+    await using IAsyncDisposable lease = await gate.EnterAsync(waitCancellation.Token);
     return await next(context).ConfigureAwait(false);
   }
 }

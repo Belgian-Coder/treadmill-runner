@@ -2,6 +2,7 @@ using TreadmillRunner.Core.Devices;
 using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Infrastructure.Persistence;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -16,7 +17,7 @@ public sealed class PolarH10MemoryAccessCoordinatorTests
       Enrollment(Guid.NewGuid(), "Garmin watch", null),
     ]);
     var live = new TrackingDeviceCoordinator();
-    var coordinator = new PolarH10MemoryAccessCoordinator(devices, live);
+    var coordinator = new PolarH10MemoryAccessCoordinator(devices, live, NullLogger<PolarH10MemoryAccessCoordinator>.Instance);
 
     IPolarH10MemoryAccessLease lease = await coordinator.AcquireAsync(null);
 
@@ -36,7 +37,8 @@ public sealed class PolarH10MemoryAccessCoordinatorTests
     Guid h10Id = Guid.NewGuid();
     var coordinator = new PolarH10MemoryAccessCoordinator(
       new StubEnrollmentStore([Enrollment(h10Id, "Polar H10", "H10")]),
-      new TrackingDeviceCoordinator(suspendResult: false));
+      new TrackingDeviceCoordinator(suspendResult: false),
+      NullLogger<PolarH10MemoryAccessCoordinator>.Instance);
 
     InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
       () => coordinator.AcquireAsync(h10Id));

@@ -24,6 +24,7 @@ public sealed class PolarH10MemoryWorker(
   ILogger<PolarH10MemoryWorker> logger) : BackgroundService
 {
   private readonly SemaphoreSlim _wake = new(0, 1);
+  private DateTimeOffset? _lastRetentionSweepUtc;
 
   public void Wake()
   {
@@ -53,6 +54,11 @@ public sealed class PolarH10MemoryWorker(
     IPolarH10RecordingStore store = scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>();
     IPolarH10MemoryClient client = scope.ServiceProvider.GetRequiredService<IPolarH10MemoryClient>();
     DateTimeOffset now = timeProvider.GetUtcNow();
+    if (_lastRetentionSweepUtc is null || now - _lastRetentionSweepUtc >= TimeSpan.FromHours(1))
+    {
+      await store.DeleteExpiredRetainedAsync(now.AddDays(-14), cancellationToken).ConfigureAwait(false);
+      _lastRetentionSweepUtc = now;
+    }
     PolarH10RecordingJob? job = await store.LeaseNextAsync(now, TimeSpan.FromSeconds(Math.Clamp(options.CurrentValue.LeaseSeconds, 30, 900)), cancellationToken).ConfigureAwait(false);
     if (job is null) return;
     bool connectionSuspended = false;
@@ -63,7 +69,14 @@ public sealed class PolarH10MemoryWorker(
       if (job.Outcome == PolarH10RecordingOutcome.Downloaded)
       {
         PolarH10RecordingOutcome merged = await store.MergeDownloadedAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-        if (merged == PolarH10RecordingOutcome.Merged) Wake();
+        if (merged == PolarH10RecordingOutcome.Merged)
+          Wake();
+        else
+        {
+          PolarH10RecordingJob unmatched = await store.FindByIdAsync(job.Id, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The downloaded H10 recording disappeared before retention.");
+          await QueueUnmatchedRemovalAsync(store, unmatched, cancellationToken).ConfigureAwait(false);
+        }
       }
       else if (job.Outcome == PolarH10RecordingOutcome.StartPending ||
           (job.Outcome == PolarH10RecordingOutcome.Retryable && job.StopRequestedAtUtc is null))
@@ -210,12 +223,29 @@ public sealed class PolarH10MemoryWorker(
     }
     if (job.Origin == "Manual")
     {
-      await store.MarkOutcomeIfVersionAsync(job.Id, job.Version, job.AttemptCount, PolarH10RecordingOutcome.Retained, null, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+      await QueueUnmatchedRemovalAsync(store, current, cancellationToken).ConfigureAwait(false);
       return;
     }
     PolarH10RecordingOutcome merge = await store.MergeDownloadedAsync(job.Id, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-    if (merge != PolarH10RecordingOutcome.Merged) return;
+    if (merge != PolarH10RecordingOutcome.Merged)
+    {
+      PolarH10RecordingJob unmatched = await store.FindByIdAsync(job.Id, cancellationToken).ConfigureAwait(false)
+        ?? throw new InvalidOperationException("The downloaded H10 recording disappeared before retention.");
+      await QueueUnmatchedRemovalAsync(store, unmatched, cancellationToken).ConfigureAwait(false);
+      return;
+    }
     garminWorker.Wake();
+    Wake();
+  }
+
+  private async Task QueueUnmatchedRemovalAsync(
+    IPolarH10RecordingStore store,
+    PolarH10RecordingJob job,
+    CancellationToken cancellationToken)
+  {
+    await store.MarkOutcomeAsync(job.Id, PolarH10RecordingOutcome.RemovalPending,
+      $"{job.LastError ?? "The recording could not be linked to workout History."} The verified local copy is retained for 14 days.",
+      timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
     Wake();
   }
 }

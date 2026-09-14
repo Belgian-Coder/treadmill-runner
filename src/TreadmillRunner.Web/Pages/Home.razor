@@ -835,8 +835,7 @@
         if (profileId is null)
         {
             profileSelectionLoading = false;
-            profileSelectionCancellation?.Dispose();
-            profileSelectionCancellation = null;
+            DisposeIfCurrent(ref profileSelectionCancellation, selectionCancellation);
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -1219,9 +1218,7 @@
 
     private async Task RefreshPreflightAsync()
     {
-        preflightRefreshCancellation?.Cancel();
-        preflightRefreshCancellation?.Dispose();
-        preflightRefreshCancellation = null;
+        CancelAndDispose(ref preflightRefreshCancellation);
         if (selectedProfileId is not { } profileId || selectedRevisionId is not { } revisionId)
         {
             preflight = null;
@@ -1905,6 +1902,13 @@
         if (owned is null) return;
         try { owned.Cancel(); }
         catch (ObjectDisposedException) { }
+        owned.Dispose();
+    }
+
+    private static void DisposeIfCurrent(ref CancellationTokenSource? source, CancellationTokenSource owned)
+    {
+        if (!ReferenceEquals(source, owned)) return;
+        source = null;
         owned.Dispose();
     }
 

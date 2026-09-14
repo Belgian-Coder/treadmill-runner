@@ -1598,9 +1598,10 @@ public sealed class ReadOnlyDeviceCoordinator(
     ArgumentNullException.ThrowIfNull(operationTimeProvider);
     if (timeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
 
-    Task disposal = subscription.DisposeAsync().AsTask();
+    Task? disposal = null;
     try
     {
+      disposal = subscription.DisposeAsync().AsTask();
       await disposal
         .WaitAsync(timeout, operationTimeProvider, CancellationToken.None)
         .ConfigureAwait(false);
@@ -1610,12 +1611,18 @@ public sealed class ReadOnlyDeviceCoordinator(
       // Some native WinRT operations do not cooperate with cancellation. Do
       // not let their async-iterator disposal pin the worker forever; observe
       // only an eventual fault after the bounded teardown window expires.
-      ObserveLateFault(disposal);
+      if (disposal is not null) ObserveLateFault(disposal);
     }
     catch (OperationCanceledException)
     {
       // Cancellation is the expected result after the subscription token was
       // signalled by the telemetry watchdog or worker shutdown.
+    }
+    catch (NotSupportedException)
+    {
+      // WinRT can report an already-ended notification subscription as not
+      // supporting disposal. Teardown is complete in that case; do not turn a
+      // harmless cleanup result into a fresh connection failure.
     }
   }
 

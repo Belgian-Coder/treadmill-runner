@@ -10,7 +10,7 @@ public sealed class PolarH10MemoryClient(
   IPolarPftpConnectionFactory connections,
   PolarH10ConnectionLocator connectionLocator) : IPolarH10MemoryClient
 {
-  private const int MaximumStatusAttempts = 4;
+  private const int MaximumStatusAttempts = 2;
 
   public async Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
   {

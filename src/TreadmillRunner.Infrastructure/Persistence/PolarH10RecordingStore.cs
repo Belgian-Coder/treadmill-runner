@@ -54,6 +54,7 @@ public interface IPolarH10RecordingStore
   Task<PolarH10RecordingOutcome> MergeDownloadedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkRemoteRemovedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task<bool> MarkRemoteRemovedIfVersionAsync(Guid id, int expectedVersion, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+  Task<int> DeleteExpiredRetainedAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default) => Task.FromResult(0);
   Task CompleteDiscardCleanupAsync(Guid id, CancellationToken cancellationToken = default);
   Task RetryAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
   Task MarkOutcomeAsync(Guid id, PolarH10RecordingOutcome outcome, string? error, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
@@ -366,8 +367,11 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
     PolarH10RecordingEntity row = await RequiredAsync(context, id, cancellationToken);
-    row.Status = PolarH10RecordingOutcome.Completed.ToString(); row.RemovalCount++;
-    row.LeaseExpiresAtUtc = null; row.LastError = null; row.UpdatedAtUtc = nowUtc;
+    bool retainUnmatched = row.Origin != "Automatic" || !string.IsNullOrWhiteSpace(row.LastError);
+    row.Status = (retainUnmatched ? PolarH10RecordingOutcome.Retained : PolarH10RecordingOutcome.Completed).ToString(); row.RemovalCount++;
+    row.LeaseExpiresAtUtc = null;
+    if (!retainUnmatched) row.LastError = null;
+    row.UpdatedAtUtc = nowUtc;
     await context.SaveChangesAsync(cancellationToken);
   }
 
@@ -378,16 +382,35 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     CancellationToken cancellationToken = default)
   {
     await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    PolarH10RecordingEntity? current = await context.PolarH10Recordings.AsNoTracking()
+      .SingleOrDefaultAsync(row => row.Id == id && row.Version == expectedVersion, cancellationToken);
+    if (current is null) return false;
+    bool retainUnmatched = current.Origin != "Automatic" || !string.IsNullOrWhiteSpace(current.LastError);
     int changed = await context.PolarH10Recordings
       .Where(row => row.Id == id && row.Version == expectedVersion)
       .ExecuteUpdateAsync(setters => setters
-        .SetProperty(row => row.Status, PolarH10RecordingOutcome.Completed.ToString())
+        .SetProperty(row => row.Status, (retainUnmatched ? PolarH10RecordingOutcome.Retained : PolarH10RecordingOutcome.Completed).ToString())
         .SetProperty(row => row.RemovalCount, row => row.RemovalCount + 1)
         .SetProperty(row => row.LeaseExpiresAtUtc, (DateTimeOffset?)null)
-        .SetProperty(row => row.LastError, (string?)null)
+        .SetProperty(row => row.LastError, row => retainUnmatched ? row.LastError : null)
         .SetProperty(row => row.Version, expectedVersion + 1)
         .SetProperty(row => row.UpdatedAtUtc, nowUtc), cancellationToken);
     return changed == 1;
+  }
+
+  public async Task<int> DeleteExpiredRetainedAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
+  {
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    List<PolarH10RecordingEntity> retained = await context.PolarH10Recordings
+      .Where(row => row.Status == "Retained" && row.RemovalCount > 0)
+      .ToListAsync(cancellationToken);
+    List<PolarH10RecordingEntity> expired = retained
+      .Where(row => row.UpdatedAtUtc < cutoffUtc)
+      .ToList();
+    if (expired.Count == 0) return 0;
+    context.PolarH10Recordings.RemoveRange(expired);
+    await context.SaveChangesAsync(cancellationToken);
+    return expired.Count;
   }
 
   public async Task CompleteDiscardCleanupAsync(Guid id, CancellationToken cancellationToken = default)
