@@ -4,8 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TreadmillRunner.Core.Sessions;
-using TreadmillRunner.Core.Devices;
-using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Garmin;
 using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Infrastructure.Persistence;
@@ -152,13 +150,14 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     var services = new ServiceCollection();
     services.AddSingleton<IPolarH10RecordingStore>(store);
     services.AddSingleton<IPolarH10MemoryClient>(client);
+    var access = new TrackingMemoryAccessCoordinator();
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(access);
     await using ServiceProvider provider = services.BuildServiceProvider();
     var wake = new FakeWakeSignal();
     var clock = new FixedTimeProvider(seed.Start);
-    var devices = new TrackingDeviceCoordinator();
     var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
       new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
-      clock, wake, new PolarH10OperationGate(), devices, NullLogger<PolarH10MemoryWorker>.Instance);
+      clock, wake, new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
 
     await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
     {
@@ -185,8 +184,8 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     Assert.Equal(PolarH10RecordingOutcome.Completed, (await store.FindByIdAsync(job.Id))!.Outcome);
     Assert.False(client.RemoteExists);
     Assert.Equal(2, client.DeleteCalls);
-    Assert.Equal(4, devices.SuspendCalls);
-    Assert.Equal(4, devices.ResumeCalls);
+    Assert.Equal(4, access.AcquireCalls);
+    Assert.Equal(4, access.ReleaseCalls);
     await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
       Assert.Single(context.SessionEvents, row => row.Kind == "session-warning" && row.DetailsJson.Contains("polar-h10-memory-merged"));
     Assert.True(wake.Count > 0);
@@ -203,10 +202,11 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     var services = new ServiceCollection();
     services.AddSingleton<IPolarH10RecordingStore>(store);
     services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new TrackingMemoryAccessCoordinator());
     await using ServiceProvider provider = services.BuildServiceProvider();
     var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
       new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = false, LeaseSeconds = 30, PollSeconds = 1 }),
-      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), new TrackingDeviceCoordinator(), NullLogger<PolarH10MemoryWorker>.Instance);
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
 
     await worker.DrainOneAsync(default);
 
@@ -215,7 +215,7 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Manual_existing_recording_download_is_retained_without_start_or_delete()
+  public async Task Manual_existing_recording_download_is_retained_after_verified_remote_removal()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
     var store = new PolarH10RecordingStore(factory);
@@ -226,17 +226,19 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     var services = new ServiceCollection();
     services.AddSingleton<IPolarH10RecordingStore>(store);
     services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new TrackingMemoryAccessCoordinator());
     await using ServiceProvider provider = services.BuildServiceProvider();
     var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
       new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
-      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), new TrackingDeviceCoordinator(), NullLogger<PolarH10MemoryWorker>.Instance);
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
 
+    await worker.DrainOneAsync(default);
     await worker.DrainOneAsync(default);
 
     Assert.Equal(PolarH10RecordingOutcome.Retained, (await store.FindByIdAsync(job.Id))!.Outcome);
-    Assert.True(client.RemoteExists);
+    Assert.False(client.RemoteExists);
     Assert.Equal(0, client.StartCalls);
-    Assert.Equal(0, client.DeleteCalls);
+    Assert.Equal(1, client.DeleteCalls);
     Assert.Single(await store.ListLocalAsync());
   }
 
@@ -324,6 +326,212 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Unconfirmed_automatic_start_is_bounded_once_and_reconciled_after_the_workout()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Running";
+      await context.SaveChangesAsync();
+    }
+    var client = new FakeMemoryClient(seed.EnrollmentId, job.ExerciseId, seed.Start) { BlockStartUntilCanceled = true };
+    var access = new TrackingMemoryAccessCoordinator();
+    var services = new ServiceCollection();
+    services.AddSingleton<IPolarH10RecordingStore>(store);
+    services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(access);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var clock = new FixedTimeProvider(seed.Start);
+    var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+      new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
+      clock, new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance)
+    {
+      AutomaticStartTimeout = TimeSpan.FromMilliseconds(50),
+    };
+
+    await worker.DrainOneAsync(default).WaitAsync(TimeSpan.FromSeconds(2));
+
+    PolarH10RecordingJob deferred = (await store.FindByIdAsync(job.Id))!;
+    Assert.Equal(PolarH10RecordingOutcome.ReviewRequired, deferred.Outcome);
+    Assert.Contains("deferred until the workout ends", deferred.LastError, StringComparison.OrdinalIgnoreCase);
+    Assert.Equal(1, client.StartCalls);
+    Assert.Equal(1, access.AcquireCalls);
+    Assert.Equal(1, access.ReleaseCalls);
+
+    clock.UtcNow = seed.Start.AddMinutes(10);
+    await worker.DrainOneAsync(default);
+    Assert.Equal(1, client.StartCalls);
+    Assert.Equal(1, access.AcquireCalls);
+    Assert.Equal(1, access.ReleaseCalls);
+
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Completed";
+      await context.SaveChangesAsync();
+    }
+    Assert.True(await store.QueueStopAsync(seed.SessionId, clock.UtcNow));
+    client.BlockStartUntilCanceled = false;
+
+    await worker.DrainOneAsync(default);
+
+    Assert.Equal(PolarH10RecordingOutcome.NotStarted, (await store.FindByIdAsync(job.Id))!.Outcome);
+    Assert.Equal(1, client.StartCalls);
+    Assert.Equal(2, access.AcquireCalls);
+    Assert.Equal(2, access.ReleaseCalls);
+  }
+
+  [Fact]
+  public async Task Existing_retryable_automatic_start_does_not_interrupt_an_active_workout()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Running";
+      PolarH10RecordingEntity row = await context.PolarH10Recordings.SingleAsync();
+      row.Status = PolarH10RecordingOutcome.Retryable.ToString();
+      row.AttemptCount = 1;
+      row.AvailableAtUtc = seed.Start;
+      row.LastError = "Prior installed worker failure";
+      await context.SaveChangesAsync();
+    }
+    var client = new FakeMemoryClient(seed.EnrollmentId, job.ExerciseId, seed.Start);
+    var access = new TrackingMemoryAccessCoordinator();
+    var services = new ServiceCollection();
+    services.AddSingleton<IPolarH10RecordingStore>(store);
+    services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(access);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+      new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
+
+    await worker.DrainOneAsync(default);
+
+    PolarH10RecordingJob deferred = (await store.FindByIdAsync(job.Id))!;
+    Assert.Equal(PolarH10RecordingOutcome.ReviewRequired, deferred.Outcome);
+    Assert.Equal(0, client.StatusCalls);
+    Assert.Equal(0, client.StartCalls);
+    Assert.Equal(0, access.AcquireCalls);
+    Assert.Equal(0, access.ReleaseCalls);
+  }
+
+  [Fact]
+  public async Task Expired_StartPending_lease_is_not_replayed_after_worker_restart()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Running";
+      PolarH10RecordingEntity row = await context.PolarH10Recordings.SingleAsync();
+      row.AttemptCount = 1;
+      row.LeaseExpiresAtUtc = seed.Start.AddSeconds(-1);
+      row.AvailableAtUtc = seed.Start.AddMinutes(-1);
+      await context.SaveChangesAsync();
+    }
+    var client = new FakeMemoryClient(seed.EnrollmentId, job.ExerciseId, seed.Start);
+    var access = new TrackingMemoryAccessCoordinator();
+    var services = new ServiceCollection();
+    services.AddSingleton<IPolarH10RecordingStore>(store);
+    services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(access);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+      new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
+
+    await worker.DrainOneAsync(default);
+
+    PolarH10RecordingJob deferred = (await store.FindByIdAsync(job.Id))!;
+    Assert.Equal(PolarH10RecordingOutcome.ReviewRequired, deferred.Outcome);
+    Assert.Equal(2, deferred.AttemptCount);
+    Assert.Equal(0, client.StartCalls);
+    Assert.Equal(0, access.AcquireCalls);
+  }
+
+  [Fact]
+  public async Task Confirmed_start_is_durably_recorded_after_the_PFTP_deadline_fires()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Running";
+      await context.SaveChangesAsync();
+    }
+    var client = new FakeMemoryClient(seed.EnrollmentId, job.ExerciseId, seed.Start)
+    {
+      BlockStartUntilCanceled = true,
+      ConfirmAfterStartCancellation = true,
+    };
+    var access = new TrackingMemoryAccessCoordinator();
+    var services = new ServiceCollection();
+    services.AddSingleton<IPolarH10RecordingStore>(store);
+    services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(access);
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+      new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance)
+    {
+      AutomaticStartTimeout = TimeSpan.FromMilliseconds(50),
+    };
+
+    await worker.DrainOneAsync(default).WaitAsync(TimeSpan.FromSeconds(2));
+
+    PolarH10RecordingJob recording = (await store.FindByIdAsync(job.Id))!;
+    Assert.Equal(PolarH10RecordingOutcome.Recording, recording.Outcome);
+    Assert.Equal(seed.Start, recording.StartConfirmedAtUtc);
+    Assert.Equal(1, access.AcquireCalls);
+    Assert.Equal(1, access.ReleaseCalls);
+  }
+
+  [Fact]
+  public async Task Already_active_exact_recording_preserves_the_requested_alignment_time()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
+      session.State = "Running";
+      await context.SaveChangesAsync();
+    }
+    var client = new FakeMemoryClient(seed.EnrollmentId, job.ExerciseId, seed.Start) { StartWasIssued = false };
+    var services = new ServiceCollection();
+    services.AddSingleton<IPolarH10RecordingStore>(store);
+    services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new TrackingMemoryAccessCoordinator());
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+      new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
+      new FixedTimeProvider(seed.Start.AddSeconds(12)), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
+
+    await worker.DrainOneAsync(default);
+
+    PolarH10RecordingJob recording = (await store.FindByIdAsync(job.Id))!;
+    Assert.Equal(PolarH10RecordingOutcome.Recording, recording.Outcome);
+    Assert.Equal(seed.Start, recording.StartConfirmedAtUtc);
+  }
+
+  [Fact]
   public async Task Worker_never_touches_PFTP_when_live_connection_suspension_is_refused()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
@@ -334,19 +542,19 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     var services = new ServiceCollection();
     services.AddSingleton<IPolarH10RecordingStore>(store);
     services.AddSingleton<IPolarH10MemoryClient>(client);
+    services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new TrackingMemoryAccessCoordinator(acquireResult: false));
     await using ServiceProvider provider = services.BuildServiceProvider();
     var worker = new PolarH10MemoryWorker(provider.GetRequiredService<IServiceScopeFactory>(),
       new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
-      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(),
-      new TrackingDeviceCoordinator(suspendResult: false), NullLogger<PolarH10MemoryWorker>.Instance);
+      new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
 
     await worker.DrainOneAsync(default);
 
     Assert.Equal(0, client.StatusCalls);
     Assert.Equal(0, client.StartCalls);
     PolarH10RecordingJob unchanged = (await store.FindByIdAsync(job.Id))!;
-    Assert.Equal(PolarH10RecordingOutcome.StartPending, unchanged.Outcome);
-    Assert.NotNull(unchanged.LeaseExpiresAtUtc);
+    Assert.Equal(PolarH10RecordingOutcome.Retryable, unchanged.Outcome);
+    Assert.Null(unchanged.LeaseExpiresAtUtc);
   }
 
   private async Task<(IDbContextFactory<TreadmillRunnerDbContext>, Seed)> CreateDatabaseAsync()
@@ -420,14 +628,29 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     public int StatusCalls { get; private set; }
     public int DeleteCalls { get; private set; }
     public int DeleteFailuresRemaining { get; set; }
+    public bool BlockStartUntilCanceled { get; set; }
+    public bool ConfirmAfterStartCancellation { get; set; }
+    public bool StartWasIssued { get; set; } = true;
 
     public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
     {
       StatusCalls++;
       return Task.FromResult(new PolarH10DeviceRecordingStatus(enrollmentId, "001122334455", "Polar H10", recording, recording ? exerciseId : null));
     }
-    public Task StartAsync(Guid requestedEnrollmentId, string requestedExerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
-    { Assert.Equal(enrollmentId, requestedEnrollmentId); Assert.Equal(exerciseId, requestedExerciseId); StartCalls++; recording = true; RemoteExists = true; return Task.CompletedTask; }
+    public async Task<PolarH10StartResult> StartAsync(Guid requestedEnrollmentId, string requestedExerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
+    {
+      Assert.Equal(enrollmentId, requestedEnrollmentId);
+      Assert.Equal(exerciseId, requestedExerciseId);
+      StartCalls++;
+      if (BlockStartUntilCanceled)
+      {
+        try { await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); }
+        catch (OperationCanceledException) when (ConfirmAfterStartCancellation) { }
+      }
+      recording = true;
+      RemoteExists = true;
+      return new(new PolarH10DeviceRecordingStatus(enrollmentId, "001122334455", "Polar H10", true, exerciseId), StartWasIssued);
+    }
     public Task StopAsync(Guid requestedEnrollmentId, CancellationToken cancellationToken = default) { recording = false; return Task.CompletedTask; }
     public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid requestedEnrollmentId, CancellationToken cancellationToken = default) =>
       Task.FromResult<IReadOnlyList<PolarH10RemoteRecording>>(RemoteExists ? [new($"/{exerciseId}/SAMPLES.BPB", 4)] : []);
@@ -450,20 +673,30 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     public void Wake() => Count++;
   }
 
-  private sealed class TrackingDeviceCoordinator(bool suspendResult = true) : IReadOnlyDeviceCoordinator
+  private sealed class TrackingMemoryAccessCoordinator(bool acquireResult = true) : IPolarH10MemoryAccessCoordinator
   {
-    public DeviceTelemetrySnapshot Current => null!;
-    public int SuspendCalls { get; private set; }
-    public int ResumeCalls { get; private set; }
-    public Task<bool> SuspendConnectionAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
+    public int AcquireCalls { get; private set; }
+    public int ReleaseCalls { get; private set; }
+
+    public Task<IPolarH10MemoryAccessLease> AcquireAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
     {
-      SuspendCalls++;
-      return Task.FromResult(suspendResult);
+      AcquireCalls++;
+      if (!acquireResult)
+        throw new InvalidOperationException("The exact H10 live connection could not be released for a memory operation.");
+      return Task.FromResult<IPolarH10MemoryAccessLease>(new Lease(enrollmentId ?? throw new InvalidOperationException(), this));
     }
-    public Task ResumeConnectionAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
+
+    private sealed class Lease(Guid enrollmentId, TrackingMemoryAccessCoordinator owner) : IPolarH10MemoryAccessLease
     {
-      ResumeCalls++;
-      return Task.CompletedTask;
+      private int disposed;
+      public Guid EnrollmentId { get; } = enrollmentId;
+
+      public ValueTask DisposeAsync()
+      {
+        if (Interlocked.Exchange(ref disposed, 1) == 0)
+          owner.ReleaseCalls++;
+        return ValueTask.CompletedTask;
+      }
     }
   }
 

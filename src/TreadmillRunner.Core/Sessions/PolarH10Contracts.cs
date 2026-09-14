@@ -4,7 +4,11 @@ namespace TreadmillRunner.Core.Sessions;
 public interface IPolarH10MemoryClient
 {
   Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default);
-  Task StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default);
+  /// <summary>
+  /// Checks the current exact recording, starts only when idle, and confirms the requested recording
+  /// without releasing the underlying PFTP connection between those steps.
+  /// </summary>
+  Task<PolarH10StartResult> StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default);
   Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default);
   Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default);
   Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default);
@@ -19,6 +23,10 @@ public sealed record PolarH10DeviceRecordingStatus(
   string DisplayName,
   bool IsRecording,
   string? ExerciseId);
+
+public sealed record PolarH10StartResult(
+  PolarH10DeviceRecordingStatus Status,
+  bool StartIssued);
 
 public sealed record PolarH10RemoteRecording(string RemotePath, long SizeBytes);
 

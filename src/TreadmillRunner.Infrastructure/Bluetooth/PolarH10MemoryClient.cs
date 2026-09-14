@@ -10,6 +10,7 @@ public sealed class PolarH10MemoryClient(
   IPolarPftpConnectionFactory connections,
   PolarH10ConnectionLocator connectionLocator) : IPolarH10MemoryClient
 {
+  // Read-only status may reopen one fresh connection. Start is mutating and never reconnects or replays.
   private const int MaximumStatusAttempts = 2;
 
   public async Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
@@ -34,15 +35,29 @@ public sealed class PolarH10MemoryClient(
     }
   }
 
-  public async Task StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
+  public async Task<PolarH10StartResult> StartAsync(
+    Guid enrollmentId,
+    string exerciseId,
+    PolarH10SampleType sampleType,
+    int intervalSeconds,
+    CancellationToken cancellationToken = default)
   {
     PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
     await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    await new PolarPftpClient(connection).StartAsync(
-      exerciseId,
-      sampleType == PolarH10SampleType.RrInterval ? PolarRecordingSampleType.RrInterval : PolarRecordingSampleType.HeartRate,
-      intervalSeconds,
-      cancellationToken).ConfigureAwait(false);
+    var client = new PolarPftpClient(connection);
+    PolarRecordingStatus current = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+    bool startIssued = false;
+    if (!current.IsRecording)
+    {
+      await client.StartAsync(
+        exerciseId,
+        sampleType == PolarH10SampleType.RrInterval ? PolarRecordingSampleType.RrInterval : PolarRecordingSampleType.HeartRate,
+        intervalSeconds,
+        cancellationToken).ConfigureAwait(false);
+      startIssued = true;
+      current = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+    }
+    return new(MapStatus(target, current), startIssued);
   }
 
   public async Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
@@ -120,6 +135,9 @@ public sealed class PolarH10MemoryClient(
   private static bool IsH10(DeviceEnrollment enrollment) =>
     enrollment.DisplayName.Contains("polar h10", StringComparison.OrdinalIgnoreCase) ||
     string.Equals(enrollment.ModelNumber?.Trim(), "H10", StringComparison.OrdinalIgnoreCase);
+
+  private static PolarH10DeviceRecordingStatus MapStatus(PolarH10Target target, PolarRecordingStatus status) =>
+    new(target.Enrollment.Id, target.Enrollment.DeviceId, target.Enrollment.DisplayName, status.IsRecording, status.EntryId);
 
   private sealed record PolarH10Target(
     DeviceEnrollment Enrollment,

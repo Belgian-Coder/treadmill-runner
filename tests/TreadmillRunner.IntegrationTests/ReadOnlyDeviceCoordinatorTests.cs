@@ -174,7 +174,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Warms_the_first_assigned_fallback_before_the_preferred_source_fails()
+  public async Task Waits_for_the_preferred_source_to_fail_before_connecting_the_first_fallback()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
     var profiles = new ProfileStore(_factory);
@@ -205,11 +205,13 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     {
       await coordinator.PrepareForRunAsync(runner.Id, requiresHeartRate: true);
       await transport.PrimaryDiscoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
-      await transport.FallbackConnectionStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
-      Assert.Equal(1, transport.FallbackConnectionCount);
+      await Task.Delay(250);
+      Assert.False(transport.FallbackConnectionStarted.Task.IsCompleted);
+      Assert.Equal(0, transport.FallbackConnectionCount);
 
       transport.ReleasePrimaryDiscovery.TrySetResult();
       using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+      await transport.FallbackConnectionStarted.Task.WaitAsync(timeout.Token);
       while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != garmin.Id)
         await Task.Delay(25, timeout.Token);
 
@@ -284,7 +286,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Sparse_samples_keep_the_warm_fallback_connected_after_preferred_recovery_stabilizes()
+  public async Task Continuous_preferred_recovery_disconnects_the_fallback_without_restarting_it_for_brief_staleness()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
     var clock = new AdjustableTimeProvider(now);
@@ -338,14 +340,14 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       await coordinator.RefreshAsync();
 
       Assert.Equal(polar.Id, coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId);
-      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+      Assert.Equal(DeviceConnectionState.Disconnected, Assert.Single(
         coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
         source => source.EnrollmentId == garmin.Id).State);
       Assert.Equal(1, transport.FallbackConnectionCount);
 
       clock.Set(clock.GetUtcNow().AddSeconds(6));
       await coordinator.RefreshAsync();
-      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+      Assert.Equal(DeviceConnectionState.Disconnected, Assert.Single(
         coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
         source => source.EnrollmentId == garmin.Id).State);
       Assert.Equal(1, transport.FallbackConnectionCount);
@@ -353,7 +355,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       transport.ReleasePostStablePrimarySample.SetResult();
       await transport.PostStablePrimarySampleObserved.Task.WaitAsync(TimeSpan.FromSeconds(2));
       await coordinator.RefreshAsync();
-      Assert.Equal(DeviceConnectionState.Ready, Assert.Single(
+      Assert.Equal(DeviceConnectionState.Disconnected, Assert.Single(
         coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
         source => source.EnrollmentId == garmin.Id).State);
       Assert.Equal(1, transport.FallbackConnectionCount);
@@ -433,6 +435,133 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     }
     finally
     {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Suspending_the_preferred_source_for_memory_access_does_not_promote_a_fallback()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment polar = HeartRate("POLAR-MEMORY-SUSPEND", "Polar H10");
+    DeviceEnrollment garmin = HeartRate("GARMIN-MEMORY-FALLBACK", "Garmin fenix 8");
+    await store.EnrollWithAssignmentsAsync(polar,
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      now, Op("device.enroll.polar", now));
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      now, Op("device.enroll.garmin", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new FallbackHysteresisBleTransport(polar.DeviceId, garmin.DeviceId)
+    {
+      PrimaryAvailable = true,
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.HoldRunConnectionsAsync(runner.Id, requiresHeartRate: true);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != polar.Id)
+        await Task.Delay(25, timeout.Token);
+      long initialGeneration = Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == polar.Id).ConnectionGeneration;
+      Assert.Equal(0, transport.FallbackConnectionCount);
+
+      Assert.True(await coordinator.SuspendConnectionAsync(polar.Id, timeout.Token));
+
+      Assert.Null(coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId);
+      Assert.False(transport.FallbackConnectionStarted.Task.IsCompleted);
+      Assert.Equal(0, transport.FallbackConnectionCount);
+
+      await coordinator.ResumeConnectionAsync(polar.Id, timeout.Token);
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != polar.Id ||
+             Assert.Single(
+               coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+               source => source.EnrollmentId == polar.Id).ConnectionGeneration <= initialGeneration)
+      {
+        await Task.Delay(25, timeout.Token);
+      }
+      Assert.Equal(0, transport.FallbackConnectionCount);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Cancellation_after_suspension_commit_rolls_back_and_restores_preferred_demand()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var profiles = new ProfileStore(_factory);
+    var store = new DeviceEnrollmentStore(_factory);
+    var runner = new UserProfile(Guid.NewGuid(), "Runner", UnitSystem.Metric, 75, 190, 18, []);
+    await profiles.CreateAsync(runner, now, Op("profile.create", now));
+    DeviceEnrollment polar = HeartRate("POLAR-CANCELLED-SUSPEND", "Polar H10");
+    DeviceEnrollment garmin = HeartRate("GARMIN-CANCELLED-SUSPEND", "Garmin fenix 8");
+    await store.EnrollWithAssignmentsAsync(polar,
+      [new HeartRateAssignmentPreference(runner.Id, 0, true, true)],
+      now, Op("device.enroll.polar", now));
+    await store.EnrollWithAssignmentsAsync(garmin,
+      [new HeartRateAssignmentPreference(runner.Id, 1, true, false)],
+      now, Op("device.enroll.garmin", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new FallbackHysteresisBleTransport(polar.DeviceId, garmin.DeviceId)
+    {
+      PrimaryAvailable = true,
+      HoldPrimaryDisposal = true,
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.HoldRunConnectionsAsync(runner.Id, requiresHeartRate: true);
+      using var readyTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != polar.Id)
+        await Task.Delay(25, readyTimeout.Token);
+      long initialGeneration = Assert.Single(
+        coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+        source => source.EnrollmentId == polar.Id).ConnectionGeneration;
+
+      using var callerCancellation = new CancellationTokenSource();
+      Task<bool> suspension = coordinator.SuspendConnectionAsync(polar.Id, callerCancellation.Token);
+      await transport.PrimaryDisposalStarted.Task.WaitAsync(readyTimeout.Token);
+      callerCancellation.Cancel();
+      transport.ReleasePrimaryDisposal.SetResult();
+
+      await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await suspension);
+
+      using var restoreTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.CurrentForProfile(runner.Id).SelectedHeartRateEnrollmentId != polar.Id ||
+             Assert.Single(
+               coordinator.CurrentForProfile(runner.Id).HeartRateSources!,
+               source => source.EnrollmentId == polar.Id).ConnectionGeneration <= initialGeneration)
+      {
+        await Task.Delay(25, restoreTimeout.Token);
+      }
+      Assert.Equal(0, transport.FallbackConnectionCount);
+    }
+    finally
+    {
+      transport.ReleasePrimaryDisposal.TrySetResult();
       await coordinator.StopAsync(CancellationToken.None);
       coordinator.Dispose();
     }
@@ -2801,9 +2930,12 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 
     public int FallbackConnectionCount => Volatile.Read(ref _fallbackConnectionCount);
     public bool CompleteStableRecovery { get; init; }
+    public bool HoldPrimaryDisposal { get; init; }
     public bool HoldPrimaryUnavailableDiscovery { get; set; }
     public TaskCompletionSource PrimaryDiscoveryStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource ReleasePrimaryDiscovery { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource PrimaryDisposalStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleasePrimaryDisposal { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource FallbackConnectionStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource PrimarySampleObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource ReleasePrimaryFailure { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2838,7 +2970,13 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     {
       public string DeviceId { get; } = deviceId;
 
-      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+      public async ValueTask DisposeAsync()
+      {
+        if (!string.Equals(DeviceId, owner._primaryDeviceId, StringComparison.OrdinalIgnoreCase)) return;
+        owner.PrimaryDisposalStarted.TrySetResult();
+        if (owner.HoldPrimaryDisposal)
+          await owner.ReleasePrimaryDisposal.Task;
+      }
 
       public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
         CancellationToken cancellationToken = default) => RequiredServices(cancellationToken);

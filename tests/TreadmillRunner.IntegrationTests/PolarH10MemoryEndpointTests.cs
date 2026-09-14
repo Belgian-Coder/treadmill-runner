@@ -94,7 +94,7 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default) =>
       _exception is null ? Task.FromResult(_status!) : Task.FromException<PolarH10DeviceRecordingStatus>(_exception);
 
-    public Task StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<PolarH10StartResult> StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();

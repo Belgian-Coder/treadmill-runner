@@ -286,31 +286,56 @@ public sealed class ReadOnlyDeviceCoordinator(
     cancellationToken.ThrowIfCancellationRequested();
     if (!await EnrollmentExistsAsync(enrollmentId, cancellationToken)) return false;
     DeviceWorker? worker = null;
-    await _reconcileGate.WaitAsync(cancellationToken);
+    var suspensionCommitted = false;
     try
     {
-      lock (_sync)
+      await _reconcileGate.WaitAsync(cancellationToken);
+      try
       {
-        if (_isStopping) return false;
-        _temporarilySuspendedEnrollmentIds.Add(enrollmentId);
-        if (_workers.Remove(enrollmentId, out DeviceWorker? existing))
+        lock (_sync)
         {
-          worker = existing;
-          existing.Cancellation.Cancel();
+          if (_isStopping) return false;
+          suspensionCommitted = _temporarilySuspendedEnrollmentIds.Add(enrollmentId);
+          if (_workers.Remove(enrollmentId, out DeviceWorker? existing))
+          {
+            worker = existing;
+            existing.Cancellation.Cancel();
+          }
+        }
+
+        if (worker is not null)
+        {
+          await worker.Task;
+          worker.Cancellation.Dispose();
         }
       }
-
-      if (worker is not null)
+      finally
       {
-        await worker.Task;
-        worker.Cancellation.Dispose();
+        _reconcileGate.Release();
       }
+
+      // Complete automatic demand reconciliation before a memory-access caller
+      // receives its lease, so an already-running fallback cannot keep competing
+      // with the exclusive operation after the preferred source is suspended.
+      await ReconcileWorkersAsync(cancellationToken);
+      cancellationToken.ThrowIfCancellationRequested();
+      return true;
     }
-    finally
+    catch
     {
-      _reconcileGate.Release();
+      // Once this call adds the suspension it owns the rollback on every failed
+      // exit, including cancellation after the live worker has already stopped.
+      if (suspensionCommitted)
+      {
+        try { await ResumeConnectionAsync(enrollmentId, CancellationToken.None); }
+        catch (Exception rollbackException)
+        {
+          logger.LogError(rollbackException,
+            "Connection suspension rollback failed for enrollment {EnrollmentId}.", enrollmentId);
+        }
+      }
+      throw;
     }
-    return true;
   }
 
   public async Task ResumeConnectionAsync(
@@ -453,8 +478,8 @@ public sealed class ReadOnlyDeviceCoordinator(
           {
             IReadOnlyList<Guid> progressiveDemand = SelectProgressiveHeartRateDemandLocked(
               orderedHeartRateIds,
-              now,
-              warmFirstFallback: runDemand.RequiresHeartRate);
+              temporarilySuspendedIds,
+              now);
             progressiveHeartRateIds.UnionWith(progressiveDemand);
             desiredIds.UnionWith(progressiveDemand);
           }
@@ -941,17 +966,20 @@ public sealed class ReadOnlyDeviceCoordinator(
 
   private IReadOnlyList<Guid> SelectProgressiveHeartRateDemandLocked(
     IReadOnlyList<Guid> orderedEnrollmentIds,
-    DateTimeOffset now,
-    bool warmFirstFallback = false)
+    IReadOnlySet<Guid> temporarilySuspendedEnrollmentIds,
+    DateTimeOffset now)
   {
     var desired = new List<Guid>(orderedEnrollmentIds.Count);
     for (var index = 0; index < orderedEnrollmentIds.Count; index++)
     {
       Guid enrollmentId = orderedEnrollmentIds[index];
+      // A memory operation temporarily releases the exact H10 connection. It
+      // is not evidence that a lower-priority sensor has become preferable,
+      // so stop automatic priority progression at the suspended enrollment.
+      if (temporarilySuspendedEnrollmentIds.Contains(enrollmentId)) break;
       desired.Add(enrollmentId);
-      bool warmFallback = warmFirstFallback && index == 0 && orderedEnrollmentIds.Count > 1;
       bool shouldActivateFallback = ShouldActivateHeartRateFallbackLocked(enrollmentId, now);
-      if (!warmFallback && !shouldActivateFallback) break;
+      if (!shouldActivateFallback) break;
       if (shouldActivateFallback && index + 1 < orderedEnrollmentIds.Count &&
           _heartRateSources.TryGetValue(enrollmentId, out HeartRateRuntime? runtime) &&
           !runtime.RequiresStableRecovery)
@@ -970,11 +998,14 @@ public sealed class ReadOnlyDeviceCoordinator(
     if (runtime.Connection.State is DeviceConnectionState.Faulted or DeviceConnectionState.Reconnecting)
       return true;
     if (runtime.Connection.State != DeviceConnectionState.Ready) return false;
+    // Five seconds is the safety boundary for publishing a pulse, not proof
+    // that the preferred sensor is gone. Wait for the telemetry watchdog's
+    // silence boundary before starting lower-priority BLE work.
     return runtime.Quality != HeartRateSignalQuality.Valid ||
       runtime.BeatsPerMinute is not (>= 30 and <= 250) ||
       runtime.ObservedAt is not { } observedAt ||
       now - observedAt < TimeSpan.Zero ||
-      now - observedAt > HeartRateFreshnessLimit;
+      now - observedAt > TelemetrySilenceTimeout;
   }
 
   private void RefreshEnrollmentMetadata(DeviceEnrollment enrollment)
