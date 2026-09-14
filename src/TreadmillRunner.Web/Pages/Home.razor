@@ -803,13 +803,13 @@
 
     private async Task ApplyProfileSelectionAsync(Guid? profileId, bool announce)
     {
+        if (disposed) return;
         if (session?.Live.SessionState is SessionState.ArmedWaitingForPhysicalStart or SessionState.Running or SessionState.PausedWaitingForPhysicalResume)
             return;
 
         int generation = ++profileSelectionGeneration;
         int selectionGeneration = ++workoutSelectionGeneration;
-        profileSelectionCancellation?.Cancel();
-        profileSelectionCancellation?.Dispose();
+        CancelAndDispose(ref profileSelectionCancellation);
         profileSelectionCancellation = new CancellationTokenSource();
         CancellationTokenSource selectionCancellation = profileSelectionCancellation;
         CancellationToken cancellationToken = selectionCancellation.Token;
@@ -820,9 +820,7 @@
         selectedWorkoutSource = "Library";
         selectedProgramRunId = null;
         selectedProgramItemId = null;
-        preflightRefreshCancellation?.Cancel();
-        preflightRefreshCancellation?.Dispose();
-        preflightRefreshCancellation = null;
+        CancelAndDispose(ref preflightRefreshCancellation);
         preflight = null;
         planningCalendar = null;
         calendarSeries = Array.Empty<CalendarSeriesView>();
@@ -1890,17 +1888,24 @@
     public async ValueTask DisposeAsync()
     {
         disposed = true;
-        preflightRefreshCancellation?.Cancel();
-        preflightRefreshCancellation?.Dispose();
-        preflightRefreshCancellation = null;
-        profileSelectionCancellation?.Cancel();
-        profileSelectionCancellation?.Dispose();
+        CancelAndDispose(ref preflightRefreshCancellation);
+        CancelAndDispose(ref profileSelectionCancellation);
         Gateway.ConnectionChanged -= GatewayConnectionChanged;
         Gateway.SessionChanged -= GatewaySessionChanged;
         Gateway.LeaseChanged -= GatewayLeaseChanged;
         ActiveProfile.Changed -= ActiveProfileChanged;
         stopDecisionModalReference = null;
         await Task.CompletedTask;
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        CancellationTokenSource? owned = source;
+        source = null;
+        if (owned is null) return;
+        try { owned.Cancel(); }
+        catch (ObjectDisposedException) { }
+        owned.Dispose();
     }
 
     private sealed record LiveChartPoint(

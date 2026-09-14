@@ -144,7 +144,13 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { errorMessage = "The local gateway could not read H10 status. Review the connection and refresh."; }
         finally { loading = false; }
-        await LoadRecordingsAsync();
+        if (status?.IsAvailable == true || source == "local")
+            await LoadRecordingsAsync();
+        else
+        {
+            recordings = [];
+            selectedRecording = null;
+        }
     }
 
     private async Task ChangeSourceAsync(string next) { source = next; await LoadRecordingsAsync(); }

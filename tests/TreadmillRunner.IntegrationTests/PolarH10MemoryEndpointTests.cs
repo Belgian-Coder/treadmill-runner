@@ -20,6 +20,8 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
       services.RemoveAll<IPolarH10MemoryClient>();
       services.AddSingleton<IPolarH10MemoryClient>(new StubPolarH10MemoryClient(
         new PolarH10DeviceRecordingStatus(enrollmentId, "synthetic-device", "Polar H10", false, null)));
+      services.RemoveAll<IPolarH10MemoryAccessCoordinator>();
+      services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new StubMemoryAccessCoordinator(enrollmentId));
     }));
     using HttpClient client = application.CreateClient();
 
@@ -39,8 +41,11 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
   {
     using var application = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
     {
+      Guid enrollmentId = Guid.NewGuid();
       services.RemoveAll<IPolarH10MemoryClient>();
       services.AddSingleton<IPolarH10MemoryClient>(new StubPolarH10MemoryClient(new TimeoutException("Synthetic timeout.")));
+      services.RemoveAll<IPolarH10MemoryAccessCoordinator>();
+      services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new StubMemoryAccessCoordinator(enrollmentId));
     }));
     using HttpClient client = application.CreateClient();
 
@@ -62,6 +67,8 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
       services.RemoveAll<IPolarH10MemoryClient>();
       services.AddSingleton<IPolarH10MemoryClient>(new StubPolarH10MemoryClient(
         new PolarH10DeviceRecordingStatus(enrollmentId, "synthetic-device", "Polar H10", false, null)));
+      services.RemoveAll<IPolarH10MemoryAccessCoordinator>();
+      services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new StubMemoryAccessCoordinator(enrollmentId));
       services.RemoveAll<IPolarH10RecordingStore>();
       services.AddSingleton<IPolarH10RecordingStore>(new StatusFailingPolarH10RecordingStore());
     }));
@@ -92,6 +99,21 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task DeleteAsync(Guid enrollmentId, string remotePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+  }
+
+  private sealed class StubMemoryAccessCoordinator(Guid enrollmentId) : IPolarH10MemoryAccessCoordinator
+  {
+    public Task<IPolarH10MemoryAccessLease> AcquireAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
+    {
+      cancellationToken.ThrowIfCancellationRequested();
+      return Task.FromResult<IPolarH10MemoryAccessLease>(new StubMemoryAccessLease(requestedEnrollmentId ?? enrollmentId));
+    }
+  }
+
+  private sealed class StubMemoryAccessLease(Guid enrollmentId) : IPolarH10MemoryAccessLease
+  {
+    public Guid EnrollmentId { get; } = enrollmentId;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
   }
 
   private sealed class StatusFailingPolarH10RecordingStore : IPolarH10RecordingStore
