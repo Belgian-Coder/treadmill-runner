@@ -17,6 +17,19 @@ public sealed class TreadmillCommandCoordinatorTests
   private static readonly Guid ControlPoint = Expand(0x2AD9);
 
   [Fact]
+  public void Rejects_non_positive_command_connection_timeouts()
+  {
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      TreadmillCommandPolicy.Default with { ConnectionTimeout = TimeSpan.Zero });
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      TreadmillCommandPolicy.Default with { ConnectionDisposalTimeout = TimeSpan.FromMilliseconds(-1) });
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      TreadmillCommandPolicy.Default with { ConnectionTimeout = TimeSpan.MaxValue });
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      TreadmillCommandPolicy.Default with { ConnectionDisposalTimeout = TimeSpan.MaxValue });
+  }
+
+  [Fact]
   public async Task Confirms_start_once_from_response_and_new_minimum_speed_telemetry()
   {
     var devices = new FakeDeviceCoordinator(ReadySnapshot(7, speedKph: 0));
@@ -120,6 +133,40 @@ public sealed class TreadmillCommandCoordinatorTests
     Assert.Contains("Fresh treadmill speed telemetry", result.Reason, StringComparison.Ordinal);
     Assert.Equal(0, transport.ConnectCount);
     Assert.Empty(connection.Payloads);
+  }
+
+  [Fact]
+  public async Task Bounds_non_cooperative_command_service_discovery()
+  {
+    var devices = new FakeDeviceCoordinator(ReadySnapshot(7, speedKph: 0));
+    var blockedDiscovery = new TaskCompletionSource<IReadOnlyList<BleService>>(
+      TaskCreationOptions.RunContinuationsAsynchronously);
+    var connection = new FakeCommandConnection(
+      blockedDiscovery: blockedDiscovery,
+      blockDisposalUntilDiscoveryCompletes: true);
+    TreadmillCommandCoordinator coordinator = CreateCoordinator(
+      devices,
+      connection,
+      VerifiedEnrollment(),
+      connectionTimeout: TimeSpan.FromMilliseconds(25),
+      connectionDisposalTimeout: TimeSpan.FromMilliseconds(25));
+
+    long started = System.Diagnostics.Stopwatch.GetTimestamp();
+    TreadmillCommandResult result;
+    try
+    {
+      result = await coordinator.ExecuteAsync(StartIntent(7), AlwaysCurrent.Instance);
+    }
+    finally
+    {
+      blockedDiscovery.TrySetResult([]);
+    }
+
+    Assert.Equal(TreadmillCommandDisposition.Rejected, result.Disposition);
+    Assert.Contains("connection failed", result.Reason, StringComparison.OrdinalIgnoreCase);
+    Assert.True(connection.DiscoveryToken.IsCancellationRequested);
+    Assert.Equal(1, connection.DisposeCount);
+    Assert.True(System.Diagnostics.Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(2));
   }
 
   [Fact]
@@ -524,15 +571,26 @@ public sealed class TreadmillCommandCoordinatorTests
     FakeCommandConnection connection,
     VersionedDeviceEnrollment enrollment,
     TimeSpan? confirmationTimeout = null,
-    TimeProvider? timeProvider = null) =>
-    CreateCoordinator(devices, new FakeCommandTransport(connection), enrollment, confirmationTimeout, timeProvider);
+    TimeProvider? timeProvider = null,
+    TimeSpan? connectionTimeout = null,
+    TimeSpan? connectionDisposalTimeout = null) =>
+    CreateCoordinator(
+      devices,
+      new FakeCommandTransport(connection),
+      enrollment,
+      confirmationTimeout,
+      timeProvider,
+      connectionTimeout,
+      connectionDisposalTimeout);
 
   private static TreadmillCommandCoordinator CreateCoordinator(
     FakeDeviceCoordinator devices,
     FakeCommandTransport transport,
     VersionedDeviceEnrollment enrollment,
     TimeSpan? confirmationTimeout = null,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    TimeSpan? connectionTimeout = null,
+    TimeSpan? connectionDisposalTimeout = null)
   {
     var services = new ServiceCollection();
     services.AddSingleton<IDeviceEnrollmentStore>(new FakeEnrollmentStore(enrollment));
@@ -547,7 +605,11 @@ public sealed class TreadmillCommandCoordinatorTests
         TimeSpan.FromMilliseconds(10),
         TimeSpan.FromMilliseconds(100),
         confirmationTimeout ?? TimeSpan.FromMilliseconds(35),
-        TimeSpan.FromMilliseconds(5)),
+        TimeSpan.FromMilliseconds(5))
+      {
+        ConnectionTimeout = connectionTimeout ?? TimeSpan.FromSeconds(15),
+        ConnectionDisposalTimeout = connectionDisposalTimeout ?? TimeSpan.FromSeconds(1),
+      },
       NullLogger<TreadmillCommandCoordinator>.Instance);
   }
 
@@ -719,17 +781,25 @@ public sealed class TreadmillCommandCoordinatorTests
 
   private sealed class FakeCommandConnection(
     Action<ReadOnlyMemory<byte>, DateTimeOffset>? onExchange = null,
-    bool omitRequestControlResponse = false) : IBleCommandConnection
+    bool omitRequestControlResponse = false,
+    TaskCompletionSource<IReadOnlyList<BleService>>? blockedDiscovery = null,
+    bool blockDisposalUntilDiscoveryCompletes = false) : IBleCommandConnection
   {
     public string DeviceId => "A0BB3E102117";
     public List<byte[]> Payloads { get; } = [];
     public int DisposeCount { get; private set; }
+    public CancellationToken DiscoveryToken { get; private set; }
 
     public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
-      CancellationToken cancellationToken = default) =>
-      ValueTask.FromResult<IReadOnlyList<BleService>>([
-        new BleService(FtmsService, [new BleCharacteristic(FtmsService, ControlPoint, false, true, true)]),
-      ]);
+      CancellationToken cancellationToken = default)
+    {
+      DiscoveryToken = cancellationToken;
+      return blockedDiscovery is not null
+        ? new ValueTask<IReadOnlyList<BleService>>(blockedDiscovery.Task)
+        : ValueTask.FromResult<IReadOnlyList<BleService>>([
+          new BleService(FtmsService, [new BleCharacteristic(FtmsService, ControlPoint, false, true, true)]),
+        ]);
+    }
 
     public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
       Guid serviceUuid,
@@ -771,10 +841,11 @@ public sealed class TreadmillCommandCoordinatorTests
         observed));
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
       DisposeCount++;
-      return ValueTask.CompletedTask;
+      if (blockDisposalUntilDiscoveryCompletes && blockedDiscovery is not null)
+        await blockedDiscovery.Task;
     }
   }
 

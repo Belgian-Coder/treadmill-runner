@@ -137,7 +137,11 @@ public sealed class WindowsBleCentralTransport : IBleCentralTransport, IBleComma
     CancellationToken cancellationToken = default)
   {
     cancellationToken.ThrowIfCancellationRequested();
-    return ValueTask.FromResult<IBleCommandConnection>(new WindowsBleCommandConnection(deviceId));
+    BluetoothAddressType? addressType = _addressTypes.TryGet(deviceId);
+    return ValueTask.FromResult<IBleCommandConnection>(
+      addressType is { } observedType
+        ? new WindowsBleCommandConnection(deviceId, observedType)
+        : new WindowsBleCommandConnection(deviceId));
   }
 
   internal BluetoothAddressType? ResolveAddressType(string deviceId) => _addressTypes.TryGet(deviceId);

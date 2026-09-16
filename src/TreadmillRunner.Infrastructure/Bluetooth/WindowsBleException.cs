@@ -22,6 +22,8 @@ public sealed class WindowsBleException : InvalidOperationException
 
   public GattCommunicationStatus? Status { get; }
 
+  public bool IsDeviceUnavailable => Status == GattCommunicationStatus.Unreachable;
+
   public ushort? ProtocolError { get; }
 
   private static string CreateMessage(

@@ -18,6 +18,7 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
 
   private readonly WindowsBleReadOnlyConnection _readOnly;
   private readonly ulong _bluetoothAddress;
+  private readonly BluetoothAddressType? _bluetoothAddressType;
   private readonly CancellationTokenSource _disposeCancellation = new();
   private readonly SemaphoreSlim _exchangeGate = new(1, 1);
   private readonly CccdConfigurationCache _responseCccd = new();
@@ -27,6 +28,13 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
   private int _disposed;
 
   public WindowsBleCommandConnection(string deviceId)
+    : this(deviceId, null)
+  {
+  }
+
+  internal WindowsBleCommandConnection(
+    string deviceId,
+    BluetoothAddressType? bluetoothAddressType)
   {
     if (deviceId is null ||
         deviceId.Length != 12 ||
@@ -38,10 +46,12 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
     }
 
     DeviceId = deviceId.ToUpperInvariant();
-    _readOnly = new WindowsBleReadOnlyConnection(DeviceId);
+    _bluetoothAddressType = WindowsBleAddressTypePolicy.SelectForConnection(bluetoothAddressType);
+    _readOnly = new WindowsBleReadOnlyConnection(DeviceId, _bluetoothAddressType);
   }
 
   public string DeviceId { get; }
+  internal BluetoothAddressType? AddressType => _bluetoothAddressType;
 
   public async ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
     CancellationToken cancellationToken = default)
@@ -275,10 +285,15 @@ internal sealed class WindowsBleCommandConnection : IBleCommandConnection
 
   private async Task<BluetoothLEDevice> OpenDeviceAsync(CancellationToken cancellationToken)
   {
-    BluetoothLEDevice? device = await BluetoothLEDevice
-      .FromBluetoothAddressAsync(_bluetoothAddress)
-      .AsTask(cancellationToken)
-      .ConfigureAwait(false);
+    BluetoothLEDevice? device = _bluetoothAddressType is { } addressType
+      ? await BluetoothLEDevice
+        .FromBluetoothAddressAsync(_bluetoothAddress, addressType)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false)
+      : await BluetoothLEDevice
+        .FromBluetoothAddressAsync(_bluetoothAddress)
+        .AsTask(cancellationToken)
+        .ConfigureAwait(false);
     return device ?? throw new WindowsBleException(
       $"Windows could not open BLE device {DeviceId} for command access.");
   }

@@ -160,6 +160,25 @@ public sealed class WindowsBleReadOnlyContractTests
   }
 
   [Fact]
+  public void Targeted_discovery_propagates_an_unreachable_device()
+  {
+    var heartRateService = Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
+    var batteryService = Guid.Parse("0000180f-0000-1000-8000-00805f9b34fb");
+    var unreachable = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.Unreachable,
+      protocolError: null);
+    var protectedService = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.AccessDenied,
+      protocolError: null);
+
+    Assert.False(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(batteryService, unreachable));
+    Assert.False(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(heartRateService, protectedService));
+    Assert.True(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(batteryService, protectedService));
+  }
+
+  [Fact]
   public async Task Disposed_connection_rejects_discovery_before_hardware_access()
   {
     var transport = new WindowsBleCentralTransport();

@@ -116,4 +116,17 @@ public sealed class WindowsBleAddressTypeCacheTests
 
     Assert.Equal(BluetoothAddressType.Random, connection.AddressType);
   }
+
+  [Fact]
+  public async Task Command_connection_reuses_the_recent_scan_address_type()
+  {
+    var cache = new BluetoothAddressTypeCache(ttl: TimeSpan.FromMinutes(1));
+    cache.Observe("A1B2C3D4E5F6", BluetoothAddressType.Random);
+    var transport = new WindowsBleCentralTransport(cache);
+
+    await using var connection = Assert.IsType<WindowsBleCommandConnection>(
+      await transport.ConnectCommandAsync("A1B2C3D4E5F6"));
+
+    Assert.Equal(BluetoothAddressType.Random, connection.AddressType);
+  }
 }

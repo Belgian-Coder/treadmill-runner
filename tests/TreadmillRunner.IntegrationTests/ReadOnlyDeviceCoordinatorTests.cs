@@ -11,6 +11,7 @@ using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Core.Profiles;
 using TreadmillRunner.Gateway.Operations;
 using TreadmillRunner.Infrastructure.Bluetooth;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace TreadmillRunner.IntegrationTests;
 
@@ -18,6 +19,81 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
 {
   private readonly string _directory = Path.Combine(Path.GetTempPath(), "TreadmillRunner.Tests", Guid.NewGuid().ToString("N"));
   private IDbContextFactory<TreadmillRunnerDbContext> _factory = null!;
+
+  [Fact]
+  public void Unreachable_gatt_status_uses_device_unavailable_recovery()
+  {
+    var unreachable = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.Unreachable,
+      protocolError: null);
+    var accessDenied = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.AccessDenied,
+      protocolError: null);
+
+    Assert.True(ReadOnlyDeviceCoordinator.IsDeviceUnavailableFailure(unreachable));
+    Assert.False(ReadOnlyDeviceCoordinator.IsDeviceUnavailableFailure(accessDenied));
+  }
+
+  [Fact]
+  public void Only_the_first_exact_unreachable_rediscovery_bypasses_backoff()
+  {
+    const string deviceId = "A1B2C3D4E5F6";
+    var unreachable = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.Unreachable,
+      protocolError: null);
+
+    Assert.True(ReadOnlyDeviceCoordinator.ShouldRetryRediscoveredDeviceImmediately(
+      unreachable, deviceId, deviceId, consecutiveFailureCount: 1));
+    Assert.False(ReadOnlyDeviceCoordinator.ShouldRetryRediscoveredDeviceImmediately(
+      unreachable, deviceId, deviceId, consecutiveFailureCount: 2));
+    Assert.True(ReadOnlyDeviceCoordinator.ShouldRetryRediscoveredDeviceImmediately(
+      new InvalidDataException(), deviceId, "112233445566", consecutiveFailureCount: 2));
+  }
+
+  [Fact]
+  public void Strict_targeted_discovery_failures_receive_one_same_locator_retry()
+  {
+    var accessDenied = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.AccessDenied,
+      protocolError: null);
+    var unreachable = new WindowsBleException(
+      "service discovery",
+      GattCommunicationStatus.Unreachable,
+      protocolError: null);
+
+    Assert.True(ReadOnlyDeviceCoordinator.IsRetryableTargetedDiscoveryFailure(
+      accessDenied, "service-discovery"));
+    Assert.True(ReadOnlyDeviceCoordinator.IsRetryableTargetedDiscoveryFailure(
+      new System.Runtime.InteropServices.COMException(), "service-discovery"));
+    Assert.False(ReadOnlyDeviceCoordinator.IsRetryableTargetedDiscoveryFailure(
+      unreachable, "service-discovery"));
+    Assert.False(ReadOnlyDeviceCoordinator.IsRetryableTargetedDiscoveryFailure(
+      accessDenied, "subscription-start"));
+  }
+
+  [Theory]
+  [InlineData(1, 5, 0)]
+  [InlineData(10, 5, 5)]
+  [InlineData(10, 12, 0)]
+  [InlineData(10, -5, 10)]
+  public void Reconnect_discovery_counts_toward_the_backoff_window(
+    int reconnectSeconds,
+    int elapsedSeconds,
+    int expectedRemainingSeconds)
+  {
+    DateTimeOffset failedAt = DateTimeOffset.UtcNow;
+
+    TimeSpan remaining = ReadOnlyDeviceCoordinator.RemainingReconnectDelay(
+      failedAt,
+      TimeSpan.FromSeconds(reconnectSeconds),
+      failedAt.AddSeconds(elapsedSeconds));
+
+    Assert.Equal(TimeSpan.FromSeconds(expectedRemainingSeconds), remaining);
+  }
 
   [Fact]
   public async Task Gatt_timeout_cancels_the_underlying_operation_without_waiting_for_late_completion()
@@ -786,6 +862,83 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     Assert.Contains("rediscovery-window-ended", evidence);
     Assert.Contains(heartRate.Id.ToString(), evidence);
     Assert.DoesNotContain("POLAR-RECONNECT-INFO", evidence);
+  }
+
+  [Fact]
+  public async Task Unreachable_treadmill_rediscovery_retries_immediately_when_it_is_advertising()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    transport.UnreachableDiscoveryFailures.TryAdd(treadmill.DeviceId, 1);
+    transport.Advertisements.Enqueue(new BleAdvertisement(treadmill.DeviceId, treadmill.DisplayName, -45, []));
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (transport.ConnectionDeviceIds.Count < 2 ||
+             coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      string[] operations = transport.OperationEvents.ToArray();
+      Assert.Equal(
+        [$"connect:{treadmill.DeviceId}", "scan", $"connect:{treadmill.DeviceId}"],
+        operations.Take(3));
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Second_consecutive_unreachable_treadmill_failure_honors_backoff()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport();
+    transport.UnreachableDiscoveryFailures.TryAdd(treadmill.DeviceId, 2);
+    transport.Advertisements.Enqueue(new BleAdvertisement(treadmill.DeviceId, treadmill.DisplayName, -45, []));
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+      while (transport.ActiveScanCount < 2)
+        await Task.Delay(25, timeout.Token);
+
+      await Task.Delay(500, timeout.Token);
+      Assert.Equal(2, transport.ConnectionDeviceIds.Count);
+
+      while (coordinator.Current.Treadmill.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+      Assert.Equal(3, transport.ConnectionDeviceIds.Count);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
   }
 
   [Fact]
@@ -1678,6 +1831,99 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Retries_a_targeted_heart_rate_access_failure_once_on_the_same_locator_before_scanning()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("102030405060", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new TargetedHeartRateRetryBleTransport(missingRequiredDiscoveryCount: 0)
+    {
+      AccessDeniedDiscoveryOrdinals = new HashSet<int> { 1 },
+    };
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Equal(2, transport.ConnectionAttemptCount);
+      Assert.Equal(2, transport.RequiredTargetedDiscoveryCount);
+      Assert.Equal(0, transport.ActiveScanCount);
+      Assert.All(transport.ConnectionDeviceIds, deviceId =>
+        Assert.Equal(heartRate.DeviceId.ToUpperInvariant(), deviceId.ToUpperInvariant()));
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task Unreachable_heart_rate_rediscovery_keeps_the_advertising_current_locator()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("102030405060", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection();
+    services.AddSingleton(_factory);
+    services.AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new TargetedHeartRateRetryBleTransport(missingRequiredDiscoveryCount: 0)
+    {
+      UnreachableDiscoveryOrdinals = new HashSet<int> { 1 },
+      HoldScanOpenAfterAdvertisements = true,
+    };
+    transport.Advertisements.Enqueue(new BleAdvertisement(
+      heartRate.DeviceId,
+      heartRate.DisplayName,
+      -45,
+      [HeartRateDeviceClassifier.HeartRateService]));
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      TimeProvider.System,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance);
+
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+      while (coordinator.Current.HeartRate.State != DeviceConnectionState.Ready)
+        await Task.Delay(25, timeout.Token);
+
+      Assert.Equal(2, transport.ConnectionAttemptCount);
+      Assert.Equal(1, transport.ActiveScanCount);
+      Assert.All(transport.ConnectionDeviceIds, deviceId =>
+        Assert.Equal(heartRate.DeviceId.ToUpperInvariant(), deviceId.ToUpperInvariant()));
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+  }
+
+  [Fact]
   public async Task Resets_the_missing_characteristic_retry_budget_after_a_ready_generation()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -2313,9 +2559,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     public DateTimeOffset? FirstBatterySubscriptionAt { get; private set; }
     public ConcurrentQueue<string> ConnectionDeviceIds { get; } = [];
     public ConcurrentQueue<string> OperationEvents { get; } = [];
+    public ConcurrentQueue<BleAdvertisement> Advertisements { get; } = [];
     private int _scanCount;
     public int ActiveScanCount => Volatile.Read(ref _scanCount);
     public ConcurrentDictionary<string, byte> UnavailableDeviceIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentDictionary<string, int> UnreachableDiscoveryFailures { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool UseVendorTreadmill { get; set; }
     public bool BlockHeartRateDeviceInformationReads { get; set; }
     public bool BlockTreadmillDeviceInformationReads { get; set; }
@@ -2347,7 +2595,11 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       Interlocked.Increment(ref _scanCount);
       OperationEvents.Enqueue("scan");
       await Task.Yield();
-      yield break;
+      foreach (BleAdvertisement advertisement in Advertisements)
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        yield return advertisement;
+      }
     }
 
     public ValueTask<IBleConnection> ConnectAsync(
@@ -2370,6 +2622,17 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       {
         if (owner.UnavailableDeviceIds.ContainsKey(DeviceId))
           return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleDeviceUnavailableException());
+        if (owner.UnreachableDiscoveryFailures.TryGetValue(DeviceId, out int failures) && failures > 0)
+        {
+          if (failures == 1)
+            owner.UnreachableDiscoveryFailures.TryRemove(DeviceId, out _);
+          else
+            owner.UnreachableDiscoveryFailures.TryUpdate(DeviceId, failures - 1, failures);
+          return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleException(
+            "service discovery",
+            GattCommunicationStatus.Unreachable,
+            protocolError: null));
+        }
         IReadOnlyList<BleService> result = DeviceId.StartsWith('A')
           ? owner.UseVendorTreadmill
             ? [new BleService(VendorService,
@@ -2783,8 +3046,12 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private int _requiredTargetedDiscoveryCount;
 
     public bool HoldScanOpen { get; init; }
+    public bool HoldScanOpenAfterAdvertisements { get; init; }
     public bool DisconnectFirstStableConnection { get; init; }
     public IReadOnlySet<int>? MissingRequiredDiscoveryOrdinals { get; init; }
+    public IReadOnlySet<int>? AccessDeniedDiscoveryOrdinals { get; init; }
+    public IReadOnlySet<int>? UnreachableDiscoveryOrdinals { get; init; }
+    public ConcurrentQueue<BleAdvertisement> Advertisements { get; } = [];
     public TaskCompletionSource FirstMissingDiscoveryCompleted { get; } =
       new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource FirstSuccessfulReading { get; } =
@@ -2807,7 +3074,13 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       ScanStarted.TrySetResult();
       if (HoldScanOpen)
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-      yield break;
+      foreach (BleAdvertisement advertisement in Advertisements)
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        yield return advertisement;
+      }
+      if (HoldScanOpenAfterAdvertisements)
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
     }
 
     public ValueTask<IBleConnection> ConnectAsync(
@@ -2845,6 +3118,20 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           return ValueTask.FromResult<IReadOnlyList<BleService>>([]);
 
         int discovery = Interlocked.Increment(ref owner._requiredTargetedDiscoveryCount);
+        if (owner.UnreachableDiscoveryOrdinals?.Contains(discovery) == true)
+        {
+          return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleException(
+            "service discovery",
+            GattCommunicationStatus.Unreachable,
+            protocolError: null));
+        }
+        if (owner.AccessDeniedDiscoveryOrdinals?.Contains(discovery) == true)
+        {
+          return ValueTask.FromException<IReadOnlyList<BleService>>(new WindowsBleException(
+            "service discovery",
+            GattCommunicationStatus.AccessDenied,
+            protocolError: null));
+        }
         if (discovery <= owner._missingRequiredDiscoveryCount ||
             owner.MissingRequiredDiscoveryOrdinals?.Contains(discovery) == true)
         {

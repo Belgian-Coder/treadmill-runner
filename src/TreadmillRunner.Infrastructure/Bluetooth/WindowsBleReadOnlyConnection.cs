@@ -133,7 +133,7 @@ internal sealed class WindowsBleReadOnlyConnection :
       }
       catch (Exception exception) when (
         !operationCancellation.IsCancellationRequested &&
-        IsSafeOptionalDiscoveryFailure(exception))
+        IsSafeOptionalDiscoveryFailure(serviceUuid, exception))
       {
         // Optional/protected vendor-adjacent services must not prevent the
         // standard HRS path from discovering its independently accessible
@@ -154,7 +154,7 @@ internal sealed class WindowsBleReadOnlyConnection :
         }
         catch (Exception exception) when (
           !operationCancellation.IsCancellationRequested &&
-          IsSafeOptionalDiscoveryFailure(exception))
+          IsSafeOptionalDiscoveryFailure(serviceUuid, exception))
         {
           // Even an unsuccessful result can carry service objects. The
           // finally block below disposes every one before moving on.
@@ -173,7 +173,7 @@ internal sealed class WindowsBleReadOnlyConnection :
           }
           catch (Exception exception) when (
             !operationCancellation.IsCancellationRequested &&
-            IsSafeOptionalDiscoveryFailure(exception))
+            IsSafeOptionalDiscoveryFailure(serviceUuid, exception))
           {
             // Keep other requested standard services independently usable.
           }
@@ -573,10 +573,17 @@ internal sealed class WindowsBleReadOnlyConnection :
     return new BleService(nativeService.Uuid, characteristics);
   }
 
-  private static bool IsSafeOptionalDiscoveryFailure(Exception exception) =>
-    exception is WindowsBleException or
+  internal static bool IsSafeOptionalDiscoveryFailure(Guid serviceUuid, Exception exception) =>
+    serviceUuid != HeartRateServiceUuid &&
+    exception is (WindowsBleException
+    {
+      Status: not GattCommunicationStatus.Unreachable,
+    } or
       COMException or
-      UnauthorizedAccessException;
+      UnauthorizedAccessException);
+
+  private static readonly Guid HeartRateServiceUuid =
+    Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
 
   private static byte[] ReadBuffer(IBuffer buffer)
   {

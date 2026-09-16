@@ -38,6 +38,30 @@ public sealed record TreadmillCommandPolicy(
   TimeSpan ConfirmationPollInterval,
   bool AllowMissingRequestControlResponse = true)
 {
+  private static readonly TimeSpan MaximumTimerTimeout =
+    TimeSpan.FromMilliseconds(uint.MaxValue - 1u);
+  private TimeSpan _connectionTimeout = TimeSpan.FromSeconds(15);
+  private TimeSpan _connectionDisposalTimeout = TimeSpan.FromSeconds(1);
+
+  public TimeSpan ConnectionTimeout
+  {
+    get => _connectionTimeout;
+    init => _connectionTimeout = ValidateTimerTimeout(value, nameof(ConnectionTimeout));
+  }
+
+  public TimeSpan ConnectionDisposalTimeout
+  {
+    get => _connectionDisposalTimeout;
+    init => _connectionDisposalTimeout = ValidateTimerTimeout(
+      value,
+      nameof(ConnectionDisposalTimeout));
+  }
+
+  private static TimeSpan ValidateTimerTimeout(TimeSpan value, string parameterName) =>
+    value > TimeSpan.Zero && value <= MaximumTimerTimeout
+      ? value
+      : throw new ArgumentOutOfRangeException(parameterName);
+
   public static TreadmillCommandPolicy Default { get; } = new(
     TimeSpan.FromSeconds(5),
     TimeSpan.FromMilliseconds(300),
@@ -413,7 +437,11 @@ public sealed class TreadmillCommandCoordinator(
     IBleCommandConnection connection = await transport.ConnectCommandAsync(deviceId, cancellationToken);
     try
     {
-      IReadOnlyList<BleService> services = await connection.DiscoverServicesAsync(cancellationToken);
+      IReadOnlyList<BleService> services = await ReadOnlyDeviceCoordinator.AwaitGattOperationAsync(
+        operationCancellation => connection.DiscoverServicesAsync(operationCancellation).AsTask(),
+        policy.ConnectionTimeout,
+        timeProvider,
+        cancellationToken);
       BleCharacteristic? controlPoint = services
         .FirstOrDefault(static service => service.Uuid == FtmsService)?
         .Characteristics.FirstOrDefault(static characteristic =>
@@ -432,7 +460,10 @@ public sealed class TreadmillCommandCoordinator(
     }
     catch
     {
-      await connection.DisposeAsync();
+      await ReadOnlyDeviceCoordinator.DisposeSubscriptionBoundedAsync(
+        connection,
+        policy.ConnectionDisposalTimeout,
+        timeProvider);
       throw;
     }
   }

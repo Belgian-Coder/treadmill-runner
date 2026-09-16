@@ -5,6 +5,7 @@ using TreadmillRunner.Protocols.Ftms;
 using TreadmillRunner.Protocols.HeartRate;
 using TreadmillRunner.Protocols.Omega;
 using Microsoft.EntityFrameworkCore;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
@@ -733,7 +734,8 @@ public sealed class ReadOnlyDeviceCoordinator(
             attemptedConnectionDeviceId,
             connectionDeviceId,
             StringComparison.OrdinalIgnoreCase) &&
-          ClassifyFailure(exception) == BleReliabilityFailureKind.RequiredCharacteristicMissing;
+          (ClassifyFailure(exception) == BleReliabilityFailureKind.RequiredCharacteristicMissing ||
+           IsRetryableTargetedDiscoveryFailure(exception, attempt.OperationStage));
         if (retrySameHeartRateLocator)
         {
           hasRetriedRequiredHeartRateLocator = true;
@@ -756,23 +758,23 @@ public sealed class ReadOnlyDeviceCoordinator(
         if (!retrySameHeartRateLocator &&
             !deferHeartRateRediscoveryForCachedRetry &&
             (enrollment.Role == DeviceRole.HeartRate ||
-             exception is WindowsBleDeviceUnavailableException))
+             IsDeviceUnavailableFailure(exception)))
         {
           resolution = await ResolveCurrentDeviceAsync(
             enrollment,
             connectionDeviceId,
             excludeCurrentDevice: enrollment.Role == DeviceRole.HeartRate &&
-              exception is not (WindowsBleDeviceUnavailableException or WindowsBleDisconnectedException),
+              !IsDeviceUnavailableFailure(exception) &&
+              exception is not WindowsBleDisconnectedException,
             generation,
             cancellationToken);
           if (cancellationToken.IsCancellationRequested) break;
         }
-        if (resolution is not null &&
-            (exception is WindowsBleDeviceUnavailableException ||
-             !string.Equals(
-               connectionDeviceId,
-               resolution.DeviceId,
-               StringComparison.OrdinalIgnoreCase)))
+        if (resolution is not null && ShouldRetryRediscoveredDeviceImmediately(
+              exception,
+              connectionDeviceId,
+              resolution.DeviceId,
+              consecutiveFailureCount))
         {
           hasRetriedRequiredHeartRateLocator = false;
           connectionDeviceId = resolution.DeviceId;
@@ -794,7 +796,14 @@ public sealed class ReadOnlyDeviceCoordinator(
         }
         try
         {
-          await Task.Delay(reconnectDelay, timeProvider, cancellationToken);
+          TimeSpan remainingReconnectDelay = RemainingReconnectDelay(
+            failedAt,
+            reconnectDelay,
+            timeProvider.GetUtcNow());
+          if (remainingReconnectDelay > TimeSpan.Zero)
+          {
+            await Task.Delay(remainingReconnectDelay, timeProvider, cancellationToken);
+          }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -2714,6 +2723,38 @@ public sealed class ReadOnlyDeviceCoordinator(
     TimeoutException => "The BLE operation timed out.",
     _ => "The BLE device is unavailable.",
   };
+
+  internal static bool IsDeviceUnavailableFailure(Exception exception) =>
+    exception is WindowsBleDeviceUnavailableException or
+      WindowsBleException { IsDeviceUnavailable: true };
+
+  internal static bool IsRetryableTargetedDiscoveryFailure(
+    Exception exception,
+    string operationStage) =>
+    string.Equals(operationStage, "service-discovery", StringComparison.Ordinal) &&
+    exception is (WindowsBleException { IsDeviceUnavailable: false } or
+      COMException or
+      UnauthorizedAccessException);
+
+  internal static bool ShouldRetryRediscoveredDeviceImmediately(
+    Exception exception,
+    string currentDeviceId,
+    string resolvedDeviceId,
+    int consecutiveFailureCount) =>
+    !string.Equals(currentDeviceId, resolvedDeviceId, StringComparison.OrdinalIgnoreCase) ||
+    (consecutiveFailureCount == 1 && IsDeviceUnavailableFailure(exception));
+
+  internal static TimeSpan RemainingReconnectDelay(
+    DateTimeOffset failedAt,
+    TimeSpan reconnectDelay,
+    DateTimeOffset now)
+  {
+    if (reconnectDelay <= TimeSpan.Zero) return TimeSpan.Zero;
+    TimeSpan elapsed = now - failedAt;
+    if (elapsed <= TimeSpan.Zero) return reconnectDelay;
+    TimeSpan remaining = reconnectDelay - elapsed;
+    return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+  }
 
   private static BleReliabilityFailureKind ClassifyFailure(Exception exception) => exception switch
   {
