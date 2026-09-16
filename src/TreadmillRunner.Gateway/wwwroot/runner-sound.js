@@ -203,6 +203,12 @@ window.treadmillRunnerView = {
     target.scrollIntoView({ block: "start", behavior: "auto" });
     return true;
   },
+  closeDisclosureAndFocus: function (disclosure, target) {
+    if (disclosure instanceof HTMLDetailsElement) disclosure.open = false;
+    if (!(target instanceof HTMLElement)) return;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "nearest", behavior: "auto" });
+  },
   openModal: function (backdropId, dotnetReference) {
     this.closeModal();
     const backdrop = document.getElementById(backdropId);

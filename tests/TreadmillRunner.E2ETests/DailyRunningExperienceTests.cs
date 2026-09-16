@@ -65,6 +65,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Page.OpenRunChoicesAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
 
+    await Expect(Page.Locator("details.choose-another-run")).Not.ToHaveAttributeAsync("open", "");
+    await Expect(Page.Locator(".selection-summary")).ToBeFocusedAsync();
     await Expect(Page.GetByLabel("Selected runner")).ToHaveTextAsync(plan.ProfileName);
     await Expect(Page.GetByLabel("Selected workout")).ToHaveTextAsync(plan.WorkoutName);
     await Expect(Page.Locator(".connection-state")).ToHaveTextAsync("Gateway ready on demand");
@@ -105,9 +107,11 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     ILocator manualRun = Page.GetByRole(AriaRole.Button, new() { Name = "Manual run", Exact = false });
     await manualRun.ClickAsync();
 
-    await Expect(manualRun).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.GetByLabel("Selected workout")).ToHaveTextAsync("Manual run");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true })).ToBeEnabledAsync();
+    await Page.OpenRunChoicesAsync();
+    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Manual run", Exact = false }))
+      .ToHaveAttributeAsync("aria-pressed", "true");
 
     using HttpClient client = CreateClient();
     JsonElement[] workouts = await client.GetFromJsonAsync<JsonElement[]>("/api/planning/workouts") ?? [];
@@ -209,7 +213,7 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Task.Delay(TimeSpan.FromMilliseconds(2_200));
     await Expect(Page.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new System.Text.RegularExpressions.Regex("^M.+L"));
     ILocator speedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
-    Assert.True(await speedAxis.Locator("span").CountAsync() >= 10);
+    Assert.InRange(await speedAxis.Locator(".chart-axis-tick").CountAsync(), 4, 6);
 
     await Page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
@@ -369,10 +373,10 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToBeVisibleAsync();
     ILocator speedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
     await Expect(speedAxis).ToContainTextAsync("km/h");
-    await Expect(speedAxis.Locator("span")).ToHaveCountAsync(10);
+    await Expect(speedAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
     await Expect(speedAxis.Locator("span").First).ToHaveTextAsync("10");
     ILocator inclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
-    await Expect(inclineAxis.Locator("span")).ToHaveCountAsync(10);
+    await Expect(inclineAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
     await Expect(inclineAxis.Locator("span").First).ToHaveTextAsync("10");
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Set speed to 7.0 km/h", Exact = true }).ClickAsync();
@@ -433,10 +437,10 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     }
 
     await SetPhysicalMotionAsync(isMoving: true, measuredSpeedKph: 12.0, measuredInclinePercent: 12.0);
-    await Expect(speedAxis.Locator("span")).ToHaveCountAsync(12);
-    await Expect(speedAxis.Locator("span").First).ToHaveTextAsync("12");
-    await Expect(inclineAxis.Locator("span")).ToHaveCountAsync(12);
-    await Expect(inclineAxis.Locator("span").First).ToHaveTextAsync("12");
+    await Expect(speedAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(6);
+    await Expect(speedAxis.Locator(".chart-axis-tick").First).ToHaveTextAsync("12.5");
+    await Expect(inclineAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(6);
+    await Expect(inclineAxis.Locator(".chart-axis-tick").First).ToHaveTextAsync("12.5");
 
     await stop.ClickAsync();
     ILocator stopDialog = Page.GetByRole(AriaRole.Dialog);

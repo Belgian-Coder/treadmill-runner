@@ -7,8 +7,8 @@ namespace TreadmillRunner.Web.Live;
 public sealed record SessionChartProjection(
   long Version,
   TimeSpan Duration,
-  int SpeedAxisMaximum,
-  int InclineAxisMaximum,
+  ChartAxisScale SpeedAxis,
+  ChartAxisScale InclineAxis,
   int HeartRateAxisMinimum,
   int HeartRateAxisMaximum,
   IReadOnlyList<SessionSample> RenderSamples,
@@ -55,12 +55,10 @@ public sealed class SessionChartProjectionCache
     TimeSpan duration = session.Samples.Count > 0 && session.Samples[^1].Elapsed > session.Duration
       ? session.Samples[^1].Elapsed
       : session.Duration;
-    int speedMaximum = (int)Math.Ceiling(Math.Max(10, session.Samples
-      .SelectMany(static sample => new[] { sample.PlannedSpeedKph ?? 0, sample.RequestedSpeedKph, sample.MeasuredSpeedKph })
-      .DefaultIfEmpty(0).Max()));
-    int inclineMaximum = (int)Math.Ceiling(Math.Max(10, session.Samples
-      .SelectMany(static sample => new[] { sample.PlannedInclinePercent ?? 0, sample.RequestedInclinePercent, sample.MeasuredInclinePercent })
-      .DefaultIfEmpty(0).Max()));
+    ChartAxisScale speedAxis = ChartAxisScale.Create(session.Samples
+      .SelectMany(static sample => new double?[] { sample.PlannedSpeedKph, sample.RequestedSpeedKph, sample.MeasuredSpeedKph }));
+    ChartAxisScale inclineAxis = ChartAxisScale.Create(session.Samples
+      .SelectMany(static sample => new double?[] { sample.PlannedInclinePercent, sample.RequestedInclinePercent, sample.MeasuredInclinePercent }));
     SessionHeartRateZoneSnapshot[] zones = session.HeartRateZones?
       .Where(static zone => zone.MinimumBpm > 0)
       .OrderBy(static zone => zone.Number)
@@ -72,19 +70,28 @@ public sealed class SessionChartProjectionCache
     int heartRateMinimum = Math.Min(dataMinimum, zones.Select(static zone => (zone.MinimumBpm / 10) * 10).DefaultIfEmpty(dataMinimum).Min());
     int heartRateMaximum = Math.Max(dataMaximum, zones.Select(static zone => ((zone.MinimumBpm + 19) / 10) * 10).DefaultIfEmpty(dataMaximum).Max());
     double X(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, duration.TotalSeconds), 0, 1) * 700);
-    static double Y(double value, int maximum) => 210 - (Math.Clamp(value / Math.Max(1, maximum), 0, 1) * 200);
     double HeartRateY(double value) => 210 - (Math.Clamp((value - heartRateMinimum) / Math.Max(1, heartRateMaximum - heartRateMinimum), 0, 1) * 200);
 
-    string Path(Func<SessionSample, double?> selector, int maximum)
+    string Path(Func<SessionSample, double?> selector, ChartAxisScale axis, bool step = false)
     {
       var path = new StringBuilder();
       bool drawing = false;
+      double previousY = 0;
       foreach (SessionSample sample in samples)
       {
         if (selector(sample) is not { } value) { drawing = false; continue; }
+        double x = X(sample.Elapsed);
+        double y = axis.ProjectY(value);
+        if (drawing && step)
+        {
+          path.Append(" L")
+            .Append(x.ToString("0.##", CultureInfo.InvariantCulture)).Append(' ')
+            .Append(previousY.ToString("0.##", CultureInfo.InvariantCulture));
+        }
         path.Append(drawing ? " L" : "M")
-          .Append(X(sample.Elapsed).ToString("0.##", CultureInfo.InvariantCulture)).Append(' ')
-          .Append(Y(value, maximum).ToString("0.##", CultureInfo.InvariantCulture));
+          .Append(x.ToString("0.##", CultureInfo.InvariantCulture)).Append(' ')
+          .Append(y.ToString("0.##", CultureInfo.InvariantCulture));
+        previousY = y;
         drawing = true;
       }
       return path.ToString();
@@ -115,21 +122,23 @@ public sealed class SessionChartProjectionCache
     versionHash.Add(key.LastSequence);
     versionHash.Add(key.LastElapsedTicks);
     versionHash.Add(key.DurationTicks);
-    versionHash.Add(speedMaximum);
-    versionHash.Add(inclineMaximum);
+    versionHash.Add(speedAxis.Minimum);
+    versionHash.Add(speedAxis.Maximum);
+    versionHash.Add(inclineAxis.Minimum);
+    versionHash.Add(inclineAxis.Maximum);
     versionHash.Add(heartRateMinimum);
     versionHash.Add(heartRateMaximum);
     versionHash.Add(key.ZoneFingerprint);
     long version = versionHash.ToHashCode();
     return new SessionChartProjection(
-      version, duration, speedMaximum, inclineMaximum, heartRateMinimum, heartRateMaximum,
+      version, duration, speedAxis, inclineAxis, heartRateMinimum, heartRateMaximum,
       samples, zones,
-      Path(static sample => sample.PlannedSpeedKph, speedMaximum),
-      Path(static sample => sample.RequestedSpeedKph, speedMaximum),
-      Path(static sample => sample.MeasuredSpeedKph, speedMaximum),
-      Path(static sample => sample.PlannedInclinePercent, inclineMaximum),
-      Path(static sample => sample.RequestedInclinePercent, inclineMaximum),
-      Path(static sample => sample.MeasuredInclinePercent, inclineMaximum),
+      Path(static sample => sample.PlannedSpeedKph, speedAxis),
+      Path(static sample => sample.RequestedSpeedKph, speedAxis, step: true),
+      Path(static sample => sample.MeasuredSpeedKph, speedAxis),
+      Path(static sample => sample.PlannedInclinePercent, inclineAxis),
+      Path(static sample => sample.RequestedInclinePercent, inclineAxis, step: true),
+      Path(static sample => sample.MeasuredInclinePercent, inclineAxis),
       heartRatePath.ToString(), speedInclinePoints, heartRatePoints);
   }
 

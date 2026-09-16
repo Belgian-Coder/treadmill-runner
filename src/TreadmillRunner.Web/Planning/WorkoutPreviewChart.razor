@@ -7,8 +7,8 @@
                    Title="@Title"
                    CssClass="workout-preview-chart"
                    ChartAriaLabel="Planned speed and incline preview using the live Run chart"
-                   SpeedAxisMaximum="@SpeedAxisMaximum"
-                   InclineAxisMaximum="@InclineAxisMaximum"
+                   SpeedAxis="@SpeedAxis"
+                   InclineAxis="@InclineAxis"
                    Duration="@Duration"
                    PlannedSpeedPath="@BuildPath(true)"
                    PlannedInclinePath="@BuildPath(false)"
@@ -23,14 +23,10 @@
 
     private IReadOnlyList<PreviewPoint> Points => BuildPoints(Blocks);
     private TimeSpan Duration => Points.Count == 0 ? TimeSpan.FromMinutes(1) : Points[^1].Elapsed;
-    private int SpeedAxisMaximum => Math.Max(10, (int)Math.Ceiling(Points
-        .Select(static point => Math.Max(point.SpeedStart ?? 0, point.SpeedEnd ?? 0))
-        .DefaultIfEmpty(0)
-        .Max()));
-    private int InclineAxisMaximum => Math.Max(10, (int)Math.Ceiling(Points
-        .Select(static point => Math.Max(point.InclineStart ?? 0, point.InclineEnd ?? 0))
-        .DefaultIfEmpty(0)
-        .Max()));
+    private ChartAxisScale SpeedAxis => ChartAxisScale.Create(Points
+        .SelectMany(static point => new double?[] { point.SpeedStart, point.SpeedEnd }));
+    private ChartAxisScale InclineAxis => ChartAxisScale.Create(Points
+        .SelectMany(static point => new double?[] { point.InclineStart, point.InclineEnd }));
 
     private string BuildPath(bool speed)
     {
@@ -52,12 +48,11 @@
             path.Append(command);
             path.Append(ChartX(elapsed).ToString("0.##", CultureInfo.InvariantCulture));
             path.Append(' ');
-            path.Append(ChartY(value, speed).ToString("0.##", CultureInfo.InvariantCulture));
+            path.Append((speed ? SpeedAxis : InclineAxis).ProjectY(value).ToString("0.##", CultureInfo.InvariantCulture));
         }
     }
 
     private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, Duration.TotalSeconds), 0, 1) * 700);
-    private double ChartY(double value, bool speed) => 210 - (Math.Clamp(value / (speed ? SpeedAxisMaximum : InclineAxisMaximum), 0, 1) * 200);
     private static IReadOnlyList<PreviewPoint> BuildPoints(IReadOnlyList<WorkoutBlockInput> blocks)
     {
         var result = new List<PreviewPoint>();

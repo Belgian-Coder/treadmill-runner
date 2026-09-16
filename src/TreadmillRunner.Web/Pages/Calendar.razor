@@ -48,26 +48,6 @@
     }
     else
     {
-        @if (ScheduleGroups.Count > 0)
-        {
-            <section class="schedule-overview" aria-labelledby="schedule-overview-title">
-                <div class="panel-heading"><div><p class="eyebrow">Your schedules</p><h2 id="schedule-overview-title">Workout groups</h2></div><span>@ScheduleGroups.Count active</span></div>
-                <div class="schedule-group-grid">
-                    @foreach (ScheduleGroupSummary group in ScheduleGroups)
-                    {
-                        <article class="schedule-group-card">
-                            <div><h3>@group.Name</h3><p>@SchedulePattern(group)</p></div>
-                            <dl class="compact-stats">
-                                <div><dt>Starts</dt><dd>@group.StartDate.ToString("d MMM")</dd></div>
-                                <div><dt>Workout choices</dt><dd>@group.WorkoutCount</dd></div>
-                            </dl>
-                            <button class="secondary-action compact-action" type="button" @onclick="() => OpenGroupManager(group)">Manage group</button>
-                        </article>
-                    }
-                </div>
-            </section>
-        }
-
         <section class="planning-panel calendar-agenda-panel" aria-labelledby="range-title">
             <div class="panel-heading calendar-heading">
                 <div><p class="eyebrow">Effective plan</p><h2 id="range-title">@visibleMonth.ToString("MMMM yyyy")</h2></div>
@@ -245,6 +225,26 @@
                 }
             }
         </section>
+
+        @if (ScheduleGroups.Count > 0)
+        {
+            <section class="schedule-overview" aria-labelledby="schedule-overview-title">
+                <div class="panel-heading"><div><p class="eyebrow">Your schedules</p><h2 id="schedule-overview-title">Workout groups</h2></div><span>@ScheduleGroups.Count active</span></div>
+                <div class="schedule-group-grid">
+                    @foreach (ScheduleGroupSummary group in ScheduleGroups)
+                    {
+                        <article class="schedule-group-card">
+                            <div><h3>@group.Name</h3><p>@SchedulePattern(group)</p></div>
+                            <dl class="compact-stats">
+                                <div><dt>Starts</dt><dd>@group.StartDate.ToString("d MMM")</dd></div>
+                                <div><dt>Workout choices</dt><dd>@group.WorkoutCount</dd></div>
+                            </dl>
+                            <button class="secondary-action compact-action" type="button" @onclick="() => OpenGroupManager(group)">Manage group</button>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
     }
 </div>
 

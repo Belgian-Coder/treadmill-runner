@@ -15,6 +15,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   {
     { "phone-narrow", 320, 800 },
     { "phone-portrait", 390, 844 },
+    { "iphone13-pro-max", 428, 926 },
     { "iphone17-pro-max", 440, 956 },
     { "phone-landscape", 844, 390 },
     { "iphone17-pro-max-landscape", 956, 440 },
@@ -319,6 +320,15 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         Assert.True(legendBottom <= chartDockBox.Y - 4,
           $"The chart legend must clear the motion dock at {width}x{height}: legend bottom {legendBottom}, dock={chartDockBox}.");
       }
+      else
+      {
+        JsonElement labelReadability = await Page.Locator(".control-live-chart--focused").EvaluateAsync<JsonElement>(
+          "chart => { const labels = [...chart.querySelectorAll('.chart-axis-tick')].filter(item => getComputedStyle(item).display !== 'none'); return { count: labels.length, minimumFontSize: Math.min(...labels.map(item => parseFloat(getComputedStyle(item).fontSize))), text: labels.map(item => item.textContent.trim()) }; }");
+        Assert.True(labelReadability.GetProperty("count").GetInt32() is >= 8 and <= 12,
+          $"Short-landscape axes must keep four to six readable labels per side at {width}x{height}: {labelReadability}.");
+        Assert.True(labelReadability.GetProperty("minimumFontSize").GetDouble() >= 10,
+          $"Short-landscape axis labels became too small at {width}x{height}: {labelReadability}.");
+      }
 
       string screenshotDirectory = Path.Combine(gateway.ProjectRoot, "output", "playwright", "bug-tr-037");
       Directory.CreateDirectory(screenshotDirectory);
@@ -337,6 +347,14 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
 
       if (width <= 360)
       {
+        JsonElement balancedChartGeometry = await Page.Locator(".control-console-grid--balanced .control-live-chart").EvaluateAsync<JsonElement>(
+          "chart => { const heading = chart.querySelector('.control-chart-heading h2').getBoundingClientRect(); const unit = chart.querySelector('.chart-y-scale:not(.chart-y-scale--secondary) .chart-axis-unit').getBoundingClientRect(); const plot = chart.querySelector('.chart-inspector__surface').getBoundingClientRect(); const legend = chart.querySelector('.control-chart-legend').getBoundingClientRect(); const items = [...chart.querySelectorAll('.control-chart-legend__group > strong, .control-chart-legend__group > span')]; return { headingBottom: heading.bottom, unitTop: unit.top, plotWidth: plot.width, legendBottom: legend.bottom, legendItemsFit: items.every(item => item.scrollWidth <= item.clientWidth + 1 && item.getBoundingClientRect().height <= parseFloat(getComputedStyle(item).lineHeight) + 2) }; }");
+        Assert.True(balancedChartGeometry.GetProperty("unitTop").GetDouble() >= balancedChartGeometry.GetProperty("headingBottom").GetDouble() - 1,
+          $"The compact chart heading overlapped its speed axis at {width}x{height}: {balancedChartGeometry}.");
+        Assert.True(balancedChartGeometry.GetProperty("plotWidth").GetDouble() >= 64,
+          $"The compact chart plot became unreadably narrow at {width}x{height}: {balancedChartGeometry}.");
+        Assert.True(balancedChartGeometry.GetProperty("legendItemsFit").GetBoolean(),
+          $"The compact chart legend wrapped or clipped at {width}x{height}: {balancedChartGeometry}.");
         ILocator overviewAxis = Page.Locator(".control-console-grid--balanced .chart-time-scale");
         await Expect(overviewAxis).ToHaveAttributeAsync("data-endpoint", "3:00");
         LocatorBoundingBoxResult? overviewAxisBox = await overviewAxis.BoundingBoxAsync();
@@ -345,9 +363,15 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         Assert.NotNull(overviewDockBox);
         Assert.True(overviewAxisBox.Y + overviewAxisBox.Height <= overviewDockBox.Y - 4,
           $"The compact overview time axis must clear the motion dock at {width}x{height}: axis={overviewAxisBox}, dock={overviewDockBox}.");
+        Assert.True(balancedChartGeometry.GetProperty("legendBottom").GetDouble() <= overviewDockBox.Y - 4,
+          $"The compact overview legend must clear the motion dock at {width}x{height}: chart={balancedChartGeometry}, dock={overviewDockBox}.");
       }
 
-      if (width <= 650 && height > 500)
+      if (width >= 381 && width <= 650 && height > 500)
+      {
+        await Expect(Page.Locator(".control-details")).ToHaveCSSAsync("display", "none");
+      }
+      else if (width <= 650 && height > 500)
       {
         LocatorBoundingBoxResult? initialDetailsBox = await Page.Locator(".control-details").BoundingBoxAsync();
         LocatorBoundingBoxResult? initialDockBox = await Page.Locator(".control-action-dock").BoundingBoxAsync();
@@ -363,7 +387,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         FullPage = false,
       });
 
-      if (width <= 650 && height > 500)
+      if (width < 381 && height > 500)
       {
         ILocator details = Page.Locator(".control-details");
         await details.EvaluateAsync("element => element.scrollIntoView({ block: 'end' })");
@@ -470,12 +494,18 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator("[data-component='live-progress-chart']")).ToHaveCountAsync(1);
     ILocator speedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
-    await Expect(speedAxis.Locator("span")).ToHaveCountAsync(10);
+    await Expect(speedAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
     await Expect(speedAxis.Locator("span").First).ToHaveTextAsync("10");
+    await Expect(speedAxis.Locator("span").Last).ToHaveTextAsync("0");
     ILocator inclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
-    await Expect(inclineAxis.Locator("span")).ToHaveCountAsync(10);
+    await Expect(inclineAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
     await Expect(inclineAxis.Locator("span").First).ToHaveTextAsync("10");
-    await Expect(inclineAxis.Locator("span").Last).ToHaveTextAsync("1");
+    await Expect(inclineAxis.Locator("span").Last).ToHaveTextAsync("0");
+    JsonElement axisRegistration = await Page.Locator("[data-component='live-progress-chart']").EvaluateAsync<JsonElement>(
+      "chart => { const axis = chart.querySelector('[aria-label=\"Speed axis in kilometers per hour\"]'); const svg = chart.querySelector('svg.live-chart'); if (!axis || !svg) return { missing: true }; const labels = [...axis.querySelectorAll('.chart-axis-tick')].map(label => { const box = label.getBoundingClientRect(); const value = Number(label.dataset.axisValue); const line = [...svg.querySelectorAll('.chart-grid')].find(item => Math.abs(Number(item.getAttribute('y1')) - (210 - value / 10 * 200)) < .01); if (!line) return { value, labelY: box.top + box.height / 2, lineY: -999 }; const point = svg.createSVGPoint(); point.x = 0; point.y = Number(line.getAttribute('y1')); const screenPoint = point.matrixTransform(svg.getScreenCTM()); return { value, labelY: box.top + box.height / 2, lineY: screenPoint.y }; }); return { missing: false, labels }; }");
+    Assert.False(axisRegistration.GetProperty("missing").GetBoolean());
+    foreach (JsonElement label in axisRegistration.GetProperty("labels").EnumerateArray())
+      Assert.InRange(Math.Abs(label.GetProperty("labelY").GetDouble() - label.GetProperty("lineY").GetDouble()), 0, 1.5);
     string plannedSpeedPath = await Page.Locator("[data-series='planned-speed']").GetAttributeAsync("d") ?? string.Empty;
     string plannedInclinePath = await Page.Locator("[data-series='planned-incline']").GetAttributeAsync("d") ?? string.Empty;
     Assert.True(plannedSpeedPath.Count(static character => character == 'L') >= 5,
@@ -527,6 +557,32 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     {
       await SaveTr039EvidenceAsync(gateway.ProjectRoot, $"controls-{viewport}");
       await AssertNoScrollMobileControlsAsync(viewport, width, height);
+      if (viewport is "iphone13-pro-max" or "iphone17-pro-max" ||
+          viewport.EndsWith("landscape", StringComparison.Ordinal))
+      {
+        await AssertDocumentFitsViewportAsync("Controls", viewport);
+        ILocator technicalDetails = Page.GetByLabel("Technical session details", new() { Exact = true });
+        await Expect(technicalDetails).ToBeVisibleAsync();
+        LocatorBoundingBoxResult? technicalDetailsBox = await technicalDetails.BoundingBoxAsync();
+        Assert.NotNull(technicalDetailsBox);
+        Assert.True(technicalDetailsBox.Y + technicalDetailsBox.Height <= height + 1,
+          $"Technical session details extended below the {viewport} viewport: details={technicalDetailsBox}.");
+        if (viewport.EndsWith("landscape", StringComparison.Ordinal))
+        {
+          ILocator technicalDetailsSummary = technicalDetails.Locator("summary");
+          await technicalDetailsSummary.ClickAsync();
+          await Expect(technicalDetails).ToHaveAttributeAsync("open", "");
+          foreach (string name in new[] { "Pause", "Stop" })
+          {
+            LocatorBoundingBoxResult? motionControlBox = await Page.GetByRole(AriaRole.Button, new() { Name = name, Exact = true }).BoundingBoxAsync();
+            Assert.NotNull(motionControlBox);
+            Assert.True(motionControlBox.Y >= 0 && motionControlBox.Y + motionControlBox.Height <= height + 1,
+              $"{name} left the {viewport} viewport after opening technical session details: {motionControlBox}.");
+          }
+          await technicalDetailsSummary.ClickAsync();
+          await Expect(technicalDetails).Not.ToHaveAttributeAsync("open", "");
+        }
+      }
     }
     await chartFocus.ClickAsync();
     await Expect(chartFocus).ToHaveAttributeAsync("aria-pressed", "true");
@@ -535,6 +591,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     if (isPhoneViewport)
     {
       await AssertFocusedMobileChartAsync(viewport, width, height);
+      if (viewport is "iphone13-pro-max" or "iphone17-pro-max")
+        await AssertDocumentFitsViewportAsync("Chart", viewport);
       await SaveTr039EvidenceAsync(gateway.ProjectRoot, $"chart-{viewport}");
       await Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true }).ClickAsync();
     }
@@ -577,17 +635,61 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
             $"{groupName} preset {index + 1} was smaller than 44px in landscape: {box}.");
         }
       }
+
+      LocatorBoundingBoxResult? chartCard = await Page.Locator(".control-console-grid--balanced .control-live-chart").BoundingBoxAsync();
+      Assert.NotNull(chartCard);
+      Assert.True(chartCard.Y + chartCard.Height <= height + 1,
+        $"Balanced chart extended below the {viewport} viewport: " +
+        $"y={chartCard.Y:F1}, height={chartCard.Height:F1}, viewportHeight={height}.");
     }
 
+    if (viewport is "iphone13-pro-max" or "iphone17-pro-max" ||
+        viewport.EndsWith("landscape", StringComparison.Ordinal))
+    {
+      foreach (ILocator rail in await Page.Locator(".control-console-grid--balanced .control-rail").AllAsync())
+      {
+        bool needsInternalScroll = await rail.EvaluateAsync<bool>("""
+          element => {
+            const style = getComputedStyle(element);
+            return element.scrollHeight > element.clientHeight + 1 || style.overflowY === 'auto' || style.overflowY === 'scroll';
+          }
+          """);
+        Assert.False(needsInternalScroll, $"Balanced mode retained an internally scrolling rail at {viewport}.");
+      }
+
+      foreach (ILocator target in await Page.Locator(".control-console-grid--balanced .control-rail button").AllAsync())
+      {
+        LocatorBoundingBoxResult? box = await target.BoundingBoxAsync();
+        Assert.NotNull(box);
+        Assert.True(box.Y >= 0 && box.Y + box.Height <= height + 1,
+          $"Balanced target was outside the {viewport} viewport: " +
+          $"x={box.X:F1}, y={box.Y:F1}, width={box.Width:F1}, height={box.Height:F1}, viewport={width}x{height}.");
+      }
+    }
+
+    ILocator alternateSpeedTarget = Page.GetByRole(AriaRole.Button, new() { Name = "Set speed to 8.0 km/h", Exact = true });
+    await alternateSpeedTarget.ClickAsync();
+    await Expect(alternateSpeedTarget).ToHaveAttributeAsync("aria-pressed", "true");
     ILocator speedTarget = Page.GetByRole(AriaRole.Button, new() { Name = "Set speed to 7.5 km/h", Exact = true });
     await speedTarget.ClickAsync();
     await Expect(speedTarget).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.Locator(".control-rail--speed h2")).ToContainTextAsync("7.5");
 
+    ILocator alternateInclineTarget = Page.GetByRole(AriaRole.Button, new() { Name = "Set incline to 1.5%", Exact = true });
+    await alternateInclineTarget.ClickAsync();
+    await Expect(alternateInclineTarget).ToHaveAttributeAsync("aria-pressed", "true");
     ILocator inclineTarget = Page.GetByRole(AriaRole.Button, new() { Name = "Set incline to 1.0%", Exact = true });
     await inclineTarget.ClickAsync();
     await Expect(inclineTarget).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("1.0");
+    await Page.WaitForFunctionAsync(
+      "() => [...document.querySelectorAll('[data-series=\"requested-speed\"], [data-series=\"requested-incline\"]')].every(path => { const points = (path.getAttribute('d') || '').match(/[ML]\\s*[0-9.]+\\s+[0-9.]+/g) || []; return points.some((point, index) => index > 0 && point.split(/\\s+/)[1] === points[index - 1].split(/\\s+/)[1] && point !== points[index - 1]); })");
+    string requestedSpeedPath = await Page.Locator("[data-series='requested-speed']").GetAttributeAsync("d") ?? string.Empty;
+    string requestedInclinePath = await Page.Locator("[data-series='requested-incline']").GetAttributeAsync("d") ?? string.Empty;
+    Assert.True(HasVerticalSvgSegment(requestedSpeedPath),
+      $"Requested speed changes must use held-target steps rather than diagonal interpolation. Path: {requestedSpeedPath}");
+    Assert.True(HasVerticalSvgSegment(requestedInclinePath),
+      $"Requested incline changes must use held-target steps rather than diagonal interpolation. Path: {requestedInclinePath}");
 
     foreach (ILocator control in new[]
     {
@@ -602,14 +704,26 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       Assert.True(box.Width >= 44 && box.Height >= 44,
         $"Control target was smaller than 44px at the {viewport} viewport.");
     }
+    if (width <= 650)
+    {
+      foreach (ILocator label in await Page.Locator(".control-action-dock .media-control > span:last-child").AllAsync())
+      {
+        bool wraps = await label.EvaluateAsync<bool>(
+          "element => element.scrollWidth > element.clientWidth + 1 || element.getBoundingClientRect().height > parseFloat(getComputedStyle(element).lineHeight) + 2");
+        Assert.False(wraps, $"A motion-control label wrapped at {viewport}.");
+      }
+    }
 
     bool hasHorizontalOverflow = await Page.EvaluateAsync<bool>(
       "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1");
     Assert.False(hasHorizontalOverflow);
-    string expectedDockPosition = viewport.EndsWith("landscape", StringComparison.Ordinal)
+    string expectedDockPosition = viewport.EndsWith("landscape", StringComparison.Ordinal) ||
+                                  (width is >= 381 and <= 650 && height >= 501)
       ? "static"
       : width <= 650 ? "fixed" : "sticky";
     await Expect(Page.Locator(".control-action-dock")).ToHaveCSSAsync("position", expectedDockPosition);
+    if (viewport is "iphone13-pro-max" or "iphone17-pro-max")
+      await AssertDocumentFitsViewportAsync("Balanced", viewport);
     if (viewport.StartsWith("iphone17-pro-max", StringComparison.Ordinal))
     {
       LocatorBoundingBoxResult? stopBox = await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).BoundingBoxAsync();
@@ -822,11 +936,17 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   public async Task Pause_is_resumable_and_stop_offers_keep_discard_end_or_restart()
   {
     var profileDisconnectRequests = 0;
+    var pauseRequests = 0;
+    var discardRequests = 0;
     Page.Request += (_, request) =>
     {
       if (request.Method == "POST" && request.Url.Contains("/api/devices/profiles/", StringComparison.Ordinal) &&
           request.Url.EndsWith("/disconnect", StringComparison.Ordinal))
         Interlocked.Increment(ref profileDisconnectRequests);
+      if (request.Method == "POST" && request.Url.EndsWith("/api/live/sessions/stop", StringComparison.Ordinal))
+        Interlocked.Increment(ref pauseRequests);
+      if (request.Method == "POST" && request.Url.EndsWith("/api/live/sessions/discard", StringComparison.Ordinal))
+        Interlocked.Increment(ref discardRequests);
     };
     await Page.SetViewportSizeAsync(440, 956);
     await ResetSimulatorAsync();
@@ -843,6 +963,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
 
     await Page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true }).ClickAsync();
+    Assert.Equal(1, Volatile.Read(ref pauseRequests));
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Run paused", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "What should happen to this session?", Exact = true })).ToHaveCountAsync(0);
     ILocator resume = Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true });
@@ -867,6 +988,24 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       Path = Path.Combine(screenshotDirectory, "tr-033-stop-decision-phone.png"),
       FullPage = false,
     });
+
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Discard session", Exact = false }).ClickAsync();
+    ILocator discardConfirmation = dialog.GetByRole(AriaRole.Alertdialog, new() { Name = "Permanently discard this session?", Exact = true });
+    await Expect(discardConfirmation).ToBeVisibleAsync();
+    Assert.Equal(0, Volatile.Read(ref discardRequests));
+    await Page.Keyboard.PressAsync("Escape");
+    await Expect(dialog).ToBeHiddenAsync();
+    Assert.Equal(0, Volatile.Read(ref discardRequests));
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Resume", Exact = true }).ClickAsync();
+    await SetPhysicalMotionAsync(6.0, 1.0);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Stop", Exact = true }).ClickAsync();
+    await Expect(dialog.GetByRole(AriaRole.Alertdialog, new() { Name = "Permanently discard this session?", Exact = true })).ToHaveCountAsync(0);
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Start from beginning", Exact = false })).ToBeVisibleAsync();
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Discard session", Exact = false }).ClickAsync();
+    discardConfirmation = dialog.GetByRole(AriaRole.Alertdialog, new() { Name = "Permanently discard this session?", Exact = true });
+    await discardConfirmation.GetByRole(AriaRole.Button, new() { Name = "Go back", Exact = false }).ClickAsync();
+    await Expect(Page.Locator("#discard-session-trigger")).ToBeFocusedAsync();
 
     await dialog.GetByRole(AriaRole.Button, new() { Name = "Start from beginning", Exact = false }).ClickAsync();
     await Expect(dialog).ToBeHiddenAsync();
@@ -955,6 +1094,44 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.True(graphBox.X + graphBox.Width <= dockBox.X + 1,
       $"Pause/Stop overlapped the graph: graph right={graphBox.X + graphBox.Width:F1}, dock left={dockBox.X:F1}; {layout}.");
 
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Failed_speed_command_is_not_retried_and_keeps_physical_stop_guidance_visible()
+  {
+    await Page.SetViewportSizeAsync(844, 390);
+    await ResetSimulatorAsync();
+    SeededPlan plan = await SeedPlanAsync("failed-speed-command");
+    var speedRequests = 0;
+    await Page.RouteAsync("**/api/live/sessions/speed-override", async route =>
+    {
+      Interlocked.Increment(ref speedRequests);
+      await route.AbortAsync("internetdisconnected");
+    });
+
+    await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+    await Page.SelectActiveRunnerAsync(plan.ProfileName);
+    await Page.OpenRunChoicesAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = plan.WorkoutName, Exact = false }).ClickAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Prepare run", Exact = true }).ClickAsync();
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Ready at the treadmill", Exact = true })).ToBeVisibleAsync();
+    await SetPhysicalMotionAsync(1.2, 0.5);
+    await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Live run", Exact = true })).ToBeVisibleAsync();
+
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Set speed to 5.0 km/h", Exact = true }).ClickAsync();
+    ILocator status = Page.Locator(".control-command-status");
+    await Expect(status).ToBeVisibleAsync();
+    await Expect(status).ToContainTextAsync("not confirmed or retried");
+    await Expect(status).ToContainTextAsync("physical Stop");
+    var statusDimensions = await status.EvaluateAsync<int[]>("element => [element.scrollHeight, element.clientHeight]");
+    Assert.True(statusDimensions[0] <= statusDimensions[1] + 1,
+      $"Safety guidance was clipped: scrollHeight={statusDimensions[0]}, clientHeight={statusDimensions[1]}.");
+    double statusFontSize = await status.EvaluateAsync<double>("element => parseFloat(getComputedStyle(element).fontSize)");
+    Assert.True(statusFontSize >= 10,
+      $"Safety guidance must remain readable in phone landscape; computed font size was {statusFontSize:F2}px.");
+    Assert.Equal(1, Volatile.Read(ref speedRequests));
+    await Expect(Page.Locator("#blazor-error-ui")).ToBeHiddenAsync();
   }
 
   [Fact]
@@ -1053,6 +1230,15 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.Equal(1, Volatile.Read(ref stopRequests));
   }
 
+  private async Task AssertDocumentFitsViewportAsync(string mode, string viewport)
+  {
+    int[] documentHeight = await Page.EvaluateAsync<int[]>(
+      "() => [document.scrollingElement.scrollHeight, document.scrollingElement.clientHeight]");
+    Assert.True(documentHeight[0] <= documentHeight[1] + 1,
+      $"{mode} dashboard required document scrolling at {viewport}: " +
+      $"scrollHeight={documentHeight[0]}, clientHeight={documentHeight[1]}.");
+  }
+
   private async Task AssertNoScrollMobileControlsAsync(string viewport, int width, int height)
   {
     ILocator summary = Page.GetByLabel("Control mode summary", new() { Exact = true });
@@ -1107,6 +1293,13 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     {
       await PrepareActiveControlAsync(plan);
       await Page.GetByRole(AriaRole.Button, new() { Name = "Chart", Exact = true }).ClickAsync();
+      await AssertDocumentFitsViewportAsync("Chart", "phone-portrait");
+      LocatorBoundingBoxResult? headerBox = await Page.Locator(".control-page__header").BoundingBoxAsync();
+      LocatorBoundingBoxResult? consoleBox = await Page.Locator(".control-console-grid--chart").BoundingBoxAsync();
+      Assert.NotNull(headerBox);
+      Assert.NotNull(consoleBox);
+      Assert.True(headerBox.Y + headerBox.Height <= consoleBox.Y + 1,
+        $"Chart console overlapped the Live run header: header={headerBox}, console={consoleBox}.");
 
       ILocator inspector = Page.Locator(".control-live-chart--focused .chart-inspector--enabled");
       ILocator surface = inspector.Locator(".chart-inspector__surface");
@@ -1155,7 +1348,12 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         bubbles = true,
       });
       await Expect(tooltip).ToBeVisibleAsync();
-      await Page.Locator(".control-page__header h1").ClickAsync();
+      await Page.Locator(".control-page__header h1").DispatchEventAsync("pointerdown", new
+      {
+        pointerType = "mouse",
+        pointerId = 42,
+        bubbles = true,
+      });
       await Expect(tooltip).ToBeHiddenAsync();
 
       await surface.FocusAsync();
@@ -1204,6 +1402,18 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     {
       Assert.True(graphBox.Width >= width - 24 && graphBox.Height >= height * .62,
         $"Focused portrait graph did not fill the available screen at {viewport}: {graphBox}.");
+      LocatorBoundingBoxResult? plotBox = await focusedGraph.Locator(".chart-inspector__surface").BoundingBoxAsync();
+      LocatorBoundingBoxResult? dockBox = await Page.Locator(".control-console-grid--chart .control-action-dock").BoundingBoxAsync();
+      Assert.NotNull(plotBox);
+      Assert.NotNull(dockBox);
+      bool dockClearsPlot = dockBox.Y >= plotBox.Y + plotBox.Height - 1 ||
+                            dockBox.Y + dockBox.Height <= plotBox.Y + 1;
+      string dockPosition = await Page.Locator(".control-console-grid--chart .control-action-dock")
+        .EvaluateAsync<string>("element => getComputedStyle(element).position");
+      Assert.True(dockClearsPlot,
+        $"Focused Chart motion controls overlapped the live plot at {viewport}: " +
+        $"plot=({plotBox.X:F1},{plotBox.Y:F1},{plotBox.Width:F1},{plotBox.Height:F1}), " +
+        $"dock=({dockBox.X:F1},{dockBox.Y:F1},{dockBox.Width:F1},{dockBox.Height:F1}), position={dockPosition}.");
     }
 
     await Expect(focusedGraph.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true })).ToBeVisibleAsync();

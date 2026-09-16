@@ -100,7 +100,7 @@
                     <p>HR automation: @session.HeartRateAutomationMode · @session.HeartRateAutomationReason</p>
                 </details>
             }
-            <span class="action-status" role="status">@actionStatus</span>
+            <span class="action-status" role="status">@DisplayedActionStatus</span>
         </section>
 
         <section class="secondary-metrics" aria-label="Run totals">
@@ -116,40 +116,43 @@
                 <span>Plan and live chart</span>
             </summary>
             <div class="chart-plot-grid chart-plot-grid--dual" aria-label="Live workout chart">
-                <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@LiveSpeedAxisMaximum, 1fr)">
-                    @foreach (int tick in LiveSpeedAxisTicks)
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned" aria-label="Speed axis in kilometers per hour">
+                    @foreach (ChartAxisTick tick in LiveSpeedAxis.Ticks)
                     {
-                        <span>@tick</span>
+                        <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @ChartPercent(tick.PositionPercent)">@tick.Label</span>
                     }
                 </div>
                 <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Planned, requested, and measured speed and incline">
-                    @foreach (int tick in LiveSpeedAxisTicks)
+                    @foreach (ChartAxisTick tick in LiveSpeedAxis.Ticks)
                     {
-                        double y = LiveChartY(tick, LiveSpeedAxisMaximum);
-                        <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                        <line class="chart-grid" x1="10" y1="@ChartAxisScale.SvgCoordinate(tick.SvgY)" x2="710" y2="@ChartAxisScale.SvgCoordinate(tick.SvgY)" />
                     }
-                    <path class="chart-plan" data-series="planned-speed" d="@BuildLiveMetricPath(static point => point.PlannedSpeedKph, LiveSpeedAxisMaximum)" />
-                    <path class="chart-requested" data-series="requested-speed" d="@BuildLiveMetricPath(static point => point.RequestedSpeedKph, LiveSpeedAxisMaximum)" />
-                    <path class="chart-current" data-series="measured-speed" d="@BuildLiveMetricPath(static point => point.MeasuredSpeedKph, LiveSpeedAxisMaximum)" />
-                    <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildLiveMetricPath(static point => point.PlannedInclinePercent, LiveInclineAxisMaximum)" />
-                    <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildLiveMetricPath(static point => point.RequestedInclinePercent, LiveInclineAxisMaximum)" />
-                    <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildLiveMetricPath(static point => point.MeasuredInclinePercent, LiveInclineAxisMaximum)" />
+                    @if (LiveInclineAxis.Minimum < 0 && LiveInclineAxis.Maximum > 0)
+                    {
+                        <line class="chart-grid chart-grid--incline-zero" x1="10" y1="@ChartAxisScale.SvgCoordinate(LiveInclineAxis.ProjectY(0))" x2="710" y2="@ChartAxisScale.SvgCoordinate(LiveInclineAxis.ProjectY(0))" />
+                    }
+                    <path class="chart-plan" data-series="planned-speed" d="@BuildLiveMetricPath(static point => point.PlannedSpeedKph, LiveSpeedAxis, step: true)" />
+                    <path class="chart-requested" data-series="requested-speed" d="@BuildLiveMetricPath(static point => point.RequestedSpeedKph, LiveSpeedAxis, step: true)" />
+                    <path class="chart-current" data-series="measured-speed" d="@BuildLiveMetricPath(static point => point.MeasuredSpeedKph, LiveSpeedAxis)" />
+                    <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildLiveMetricPath(static point => point.PlannedInclinePercent, LiveInclineAxis, step: true)" />
+                    <path class="chart-requested chart-requested--incline" data-series="requested-incline" d="@BuildLiveMetricPath(static point => point.RequestedInclinePercent, LiveInclineAxis, step: true)" />
+                    <path class="chart-current chart-current--incline" data-series="measured-incline" d="@BuildLiveMetricPath(static point => point.MeasuredInclinePercent, LiveInclineAxis)" />
                     @foreach (TimeSpan marker in liveOverrideMarkers)
                     {
                         double markerX = ChartX(marker);
-                        <line class="chart-event-marker" x1="@markerX" x2="@markerX" y1="10" y2="210" />
+                        <line class="chart-event-marker" x1="@ChartAxisScale.SvgCoordinate(markerX)" x2="@ChartAxisScale.SvgCoordinate(markerX)" y1="10" y2="210" />
                     }
-                    <line class="chart-cursor" x1="@LiveProgressX" x2="@LiveProgressX" y1="10" y2="210" data-elapsed-seconds="@LiveChartElapsedSeconds" data-duration-seconds="@LiveChartDurationSeconds" />
+                    <line class="chart-cursor" x1="@ChartAxisScale.SvgCoordinate(LiveProgressX)" x2="@ChartAxisScale.SvgCoordinate(LiveProgressX)" y1="10" y2="210" data-elapsed-seconds="@LiveChartElapsedSeconds" data-duration-seconds="@LiveChartDurationSeconds" />
                     @if (LatestLiveChartPoint is { } latest)
                     {
-                        <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@LiveChartY(latest.MeasuredSpeedKph, LiveSpeedAxisMaximum)" r="5" />
+                        <circle class="chart-marker" cx="@ChartAxisScale.SvgCoordinate(ChartX(latest.Elapsed))" cy="@ChartAxisScale.SvgCoordinate(LiveSpeedAxis.ProjectY(latest.MeasuredSpeedKph))" r="5" />
                     }
                 </svg>
-                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@LiveInclineAxisMaximum, 1fr)">
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned chart-y-scale--secondary" aria-label="Incline axis in percent">
                     <strong class="chart-axis-unit">%</strong>
-                    @foreach (int tick in LiveInclineAxisTicks)
+                    @foreach (ChartAxisTick tick in LiveInclineAxis.Ticks)
                     {
-                        <span>@tick</span>
+                        <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @ChartPercent(tick.PositionPercent)">@tick.Label</span>
                     }
                 </div>
                 <div></div>
@@ -200,7 +203,7 @@
                 <span class="media-control__icon"><AppIcon Name="play" /></span><span>Start</span>
             </button>
             <button class="touch-action danger-action media-control media-control--stop" type="button" @onclick="StopAsync" disabled="@(!CanStop)"><span class="media-control__icon"><AppIcon Name="stop" /></span><span>Stop</span></button>
-            <span id="start-hold-status" class="action-status" role="status">@actionStatus</span>
+            <span id="start-hold-status" class="action-status" role="status">@DisplayedActionStatus</span>
         </section>
 
         @if (session.LastCommandResult is { } armedResult)
@@ -303,7 +306,7 @@
                     </section>
                 }
 
-                <details class="choose-another-run">
+                <details @ref="chooseAnotherRun" class="choose-another-run">
                     <summary><span><strong>Other workout</strong><small>Manual, calendar, plan, or library</small></span><AppIcon Name="chevron-down" /></summary>
                     <div class="choose-another-run__content">
                 <section class="workout-picker" aria-label="Choose workout">
@@ -336,7 +339,7 @@
                                     <span><strong>@program.Name</strong><small>@program.Category · @program.CompletedItemCount/@program.ItemCount complete</small></span>
                                     @if (program.Run is not null && ProgramChoice(program) is { } nextChoice)
                                     {
-                                        <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(nextChoice)">Next workout</button>
+                                        <button class="secondary-action compact-action" type="button" @onclick="() => SelectWorkoutAsync(nextChoice, closeWorkoutBrowser: true)">Next workout</button>
                                     }
                                     else
                                     {
@@ -383,7 +386,7 @@
                             {
                                 <button class="workout-choice-card" type="button"
                                         aria-pressed="@(selectedRevisionId == choice.RevisionId ? "true" : "false")"
-                                        @onclick="() => SelectWorkoutAsync(choice)">
+                                        @onclick="() => SelectWorkoutAsync(choice, closeWorkoutBrowser: true)">
                                     <span><strong>@choice.Name</strong><small>@choice.Context</small></span>
                                     <span>@(string.IsNullOrWhiteSpace(choice.Description) ? "No description" : choice.Description)</span>
                                     <small>@choice.Stats</small>
@@ -394,7 +397,7 @@
                 </section>
                     </div>
                     </details>
-                <dl class="selection-summary" aria-busy="@profileSelectionLoading">
+                <dl @ref="selectionSummary" class="selection-summary" aria-busy="@profileSelectionLoading" tabindex="-1">
                     <div><dt>Selected runner</dt><dd aria-label="Selected runner">@SelectedProfileName</dd></div>
                     <div><dt>Selected workout</dt><dd aria-label="Selected workout">@(profileSelectionLoading ? "Loading…" : SelectedWorkoutName)</dd></div>
                     <div><dt>Expected</dt><dd>@(profileSelectionLoading ? "Loading…" : ExpectedDuration)</dd></div>
@@ -417,7 +420,7 @@
                     {
                         <button class="primary-action touch-action" type="button" @onclick="ConnectRunDevicesAsync" disabled="@(!CanConnectRunDevices)">Connect devices for this run</button>
                     }
-                    <span role="status" class="action-status">@actionStatus</span>
+                    <span role="status" class="action-status">@DisplayedActionStatus</span>
                 </div>
             </article>
 
@@ -484,8 +487,23 @@
 {
     <DetailSheet BackdropId="home-stop-decision-backdrop" BackdropClass="workout-details-backdrop" CssClass="workout-details-dialog stop-decision-dialog" LabelledBy="home-stop-decision-title" OnDismiss="KeepSessionPausedAsync">
         <header class="workout-details-header"><div><p class="eyebrow">Treadmill stopped</p><h2 id="home-stop-decision-title">What should happen to this session?</h2></div><button class="icon-action" type="button" aria-label="Keep session paused" autofocus @onclick="KeepSessionPausedAsync"><AppIcon Name="close" /></button></header>
-        <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
-        <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session, keep it in History, and leave manually connected devices online.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAndDisconnectAsync"><strong>End, save and disconnect devices</strong><span>Finish this session, keep it in History, then disconnect this runner’s treadmill and heart-rate sensors.</span></button></div>
+        @if (sessionDecisionStatus is not null)
+        {
+            <p class="inline-validation" role="alert">@sessionDecisionStatus</p>
+        }
+        @if (confirmDiscardSession)
+        {
+            <section id="home-discard-session-confirmation" class="stop-discard-confirmation" role="alertdialog" aria-labelledby="home-discard-session-title" aria-describedby="home-discard-session-description" tabindex="-1">
+                <h3 id="home-discard-session-title">Permanently discard this session?</h3>
+                <p id="home-discard-session-description">This deletes the run and all local samples. It cannot be undone.</p>
+                <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" autofocus @onclick="CancelDiscardSession"><strong>Go back</strong><span>Keep the session paused and preserved.</span></button><button class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="DiscardSessionAsync"><strong>Yes, discard permanently</strong><span>Delete this run instead of adding it to History.</span></button></div>
+            </section>
+        }
+        else
+        {
+            <p>The belt is stopped. Your recording and workout progress are still preserved.</p>
+            <div class="stop-decision-actions"><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="KeepSessionPausedAsync"><strong>Keep paused</strong><span>Return to the run and resume later.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="ResetWorkoutProgressAsync"><strong>Start from beginning</strong><span>Go back to the first step and apply its speed and incline after Start.</span></button><button class="primary-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAsync"><strong>End and save</strong><span>Finish this session, keep it in History, and leave manually connected devices online.</span></button><button class="secondary-action" type="button" disabled="@sessionActionBusy" @onclick="EndSessionAndDisconnectAsync"><strong>End, save and disconnect devices</strong><span>Finish this session, keep it in History, then disconnect this runner’s treadmill and heart-rate sensors.</span></button><button id="home-discard-session-trigger" class="danger-action" type="button" disabled="@sessionActionBusy" @onclick="RequestDiscardSessionAsync"><strong>Discard session</strong><span>Delete this run and all local samples instead of adding it to History.</span></button></div>
+        }
     </DetailSheet>
 }
 
@@ -527,23 +545,40 @@
     private bool liveStateConnected => Gateway.Current.IsConnected;
     private string controlStatus => lease is null ? "Observer" : "Controller";
     private string actionStatus = "Select a runner and workout.";
+    private string? safetyGuidance;
+    private string DisplayedActionStatus => safetyGuidance ?? actionStatus;
     private bool soundEnabled;
     private bool polarH10MemoryAvailable;
     private bool recordPolarH10Memory;
     private RunCuePreferences cuePreferences = RunCuePreferences.Default;
-    private int liveSpeedAxisMaximum = 10;
-    private int liveInclineAxisMaximum = 10;
+    private double liveSpeedAxisMinimum;
+    private double liveSpeedAxisMaximum = 10;
+    private double liveInclineAxisMinimum;
+    private double liveInclineAxisMaximum = 10;
+    private ChartAxisScale liveSpeedAxis = ChartAxisScale.CreateFromBounds(0, 10);
+    private ChartAxisScale liveInclineAxis = ChartAxisScale.CreateFromBounds(0, 10);
     private bool isManualCommandPending;
     private bool isStopPending;
     private bool stopRequestedDuringCommand;
     private bool openDecisionAfterQueuedStop;
     private bool isStopDecisionOpen;
     private bool openStopDecisionPending;
+    private bool confirmDiscardSession;
+    private bool focusDiscardConfirmation;
+    private bool focusDiscardTrigger;
     private bool sessionActionBusy;
+    private string? sessionDecisionStatus;
+    private string? pendingSessionDecisionKey;
+    private Guid pendingSessionDecisionOperationId;
+    private long pendingSessionDecisionVersion;
+    private Guid pendingSessionDecisionLeaseId;
     private int workoutSelectionGeneration;
+    private int activeProfileChangeVersion;
     private DotNetObjectReference<Home>? stopDecisionModalReference;
     private PendingProgramStart? pendingProgramStart;
     private ElementReference programStartCancel;
+    private ElementReference chooseAnotherRun;
+    private ElementReference selectionSummary;
     private bool focusProgramStartCancel;
     private string? programStartOriginId;
     private string? restoreProgramStartTriggerId;
@@ -654,8 +689,7 @@
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetSpeedRemotely);
     private bool CanAdjustIncline => ClientReady && !isManualCommandPending && lease is not null && session?.Live.SessionState == SessionState.Running &&
         (session.HeartRateSource == HeartRateSource.Simulated || session.CanSetInclineRemotely);
-    private bool CanPause => ClientReady && !isManualCommandPending && lease is not null && session?.CanPauseRemotely == true &&
-        session.Live.SessionState == SessionState.Running;
+    private bool CanPause => CanStop && !isManualCommandPending && session?.Live.SessionState == SessionState.Running;
     private bool CanSetAutomation => ClientReady && !isManualCommandPending && lease is not null &&
         session?.Live.SessionState == SessionState.Running;
     private bool CanSetSpeedAutomation => CanSetAutomation && session?.CanSetSpeedRemotely == true;
@@ -714,6 +748,7 @@
 
     private async Task ReloadRunSelectionDataAsync()
     {
+        int observedProfileChangeVersion = activeProfileChangeVersion;
         // These first-screen reads are independent. Start them together, then await and
         // commit in the original order below so partial responses never affect selection.
         Task<TreadmillMaintenanceSnapshot?> maintenanceTask = LoadMaintenanceAsync();
@@ -723,12 +758,14 @@
         Task<PolarMemoryCapability?> polarMemoryTask = LoadPolarMemoryCapabilityAsync();
         Task<Guid?> activeProfileTask = ActiveProfile.GetAsync().AsTask();
 
+        Guid? initiallyStoredProfileId = await activeProfileTask;
+
         // Ensure all started requests settle before replaying the original await order. This
         // observes sibling failures if one request fails, while the individual awaits below
         // preserve the previous exception type and maintenance JSON fallback.
         try
         {
-            await Task.WhenAll(maintenanceTask, profilesTask, workoutsTask, quickStartTask, polarMemoryTask, activeProfileTask);
+            await Task.WhenAll(maintenanceTask, profilesTask, workoutsTask, quickStartTask, polarMemoryTask);
         }
         catch (Exception)
         {
@@ -748,8 +785,17 @@
         PolarMemoryCapability? polarCapability = await polarMemoryTask;
         polarH10MemoryAvailable = polarCapability?.IsAvailable == true;
         if (!polarH10MemoryAvailable) recordPolarH10Memory = false;
-        selectedProfileId = await activeProfileTask;
-        await ApplyProfileSelectionAsync(selectedProfileId, announce: false);
+        if (activeProfileChangeVersion == observedProfileChangeVersion)
+        {
+            await ApplyProfileSelectionAsync(initiallyStoredProfileId, announce: false);
+        }
+        else if (selectedProfileId is not null && selectedRevisionId is null)
+        {
+            // The navigation picker already applied the newer runner while these initial
+            // reads were in flight. Do not reset that selection (or a workout chosen from
+            // it); only fill a recommendation if the newer selection still has none.
+            await ApplyRecommendationForCurrentProfileAsync();
+        }
     }
 
     private async Task<TreadmillMaintenanceSnapshot?> LoadMaintenanceAsync()
@@ -782,6 +828,16 @@
             restoreProgramStartTriggerId = null;
             await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", triggerId);
         }
+        else if (focusDiscardConfirmation && confirmDiscardSession)
+        {
+            focusDiscardConfirmation = false;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", "home-discard-session-confirmation");
+        }
+        else if (focusDiscardTrigger && !confirmDiscardSession)
+        {
+            focusDiscardTrigger = false;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", "home-discard-session-trigger");
+        }
         else if (openStopDecisionPending && isStopDecisionOpen)
         {
             openStopDecisionPending = false;
@@ -801,6 +857,8 @@
     private void ActiveProfileChanged(Guid? profileId)
     {
         if (disposed) return;
+        activeProfileChangeVersion++;
+        selectedProfileId = profileId;
         _ = InvokeAsync(() => ApplyProfileSelectionAsync(profileId, announce: true));
     }
 
@@ -912,7 +970,7 @@
         quickStart = null;
     }
 
-    private async Task SelectWorkoutAsync(WorkoutChoice choice)
+    private async Task SelectWorkoutAsync(WorkoutChoice choice, bool closeWorkoutBrowser = false)
     {
         int profileGeneration = profileSelectionGeneration;
         Guid? profileId = selectedProfileId;
@@ -926,6 +984,10 @@
         preflight = null;
         actionStatus = "Checking readiness in the background…";
         await InvokeAsync(StateHasChanged);
+        if (closeWorkoutBrowser)
+        {
+            await JS.InvokeVoidAsync("treadmillRunnerView.closeDisclosureAndFocus", chooseAnotherRun, selectionSummary);
+        }
         if (!IsCurrentWorkoutSelection(profileGeneration, profileId, workoutGeneration, choice.RevisionId)) return;
         await RefreshPreflightAsync();
     }
@@ -985,7 +1047,9 @@
             return;
         }
 
-        await SelectWorkoutAsync(ChoiceFromSummary(manual) with { Context = "Manual run", SelectionSource = "Manual" });
+        await SelectWorkoutAsync(
+            ChoiceFromSummary(manual) with { Context = "Manual run", SelectionSource = "Manual" },
+            closeWorkoutBrowser: true);
     }
 
     private async Task<ProfilePlanningData> LoadProfilePlanningAsync(Guid profileId, CancellationToken cancellationToken)
@@ -1453,6 +1517,7 @@
     private async Task AdjustInclineAsync(double adjustmentPercent)
     {
         if (!CanAdjustIncline || session is null || lease is null) return;
+        safetyGuidance = null;
         isManualCommandPending = true;
         actionStatus = "Changing incline…";
         await InvokeAsync(StateHasChanged);
@@ -1468,6 +1533,10 @@
             });
             await RefreshAfterManualControlAsync(response, "incline");
         }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            await HandleUnconfirmedCommandAsync("Incline");
+        }
         finally
         {
             await CompleteManualCommandAsync();
@@ -1477,6 +1546,7 @@
     private async Task AdjustSpeedAsync(double adjustmentKph)
     {
         if (!CanAdjustSpeed || session is null || lease is null) return;
+        safetyGuidance = null;
         isManualCommandPending = true;
         actionStatus = "Changing speed…";
         await InvokeAsync(StateHasChanged);
@@ -1507,6 +1577,10 @@
                 actionStatus = "The requested speed could not be changed.";
             }
         }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            await HandleUnconfirmedCommandAsync("Speed");
+        }
         finally
         {
             await CompleteManualCommandAsync();
@@ -1515,7 +1589,7 @@
 
     private Task StartAsync() => SendCommandAsync(TreadmillCommandKind.Start);
     private Task StopAsync() => RequestStopAsync(openDecision: true);
-    private Task PauseAsync() => SendCommandAsync(TreadmillCommandKind.Pause);
+    private Task PauseAsync() => RequestStopAsync(openDecision: false);
 
     private Task RequestStopAsync(bool openDecision)
     {
@@ -1551,6 +1625,7 @@
     private async Task SetAutomationAsync(HeartRateAutomationMode mode)
     {
         if (!CanSetAutomation || session is null || lease is null) return;
+        safetyGuidance = null;
         isManualCommandPending = true;
         actionStatus = "Updating heart-rate control…";
         await InvokeAsync(StateHasChanged);
@@ -1574,6 +1649,10 @@
                 actionStatus = "Heart-rate automation could not be changed.";
             }
         }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            await HandleUnconfirmedCommandAsync("Heart-rate automation");
+        }
         finally
         {
             await CompleteManualCommandAsync();
@@ -1587,6 +1666,7 @@
         ActiveSessionSnapshot? currentSession = session;
         ControlLease? currentLease = lease;
         if (currentSession is null || currentLease is null) return;
+        safetyGuidance = null;
         if (isStopCommand) isStopPending = true;
         else isManualCommandPending = true;
         string operation = kind switch
@@ -1631,6 +1711,10 @@
                 await InvokeAsync(StateHasChanged);
             }
         }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            await HandleUnconfirmedCommandAsync(kind.ToString());
+        }
         finally
         {
             if (isStopCommand) isStopPending = false;
@@ -1642,14 +1726,37 @@
     {
         isManualCommandPending = false;
         if (!stopRequestedDuringCommand) return;
-        stopRequestedDuringCommand = false;
         bool openDecision = openDecisionAfterQueuedStop;
-        openDecisionAfterQueuedStop = false;
-        using HttpResponseMessage response = await Http.GetAsync("api/live/session");
-        session = response.StatusCode == System.Net.HttpStatusCode.NoContent
-            ? null
-            : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
-        await SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
+        try
+        {
+            using HttpResponseMessage response = await Http.GetAsync("api/live/session");
+            session = response.StatusCode == System.Net.HttpStatusCode.NoContent
+                ? null
+                : await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            stopRequestedDuringCommand = false;
+            openDecisionAfterQueuedStop = false;
+            await SendCommandAsync(TreadmillCommandKind.Stop, openDecision);
+        }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            stopRequestedDuringCommand = false;
+            openDecisionAfterQueuedStop = false;
+            actionStatus = "Use physical Stop now. Queued Stop was not sent because live state could not be refreshed.";
+            safetyGuidance = actionStatus;
+        }
+    }
+
+    private static bool IsExpectedCommandFailure(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException or JsonException;
+
+    private async Task HandleUnconfirmedCommandAsync(string command)
+    {
+        string guidance = $"Use physical Stop if moving. {command} was not confirmed or retried.";
+        safetyGuidance = guidance;
+        actionStatus = guidance;
+        try { await Gateway.RefreshAuthoritativeStateAsync(); }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception)) { }
+        actionStatus = guidance;
     }
 
     private async Task KeepSessionPausedAsync()
@@ -1657,10 +1764,28 @@
         await JS.InvokeVoidAsync("treadmillRunnerView.closeModal");
         stopDecisionModalReference = null;
         isStopDecisionOpen = false;
+        confirmDiscardSession = false;
+        focusDiscardConfirmation = false;
+        focusDiscardTrigger = false;
+        sessionDecisionStatus = null;
+        ClearPendingSessionDecision();
         actionStatus = "Session paused. Press Resume when you are ready.";
     }
 
     private Task ResetWorkoutProgressAsync() => ApplySessionDecisionAsync("reset-progress", "Workout reset to the first step. Press Start when you are ready.", false);
+    private async Task RequestDiscardSessionAsync()
+    {
+        confirmDiscardSession = true;
+        focusDiscardConfirmation = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelDiscardSession()
+    {
+        confirmDiscardSession = false;
+        focusDiscardConfirmation = false;
+        focusDiscardTrigger = true;
+    }
     private Task DiscardSessionAsync() => ApplySessionDecisionAsync("discard", "Session discarded.", true);
     private Task EndSessionAsync() => ApplySessionDecisionAsync("end", "Session ended and saved.", true);
     private Task EndSessionAndDisconnectAsync() => ApplySessionDecisionAsync("end", "Session ended, saved, and devices disconnected.", true, disconnectDevices: true);
@@ -1669,20 +1794,56 @@
     {
         if (sessionActionBusy || session is null || lease is null) return;
         sessionActionBusy = true;
+        string decisionKey = $"{action}:{disconnectDevices}";
+        if (!string.Equals(pendingSessionDecisionKey, decisionKey, StringComparison.Ordinal))
+        {
+            pendingSessionDecisionKey = decisionKey;
+            pendingSessionDecisionOperationId = Guid.NewGuid();
+            pendingSessionDecisionVersion = session.Version;
+            pendingSessionDecisionLeaseId = lease.Id;
+        }
+        sessionDecisionStatus = null;
         try
         {
             Guid profileId = session.UserProfileId;
-            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new { operationId = Guid.NewGuid(), holderId, leaseId = lease.Id, expectedSessionVersion = session.Version });
-            if (!response.IsSuccessStatusCode) { actionStatus = "The session action was rejected."; return; }
+            using HttpResponseMessage response = await Http.PostAsJsonAsync($"api/live/sessions/{action}", new { operationId = pendingSessionDecisionOperationId, holderId, leaseId = pendingSessionDecisionLeaseId, expectedSessionVersion = pendingSessionDecisionVersion });
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.RequestTimeout || (int)response.StatusCode >= 500)
+                {
+                    await HandleUnknownSessionDecisionAsync();
+                    return;
+                }
+                ClearPendingSessionDecision();
+                sessionDecisionStatus = "The session action was rejected. Live state was refreshed.";
+                actionStatus = sessionDecisionStatus;
+                try
+                {
+                    using HttpResponseMessage refresh = await Http.GetAsync("api/live/session");
+                    session = refresh.StatusCode == System.Net.HttpStatusCode.NoContent ? null : await refresh.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+                }
+                catch (Exception exception) when (IsExpectedCommandFailure(exception)) { }
+                return;
+            }
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+            ClearPendingSessionDecision();
             Guid completedSessionId = session?.SessionId ?? Guid.Empty;
             if (disconnectDevices)
             {
-                using HttpResponseMessage disconnect = await Http.PostAsync($"api/devices/profiles/{profileId:D}/disconnect", content: null);
-                if (!disconnect.IsSuccessStatusCode)
+                try
+                {
+                    using HttpResponseMessage disconnect = await Http.PostAsync($"api/devices/profiles/{profileId:D}/disconnect", content: null);
+                    if (!disconnect.IsSuccessStatusCode)
+                    {
+                        await KeepSessionPausedAsync();
+                        actionStatus = "Session saved, but devices were not disconnected. Check Devices.";
+                        return;
+                    }
+                }
+                catch (Exception exception) when (IsExpectedCommandFailure(exception))
                 {
                     await KeepSessionPausedAsync();
-                    actionStatus = "Session saved, but the devices could not be disconnected. Use Devices to disconnect them.";
+                    actionStatus = "Session saved. Device disconnect was not confirmed; check Devices.";
                     return;
                 }
             }
@@ -1695,7 +1856,31 @@
                     replace: true);
             }
         }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception))
+        {
+            await HandleUnknownSessionDecisionAsync();
+        }
         finally { sessionActionBusy = false; }
+    }
+
+    private void ClearPendingSessionDecision()
+    {
+        pendingSessionDecisionKey = null;
+        pendingSessionDecisionOperationId = Guid.Empty;
+        pendingSessionDecisionVersion = 0;
+        pendingSessionDecisionLeaseId = Guid.Empty;
+    }
+
+    private async Task HandleUnknownSessionDecisionAsync()
+    {
+        sessionDecisionStatus = "Outcome unknown. This action was not retried. Check the current run or History before trying again.";
+        actionStatus = sessionDecisionStatus;
+        try
+        {
+            using HttpResponseMessage refresh = await Http.GetAsync("api/live/session");
+            session = refresh.StatusCode == System.Net.HttpStatusCode.NoContent ? null : await refresh.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
+        }
+        catch (Exception exception) when (IsExpectedCommandFailure(exception)) { }
     }
 
     private static bool IsProfileDeviceCheck(PreflightCheck check) =>
@@ -1706,6 +1891,11 @@
     {
         stopDecisionModalReference = null;
         isStopDecisionOpen = false;
+        confirmDiscardSession = false;
+        focusDiscardConfirmation = false;
+        focusDiscardTrigger = false;
+        sessionDecisionStatus = null;
+        ClearPendingSessionDecision();
         await InvokeAsync(StateHasChanged);
         return true;
     }
@@ -1750,20 +1940,32 @@
             snapshot.PlannedInclinePercent,
             snapshot.RequestedInclinePercent,
             snapshot.Live.InclinePercent);
+        double planSpeedMinimum = snapshot.WorkoutPlan.Count == 0
+            ? 0
+            : snapshot.WorkoutPlan.Min(static item => item.SpeedKph ?? 0);
         double planSpeedMaximum = snapshot.WorkoutPlan.Count == 0
             ? 0
             : snapshot.WorkoutPlan.Max(static item => item.SpeedKph ?? 0);
+        double planInclineMinimum = snapshot.WorkoutPlan.Count == 0
+            ? 0
+            : snapshot.WorkoutPlan.Min(static item => item.InclinePercent ?? 0);
         double planInclineMaximum = snapshot.WorkoutPlan.Count == 0
             ? 0
             : snapshot.WorkoutPlan.Max(static item => item.InclinePercent ?? 0);
-        double observedSpeed = Math.Max(point.PlannedSpeedKph ?? 0, Math.Max(point.RequestedSpeedKph, point.MeasuredSpeedKph));
-        double observedIncline = Math.Max(point.PlannedInclinePercent ?? 0, Math.Max(point.RequestedInclinePercent, point.MeasuredInclinePercent));
-        liveSpeedAxisMaximum = (int)Math.Ceiling(Math.Max(liveSpeedAxisMaximum, Math.Max(planSpeedMaximum, observedSpeed)));
-        liveInclineAxisMaximum = (int)Math.Ceiling(Math.Max(liveInclineAxisMaximum, Math.Max(planInclineMaximum, observedIncline)));
+        double observedSpeedMinimum = Math.Min(point.PlannedSpeedKph ?? 0, Math.Min(point.RequestedSpeedKph, point.MeasuredSpeedKph));
+        double observedSpeedMaximum = Math.Max(point.PlannedSpeedKph ?? 0, Math.Max(point.RequestedSpeedKph, point.MeasuredSpeedKph));
+        double observedInclineMinimum = Math.Min(point.PlannedInclinePercent ?? 0, Math.Min(point.RequestedInclinePercent, point.MeasuredInclinePercent));
+        double observedInclineMaximum = Math.Max(point.PlannedInclinePercent ?? 0, Math.Max(point.RequestedInclinePercent, point.MeasuredInclinePercent));
+        liveSpeedAxisMinimum = Math.Min(liveSpeedAxisMinimum, Math.Min(planSpeedMinimum, observedSpeedMinimum));
+        liveSpeedAxisMaximum = Math.Max(liveSpeedAxisMaximum, Math.Max(planSpeedMaximum, observedSpeedMaximum));
+        liveInclineAxisMinimum = Math.Min(liveInclineAxisMinimum, Math.Min(planInclineMinimum, observedInclineMinimum));
+        liveInclineAxisMaximum = Math.Max(liveInclineAxisMaximum, Math.Max(planInclineMaximum, observedInclineMaximum));
+        liveSpeedAxis = ChartAxisScale.CreateFromBounds(liveSpeedAxisMinimum, liveSpeedAxisMaximum);
+        liveInclineAxis = ChartAxisScale.CreateFromBounds(liveInclineAxisMinimum, liveInclineAxisMaximum);
         liveChartPoints.AppendOrReplace(point, static (previous, current) => (long)previous.Elapsed.TotalSeconds == (long)current.Elapsed.TotalSeconds);
     }
 
-    private string BuildLiveMetricPath(Func<LiveChartPoint, double?> selector, int axisMaximum)
+    private string BuildLiveMetricPath(Func<LiveChartPoint, double?> selector, ChartAxisScale axis, bool step = false)
     {
         if (liveChartPoints.Count == 0) return string.Empty;
         IReadOnlyList<LiveChartPoint> points = RenderLiveChartPoints();
@@ -1777,7 +1979,7 @@
                 started = false;
                 continue;
             }
-            double y = LiveChartY(value, axisMaximum);
+            double y = axis.ProjectY(value);
             double x = ChartX(point.Elapsed);
             if (!started)
             {
@@ -1786,7 +1988,7 @@
                 path.Append(' ');
                 path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
             }
-            else
+            else if (step)
             {
                 // Treat each sample as the value held until the next timestamp. This
                 // keeps speed changes rectangular, matching the incline presentation,
@@ -1802,6 +2004,13 @@
                     path.Append(' ');
                     path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
                 }
+            }
+            else
+            {
+                path.Append(" L");
+                path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
+                path.Append(' ');
+                path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
             }
             previousY = y;
             started = true;
@@ -1870,11 +2079,9 @@
         session,
         LatestLiveChartPoint?.Elapsed ?? TimeSpan.Zero);
     private LiveChartPoint? LatestLiveChartPoint => liveChartPoints.Snapshot().LastOrDefault();
-    private int LiveSpeedAxisMaximum => liveSpeedAxisMaximum;
-    private int LiveInclineAxisMaximum => liveInclineAxisMaximum;
-    private IEnumerable<int> LiveSpeedAxisTicks => Enumerable.Range(1, LiveSpeedAxisMaximum).Reverse();
-    private IEnumerable<int> LiveInclineAxisTicks => Enumerable.Range(1, LiveInclineAxisMaximum).Reverse();
-    private static double LiveChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
+    private ChartAxisScale LiveSpeedAxis => liveSpeedAxis;
+    private ChartAxisScale LiveInclineAxis => liveInclineAxis;
+    private static string ChartPercent(double value) => $"{value.ToString("0.##", CultureInfo.InvariantCulture)}%";
     private double LiveProgressX => ChartX(session?.Live.Elapsed ?? TimeSpan.Zero);
     private string LiveChartElapsedSeconds => (session?.Live.Elapsed.TotalSeconds ?? 0).ToString("0.###", CultureInfo.InvariantCulture);
     private string LiveChartDurationSeconds => LiveChartDuration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
@@ -1915,6 +2122,12 @@
     public async ValueTask DisposeAsync()
     {
         disposed = true;
+        if (isStopDecisionOpen || stopDecisionModalReference is not null)
+        {
+            try { await JS.InvokeVoidAsync("treadmillRunnerView.closeModal"); }
+            catch (JSDisconnectedException) { }
+            catch (InvalidOperationException) { }
+        }
         CancelAndDispose(ref preflightRefreshCancellation);
         CancelAndDispose(ref profileSelectionCancellation);
         Gateway.ConnectionChanged -= GatewayConnectionChanged;

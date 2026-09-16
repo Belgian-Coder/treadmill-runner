@@ -272,19 +272,22 @@ else
         <section class="route-card">
             <h2>Planned versus actual</h2>
             <div class="chart-plot-grid chart-plot-grid--dual">
-                <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@SpeedAxisMaximum, 1fr)">
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned" aria-label="Speed axis in kilometers per hour">
                     <strong class="chart-axis-unit">km/h</strong>
-                    @foreach (int tick in SpeedAxisTicks)
+                    @foreach (ChartAxisTick tick in SpeedAxis.Ticks)
                     {
-                        <span>@tick</span>
+                        <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @Percent(tick.PositionPercent)">@tick.Label</span>
                     }
                 </div>
                 <ChartInspector Series="@SpeedInclineInspectionSeries" PointFactory="@GetSpeedInclineInspectionPoints" ProjectionVersion="@Projection.Version" AriaLabel="Interactive historical speed and incline chart. Hover, touch and drag, or use Left and Right arrow keys to inspect every plotted value.">
                     <svg class="live-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="Historical speed and incline over elapsed time">
-                        @foreach (int tick in SpeedAxisTicks)
+                        @foreach (ChartAxisTick tick in SpeedAxis.Ticks)
                         {
-                            double y = ChartY(tick, SpeedAxisMaximum);
-                            <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                            <line class="chart-grid" x1="10" y1="@ChartAxisScale.SvgCoordinate(tick.SvgY)" x2="710" y2="@ChartAxisScale.SvgCoordinate(tick.SvgY)" />
+                        }
+                        @if (InclineAxis.Minimum < 0 && InclineAxis.Maximum > 0)
+                        {
+                            <line class="chart-grid chart-grid--incline-zero" x1="10" y1="@ChartAxisScale.SvgCoordinate(InclineAxis.ProjectY(0))" x2="710" y2="@ChartAxisScale.SvgCoordinate(InclineAxis.ProjectY(0))" />
                         }
                         <path class="chart-plan" data-series="planned-speed" d="@Projection.PlannedSpeedPath" />
                         <path class="chart-requested" data-series="requested-speed" d="@Projection.RequestedSpeedPath" />
@@ -294,15 +297,15 @@ else
                         <path class="chart-current chart-current--incline" data-series="measured-incline" d="@Projection.MeasuredInclinePath" />
                         @if (session.Samples.LastOrDefault() is { } latest)
                         {
-                            <circle class="chart-marker" cx="@ChartX(latest.Elapsed)" cy="@ChartY(latest.MeasuredSpeedKph, SpeedAxisMaximum)" r="5" />
+                            <circle class="chart-marker" cx="@ChartAxisScale.SvgCoordinate(ChartX(latest.Elapsed))" cy="@ChartAxisScale.SvgCoordinate(SpeedAxis.ProjectY(latest.MeasuredSpeedKph))" r="5" />
                         }
                     </svg>
                 </ChartInspector>
-                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@InclineAxisMaximum, 1fr)">
+                <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned chart-y-scale--secondary" aria-label="Incline axis in percent">
                     <strong class="chart-axis-unit">%</strong>
-                    @foreach (int tick in InclineAxisTicks)
+                    @foreach (ChartAxisTick tick in InclineAxis.Ticks)
                     {
-                        <span>@tick</span>
+                        <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @Percent(tick.PositionPercent)">@tick.Label</span>
                     }
                 </div>
                 <div></div>
@@ -342,14 +345,14 @@ else
                             @foreach (int tick in HeartRateAxisTicks)
                             {
                                 double y = HeartRateChartY(tick);
-                                <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                                <line class="chart-grid" x1="10" y1="@ChartAxisScale.SvgCoordinate(y)" x2="710" y2="@ChartAxisScale.SvgCoordinate(y)" />
                             }
                             @foreach (SessionHeartRateZoneSnapshot zone in HeartRateBoundaryZones)
                             {
                                 double y = HeartRateChartY(zone.MinimumBpm);
                                 double labelY = Math.Clamp(y - 5, 12, 208);
                                 <g class="chart-zone-boundary-group" data-zone-boundary="@zone.Number" role="img" aria-label="Zone @zone.Number · @zone.Name starts at @zone.MinimumBpm bpm">
-                                    <line class="chart-zone-boundary" x1="10" y1="@y" x2="710" y2="@y" />
+                                    <line class="chart-zone-boundary" x1="10" y1="@ChartAxisScale.SvgCoordinate(y)" x2="710" y2="@ChartAxisScale.SvgCoordinate(y)" />
                                     <text class="chart-zone-label" x="16" y="@labelY" dominant-baseline="middle" aria-hidden="true">Zone @zone.Number · @zone.MinimumBpm</text>
                                 </g>
                             }
@@ -838,32 +841,6 @@ else
         deletionOperationId = Guid.Empty;
     }
 
-    private string BuildMetricPath(Func<SessionSample, double?> selector, int axisMaximum)
-    {
-        if (session?.Samples.Count is null or 0) return string.Empty;
-
-        IReadOnlyList<SessionSample> points = RenderSamples(session.Samples);
-        var path = new StringBuilder();
-        bool started = false;
-        foreach (SessionSample point in points)
-        {
-            if (selector(point) is not { } value)
-            {
-                started = false;
-                continue;
-            }
-            double x = ChartX(point.Elapsed);
-            double y = ChartY(value, axisMaximum);
-            path.Append(started ? " L" : "M");
-            path.Append(x.ToString("0.##", CultureInfo.InvariantCulture));
-            path.Append(' ');
-            path.Append(y.ToString("0.##", CultureInfo.InvariantCulture));
-            started = true;
-        }
-
-        return path.ToString();
-    }
-
     private string BuildHeartRatePath()
     {
         if (session?.Samples.Count is null or 0) return string.Empty;
@@ -934,11 +911,8 @@ else
         return selected;
     }
 
-    private int SpeedAxisMaximum => session is null ? 10 : Projection.SpeedAxisMaximum;
-    private int InclineAxisMaximum => session is null ? 10 : Projection.InclineAxisMaximum;
-
-    private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, SpeedAxisMaximum).Reverse();
-    private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, InclineAxisMaximum).Reverse();
+    private ChartAxisScale SpeedAxis => session is null ? ChartAxisScale.CreateFromBounds(0, 10) : Projection.SpeedAxis;
+    private ChartAxisScale InclineAxis => session is null ? ChartAxisScale.CreateFromBounds(0, 10) : Projection.InclineAxis;
     private IReadOnlyList<SessionHeartRateZoneSnapshot> HeartRateBoundaryZones => session is null ? [] : Projection.HeartRateBoundaryZones;
     private int HeartRateAxisMinimum => session is null ? 60 : Projection.HeartRateAxisMinimum;
     private int HeartRateAxisMaximum => session is null ? 180 : Projection.HeartRateAxisMaximum;
@@ -952,8 +926,8 @@ else
         }
     }
     private double ChartX(TimeSpan elapsed) => 10 + (Math.Clamp(elapsed.TotalSeconds / Math.Max(1, ChartDuration.TotalSeconds), 0, 1) * 700);
-    private static double ChartY(double value, int axisMaximum) => 210 - (Math.Clamp(value / axisMaximum, 0, 1) * 200);
     private double HeartRateChartY(double value) => 210 - (Math.Clamp((value - HeartRateAxisMinimum) / Math.Max(1, HeartRateAxisMaximum - HeartRateAxisMinimum), 0, 1) * 200);
+    private static string Percent(double value) => $"{value.ToString("0.##", CultureInfo.InvariantCulture)}%";
     private IReadOnlyList<ChartInspectionPoint> GetSpeedInclineInspectionPoints() => session is null ? [] : Projection.SpeedInclineInspectionPoints;
     private IReadOnlyList<ChartInspectionPoint> GetHeartRateInspectionPoints() => session is null ? [] : Projection.HeartRateInspectionPoints;
 

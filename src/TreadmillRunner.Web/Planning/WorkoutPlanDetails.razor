@@ -17,12 +17,12 @@ else
                 @for (int line = 0; line <= 4; line++)
                 {
                     double y = 10 + (line * 50);
-                    <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                    <line class="chart-grid" x1="10" y1="@ChartAxisScale.SvgCoordinate(y)" x2="710" y2="@ChartAxisScale.SvgCoordinate(y)" />
                 }
                 @for (int index = 1; index < Steps.Count; index++)
                 {
                     double x = ChartX(index);
-                    <line class="chart-event-marker" x1="@x" x2="@x" y1="10" y2="210" />
+                    <line class="chart-event-marker" x1="@ChartAxisScale.SvgCoordinate(x)" x2="@ChartAxisScale.SvgCoordinate(x)" y1="10" y2="210" />
                 }
                 <path class="chart-plan" data-series="planned-speed" d="@BuildPath(static step => step.SpeedStart, static step => step.SpeedEnd, MaximumSpeed)" />
                 <path class="chart-plan chart-plan--incline" data-series="planned-incline" d="@BuildPath(static step => step.InclineStart, static step => step.InclineEnd, MaximumIncline)" />

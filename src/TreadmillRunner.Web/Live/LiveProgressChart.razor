@@ -9,21 +9,24 @@
         </div>
     </div>
     <div class="chart-plot-grid chart-plot-grid--dual">
-        <div class="chart-y-scale chart-y-scale--ticks" aria-label="Speed axis in kilometers per hour" style="grid-template-rows: repeat(@SpeedAxisMaximum, 1fr)">
+        <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned" aria-label="Speed axis in kilometers per hour">
             <strong class="chart-axis-unit">km/h</strong>
-            @foreach (int tick in SpeedAxisTicks)
+            @foreach (ChartAxisTick tick in SpeedAxis.Ticks)
             {
-                <span>@tick</span>
+                <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @Percent(tick.PositionPercent)">@tick.Label</span>
             }
         </div>
         <ChartInspector Series="@InspectionSeries" Points="@InspectionPoints" AriaLabel="@InspectorAriaLabel">
             <svg class="live-chart control-chart" viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="@ChartAriaLabel">
-                @foreach (int tick in SpeedAxisTicks)
+                @foreach (ChartAxisTick tick in SpeedAxis.Ticks)
                 {
-                    double y = ChartY(tick, SpeedAxisMaximum);
-                    <line class="chart-grid" x1="10" y1="@y" x2="710" y2="@y" />
+                    <line class="chart-grid" x1="10" y1="@ChartAxisScale.SvgCoordinate(tick.SvgY)" x2="710" y2="@ChartAxisScale.SvgCoordinate(tick.SvgY)" />
                 }
-                <line class="chart-axis" x1="10" y1="210" x2="710" y2="210" />
+                <line class="chart-axis" x1="10" y1="@ChartAxisScale.SvgCoordinate(SpeedAxis.ProjectY(0))" x2="710" y2="@ChartAxisScale.SvgCoordinate(SpeedAxis.ProjectY(0))" />
+                @if (InclineAxis.Minimum < 0 && InclineAxis.Maximum > 0)
+                {
+                    <line class="chart-grid chart-grid--incline-zero" x1="10" y1="@ChartAxisScale.SvgCoordinate(InclineAxis.ProjectY(0))" x2="710" y2="@ChartAxisScale.SvgCoordinate(InclineAxis.ProjectY(0))" />
+                }
                 <path class="chart-plan" data-series="planned-speed" d="@PlannedSpeedPath" />
                 <path class="chart-requested" data-series="requested-speed" d="@TargetSpeedPath" />
                 <path class="chart-current" data-series="measured-speed" d="@MeasuredSpeedPath" />
@@ -32,19 +35,19 @@
                 <path class="chart-current chart-current--incline" data-series="measured-incline" d="@MeasuredInclinePath" />
                 @if (CursorX is { } cursorX)
                 {
-                    <line class="chart-cursor" x1="@cursorX" x2="@cursorX" y1="10" y2="210" data-elapsed-seconds="@ElapsedSeconds" data-duration-seconds="@DurationSeconds" />
+                    <line class="chart-cursor" x1="@ChartAxisScale.SvgCoordinate(cursorX)" x2="@ChartAxisScale.SvgCoordinate(cursorX)" y1="10" y2="210" data-elapsed-seconds="@ElapsedSeconds" data-duration-seconds="@DurationSeconds" />
                 }
                 @if (MarkerX is { } markerX && MarkerY is { } markerY)
                 {
-                    <circle class="chart-marker" cx="@markerX" cy="@markerY" r="5" />
+                    <circle class="chart-marker" cx="@ChartAxisScale.SvgCoordinate(markerX)" cy="@ChartAxisScale.SvgCoordinate(markerY)" r="5" />
                 }
             </svg>
         </ChartInspector>
-        <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--secondary" aria-label="Incline axis in percent" style="grid-template-rows: repeat(@InclineAxisMaximum, 1fr)">
+        <div class="chart-y-scale chart-y-scale--ticks chart-y-scale--positioned chart-y-scale--secondary" aria-label="Incline axis in percent">
             <strong class="chart-axis-unit">%</strong>
-            @foreach (int tick in InclineAxisTicks)
+            @foreach (ChartAxisTick tick in InclineAxis.Ticks)
             {
-                <span>@tick</span>
+                <span class="chart-axis-tick" data-axis-value="@tick.Label" style="top: @Percent(tick.PositionPercent)">@tick.Label</span>
             }
         </div>
         <div></div>
@@ -73,8 +76,8 @@
     [Parameter] public string Title { get; set; } = "Workout";
     [Parameter] public string CssClass { get; set; } = string.Empty;
     [Parameter] public string ChartAriaLabel { get; set; } = "Live speed in kilometers per hour and incline percentage over elapsed time";
-    [Parameter] public int SpeedAxisMaximum { get; set; } = 10;
-    [Parameter] public int InclineAxisMaximum { get; set; } = 10;
+    [Parameter] public ChartAxisScale SpeedAxis { get; set; } = ChartAxisScale.CreateFromBounds(0, 10);
+    [Parameter] public ChartAxisScale InclineAxis { get; set; } = ChartAxisScale.CreateFromBounds(0, 10);
     [Parameter] public TimeSpan Duration { get; set; } = TimeSpan.FromMinutes(1);
     [Parameter] public string PlannedSpeedPath { get; set; } = string.Empty;
     [Parameter] public string TargetSpeedPath { get; set; } = string.Empty;
@@ -94,9 +97,6 @@
     [Parameter] public string InspectorAriaLabel { get; set; } = "Interactive workout chart. Hover, touch and drag, or use Left and Right arrow keys to inspect every plotted value.";
 
     private TimeSpan SafeDuration => Duration > TimeSpan.Zero ? Duration : TimeSpan.FromMinutes(1);
-    private IEnumerable<int> SpeedAxisTicks => Enumerable.Range(1, Math.Max(1, SpeedAxisMaximum)).Reverse();
-    private IEnumerable<int> InclineAxisTicks => Enumerable.Range(1, Math.Max(1, InclineAxisMaximum)).Reverse();
-
     private IReadOnlyList<ChartTimeTick> ChartTimeTicks
     {
         get
@@ -116,7 +116,7 @@
         }
     }
 
-    private static double ChartY(double value, int maximum) => 210 - (Math.Clamp(value / Math.Max(1, maximum), 0, 1) * 200);
+    private static string Percent(double value) => $"{value.ToString("0.##", CultureInfo.InvariantCulture)}%";
     private static string FormatAxisTime(TimeSpan elapsed) => elapsed.TotalHours >= 1
         ? elapsed.ToString(@"h\:mm", CultureInfo.InvariantCulture)
         : elapsed.ToString(@"m\:ss", CultureInfo.InvariantCulture);

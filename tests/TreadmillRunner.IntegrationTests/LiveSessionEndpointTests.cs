@@ -433,6 +433,9 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
       expectedSessionVersion = running.Version,
     });
     Assert.Equal(HttpStatusCode.OK, stop.StatusCode);
+    TreadmillCommandResult pauseResult = Assert.IsType<TreadmillCommandResult>(
+      await stop.Content.ReadFromJsonAsync<TreadmillCommandResult>());
+    Assert.Equal(TreadmillCommandKind.Stop, pauseResult.Kind);
     ActiveSessionSnapshot paused = Assert.IsType<ActiveSessionSnapshot>(
       await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
     Assert.Equal(SessionState.PausedWaitingForPhysicalResume, paused.Live.SessionState);

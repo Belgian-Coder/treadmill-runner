@@ -104,6 +104,12 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/calendar").AbsoluteUri);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Calendar", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Plan training", Exact = true })).ToHaveCountAsync(0);
+    if (await Page.Locator(".schedule-overview").CountAsync() > 0)
+    {
+      bool agendaPrecedesSchedules = await Page.EvaluateAsync<bool>(
+        "() => Boolean(document.querySelector('.calendar-agenda-panel').compareDocumentPosition(document.querySelector('.schedule-overview')) & Node.DOCUMENT_POSITION_FOLLOWING)");
+      Assert.True(agendaPrecedesSchedules, "Calendar visual order must match DOM and keyboard focus order.");
+    }
     ILocator calendarView = Page.GetByRole(AriaRole.Group, new() { Name = "Calendar view", Exact = true });
     ILocator agendaView = calendarView.GetByRole(AriaRole.Button, new() { Name = "Agenda", Exact = true });
     ILocator monthView = calendarView.GetByRole(AriaRole.Button, new() { Name = "Month", Exact = true });
@@ -1675,6 +1681,47 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     await Expect(Page.Locator(".selection-summary").GetByText("Planned pace", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Gateway ready — take control when you are prepared.", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByText("Pre-run checks are temporarily unavailable. Try selecting the workout again.", new() { Exact = true })).ToHaveCountAsync(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Browser")]
+  public async Task Run_page_does_not_overwrite_a_runner_chosen_while_initial_data_is_loading()
+  {
+    string profileName = $"Early choice {Guid.NewGuid():N}";
+    await CreateProfileAsync(profileName);
+    TaskCompletionSource<bool> workoutsResponse = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    await Page.AddInitScriptAsync("() => localStorage.removeItem('treadmillrunner.active-profile')");
+    await Page.RouteAsync("**/api/planning/workouts", async route =>
+    {
+      try
+      {
+        await workoutsResponse.Task;
+        await route.ContinueAsync();
+      }
+      catch (Exception exception) when (exception is OperationCanceledException or PlaywrightException)
+      {
+        // Page teardown can abort the held initial request.
+      }
+    });
+
+    try
+    {
+      await Page.GotoAsync(gateway.BaseAddress.AbsoluteUri, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+      ILocator picker = Page.Locator("details.active-runner-picker");
+      await picker.Locator("summary").ClickAsync();
+      await picker.GetByRole(AriaRole.Radio, new() { Name = profileName, Exact = true }).ClickAsync();
+      await Expect(picker.Locator("summary")).ToContainTextAsync(profileName);
+
+      workoutsResponse.TrySetResult(true);
+
+      await Expect(Page.GetByLabel("Selected runner", new() { Exact = true })).ToHaveTextAsync(profileName);
+      await Expect(Page.GetByLabel("Runner required", new() { Exact = true })).ToHaveCountAsync(0);
+      await Expect(picker.Locator("summary")).ToContainTextAsync(profileName);
+    }
+    finally
+    {
+      workoutsResponse.TrySetResult(true);
+    }
   }
 
   [Fact]

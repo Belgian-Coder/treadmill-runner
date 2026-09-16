@@ -179,6 +179,29 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
           Assert.NotNull(browser);
           Assert.InRange(browser.Width, workspace.Width - 1, workspace.Width + 1);
         }
+        if (fileName == "calendar" && height <= 500)
+        {
+          LocatorBoundingBoxResult? agenda = await Page.Locator(".calendar-agenda-panel").BoundingBoxAsync();
+          LocatorBoundingBoxResult? schedules = await Page.Locator(".schedule-overview").BoundingBoxAsync();
+          Assert.NotNull(agenda);
+          Assert.NotNull(schedules);
+          Assert.True(agenda.Y < schedules.Y,
+            $"The training agenda must remain ahead of schedule management at {device}: agenda={agenda}, schedules={schedules}.");
+        }
+        if (fileName == "control")
+        {
+          ILocator balancedLegend = Page.Locator(".control-console-grid--balanced .control-chart-legend");
+          await Expect(balancedLegend).ToBeVisibleAsync();
+          if (height > 500)
+          {
+            LocatorBoundingBoxResult? legend = await balancedLegend.BoundingBoxAsync();
+            LocatorBoundingBoxResult? actionDock = await Page.Locator(".control-action-dock").BoundingBoxAsync();
+            Assert.NotNull(legend);
+            Assert.NotNull(actionDock);
+            Assert.True(legend.Y + legend.Height < actionDock.Y,
+              $"The compact chart legend must clear the Pause/Stop dock at {device}: legend={legend}, dock={actionDock}.");
+          }
+        }
         await Page.ScreenshotAsync(new PageScreenshotOptions
         {
           Path = Path.Combine(galleryDirectory, $"{fileName}-{device}.png"),
@@ -627,13 +650,13 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByLabel("Elapsed time axis", new() { Exact = true })).ToContainTextAsync("0:00");
         ILocator liveSpeedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
-        await Expect(liveSpeedAxis.Locator("span")).ToHaveCountAsync(10);
+        await Expect(liveSpeedAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
         await Expect(liveSpeedAxis.Locator("span").First).ToHaveTextAsync("10");
-        await Expect(liveSpeedAxis.Locator("span").Last).ToHaveTextAsync("1");
+        await Expect(liveSpeedAxis.Locator("span").Last).ToHaveTextAsync("0");
         ILocator liveInclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
-        await Expect(liveInclineAxis.Locator("span")).ToHaveCountAsync(10);
+        await Expect(liveInclineAxis.Locator(".chart-axis-tick")).ToHaveCountAsync(5);
         await Expect(liveInclineAxis.Locator("span").First).ToHaveTextAsync("10");
-        await Expect(liveInclineAxis.Locator("span").Last).ToHaveTextAsync("1");
+        await Expect(liveInclineAxis.Locator("span").Last).ToHaveTextAsync("0");
         string plannedPath = await Page.Locator("[data-series='planned-speed']").GetAttributeAsync("d") ?? string.Empty;
         Assert.True(plannedPath.Count(character => character == 'L') >= 5, "Control gallery plan must contain the full interval workout.");
         await Expect(Page.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new Regex("^M"));
@@ -674,10 +697,12 @@ public sealed class ScreenshotGalleryTests(GatewayFixture gateway) : PageTest, I
         await Expect(Page.GetByText("5.02 km", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByLabel("Elapsed time axis", new() { Exact = true })).ToContainTextAsync("34:12");
         ILocator historySpeedAxis = Page.GetByLabel("Speed axis in kilometers per hour", new() { Exact = true });
-        Assert.True(await historySpeedAxis.Locator("span").CountAsync() >= 10);
+        Assert.InRange(await historySpeedAxis.Locator(".chart-axis-tick").CountAsync(), 4, 6);
         await Expect(historySpeedAxis.Locator("span").First).ToHaveTextAsync(new Regex("^\\d+$"));
+        await Expect(historySpeedAxis.Locator("span").Last).ToHaveTextAsync("0");
         ILocator historyInclineAxis = Page.GetByLabel("Incline axis in percent", new() { Exact = true });
-        Assert.True(await historyInclineAxis.Locator("span").CountAsync() >= 10);
+        Assert.InRange(await historyInclineAxis.Locator(".chart-axis-tick").CountAsync(), 4, 6);
+        await Expect(historyInclineAxis.Locator("span").Last).ToHaveTextAsync("0");
         await Expect(Page.Locator("[data-series='measured-incline']")).ToHaveAttributeAsync("d", new Regex("^M"));
         await Expect(Page.GetByRole(AriaRole.Img, new() { Name = "Historical heart rate over elapsed time", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.Locator("[data-series='heart-rate']")).ToHaveAttributeAsync("d", new Regex("^M"));

@@ -426,6 +426,9 @@ button[aria-busy="true"], [aria-busy="true"] .is-pending { cursor: progress; }
 .chart-y-scale--dual { grid-template-rows: 1fr 1fr; gap: .45rem; }
 .chart-y-scale--ticks { position: relative; align-items: start; padding: 0 0 .15rem; text-align: right; }
 .chart-y-scale--ticks span { align-self: start; line-height: 1; transform: translateY(-45%); }
+.chart-y-scale--positioned { display: block; }
+.chart-y-scale--positioned .chart-axis-tick { position: absolute; right: 0; line-height: 1; transform: translateY(-50%); white-space: nowrap; }
+.chart-y-scale--positioned.chart-y-scale--secondary .chart-axis-tick { right: auto; left: 0; }
 .chart-axis-unit { position: absolute; top: -1.2rem; right: 0; color: #d9ece8; font-size: .58rem; line-height: 1; text-align: right; }
 .chart-y-scale--secondary { grid-template-rows: auto auto 1fr auto; text-align: left; }
 .chart-y-scale--secondary .chart-axis-unit { right: auto; left: 0; text-align: left; }
@@ -852,6 +855,7 @@ body.immersive-view { overflow: hidden; }
 .control-chart { height: clamp(180px, 27vw, 260px); margin-top: .4rem; }
 .control-chart path { vector-effect: non-scaling-stroke; }
 .chart-axis { stroke: #d9f9f222; stroke-width: 1; }
+.chart-grid--incline-zero { stroke: #78908e99; stroke-width: 1; stroke-dasharray: 2 5; }
 .chart-plan--incline { stroke: #a68af4; }
 .chart-requested--incline { stroke: #ef8fc7; }
 .chart-current--incline { stroke: #ff9f66; }
@@ -990,9 +994,13 @@ body.immersive-view { overflow: hidden; }
   .chart-focus-action { display: grid; }
   .control-live-chart--focused { position: fixed; top: max(7.4rem, env(safe-area-inset-top)); right: .55rem; bottom: calc(7.4rem + env(safe-area-inset-bottom)); left: .55rem; z-index: 9; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .35rem; padding: .65rem; background: #081e27; box-shadow: 0 1rem 3rem #000c; }
   .control-live-chart--focused .chart-plot-grid { height: auto; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; row-gap: .5rem; margin-top: 1.5rem; }
-  .control-live-chart--focused .control-chart { height: 100%; min-height: 0; }
+  .control-console-grid--chart .control-live-chart--focused .control-chart { height: 100%; min-height: 0; }
   .control-live-chart--focused .chart-inspector, .control-live-chart--focused .chart-inspector__surface { height: 100%; min-height: 0; }
-  .control-console-grid--balanced .control-chart-legend { display: none; }
+  .control-console-grid--balanced .control-chart-legend { display: grid; gap: .12rem; padding-top: .1rem; font-size: .54rem; line-height: 1.1; }
+  .control-console-grid--balanced .control-chart-legend__group { flex-wrap: nowrap; justify-content: space-between; gap: .08rem; }
+  .control-console-grid--balanced .control-chart-legend__group > :is(strong, span) { flex-shrink: 0; white-space: nowrap; }
+  .control-console-grid--balanced .control-chart-legend span { gap: .08rem; }
+  .control-console-grid--balanced .control-chart-legend .legend-line { width: .35rem; flex-basis: .35rem; }
   .control-live-chart--focused .control-chart-legend { gap: .55rem; padding-top: .15rem; }
   .control-live-chart--focused .control-chart-actions > span { display: block; max-width: min(46vw, 14rem); }
   .control-live-chart--focused .chart-focus-action { display: inline-flex; width: auto; min-width: 4.7rem; flex-shrink: 0; gap: .35rem; padding-inline: .55rem; white-space: nowrap; }
@@ -1086,11 +1094,40 @@ body.immersive-view { overflow: hidden; }
   .control-console-grid--balanced .control-rail__heading::after { content: "Scroll ↓"; color: #8ee6c4; font-size: .55rem; font-weight: 800; letter-spacing: .02em; }
 }
 
+/* A Pro Max portrait viewport has enough width to expose every manual target.
+   Use that width instead of turning the two target rails into nested scrollers. */
+@media (min-width: 381px) and (max-width: 650px) and (min-height: 501px) {
+  .app-shell:has(.control-page) { min-height: 0; }
+  .control-page { gap: .35rem; padding-bottom: max(.35rem, env(safe-area-inset-bottom)); }
+  .control-page.control-page--highcontrast { padding: .2rem; }
+  .control-console-grid--balanced { grid-template-columns: 96px minmax(0, 1fr) 96px; gap: .3rem; }
+  .control-console-grid--balanced .control-rail {
+    max-height: none;
+    gap: .25rem;
+    padding: .25rem;
+    overflow: visible;
+  }
+  .control-console-grid--balanced .control-rail__heading::after { display: none; }
+  .control-console-grid--balanced .rail-stepper,
+  .control-console-grid--balanced .rail-presets { grid-template-columns: repeat(2, minmax(44px, 1fr)); gap: .2rem; }
+  .control-console-grid--balanced .rail-stepper .touch-action,
+  .control-console-grid--balanced .rail-presets .quick-target { min-width: 44px; min-height: 44px; padding-inline: .15rem; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock { position: static; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock .media-control { flex-direction: column; gap: .15rem; }
+  .control-page--chart .control-action-dock { position: fixed; }
+  .control-page--chart .control-action-dock .media-control { flex-direction: row; gap: .45rem; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock .media-control > span:last-child,
+  .control-page--chart .control-action-dock .media-control > span:last-child { white-space: nowrap; }
+  .control-details { display: none; }
+  .control-page--controls .control-details { display: block; margin-top: 0; }
+}
+
 @media (max-width: 360px) {
+  .control-console-grid--balanced { grid-template-columns: 58px minmax(0, 1fr) 58px; gap: .25rem; }
   .control-console-grid--balanced .control-chart-heading .eyebrow { display: none; }
-  .control-console-grid--balanced .control-chart-heading h2 { margin-top: 0; font-size: .85rem; white-space: nowrap; }
+  .control-console-grid--balanced .control-chart-heading h2 { margin-top: 0; font-size: .75rem; white-space: nowrap; }
   .control-console-grid--balanced .control-live-chart .control-chart { height: 72px; }
-  .control-console-grid--balanced .chart-plot-grid { margin-top: .45rem; }
+  .control-console-grid--balanced .chart-plot-grid { grid-template-columns: 25px minmax(64px, 1fr) 25px; gap: .15rem; margin-top: 1.2rem; }
   .control-console-grid--balanced .chart-time-scale span { display: none; }
   .control-console-grid--balanced .chart-time-scale::after { display: block; content: "0–" attr(data-endpoint); }
 }
@@ -1110,9 +1147,15 @@ body.immersive-view { overflow: hidden; }
   .control-console-grid { grid-template-columns: 120px minmax(0, 1fr) 120px; gap: .45rem; }
   .control-console-grid--chart { grid-template-columns: 72px minmax(0, 1fr) 72px; }
   .control-console-grid--controls { grid-template-columns: 156px minmax(0, 1fr) 156px; }
-  .control-rail { max-height: calc(100dvh - 52px); padding: .45rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .control-console-grid { align-items: stretch; }
+  .control-rail { max-height: none; gap: .25rem; padding: .3rem; overflow: visible; }
+  .control-rail__heading > .eyebrow { font-size: .58rem; }
+  .control-rail h2 { font-size: 1rem; }
   .control-rail .rail-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .control-rail .rail-presets .quick-target { min-width: 44px; padding-inline: .2rem; }
+  .control-rail .rail-presets .quick-target,
+  .control-rail .rail-stepper .touch-action { min-width: 44px; min-height: 44px; padding-inline: .2rem; }
+  .chart-y-scale { font-size: .64rem; }
+  .chart-axis-unit { font-size: .62rem; }
   .control-center { grid-template-columns: minmax(0, 1fr) minmax(190px, .38fr); gap: .45rem; padding: .55rem; }
   .control-primary-metrics { grid-column: 1; grid-row: 1; }
   .control-primary-metrics article { padding: .45rem .35rem; }
@@ -1123,14 +1166,15 @@ body.immersive-view { overflow: hidden; }
   .control-action-dock .media-control { flex-direction: column; gap: .2rem; }
   .control-action-dock .media-control__icon { width: 1.5rem; height: 1.35rem; flex-basis: 1.35rem; font-size: 1.15rem; }
   .control-action-dock .media-control > span:last-child { font-size: .82rem; line-height: 1.05; white-space: nowrap; }
-  .control-command-status { display: none; }
+  .control-command-status { display: -webkit-box; max-height: 2.7em; overflow: hidden; font-size: .64rem; line-height: 1.25; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .control-chart-actions > span { display: none; }
-  .control-live-chart .control-chart { height: 170px; }
+  .control-live-chart .control-chart { height: 58px; }
   .control-console-grid--chart .control-live-chart .control-chart { height: 100px; }
   .control-live-chart--focused .chart-plot-grid { margin-top: 1.4rem; }
-  .chart-y-scale, .chart-time-scale, .control-chart-legend { font-size: .62rem; }
+  .chart-time-scale, .control-chart-legend { font-size: .62rem; }
   .control-chart-legend { gap: .5rem; }
   .control-details { display: none; }
+  .control-page--controls .control-details { display: block; margin-top: 0; }
   .chart-focus-action { display: inline-flex; }
   .control-console-grid--controls {
     grid-template-areas: none;
@@ -1285,6 +1329,11 @@ body.immersive-view { overflow: hidden; }
   .calendar-agenda-panel { order: 1; }
   .schedule-overview { order: 2; }
   .program-workspace--editing .program-browser { display: none; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .calendar-agenda-panel { order: 1; }
+  .schedule-overview { order: 2; }
 }
 
 @media (prefers-reduced-motion: reduce) {
