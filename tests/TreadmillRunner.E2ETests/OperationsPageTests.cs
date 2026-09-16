@@ -164,6 +164,7 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
   public async Task Operations_page_progresses_available_stage_and_two_step_activation()
   {
     await InstallAccessRoutesAsync();
+    await Page.SetViewportSizeAsync(956, 440);
     string state = "Available";
     await Page.RouteAsync("**/api/updates/**", async route =>
     {
@@ -199,10 +200,19 @@ public sealed class OperationsPageTests(GatewayFixture gateway) : PageTest, ICla
       .ToContainTextAsync("GitHub Releases (belgian-coder/treadmill-runner)");
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Verify and stage", Exact = true })).ToBeVisibleAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Verify and stage", Exact = true }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Activate staged update", Exact = true })).ToBeVisibleAsync();
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Activate staged update", Exact = true }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Region, new() { Name = "Confirm software update activation" })).ToBeVisibleAsync();
+    ILocator activate = Page.GetByRole(AriaRole.Button, new() { Name = "Activate staged update", Exact = true });
+    await Expect(activate).ToBeVisibleAsync();
+    await activate.ClickAsync();
+    ILocator activationDialog = Page.GetByRole(AriaRole.Alertdialog, new() { Name = "Install 2.0.0 now?", Exact = true });
+    await Expect(activationDialog).ToBeVisibleAsync();
     await Expect(Page.GetByText("Install 2.0.0 now?", new() { Exact = false })).ToBeVisibleAsync();
+    ILocator cancel = activationDialog.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true });
+    await Expect(cancel).ToBeFocusedAsync();
+    await Expect(cancel).ToBeInViewportAsync();
+    await cancel.PressAsync("Escape");
+    await Expect(activationDialog).ToBeHiddenAsync();
+    await Expect(activate).ToBeFocusedAsync();
+    await activate.ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Confirm activation", Exact = true }).ClickAsync();
     await Expect(Page.GetByText("The signed update is activating. The service will reconnect after promotion or rollback.", new() { Exact = true })).ToBeVisibleAsync();
     await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Activate staged update", Exact = true })).ToHaveCountAsync(0);

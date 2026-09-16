@@ -29,7 +29,7 @@ public sealed class PolarH10MemoryTests(GatewayFixture gateway) : PageTest, ICla
 
   [Theory]
   [InlineData(390, 844)]
-  [InlineData(844, 390)]
+  [InlineData(956, 440)]
   [InlineData(1024, 768)]
   [InlineData(1920, 1080)]
   [Trait("Category", "Browser")]
@@ -59,8 +59,17 @@ public sealed class PolarH10MemoryTests(GatewayFixture gateway) : PageTest, ICla
     await Page.GetByRole(AriaRole.Button, new() { Name = "Verified local copies", Exact = true }).ClickAsync();
     ILocator local = Page.Locator(".polar-recording-card", new() { HasText = "Verified morning run" });
     await Expect(local).ToBeVisibleAsync();
-    await local.GetByRole(AriaRole.Button, new() { Name = "Delete from H10", Exact = true }).ClickAsync();
-    await Expect(Page.Locator("[role='alertdialog'][aria-label='Confirm remote recording deletion']")).ToContainTextAsync("verified local copy stays available");
+    ILocator delete = local.GetByRole(AriaRole.Button, new() { Name = "Delete from H10", Exact = true });
+    await delete.ClickAsync();
+    ILocator deleteDialog = Page.GetByRole(AriaRole.Alertdialog, new() { Name = "Delete this recording from the H10?", Exact = true });
+    await Expect(deleteDialog).ToContainTextAsync("verified local copy stays available");
+    ILocator cancel = deleteDialog.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true });
+    await Expect(cancel).ToBeFocusedAsync();
+    await Expect(cancel).ToBeInViewportAsync();
+    await cancel.PressAsync("Escape");
+    await Expect(deleteDialog).ToBeHiddenAsync();
+    await Expect(delete).ToBeFocusedAsync();
+    await delete.ClickAsync();
     await Page.GetByRole(AriaRole.Button, new() { Name = "Confirm delete from H10", Exact = true }).ClickAsync();
     Assert.Equal(1, deleteCalls);
     Assert.False(await Page.EvaluateAsync<bool>("document.documentElement.scrollWidth > document.documentElement.clientWidth"));

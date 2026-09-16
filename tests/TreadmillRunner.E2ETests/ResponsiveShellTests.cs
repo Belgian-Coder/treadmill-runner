@@ -154,4 +154,149 @@ public sealed class ResponsiveShellTests(GatewayFixture gateway) : PageTest, ICl
       FullPage = false,
     });
   }
+
+  [Theory]
+  [InlineData(390, 844)]
+  [InlineData(956, 440)]
+  [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
+  public async Task Runner_picker_supports_radio_keys_and_restores_summary_focus(int width, int height)
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    ILocator summary = picker.Locator("summary");
+    await summary.FocusAsync();
+    await summary.PressAsync("Enter");
+    ILocator marc = picker.GetByRole(AriaRole.Radio, new() { Name = "Marc", Exact = true });
+    ILocator runnerTwo = picker.GetByRole(AriaRole.Radio, new() { Name = GalleryScenario.SecondProfileName, Exact = true });
+    await Expect(marc).ToHaveAttributeAsync("tabindex", "0");
+    await Expect(runnerTwo).ToHaveAttributeAsync("tabindex", "-1");
+
+    await marc.FocusAsync();
+    double scrollBeforeNavigation = await Page.EvaluateAsync<double>("window.scrollY");
+    await marc.PressAsync("End");
+    Assert.Equal(scrollBeforeNavigation, await Page.EvaluateAsync<double>("window.scrollY"));
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync(GalleryScenario.SecondProfileName);
+    await Expect(Page.Locator(".active-runner-picker summary")).ToHaveAttributeAsync(
+      "aria-label", $"Active runner: {GalleryScenario.SecondProfileName}. Choose runner");
+    Assert.Equal(scenario.SecondProfileId.ToString("D"),
+      await Page.EvaluateAsync<string>("window.localStorage.getItem('treadmillrunner.active-profile')"));
+
+    await summary.PressAsync("Enter");
+    await Expect(runnerTwo).ToHaveAttributeAsync("tabindex", "0");
+    await runnerTwo.FocusAsync();
+    await runnerTwo.PressAsync("Home");
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync("Marc");
+    Assert.Equal(scenario.MarcProfileId.ToString("D"),
+      await Page.EvaluateAsync<string>("window.localStorage.getItem('treadmillrunner.active-profile')"));
+
+    await summary.PressAsync("Enter");
+    await marc.FocusAsync();
+    await marc.PressAsync("ArrowDown");
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync(GalleryScenario.SecondProfileName);
+
+    await summary.PressAsync("Enter");
+    await runnerTwo.FocusAsync();
+    bool modifiedShortcutWasCanceled = await runnerTwo.EvaluateAsync<bool>("element => !element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true }))");
+    Assert.False(modifiedShortcutWasCanceled);
+    await Expect(picker).ToHaveAttributeAsync("open", "");
+    await Expect(runnerTwo).ToBeFocusedAsync();
+    await runnerTwo.PressAsync("ArrowDown");
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync("Marc");
+
+    await summary.PressAsync("Enter");
+    await marc.FocusAsync();
+    await marc.PressAsync("ArrowUp");
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync(GalleryScenario.SecondProfileName);
+  }
+
+  [Theory]
+  [InlineData(390, 844)]
+  [InlineData(956, 440)]
+  [Trait("Category", "Browser")]
+  [Trait("Category", "ReleaseSmoke")]
+  public async Task Runner_picker_distinguishes_load_failure_from_an_empty_household_and_retries(int width, int height)
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    int requests = 0;
+    await Page.RouteAsync("**/api/planning/profiles", route =>
+    {
+      if (Interlocked.Increment(ref requests) <= 2)
+        return route.FulfillAsync(new RouteFulfillOptions { Status = 503, ContentType = "application/json", Body = "{}" });
+      return route.FulfillAsync(new RouteFulfillOptions { Status = 200, ContentType = "application/json", Body = "[]" });
+    });
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator picker = Page.Locator("details.active-runner-picker");
+    ILocator summary = picker.Locator("summary");
+    await summary.ClickAsync();
+    await Expect(picker.GetByRole(AriaRole.Alert)).ToContainTextAsync("Runners could not be loaded");
+    await Expect(picker.GetByRole(AriaRole.Link, new() { Name = "Create a profile", Exact = true })).ToHaveCountAsync(0);
+    ILocator retry = picker.GetByRole(AriaRole.Button, new() { Name = "Try again", Exact = true });
+    await retry.ClickAsync();
+    await Expect(picker.GetByRole(AriaRole.Alert)).ToContainTextAsync("Runners could not be loaded");
+    await Expect(retry).ToBeFocusedAsync();
+    await retry.ClickAsync();
+
+    await Expect(picker).Not.ToHaveAttributeAsync("open", "");
+    await Expect(summary).ToBeFocusedAsync();
+    await Expect(summary).ToContainTextAsync("Choose runner");
+    await summary.ClickAsync();
+    await Expect(picker.GetByRole(AriaRole.Link, new() { Name = "Create a profile", Exact = true })).ToBeVisibleAsync();
+    Assert.True(requests >= 3);
+  }
+
+  [Theory]
+  [InlineData(390, 844)]
+  [InlineData(844, 390)]
+  [Trait("Category", "Browser")]
+  public async Task History_cards_activate_once_without_space_scroll_and_restore_focus(int width, int height)
+  {
+    GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
+    await scenario.ConfigureBrowserAsync(Page);
+    await scenario.InstallVisualDataRoutesAsync(Page);
+    await Page.SetViewportSizeAsync(width, height);
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/history").AbsoluteUri,
+      new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+    ILocator card = Page.GetByRole(AriaRole.Button, new() { Name = $"View details for {GalleryScenario.FeaturedWorkoutName}", Exact = true });
+    await card.ScrollIntoViewIfNeededAsync();
+    await card.FocusAsync();
+    await card.EvaluateAsync("element => { window.__historyCardClicks = 0; element.addEventListener('click', () => window.__historyCardClicks++); }");
+    await card.DispatchEventAsync("keydown", new Dictionary<string, object> { ["key"] = " ", ["repeat"] = true });
+    Assert.Equal(0, await Page.EvaluateAsync<int>("window.__historyCardClicks"));
+    double scrollBefore = await Page.EvaluateAsync<double>("window.scrollY");
+    await card.PressAsync("Space");
+    Assert.Equal(1, await Page.EvaluateAsync<int>("window.__historyCardClicks"));
+
+    ILocator dialog = Page.GetByRole(AriaRole.Dialog);
+    await Expect(dialog).ToBeVisibleAsync();
+    await Expect(dialog.GetByRole(AriaRole.Button, new() { Name = "Close session details", Exact = true })).ToBeFocusedAsync();
+    Assert.Equal(scrollBefore, await Page.EvaluateAsync<double>("window.scrollY"));
+
+    await Page.Keyboard.PressAsync("Escape");
+    await Expect(dialog).ToBeHiddenAsync();
+    await Expect(card).ToBeFocusedAsync();
+
+    await card.PressAsync("Enter");
+    await Expect(dialog).ToBeVisibleAsync();
+  }
 }

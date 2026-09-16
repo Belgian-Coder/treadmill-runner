@@ -78,6 +78,13 @@
             {
                 <p class="empty-state">Loading workouts…</p>
             }
+            else if (!string.IsNullOrWhiteSpace(libraryLoadError))
+            {
+                <section class="empty-state" role="alert">
+                    <p>@libraryLoadError</p>
+                    <button class="secondary-action" type="button" @onclick="ReloadAsync">Retry</button>
+                </section>
+            }
             else if (FilteredWorkouts.Count == 0)
             {
                 <EmptyState><p>@(workouts.Count == 0 ? "Your library is empty." : "No workouts match these filters.")</p><a class="primary-action" href="/workouts/new">Build a workout</a></EmptyState>
@@ -103,8 +110,8 @@
                             <div class="card-actions">
                                 <button class="secondary-action" type="button" @onclick="() => OpenWorkoutDetailsAsync(workout)">View details</button>
                                 <button class="primary-action compact-action" type="button" @onclick="() => OpenWorkoutScheduleAsync(workout)">Schedule</button>
-                                <details class="card-overflow">
-                                    <summary aria-label="More actions for @workout.Name">More</summary>
+                                <details @key="WorkoutOverflowKey(workout.Id)" class="card-overflow">
+                                    <summary id="@WorkoutOverflowTriggerId(workout.Id)" aria-label="More actions for @workout.Name">More</summary>
                                     <div>
                                         <a class="secondary-action" href="@RevisionHref(workout)">New revision</a>
                                         <button class="text-action danger-action" type="button" @onclick="() => RequestArchive(workout)">Archive</button>
@@ -113,11 +120,11 @@
                             </div>
                             @if (pendingArchive is { Kind: ArchiveKind.Workout } pending && pending.Id == workout.Id)
                             {
-                                <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-workout-confirm-title">
+                                <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-workout-confirm-title" aria-describedby="archive-workout-confirm-description" @onkeydown="HandleArchiveKeyDownAsync">
                                     <strong id="archive-workout-confirm-title">Archive @workout.Name?</strong>
-                                    <p>It will be hidden from the workout library. Existing session history is kept.</p>
+                                    <p id="archive-workout-confirm-description">It will be hidden from the workout library. Existing session history is kept.</p>
                                     <div class="card-actions">
-                                        <button class="secondary-action compact-action" type="button" @onclick="CancelArchive">Cancel</button>
+                                        <button @ref="confirmationSafeAction" class="secondary-action compact-action" type="button" @onclick="CancelArchiveAsync">Cancel</button>
                                         <button class="danger-action compact-action" type="button" @onclick="ConfirmArchiveAsync">Archive workout</button>
                                     </div>
                                 </section>
@@ -149,6 +156,13 @@
                 {
                     <p class="empty-state">Loading training plans…</p>
                 }
+                else if (!string.IsNullOrWhiteSpace(libraryLoadError))
+                {
+                    <section class="empty-state" role="alert">
+                        <p>@libraryLoadError</p>
+                        <button class="secondary-action" type="button" @onclick="ReloadAsync">Retry</button>
+                    </section>
+                }
                 else if (FilteredPrograms.Count == 0)
                 {
                     <EmptyState><p>No training plans match this view.</p><button class="primary-action" type="button" @onclick="NewProgram">Create a plan</button></EmptyState>
@@ -175,10 +189,10 @@
                                 <div class="card-actions">
                                     @if (activeProfileId is not null)
                                     {
-                                        <button class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart")</button>
+                                        <button id="@ProgramStartTriggerId(program.Id)" class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart")</button>
                                     }
-                                    <details class="card-overflow">
-                                        <summary aria-label="More actions for @program.Name">More</summary>
+                                    <details @key="ProgramOverflowKey(program.Id)" class="card-overflow">
+                                        <summary id="@ProgramOverflowTriggerId(program.Id)" aria-label="More actions for @program.Name">More</summary>
                                         <div>
                                             @if (program.TemplateId is null)
                                             {
@@ -194,20 +208,20 @@
                                 </div>
                                 @if (pendingArchive is { Kind: ArchiveKind.Program } archive && archive.Id == program.Id)
                                 {
-                                    <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-program-confirm-title">
+                                    <section class="program-start-confirm" role="alertdialog" aria-labelledby="archive-program-confirm-title" aria-describedby="archive-program-confirm-description" @onkeydown="HandleArchiveKeyDownAsync">
                                         <strong id="archive-program-confirm-title">Archive @program.Name?</strong>
-                                        <p>The training plan will be hidden. Completed workouts remain in history.</p>
+                                        <p id="archive-program-confirm-description">The training plan will be hidden. Completed workouts remain in history.</p>
                                         <div class="card-actions">
-                                            <button class="secondary-action compact-action" type="button" @onclick="CancelArchive">Cancel</button>
+                                            <button @ref="confirmationSafeAction" class="secondary-action compact-action" type="button" @onclick="CancelArchiveAsync">Cancel</button>
                                             <button class="danger-action compact-action" type="button" @onclick="ConfirmArchiveAsync">Archive plan</button>
                                         </div>
                                     </section>
                                 }
                                 @if (pendingProgramStart is { } pending && pending.Program.Id == program.Id)
                                 {
-                                    <section class="program-start-confirm" role="alertdialog" aria-labelledby="program-start-confirm-title">
+                                    <section class="program-start-confirm" role="alertdialog" aria-labelledby="program-start-confirm-title" aria-describedby="program-start-confirm-description" @onkeydown="HandleProgramStartKeyDownAsync">
                                         <strong id="program-start-confirm-title">@(pending.Restart ? $"Restart {program.Name} for {ActiveProfileName}?" : $"Start {program.Name} for {ActiveProfileName}?")</strong>
-                                        <p>@ProgramStartWarning(pending)</p>
+                                        <p id="program-start-confirm-description">@ProgramStartWarning(pending)</p>
                                         <div class="program-schedule-fields">
                                             <label class="field">First training date
                                                 <input type="date" @bind="programScheduleStartDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" />
@@ -219,7 +233,7 @@
                                             <p class="field-help">Sessions stay in exact order and appear only on @ActiveProfileName’s calendar.</p>
                                         </div>
                                         <div class="card-actions">
-                                            <button class="secondary-action compact-action" type="button" @onclick="CancelProgramStart">@(pending.Restart ? "Cancel" : "Keep for later")</button>
+                                            <button @ref="confirmationSafeAction" class="secondary-action compact-action" type="button" @onclick="CancelProgramStartAsync">@(pending.Restart ? "Cancel" : "Keep for later")</button>
                                             <button class="primary-action compact-action" type="button" disabled="@(!CanConfirmProgramSchedule)" @onclick="ConfirmProgramStartAsync">@ProgramStartConfirmLabel(pending)</button>
                                         </div>
                                     </section>
@@ -235,7 +249,7 @@
                 <section class="planning-panel program-editor" aria-labelledby="program-editor-title" @oninput="QueueProgramDraftSave" @onchange="QueueProgramDraftSave">
                     <div class="panel-heading">
                         <div><p class="eyebrow">Ordered plan</p><h2 id="program-editor-title">@(editingProgramId is null ? "New training plan" : "Edit training plan")</h2></div>
-                        <button class="secondary-action icon-action" type="button" @onclick="RequestCloseProgramEditor" aria-label="Close training plan editor" title="Close"><AppIcon Name="close" /></button>
+                        <button id="close-program-editor" class="secondary-action icon-action" type="button" @onclick="RequestCloseProgramEditor" aria-label="Close training plan editor" title="Close"><AppIcon Name="close" /></button>
                     </div>
                     @if (pendingProgramDraft is not null)
                     {
@@ -243,11 +257,11 @@
                     }
                     @if (confirmDiscardProgram)
                     {
-                        <section class="program-start-confirm" role="alertdialog" aria-labelledby="discard-program-confirm-title">
+                        <section class="program-start-confirm" role="alertdialog" aria-labelledby="discard-program-confirm-title" aria-describedby="discard-program-confirm-description" @onkeydown="HandleDiscardProgramKeyDownAsync">
                             <strong id="discard-program-confirm-title">Discard unsaved changes?</strong>
-                            <p>Your edits to this training plan have not been saved.</p>
+                            <p id="discard-program-confirm-description">Your edits to this training plan have not been saved.</p>
                             <div class="card-actions">
-                                <button class="secondary-action compact-action" type="button" @onclick="KeepEditingProgram">Keep editing</button>
+                                <button @ref="confirmationSafeAction" class="secondary-action compact-action" type="button" @onclick="KeepEditingProgramAsync">Keep editing</button>
                                 <button class="danger-action compact-action" type="button" @onclick="CloseProgramEditor">Discard changes</button>
                             </div>
                         </section>
@@ -365,6 +379,17 @@
                 @if (loading)
                 {
                     <p class="empty-state">Loading premade plans…</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(libraryLoadError))
+                {
+                    <section class="empty-state" role="alert">
+                        <p>@libraryLoadError</p>
+                        <button class="secondary-action" type="button" @onclick="ReloadAsync">Retry</button>
+                    </section>
+                }
+                else if (visiblePremadePlans.Count == 0)
+                {
+                    <p class="empty-state">No plan templates match this view.</p>
                 }
                 else
                 {
@@ -614,6 +639,7 @@
     private List<PremadePlanCatalogView> premadePlans = [];
     private bool loading = true;
     private string? message;
+    private string? libraryLoadError;
     private string libraryMode = "programs";
     private string searchText = string.Empty;
     private string durationFilter = "all";
@@ -687,6 +713,11 @@
     private int reloadGeneration;
     private CancellationTokenSource? reloadCancellation;
     private bool programSaveBusy;
+    private ElementReference confirmationSafeAction;
+    private bool focusConfirmationSafeAction;
+    private string? confirmationOriginId;
+    private string? restoreConfirmationOriginId;
+    private int overflowRenderVersion;
     private string DetailName => selectedWorkoutDetails?.Name ?? selectedPlanWorkoutName ?? "Workout";
     private string DetailEyebrow => selectedWorkoutDetails is not null
         ? $"{selectedWorkoutDetails.StructureLabel} · Revision {selectedWorkoutDetails.CurrentRevisionNumber}"
@@ -788,7 +819,17 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (openWorkoutSchedulePending && scheduledWorkout is not null)
+        if (focusConfirmationSafeAction)
+        {
+            focusConfirmationSafeAction = false;
+            await confirmationSafeAction.FocusAsync();
+        }
+        else if (restoreConfirmationOriginId is { } originId)
+        {
+            restoreConfirmationOriginId = null;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", originId);
+        }
+        else if (openWorkoutSchedulePending && scheduledWorkout is not null)
         {
             openWorkoutSchedulePending = false;
             workoutScheduleModalReference = DotNetObjectReference.Create(this);
@@ -871,6 +912,7 @@
         int generation = ++reloadGeneration;
         Guid? requestedProfileId = activeProfileId;
         loading = true;
+        libraryLoadError = null;
         try
         {
             List<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles", cancellationToken) ?? [];
@@ -881,18 +923,22 @@
                 await ActiveProfile.SetAsync(requestedProfileId.Value);
             }
             if (generation != reloadGeneration || activeProfileId != requestedProfileId) return;
-            profiles = loadedProfiles;
-            workouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts", cancellationToken) ?? [];
+            List<WorkoutSummaryView> loadedWorkouts = await Http.GetFromJsonAsync<List<WorkoutSummaryView>>("api/planning/workouts", cancellationToken) ?? [];
             string programUrl = requestedProfileId is { } profileId ? $"api/planning/programs?profileId={profileId}" : "api/planning/programs";
-            programs = await Http.GetFromJsonAsync<List<WorkoutProgramSummaryView>>(programUrl, cancellationToken) ?? [];
+            List<WorkoutProgramSummaryView> loadedPrograms = await Http.GetFromJsonAsync<List<WorkoutProgramSummaryView>>(programUrl, cancellationToken) ?? [];
             string catalogUrl = requestedProfileId is { } selectedProfileId ? $"api/planning/premade-plans?profileId={selectedProfileId}" : "api/planning/premade-plans";
-            premadePlans = await Http.GetFromJsonAsync<List<PremadePlanCatalogView>>(catalogUrl, cancellationToken) ?? [];
+            List<PremadePlanCatalogView> loadedPremadePlans = await Http.GetFromJsonAsync<List<PremadePlanCatalogView>>(catalogUrl, cancellationToken) ?? [];
+            if (generation != reloadGeneration || activeProfileId != requestedProfileId) return;
+            profiles = loadedProfiles;
+            workouts = loadedWorkouts;
+            programs = loadedPrograms;
+            premadePlans = loadedPremadePlans;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             if (generation == reloadGeneration)
-                message = "The workout library is temporarily unavailable.";
+                libraryLoadError = "The training library could not be loaded from the local gateway. Your saved plans and workouts were not changed.";
         }
         finally
         {
@@ -1176,13 +1222,18 @@
     {
         if (DraftSignature(programDraft) != programDraftBaseline)
         {
+            BeginInlineConfirmation("close-program-editor");
             confirmDiscardProgram = true;
             return;
         }
         CloseProgramEditor();
     }
 
-    private void KeepEditingProgram() => confirmDiscardProgram = false;
+    private Task KeepEditingProgramAsync()
+    {
+        confirmDiscardProgram = false;
+        return RestoreConfirmationOriginAsync();
+    }
 
     private void CloseProgramEditor()
     {
@@ -1336,13 +1387,20 @@
 
     private void RequestProgramStart(WorkoutProgramSummaryView program, bool restart)
     {
+        pendingArchive = null;
+        confirmDiscardProgram = false;
+        BeginInlineConfirmation(ProgramStartTriggerId(program.Id));
         WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         pendingProgramStart = new PendingProgramStart(program, restart, active);
         programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
         programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
     }
 
-    private void CancelProgramStart() => pendingProgramStart = null;
+    private Task CancelProgramStartAsync()
+    {
+        pendingProgramStart = null;
+        return RestoreConfirmationOriginAsync();
+    }
 
     private async Task SelectProfileAsync(Guid profileId)
     {
@@ -1588,9 +1646,59 @@
         if (response.IsSuccessStatusCode) { if (editingProgramId == program.Id) CloseProgramEditor(); await ReloadAsync(); }
     }
 
-    private void RequestArchive(WorkoutSummaryView workout) => pendingArchive = new PendingArchive(ArchiveKind.Workout, workout.Id, workout.Name);
-    private void RequestArchive(WorkoutProgramSummaryView program) => pendingArchive = new PendingArchive(ArchiveKind.Program, program.Id, program.Name);
-    private void CancelArchive() => pendingArchive = null;
+    private void RequestArchive(WorkoutSummaryView workout)
+    {
+        pendingProgramStart = null;
+        confirmDiscardProgram = false;
+        overflowRenderVersion++;
+        BeginInlineConfirmation(WorkoutOverflowTriggerId(workout.Id));
+        pendingArchive = new PendingArchive(ArchiveKind.Workout, workout.Id, workout.Name);
+    }
+
+    private void RequestArchive(WorkoutProgramSummaryView program)
+    {
+        pendingProgramStart = null;
+        confirmDiscardProgram = false;
+        overflowRenderVersion++;
+        BeginInlineConfirmation(ProgramOverflowTriggerId(program.Id));
+        pendingArchive = new PendingArchive(ArchiveKind.Program, program.Id, program.Name);
+    }
+
+    private Task CancelArchiveAsync()
+    {
+        pendingArchive = null;
+        return RestoreConfirmationOriginAsync();
+    }
+
+    private void BeginInlineConfirmation(string originId)
+    {
+        confirmationOriginId = originId;
+        restoreConfirmationOriginId = null;
+        focusConfirmationSafeAction = true;
+    }
+
+    private Task RestoreConfirmationOriginAsync()
+    {
+        focusConfirmationSafeAction = false;
+        restoreConfirmationOriginId = confirmationOriginId;
+        confirmationOriginId = null;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleArchiveKeyDownAsync(KeyboardEventArgs args) =>
+        string.Equals(args.Key, "Escape", StringComparison.Ordinal) ? CancelArchiveAsync() : Task.CompletedTask;
+
+    private Task HandleProgramStartKeyDownAsync(KeyboardEventArgs args) =>
+        string.Equals(args.Key, "Escape", StringComparison.Ordinal) ? CancelProgramStartAsync() : Task.CompletedTask;
+
+    private Task HandleDiscardProgramKeyDownAsync(KeyboardEventArgs args) =>
+        string.Equals(args.Key, "Escape", StringComparison.Ordinal) ? KeepEditingProgramAsync() : Task.CompletedTask;
+
+    private string WorkoutOverflowKey(Guid workoutId) => $"workout-overflow-{workoutId:N}-{overflowRenderVersion}";
+    private static string WorkoutOverflowTriggerId(Guid workoutId) => $"workout-overflow-trigger-{workoutId:N}";
+    private string ProgramOverflowKey(Guid programId) => $"program-overflow-{programId:N}-{overflowRenderVersion}";
+    private static string ProgramOverflowTriggerId(Guid programId) => $"program-overflow-trigger-{programId:N}";
+    private static string ProgramStartTriggerId(Guid programId) => $"program-start-trigger-{programId:N}";
 
     private async Task ConfirmArchiveAsync()
     {

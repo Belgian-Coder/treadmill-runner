@@ -1827,6 +1827,81 @@ public sealed class PlanningPagesTests(GatewayFixture gateway, ITestOutputHelper
     Assert.Contains("standalone", manifest, StringComparison.Ordinal);
   }
 
+  [Theory]
+  [InlineData(390, 844)]
+  [InlineData(956, 440)]
+  [Trait("Category", "Browser")]
+  public async Task Profiles_and_workouts_show_retry_before_successful_empty_states(int width, int height)
+  {
+    await Page.SetViewportSizeAsync(width, height);
+    int profileRequests = 0;
+    bool loadingWorkouts = false;
+    int workoutRequests = 0;
+
+    await Page.RouteAsync("**/api/planning/profiles", async route =>
+    {
+      // A full navigation also loads the shell runner picker from this endpoint.
+      // Fail both initial consumers so the page-level retry state is deterministic.
+      if (!loadingWorkouts && Interlocked.Increment(ref profileRequests) <= 2)
+      {
+        await route.FulfillAsync(new RouteFulfillOptions
+        {
+          Status = 503,
+          ContentType = "application/json",
+          Body = "{\"error\":\"temporarily unavailable\"}",
+        });
+        return;
+      }
+
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = 200,
+        ContentType = "application/json",
+        Body = "[]",
+      });
+    });
+    await Page.RouteAsync("**/api/planning/workouts", async route =>
+    {
+      int attempt = Interlocked.Increment(ref workoutRequests);
+      await route.FulfillAsync(new RouteFulfillOptions
+      {
+        Status = attempt == 1 ? 503 : 200,
+        ContentType = "application/json",
+        Body = attempt == 1 ? "{\"error\":\"temporarily unavailable\"}" : "[]",
+      });
+    });
+    await Page.RouteAsync("**/api/planning/programs**", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = "[]",
+    }));
+    await Page.RouteAsync("**/api/planning/premade-plans**", route => route.FulfillAsync(new()
+    {
+      Status = 200,
+      ContentType = "application/json",
+      Body = "[]",
+    }));
+
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/profiles").AbsoluteUri);
+    ILocator profileError = Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "Profiles could not be loaded" });
+    await Expect(profileError).ToBeVisibleAsync();
+    await Expect(Page.GetByText("No profiles yet. Create the first household profile.", new() { Exact = true })).ToHaveCountAsync(0);
+    await profileError.GetByRole(AriaRole.Button, new() { Name = "Retry", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("No profiles yet. Create the first household profile.", new() { Exact = true })).ToBeVisibleAsync();
+
+    loadingWorkouts = true;
+    await Page.GotoAsync(new Uri(gateway.BaseAddress, "/workouts").AbsoluteUri);
+    ILocator workoutError = Page.GetByRole(AriaRole.Alert).Filter(new() { HasText = "The training library could not be loaded" });
+    await Expect(workoutError).ToBeVisibleAsync();
+    await Expect(Page.GetByText("No training plans match this view.", new() { Exact = true })).ToHaveCountAsync(0);
+    await workoutError.GetByRole(AriaRole.Button, new() { Name = "Retry", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("No training plans match this view.", new() { Exact = true })).ToBeVisibleAsync();
+    await Page.GetByRole(AriaRole.Button, new() { Name = "Standalone workouts", Exact = true }).ClickAsync();
+    await Expect(Page.GetByText("Your library is empty.", new() { Exact = true })).ToBeVisibleAsync();
+    Assert.False(await Page.EvaluateAsync<bool>("document.documentElement.scrollWidth > document.documentElement.clientWidth"));
+  }
+
   private async Task<Guid> CreateProfileAsync(string name)
   {
     using HttpClient client = new() { BaseAddress = gateway.BaseAddress };

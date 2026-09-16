@@ -225,8 +225,8 @@
 
         @if (maintenance?.IsDue == true)
         {
-            <aside class="maintenance-advisory" role="status">
-                <p><strong>Treadmill maintenance is due.</strong> This reminder is informational and does not block your run.</p>
+            <aside class="maintenance-advisory maintenance-advisory--treadmill" role="status">
+                <p><strong>Treadmill maintenance is due.</strong><span class="maintenance-advisory__detail"> This reminder is informational and does not block your run.</span></p>
                 <a class="secondary-action compact-action" href="/devices">Review maintenance</a>
             </aside>
         }
@@ -340,13 +340,13 @@
                                     }
                                     else
                                     {
-                                        <button class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart plan")</button>
+                                        <button id="@ProgramStartTriggerId(program.Id)" class="secondary-action compact-action" type="button" @onclick="() => RequestProgramStart(program, program.Run is not null)">@(program.Run is null ? "Start plan" : "Restart plan")</button>
                                     }
                                     @if (pendingProgramStart is { } pending && pending.Program.Id == program.Id)
                                     {
-                                        <section class="program-start-confirm" role="alertdialog" aria-labelledby="run-program-start-confirm-title">
+                                        <section class="program-start-confirm" role="alertdialog" aria-labelledby="run-program-start-confirm-title" aria-describedby="run-program-start-confirm-description" @onkeydown="HandleProgramStartKeyDownAsync">
                                             <strong id="run-program-start-confirm-title">@(pending.Restart ? $"Restart {program.Name} for {SelectedProfileName}?" : $"Start {program.Name} for {SelectedProfileName}?")</strong>
-                                            <p>@ProgramStartWarning(pending)</p>
+                                            <p id="run-program-start-confirm-description">@ProgramStartWarning(pending)</p>
                                             <div class="program-schedule-fields">
                                                 <label class="field">First training date
                                                     <input type="date" @bind="programScheduleStartDate" min="@DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd")" />
@@ -365,7 +365,7 @@
                                                 <p class="field-help">The plan stays in order and appears only on @SelectedProfileName’s calendar.</p>
                                             </div>
                                             <div class="card-actions">
-                                                <button class="secondary-action compact-action" type="button" @onclick="CancelProgramStart">Cancel</button>
+                                                <button @ref="programStartCancel" class="secondary-action compact-action" type="button" @onclick="CancelProgramStartAsync">Cancel</button>
                                                 <button class="primary-action compact-action" type="button" disabled="@(!CanConfirmProgramSchedule)" @onclick="ConfirmProgramStartAsync">@ProgramStartConfirmLabel(pending)</button>
                                             </div>
                                         </section>
@@ -543,6 +543,10 @@
     private int workoutSelectionGeneration;
     private DotNetObjectReference<Home>? stopDecisionModalReference;
     private PendingProgramStart? pendingProgramStart;
+    private ElementReference programStartCancel;
+    private bool focusProgramStartCancel;
+    private string? programStartOriginId;
+    private string? restoreProgramStartTriggerId;
     private static readonly (string Label, int Flag)[] ScheduleWeekdays =
     [
         ("Mon", 1), ("Tue", 2), ("Wed", 4), ("Thu", 8), ("Fri", 16), ("Sat", 32), ("Sun", 64),
@@ -611,7 +615,7 @@
             {
                 WorkoutSummaryView? summary = workouts.FirstOrDefault(workout => workout.CurrentRevisionId == calendar.WorkoutRevisionId);
                 string context = calendar.Source == "Program"
-                    ? $"{calendar.ScheduleName} · workout {calendar.ProgramPosition} of {calendar.ProgramTotal}"
+                    ? calendar.ScheduleName
                     : "Today’s calendar";
                 return new WorkoutChoice(
                     calendar.WorkoutRevisionId,
@@ -768,7 +772,17 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (openStopDecisionPending && isStopDecisionOpen)
+        if (focusProgramStartCancel)
+        {
+            focusProgramStartCancel = false;
+            await programStartCancel.FocusAsync();
+        }
+        else if (restoreProgramStartTriggerId is { } triggerId)
+        {
+            restoreProgramStartTriggerId = null;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", triggerId);
+        }
+        else if (openStopDecisionPending && isStopDecisionOpen)
         {
             openStopDecisionPending = false;
             stopDecisionModalReference = DotNetObjectReference.Create(this);
@@ -1130,11 +1144,25 @@
     {
         WorkoutProgramSummaryView? active = programs.FirstOrDefault(static candidate => candidate.Run is { Status: "Active" });
         pendingProgramStart = new PendingProgramStart(program, restart, active);
+        programStartOriginId = ProgramStartTriggerId(program.Id);
+        restoreProgramStartTriggerId = null;
+        focusProgramStartCancel = true;
         programScheduleWeekdayMask = DefaultWeekdayMask(RequiredTrainingDays);
         programScheduleStartDate = NextSelectedDate(DateOnly.FromDateTime(DateTime.Today), programScheduleWeekdayMask);
     }
 
-    private void CancelProgramStart() => pendingProgramStart = null;
+    private Task CancelProgramStartAsync()
+    {
+        pendingProgramStart = null;
+        restoreProgramStartTriggerId = programStartOriginId;
+        programStartOriginId = null;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleProgramStartKeyDownAsync(KeyboardEventArgs args) =>
+        string.Equals(args.Key, "Escape", StringComparison.Ordinal) ? CancelProgramStartAsync() : Task.CompletedTask;
+
+    private static string ProgramStartTriggerId(Guid programId) => $"home-program-start-trigger-{programId:N}";
 
     private void ToggleProgramWeekday(int flag)
     {
@@ -1164,6 +1192,8 @@
     {
         if (pendingProgramStart is not { } pending) return;
         pendingProgramStart = null;
+        programStartOriginId = null;
+        restoreProgramStartTriggerId = null;
         await StartProgramAsync(pending.Program, pending.Restart);
     }
 

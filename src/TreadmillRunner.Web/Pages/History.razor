@@ -100,7 +100,7 @@
         <div class="history-list">
             @foreach (SessionSummary item in VisibleSessions)
             {
-                <article class="history-card history-card--interactive" role="button" tabindex="0" aria-label="View details for @item.WorkoutTitle" @onclick="() => OpenSessionDetailsAsync(item)" @onkeydown="args => OpenSessionDetailsFromKeyAsync(args, item)">
+                <article class="history-card history-card--interactive" role="button" tabindex="0" aria-label="View details for @item.WorkoutTitle" @onclick="() => OpenSessionDetailsAsync(item)" onkeydown="if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); if (!event.repeat) event.currentTarget.click(); }">
                     <div><span class="status-chip">@(item.Origin == SessionOrigin.SystemTest ? "System test" : item.Status)</span><h2>@item.WorkoutTitle</h2><p>@item.StartedAt.ToLocalTime().ToString("d MMM yyyy · HH:mm")</p><span class="history-card__hint">View graph and all changes</span></div>
                     <dl>
                         <div><dt>Time</dt><dd>@item.Duration.ToString(@"hh\:mm\:ss")</dd></div>
@@ -248,11 +248,6 @@
         sessionDetailsOpenPending = true;
         await InvokeAsync(StateHasChanged);
         await LoadSessionDetailsAsync();
-    }
-
-    private Task OpenSessionDetailsFromKeyAsync(KeyboardEventArgs args, SessionSummary summary)
-    {
-        return args.Key is "Enter" or " " ? OpenSessionDetailsAsync(summary) : Task.CompletedTask;
     }
 
     private async Task LoadSessionDetailsAsync()

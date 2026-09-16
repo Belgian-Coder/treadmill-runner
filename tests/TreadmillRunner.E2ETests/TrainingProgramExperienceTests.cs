@@ -75,7 +75,18 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     await Expect(planDialog.Locator(".program-session-summary-list li")).ToHaveCountAsync(3);
     await planDialog.GetByRole(AriaRole.Button, new() { Name = "Close training plan details", Exact = true }).ClickAsync();
 
-    await first5KCard.Locator("details.card-overflow summary").ClickAsync();
+    ILocator planOverflow = first5KCard.Locator("details.card-overflow");
+    ILocator planOverflowTrigger = planOverflow.Locator("summary");
+    await planOverflowTrigger.ClickAsync();
+    await first5KCard.GetByRole(AriaRole.Button, new() { Name = "Archive", Exact = true }).ClickAsync();
+    await Expect(planOverflow).Not.ToHaveAttributeAsync("open", "");
+    ILocator archiveDialog = first5KCard.GetByRole(AriaRole.Alertdialog, new() { Name = "Archive First 5K?", Exact = true });
+    ILocator archiveCancel = archiveDialog.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true });
+    await Expect(archiveCancel).ToBeFocusedAsync();
+    await archiveCancel.PressAsync("Escape");
+    await Expect(archiveDialog).ToBeHiddenAsync();
+    await Expect(planOverflowTrigger).ToBeFocusedAsync();
+    await planOverflowTrigger.ClickAsync();
     await first5KCard.GetByRole(AriaRole.Button, new() { Name = "Edit plan", Exact = true }).ClickAsync();
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Edit training plan", Exact = true })).ToBeVisibleAsync();
     await Expect(Page.Locator(".program-item")).ToHaveCountAsync(3);
@@ -86,11 +97,27 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     await items.Nth(1).GetByRole(AriaRole.Button, new() { Name = $"Move {GalleryScenario.FeaturedWorkoutName} up" }).ClickAsync();
     await Expect(items.Nth(0)).ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
     await Page.GetByLabel("Description", new() { Exact = true }).FillAsync("Unsaved mobile edit");
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Close training plan editor", Exact = true }).ClickAsync();
-    await Expect(Page.GetByRole(AriaRole.Alertdialog)).ToContainTextAsync("Discard unsaved changes?");
-    await Page.GetByRole(AriaRole.Button, new() { Name = "Keep editing", Exact = true }).ClickAsync();
+    ILocator closeEditor = Page.GetByRole(AriaRole.Button, new() { Name = "Close training plan editor", Exact = true });
+    await closeEditor.ClickAsync();
+    ILocator discardDialog = Page.GetByRole(AriaRole.Alertdialog, new() { Name = "Discard unsaved changes?", Exact = true });
+    await Expect(discardDialog).ToContainTextAsync("Discard unsaved changes?");
+    ILocator keepEditing = discardDialog.GetByRole(AriaRole.Button, new() { Name = "Keep editing", Exact = true });
+    await Expect(keepEditing).ToBeFocusedAsync();
+    await Expect(keepEditing).ToBeInViewportAsync();
+    await keepEditing.ClickAsync();
+    await Expect(closeEditor).ToBeFocusedAsync();
+    await Page.SetViewportSizeAsync(956, 440);
+    await closeEditor.ClickAsync();
+    await Expect(keepEditing).ToBeFocusedAsync();
+    await keepEditing.PressAsync("Escape");
+    await Expect(discardDialog).ToBeHiddenAsync();
+    await Expect(closeEditor).ToBeFocusedAsync();
+    await Page.SetViewportSizeAsync(390, 844);
     await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Edit training plan", Exact = true })).ToBeVisibleAsync();
 
+    Guid scheduledProgramRunId = Guid.NewGuid();
+    Guid scheduledProgramItemId = Guid.NewGuid();
+    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
     await Page.RouteAsync("**/api/planning/calendar/**", route =>
     {
       string path = new Uri(route.Request.Url).AbsolutePath;
@@ -106,9 +133,41 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
         Body = JsonSerializer.Serialize(new
         {
           profileId = scenario.MarcProfileId,
-          from = DateOnly.FromDateTime(DateTime.Today),
-          to = DateOnly.FromDateTime(DateTime.Today.AddDays(30)),
-          days = Array.Empty<object>(),
+          from = today,
+          to = today.AddDays(30),
+          days = new[]
+          {
+            new
+            {
+              date = today,
+              options = new[]
+              {
+                new
+                {
+                  seriesId = scheduledProgramRunId,
+                  scheduleGroupId = scheduledProgramRunId,
+                  scheduleName = "First 5K",
+                  workoutRevisionId = scenario.FeaturedWorkoutRevisionId,
+                  workoutName = GalleryScenario.FeaturedWorkoutName,
+                  revisionNumber = 1,
+                  displayOrder = 0,
+                  isSelected = true,
+                  source = "Program",
+                  programRunId = scheduledProgramRunId,
+                  programItemId = scheduledProgramItemId,
+                  programPosition = 2,
+                  programTotal = 18,
+                  weekNumber = 1,
+                  phase = "Foundation",
+                  programRunVersion = 4,
+                  isRepeat = false,
+                  originalDate = today,
+                  isCompleted = false,
+                  programWeekdayMask = 37,
+                },
+              },
+            },
+          },
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
       });
     });
@@ -117,7 +176,41 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     ILocator recommendation = Page.GetByLabel("Recommended next run", new() { Exact = true });
     await Expect(recommendation).ToContainTextAsync("Next for Marc");
     await Expect(recommendation).ToContainTextAsync(GalleryScenario.FeaturedWorkoutName);
-    await recommendation.GetByRole(AriaRole.Button, new() { Name = "Choose", Exact = true }).ClickAsync();
+    string recommendationText = await recommendation.InnerTextAsync();
+    Assert.Single(System.Text.RegularExpressions.Regex.Matches(
+      recommendationText,
+      "workout\\s+2\\s+of\\s+18",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase).Cast<System.Text.RegularExpressions.Match>());
+
+    ILocator chooseRecommendation = recommendation.GetByRole(AriaRole.Button, new() { Name = "Choose", Exact = true });
+    LocatorBoundingBoxResult? recommendationBox = await recommendation.BoundingBoxAsync();
+    LocatorBoundingBoxResult? recommendationCopyBox = await recommendation.Locator(".next-run-card__copy").BoundingBoxAsync();
+    LocatorBoundingBoxResult? chooseBox = await chooseRecommendation.BoundingBoxAsync();
+    Assert.NotNull(recommendationBox);
+    Assert.NotNull(recommendationCopyBox);
+    Assert.NotNull(chooseBox);
+    Assert.True(chooseBox.Y >= recommendationCopyBox.Y + recommendationCopyBox.Height - 1,
+      $"The portrait Choose action must wrap below the recommendation copy: card={recommendationBox}, copy={recommendationCopyBox}, action={chooseBox}.");
+    Assert.True(chooseBox.Width >= recommendationBox.Width - 24,
+      $"The portrait Choose action must span the recommendation card: card={recommendationBox}, action={chooseBox}.");
+
+    ILocator memoryStatusLink = Page.GetByRole(AriaRole.Link, new() { Name = "Review H10 memory status", Exact = true });
+    await Expect(memoryStatusLink).ToHaveCSSAsync("color", "rgb(142, 230, 196)");
+    await ScreenshotAsync("home-recommendation-iphone-portrait.png");
+
+    await Page.SetViewportSizeAsync(844, 390);
+    LocatorBoundingBoxResult? landscapeRunnerBox = await Page.Locator(".active-runner-picker summary").BoundingBoxAsync();
+    LocatorBoundingBoxResult? landscapeChooseBox = await chooseRecommendation.BoundingBoxAsync();
+    Assert.NotNull(landscapeRunnerBox);
+    Assert.NotNull(landscapeChooseBox);
+    Assert.True(landscapeRunnerBox.Height >= 44,
+      $"The landscape runner selector must retain a 44px touch target: {landscapeRunnerBox}.");
+    Assert.True(landscapeChooseBox.Y + landscapeChooseBox.Height <= 390,
+      $"The recommended run action must remain in the initial short-landscape viewport: {landscapeChooseBox}.");
+    await ScreenshotAsync("home-recommendation-iphone-landscape.png");
+    await Page.SetViewportSizeAsync(390, 844);
+
+    await chooseRecommendation.ClickAsync();
     await Expect(Page.GetByLabel("Selected workout", new() { Exact = true }))
       .ToHaveTextAsync(GalleryScenario.FeaturedWorkoutName);
 
@@ -139,8 +232,11 @@ public sealed class TrainingProgramExperienceTests(GatewayFixture gateway)
     await Expect(confirmation).ToContainTextAsync("First 5K");
     await Expect(confirmation).ToContainTextAsync("will be abandoned");
     Assert.Equal(0, immediateStartRequests);
-    await confirmation.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
+    ILocator startCancel = confirmation.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true });
+    await Expect(startCancel).ToBeFocusedAsync();
+    await startCancel.PressAsync("Escape");
     await Expect(confirmation).ToBeHiddenAsync();
+    await Expect(stronger10K.GetByRole(AriaRole.Button, new() { Name = "Start plan", Exact = true })).ToBeFocusedAsync();
   }
 
   private async Task ScreenshotAsync(string fileName)

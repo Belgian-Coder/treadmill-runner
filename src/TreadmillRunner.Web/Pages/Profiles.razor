@@ -33,6 +33,13 @@
             {
                 <p class="empty-state">Loading profiles…</p>
             }
+            else if (!string.IsNullOrWhiteSpace(profileLoadError))
+            {
+                <section class="empty-state" role="alert">
+                    <p>@profileLoadError</p>
+                    <button class="secondary-action" type="button" @onclick="ReloadAsync">Retry</button>
+                </section>
+            }
             else if (profiles.Count == 0)
             {
                 <p class="empty-state">No profiles yet. Create the first household profile.</p>
@@ -152,6 +159,7 @@
     private bool zonesUseSuggestedDefaults = true;
     private bool archiveConfirming;
     private string? message;
+    private string? profileLoadError;
     private Guid pendingSaveOperationId = Guid.NewGuid();
     private Guid pendingArchiveOperationId = Guid.NewGuid();
     private int profileChangeGeneration;
@@ -201,6 +209,7 @@
         CancellationToken cancellationToken = reloadCancellation.Token;
         int generation = ++reloadGeneration;
         loading = true;
+        profileLoadError = null;
         try
         {
             List<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<List<ProfileView>>("api/planning/profiles", cancellationToken) ?? [];
@@ -208,10 +217,10 @@
             profiles = loadedProfiles;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
         {
             if (generation == reloadGeneration)
-                message = "Profiles are temporarily unavailable.";
+                profileLoadError = "Profiles could not be loaded from the local gateway. No household profiles were changed.";
         }
         finally
         {

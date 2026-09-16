@@ -4,6 +4,7 @@
 @using System.Text.Json
 @implements IAsyncDisposable
 @inject HttpClient Http
+@inject IJSRuntime JS
 
 <PageTitle>Polar H10 memory · TreadmillRunner</PageTitle>
 
@@ -92,10 +93,10 @@
                 {
                     <article class="polar-recording-card">
                         <div><h3>@(recordingItem.Title ?? $"Recording {recordingItem.Id}")</h3><p>@FormatRange(recordingItem)</p><span class="status-chip">@(recordingItem.Status ?? "Available")</span></div>
-                        <div class="polar-recording-actions">@if (source == "remote") { <button class="secondary-action compact-action" type="button" @onclick="() => DownloadAsync(recordingItem)" disabled="@busy">Download verified copy</button> } else { <a class="secondary-action compact-action" href="@($"api/polar-h10/recordings/{recordingItem.Id}/export.csv")" download>Download CSV</a> }@if (source == "local" && recordingItem.CanDeleteRemote) { <button class="danger-action compact-action" type="button" @onclick="() => AskDelete(recordingItem)">Delete from H10</button> }</div>
+                        <div class="polar-recording-actions">@if (source == "remote") { <button class="secondary-action compact-action" type="button" @onclick="() => DownloadAsync(recordingItem)" disabled="@busy">Download verified copy</button> } else { <a class="secondary-action compact-action" href="@($"api/polar-h10/recordings/{recordingItem.Id}/export.csv")" download>Download CSV</a> }@if (source == "local" && recordingItem.CanDeleteRemote) { <button id="@DeleteCardTriggerId(recordingItem)" class="danger-action compact-action" type="button" @onclick="() => AskDelete(recordingItem, DeleteCardTriggerId(recordingItem))">Delete from H10</button> }</div>
                         @if (selectedRecording?.Id == recordingItem.Id && confirmDelete)
                         {
-                            <div class="inline-confirmation" role="alertdialog" aria-label="Confirm remote recording deletion"><p><strong>Delete this recording from the H10?</strong> The verified local copy stays available, and workout History remains unchanged.</p><div class="form-actions"><button class="danger-action compact-action" type="button" @onclick="DeleteLocalAsync" disabled="@busy">Confirm delete from H10</button><button class="secondary-action compact-action" type="button" @onclick="CancelDelete">Cancel</button></div></div>
+                            <section class="inline-confirmation" role="alertdialog" aria-labelledby="remote-delete-confirm-title" aria-describedby="remote-delete-confirm-description" @onkeydown="HandleDeleteKeyDownAsync"><p><strong id="remote-delete-confirm-title">Delete this recording from the H10?</strong> <span id="remote-delete-confirm-description">The verified local copy stays available, and workout History remains unchanged.</span></p><div class="form-actions"><button @ref="deleteCancel" class="secondary-action compact-action" type="button" @onclick="CancelDeleteAsync" disabled="@busy">Cancel</button><button class="danger-action compact-action" type="button" @onclick="DeleteLocalAsync" disabled="@busy">Confirm delete from H10</button></div></section>
                         }
                     </article>
                 }
@@ -108,7 +109,7 @@
         <section class="panel-card polar-chart-card" aria-labelledby="polar-chart-title">
             <div class="panel-heading"><div><p class="eyebrow">Review before archive</p><h2 id="polar-chart-title">@(selected.Title ?? "Heart-rate recording")</h2></div><span class="status-chip">@(selected.Samples?.Count ?? 0) samples</span></div>
             <svg class="polar-memory-chart" viewBox="0 0 720 220" role="img" aria-label="Heart rate over elapsed time"><path class="chart-current" d="@BuildChartPath(selected)" /></svg>
-            <div class="form-actions"><a class="secondary-action" href="@($"api/polar-h10/recordings/{selected.Id}/export.csv")" download>Download CSV</a>@if (source == "local" && selected.CanDeleteRemote) { <button class="danger-action" type="button" @onclick="() => AskDelete(selected)">Delete from H10</button> }</div>
+            <div class="form-actions"><a class="secondary-action" href="@($"api/polar-h10/recordings/{selected.Id}/export.csv")" download>Download CSV</a>@if (source == "local" && selected.CanDeleteRemote) { <button id="@DeleteChartTriggerId(selected)" class="danger-action" type="button" @onclick="() => AskDelete(selected, DeleteChartTriggerId(selected))">Delete from H10</button> }</div>
         </section>
     }
 </section>
@@ -127,10 +128,28 @@
     private bool manualStartPending;
     private bool confirmDelete;
     private int manualIntervalSeconds = 1;
+    private ElementReference deleteCancel;
+    private bool focusDeleteCancel;
+    private string? deleteOriginId;
+    private string? restoreDeleteOriginId;
 
     private bool CanRecord => status?.IsAvailable == true;
 
     protected override async Task OnInitializedAsync() { await LoadAsync(); }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusDeleteCancel)
+        {
+            focusDeleteCancel = false;
+            await deleteCancel.FocusAsync();
+        }
+        else if (restoreDeleteOriginId is { } originId)
+        {
+            restoreDeleteOriginId = null;
+            await JS.InvokeVoidAsync("treadmillRunnerView.focusModalStage", originId);
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -201,9 +220,13 @@
         finally { busy = false; }
     }
 
-    private void AskDelete(PolarRecording item) { selectedRecording = item; confirmDelete = true; }
-    private void CancelDelete() { confirmDelete = false; }
+    private void AskDelete(PolarRecording item, string originId) { selectedRecording = item; confirmDelete = true; deleteOriginId = originId; restoreDeleteOriginId = null; focusDeleteCancel = true; }
+    private Task CancelDeleteAsync() { confirmDelete = false; focusDeleteCancel = false; restoreDeleteOriginId = deleteOriginId; deleteOriginId = null; return Task.CompletedTask; }
+    private Task HandleDeleteKeyDownAsync(KeyboardEventArgs args) => !busy && string.Equals(args.Key, "Escape", StringComparison.Ordinal) ? CancelDeleteAsync() : Task.CompletedTask;
     private async Task DeleteLocalAsync() { if (selectedRecording is null || !selectedRecording.CanDeleteRemote) return; confirmDelete = false; await RunRecordingActionAsync(selectedRecording, "delete-remote", "Remote H10 recording deleted. The verified local copy and workout History were retained."); }
+    private static string DeleteCardTriggerId(PolarRecording item) => $"polar-delete-card-{DomId(item.Id)}";
+    private static string DeleteChartTriggerId(PolarRecording item) => $"polar-delete-chart-{DomId(item.Id)}";
+    private static string DomId(string value) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant()[..16];
     private string FormatRange(PolarRecording item) => item.StartedAtUtc is { } start && item.EndedAtUtc is { } end ? $"{start.ToLocalTime():d MMM yyyy · HH:mm} · {(end - start):hh\\:mm\\:ss}" : "Time range unavailable";
     private static string BuildChartPath(PolarRecording item)
     {

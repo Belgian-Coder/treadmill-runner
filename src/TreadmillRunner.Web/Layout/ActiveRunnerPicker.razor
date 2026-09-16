@@ -3,14 +3,25 @@
 @implements IDisposable
 
 <details @key="pickerRenderKey" class="active-runner-picker">
-    <summary aria-label="@ActiveRunnerLabel">
+    <summary @ref="summaryElement" aria-label="@ActiveRunnerLabel">
         <span aria-hidden="true">@ActiveInitial</span>
         <strong>@ActiveName</strong>
         <AppIcon Name="chevron-down" CssClass="active-runner-picker__chevron" />
     </summary>
     <div class="active-runner-picker__menu" role="radiogroup" aria-label="Active runner">
         <span>Running as</span>
-        @if (profiles.Count == 0)
+        @if (profilesLoading)
+        {
+            <span role="status">Loading runners…</span>
+        }
+        else if (!string.IsNullOrWhiteSpace(profilesLoadError))
+        {
+            <div role="alert">
+                <p>@profilesLoadError</p>
+                <button @ref="retryButton" class="secondary-action" type="button" @onclick="RetryProfilesAsync">Try again</button>
+            </div>
+        }
+        else if (profilesLoaded && profiles.Count == 0)
         {
             <a href="/profiles">Create a profile</a>
         }
@@ -19,8 +30,10 @@
             @foreach (ProfileView profile in profiles)
             {
                 <button type="button" role="radio" aria-checked="@(profile.Id == activeProfileId ? "true" : "false")"
+                        tabindex="@RadioTabIndex(profile.Id)"
                         data-profile-id="@profile.Id.ToString("D")"
                         class="@(profile.Id == activeProfileId ? "active-runner-picker__selected" : null)"
+                        @onkeydown="args => HandleRadioKeyAsync(args, profile.Id)"
                         @onclick="() => SelectAsync(profile.Id)">@profile.DisplayName</button>
             }
         }
@@ -31,6 +44,13 @@
     private IReadOnlyList<ProfileView> profiles = Array.Empty<ProfileView>();
     private Guid? activeProfileId;
     private int pickerRenderKey;
+    private ElementReference summaryElement;
+    private ElementReference retryButton;
+    private bool profilesLoading = true;
+    private bool profilesLoaded;
+    private bool focusSummaryPending;
+    private bool focusRetryPending;
+    private string? profilesLoadError;
     private string ActiveName => profiles.FirstOrDefault(profile => profile.Id == activeProfileId)?.DisplayName ?? "Choose runner";
     private string ActiveInitial => ActiveName == "Choose runner" ? "?" : ActiveName[..1].ToUpperInvariant();
     private string ActiveRunnerLabel => ActiveName == "Choose runner"
@@ -41,19 +61,83 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (firstRender) await LoadProfilesAsync();
+        if (focusSummaryPending)
+        {
+            focusSummaryPending = false;
+            await summaryElement.FocusAsync();
+        }
+        else if (focusRetryPending)
+        {
+            focusRetryPending = false;
+            await retryButton.FocusAsync();
+        }
+    }
+
+    private async Task LoadProfilesAsync(bool focusSummaryAfterLoad = false)
+    {
+        profilesLoading = true;
+        profilesLoadError = null;
+        await InvokeAsync(StateHasChanged);
         try
         {
-            profiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? [];
+            IReadOnlyList<ProfileView> loadedProfiles = await Http.GetFromJsonAsync<ProfileView[]>("api/planning/profiles") ?? [];
             activeProfileId = await ActiveProfile.GetAsync();
-            if (activeProfileId is not null && profiles.All(profile => profile.Id != activeProfileId))
+            if (activeProfileId is not null && loadedProfiles.All(profile => profile.Id != activeProfileId))
             {
                 await ActiveProfile.ClearAsync();
                 activeProfileId = null;
             }
+            profiles = loadedProfiles;
+            profilesLoaded = true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException or TaskCanceledException)
+        {
+            profilesLoadError = "Runners could not be loaded from the local gateway.";
+        }
+        finally
+        {
+            profilesLoading = false;
+            if (focusSummaryAfterLoad)
+            {
+                if (string.IsNullOrWhiteSpace(profilesLoadError))
+                {
+                    pickerRenderKey++;
+                    focusSummaryPending = true;
+                }
+                else
+                {
+                    focusRetryPending = true;
+                }
+            }
             await InvokeAsync(StateHasChanged);
         }
-        catch (HttpRequestException) { }
+    }
+
+    private Task RetryProfilesAsync() => LoadProfilesAsync(focusSummaryAfterLoad: true);
+
+    private int RadioTabIndex(Guid profileId)
+    {
+        Guid? tabStop = profiles.Any(profile => profile.Id == activeProfileId)
+            ? activeProfileId
+            : profiles.FirstOrDefault()?.Id;
+        return profileId == tabStop ? 0 : -1;
+    }
+
+    private async Task HandleRadioKeyAsync(KeyboardEventArgs args, Guid profileId)
+    {
+        if (args.AltKey || args.CtrlKey || args.MetaKey || profiles.Count == 0) return;
+        int currentIndex = profiles.ToList().FindIndex(profile => profile.Id == profileId);
+        if (currentIndex < 0) return;
+        int targetIndex = args.Key switch
+        {
+            "ArrowDown" or "ArrowRight" => (currentIndex + 1) % profiles.Count,
+            "ArrowUp" or "ArrowLeft" => (currentIndex - 1 + profiles.Count) % profiles.Count,
+            "Home" => 0,
+            "End" => profiles.Count - 1,
+            _ => currentIndex,
+        };
+        if (targetIndex != currentIndex) await SelectAsync(profiles[targetIndex].Id);
     }
 
     private async Task SelectAsync(Guid profileId)
@@ -63,6 +147,7 @@
         await ActiveProfile.SetAsync(profileId);
         activeProfileId = profileId;
         pickerRenderKey++;
+        focusSummaryPending = true;
         await InvokeAsync(StateHasChanged);
     }
 

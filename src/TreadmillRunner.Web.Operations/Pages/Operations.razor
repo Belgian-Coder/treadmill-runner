@@ -264,7 +264,7 @@
             }
             @if (updateStatus.State == "Staged" && !activationConfirming)
             {
-                <button class="danger-action touch-action" type="button" @onclick="BeginActivationConfirmation" disabled="@updateBusy">Activate staged update</button>
+                <button @ref="activationTrigger" class="danger-action touch-action" type="button" @onclick="BeginActivationConfirmation" disabled="@updateBusy">Activate staged update</button>
             }
         </div>
         <details class="advanced-settings update-file-fallback">
@@ -276,10 +276,10 @@
         </details>
         @if (activationConfirming && updateStatus.State == "Staged" && activationVersion == updateStatus.StagedVersion)
         {
-            <section class="inline-confirmation" aria-label="Confirm software update activation">
-                <p><strong>Install @updateStatus.StagedVersion now?</strong> The gateway will back up its database, briefly disconnect, and automatically restore the previous release if readiness fails.</p>
+            <section class="inline-confirmation" role="alertdialog" aria-labelledby="activation-confirm-title" aria-describedby="activation-confirm-description" @onkeydown="HandleActivationConfirmationKeyDown">
+                <p><strong id="activation-confirm-title">Install @updateStatus.StagedVersion now?</strong> <span id="activation-confirm-description">The gateway will back up its database, briefly disconnect, and automatically restore the previous release if readiness fails.</span></p>
                 <div class="controls-card">
-                    <button class="secondary-action" type="button" @onclick="() => activationConfirming = false" disabled="@updateBusy">Cancel</button>
+                    <button @ref="activationCancel" class="secondary-action" type="button" @onclick="CancelActivationConfirmation" disabled="@updateBusy">Cancel</button>
                     <button class="danger-action touch-action" type="button" @onclick="ActivateUpdateAsync" disabled="@updateBusy">@(updateBusy ? "Activating…" : "Confirm activation")</button>
                 </div>
             </section>
@@ -300,6 +300,10 @@
     private bool updateBusy;
     private bool activationConfirming;
     private string? activationVersion;
+    private ElementReference activationTrigger;
+    private ElementReference activationCancel;
+    private bool focusActivationCancel;
+    private bool restoreActivationTrigger;
     private CancellationTokenSource? activationRecoveryCancellation;
     private bool disposed;
     private DatabaseIntegrityStatusModel? databaseStatus;
@@ -376,20 +380,32 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-
-        await JS.InvokeVoidAsync("treadmillRunnerView.scrollToCurrentHash");
-
-        pwaReference = DotNetObjectReference.Create(this);
-        try
+        if (focusActivationCancel)
         {
-            pwaStatus = await JS.InvokeAsync<PwaStatusModel>("treadmillRunnerPwa.initialize", pwaReference);
-            await InvokeAsync(StateHasChanged);
+            focusActivationCancel = false;
+            await activationCancel.FocusAsync();
         }
-        catch (JSException)
+        else if (restoreActivationTrigger)
         {
-            pwaMessage = "Browser installation and sharing features are temporarily unavailable.";
-            await InvokeAsync(StateHasChanged);
+            restoreActivationTrigger = false;
+            await activationTrigger.FocusAsync();
+        }
+
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("treadmillRunnerView.scrollToCurrentHash");
+
+            pwaReference = DotNetObjectReference.Create(this);
+            try
+            {
+                pwaStatus = await JS.InvokeAsync<PwaStatusModel>("treadmillRunnerPwa.initialize", pwaReference);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (JSException)
+            {
+                pwaMessage = "Browser installation and sharing features are temporarily unavailable.";
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -826,6 +842,21 @@
     {
         activationVersion = updateStatus.StagedVersion;
         activationConfirming = !string.IsNullOrWhiteSpace(activationVersion);
+        focusActivationCancel = activationConfirming;
+        restoreActivationTrigger = false;
+    }
+
+    private void CancelActivationConfirmation()
+    {
+        if (updateBusy) return;
+        activationConfirming = false;
+        focusActivationCancel = false;
+        restoreActivationTrigger = true;
+    }
+
+    private void HandleActivationConfirmationKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.Ordinal)) CancelActivationConfirmation();
     }
 
     private async Task<UpdateActionDisposition> RunUpdateActionAsync(

@@ -28,6 +28,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     { "desktop-full-hd", 1920, 1080 },
     { "phone-portrait", 390, 844 },
     { "phone-landscape", 844, 390 },
+    { "iphone17-pro-max-landscape", 956, 440 },
     { "phone-compact", 360, 800 },
     { "phone-narrow", 320, 800 },
   };
@@ -202,11 +203,25 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         await Expect(compactRunnerContext).ToBeVisibleAsync();
         await Expect(compactRunnerContext).ToContainTextAsync(plan.ProfileName);
         await Expect(compactRunnerContext).ToHaveAttributeAsync("aria-label", $"Active runner: {plan.ProfileName}");
+
+        ILocator runNavigation = Page.GetByRole(AriaRole.Link, new() { Name = "Back to Run", Exact = true });
+        await Expect(runNavigation).ToBeVisibleAsync();
+        await Expect(runNavigation).ToHaveAttributeAsync("href", "/");
+        LocatorBoundingBoxResult? runNavigationBox = await runNavigation.BoundingBoxAsync();
+        Assert.NotNull(runNavigationBox);
+        Assert.True(runNavigationBox.Width >= 44 && runNavigationBox.Height >= 44,
+          $"The short-landscape Run route must retain a 44px touch target at {width}x{height}: {runNavigationBox}.");
       }
       else
       {
         await Expect(compactRunnerContext).ToBeHiddenAsync();
+        await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Back to Run", Exact = true })).ToBeHiddenAsync();
       }
+
+      ILocator heartRateStatus = Page.Locator(".control-header-actions .global-hr-status");
+      await Expect(heartRateStatus).ToHaveAttributeAsync("aria-label", new System.Text.RegularExpressions.Regex("^Pulse sensor status:"));
+      Assert.Null(await heartRateStatus.GetAttributeAsync("role"));
+      Assert.Null(await heartRateStatus.GetAttributeAsync("aria-live"));
       await Expect(Page.Locator(".control-command-status")).ToContainTextAsync("Session running");
       await Expect(Page.Locator(".control-command-status")).Not.ToContainTextAsync("Hold Start");
 

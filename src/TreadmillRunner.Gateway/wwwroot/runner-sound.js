@@ -2,6 +2,14 @@ if (window.matchMedia("(display-mode: standalone)").matches || navigator.standal
   document.documentElement.classList.add("standalone-shell");
 }
 
+document.addEventListener("keydown", event => {
+  if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.target instanceof Element && event.target.matches(".active-runner-picker [role='radio']")) {
+    event.preventDefault();
+  }
+}, true);
+
 window.treadmillRunnerSound = {
   playCue: function (volumePercent = 60) {
     const AudioContextType = window.AudioContext || window.webkitAudioContext;
