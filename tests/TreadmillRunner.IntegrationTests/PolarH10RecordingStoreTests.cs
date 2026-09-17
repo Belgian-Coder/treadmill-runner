@@ -84,6 +84,63 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Prepare_time_recording_ignores_pre_run_samples_and_merges_the_exact_workout_window()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    DateTimeOffset preparedAt = seed.Start.AddMinutes(-2);
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      (await context.WorkoutSessions.SingleAsync()).ArmedAtUtc = preparedAt;
+      await context.SaveChangesAsync();
+    }
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, preparedAt);
+    await store.MarkRecordingAsync(job.Id, preparedAt.AddSeconds(1));
+    PolarH10HeartRateSample[] samples = Enumerable.Range(0, 124)
+      .Select(index => new PolarH10HeartRateSample(
+        preparedAt.AddSeconds(index),
+        index >= 120 ? (ushort)(100 + index - 120) : (ushort)80))
+      .ToArray();
+    var recording = new PolarH10MemoryRecord(job.ExerciseId, $"/{job.ExerciseId}/SAMPLES.BPB", preparedAt, preparedAt.AddSeconds(124),
+      PolarH10SampleType.HeartRate, 1, Enumerable.Repeat((byte)1, 124).ToArray(), samples, []);
+    await store.StoreDownloadedAsync(job.Id, recording, seed.Start.AddMinutes(21));
+
+    Assert.Equal(PolarH10RecordingOutcome.Merged, await store.MergeDownloadedAsync(job.Id, seed.Start.AddMinutes(21).AddSeconds(1)));
+    await using TreadmillRunnerDbContext verification = await factory.CreateDbContextAsync();
+    SessionSampleEntity[] merged = await verification.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
+    Assert.Equal(new ushort?[] { 100, 101, 102, 103 }, merged.Select(row => row.HeartRateBpm));
+    Assert.DoesNotContain(merged, row => row.HeartRateBpm == 80);
+  }
+
+  [Fact]
+  public async Task Legacy_running_time_start_still_merges_when_the_session_was_armed_earlier()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      (await context.WorkoutSessions.SingleAsync()).ArmedAtUtc = seed.Start.AddMinutes(-3);
+      await context.SaveChangesAsync();
+    }
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(
+      seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await store.MarkRecordingAsync(job.Id, seed.Start);
+    var recording = new PolarH10MemoryRecord(
+      job.ExerciseId, $"/{job.ExerciseId}/SAMPLES.BPB", seed.Start, seed.Start.AddSeconds(4),
+      PolarH10SampleType.HeartRate, 1, new byte[] { 1, 2, 3, 4 },
+      new ushort[] { 100, 101, 102, 103 }
+        .Select((value, index) => new PolarH10HeartRateSample(seed.Start.AddSeconds(index), value)).ToArray(),
+      []);
+    await store.StoreDownloadedAsync(job.Id, recording, seed.Start.AddMinutes(21));
+
+    Assert.Equal(
+      PolarH10RecordingOutcome.Merged,
+      await store.MergeDownloadedAsync(job.Id, seed.Start.AddMinutes(21).AddSeconds(1)));
+  }
+
+  [Fact]
   public async Task Pending_h10_recovery_blocks_Garmin_reconcile_until_explicit_skip()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
@@ -174,18 +231,16 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
       session.State = "Completed";
       await context.SaveChangesAsync();
     }
+    client.DeleteFailuresRemaining = 1;
     await worker.DrainOneAsync(default);
     Assert.Equal(PolarH10RecordingOutcome.Merged, (await store.FindByIdAsync(job.Id))!.Outcome);
     Assert.True(client.RemoteExists);
-    client.DeleteFailuresRemaining = 1;
-    await worker.DrainOneAsync(default);
-    Assert.Equal(PolarH10RecordingOutcome.RemovalPending, (await store.FindByIdAsync(job.Id))!.Outcome);
     await worker.DrainOneAsync(default);
     Assert.Equal(PolarH10RecordingOutcome.Completed, (await store.FindByIdAsync(job.Id))!.Outcome);
     Assert.False(client.RemoteExists);
     Assert.Equal(2, client.DeleteCalls);
-    Assert.Equal(4, access.AcquireCalls);
-    Assert.Equal(4, access.ReleaseCalls);
+    Assert.Equal(3, access.AcquireCalls);
+    Assert.Equal(3, access.ReleaseCalls);
     await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
       Assert.Single(context.SessionEvents, row => row.Kind == "session-warning" && row.DetailsJson.Contains("polar-h10-memory-merged"));
     Assert.True(wake.Count > 0);
@@ -232,7 +287,6 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
       new FixedOptionsMonitor<PolarH10MemoryOptions>(new() { Enabled = true, LeaseSeconds = 30, PollSeconds = 1 }),
       new FixedTimeProvider(seed.Start), new FakeWakeSignal(), new PolarH10OperationGate(), NullLogger<PolarH10MemoryWorker>.Instance);
 
-    await worker.DrainOneAsync(default);
     await worker.DrainOneAsync(default);
 
     Assert.Equal(PolarH10RecordingOutcome.Retained, (await store.FindByIdAsync(job.Id))!.Outcome);
@@ -620,7 +674,7 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
 
   private sealed record Seed(Guid ProfileId, Guid SessionId, Guid EnrollmentId, DateTimeOffset Start);
 
-  private sealed class FakeMemoryClient(Guid enrollmentId, string exerciseId, DateTimeOffset startedAt, bool remoteExists = false) : IPolarH10MemoryClient
+  private sealed class FakeMemoryClient(Guid enrollmentId, string exerciseId, DateTimeOffset startedAt, bool remoteExists = false) : IPolarH10MemoryClient, IPolarH10MemorySession
   {
     private bool recording;
     public bool RemoteExists { get; private set; } = remoteExists;
@@ -632,14 +686,21 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     public bool ConfirmAfterStartCancellation { get; set; }
     public bool StartWasIssued { get; set; } = true;
 
-    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
+    public Guid EnrollmentId => enrollmentId;
+    public string DeviceId => "001122334455";
+    public string DisplayName => "Polar H10";
+    public Task<IPolarH10MemorySession> OpenAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
+    {
+      Assert.Equal(enrollmentId, requestedEnrollmentId);
+      return Task.FromResult<IPolarH10MemorySession>(this);
+    }
+    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
       StatusCalls++;
       return Task.FromResult(new PolarH10DeviceRecordingStatus(enrollmentId, "001122334455", "Polar H10", recording, recording ? exerciseId : null));
     }
-    public async Task<PolarH10StartResult> StartAsync(Guid requestedEnrollmentId, string requestedExerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
+    public async Task<PolarH10StartResult> StartAsync(string requestedExerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
     {
-      Assert.Equal(enrollmentId, requestedEnrollmentId);
       Assert.Equal(exerciseId, requestedExerciseId);
       StartCalls++;
       if (BlockStartUntilCanceled)
@@ -649,15 +710,18 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
       }
       recording = true;
       RemoteExists = true;
-      return new(new PolarH10DeviceRecordingStatus(enrollmentId, "001122334455", "Polar H10", true, exerciseId), StartWasIssued);
+      return new(
+        new PolarH10DeviceRecordingStatus(enrollmentId, "001122334455", "Polar H10", true, exerciseId),
+        StartWasIssued,
+        StartWasIssued ? startedAt : null);
     }
-    public Task StopAsync(Guid requestedEnrollmentId, CancellationToken cancellationToken = default) { recording = false; return Task.CompletedTask; }
-    public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid requestedEnrollmentId, CancellationToken cancellationToken = default) =>
+    public Task StopAsync(CancellationToken cancellationToken = default) { recording = false; return Task.CompletedTask; }
+    public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(CancellationToken cancellationToken = default) =>
       Task.FromResult<IReadOnlyList<PolarH10RemoteRecording>>(RemoteExists ? [new($"/{exerciseId}/SAMPLES.BPB", 4)] : []);
-    public Task<PolarH10MemoryRecord> FetchAsync(Guid requestedEnrollmentId, string remotePath, DateTimeOffset requestedStart, CancellationToken cancellationToken = default) =>
+    public Task<PolarH10MemoryRecord> FetchAsync(string remotePath, DateTimeOffset requestedStart, CancellationToken cancellationToken = default) =>
       Task.FromResult(new PolarH10MemoryRecord(exerciseId, remotePath, startedAt, startedAt.AddSeconds(4), PolarH10SampleType.HeartRate, 1,
         new byte[] { 1, 2, 3, 4 }, new ushort[] { 100, 101, 102, 103 }.Select((value, index) => new PolarH10HeartRateSample(startedAt.AddSeconds(index), value)).ToArray(), []));
-    public Task DeleteAsync(Guid requestedEnrollmentId, string remotePath, CancellationToken cancellationToken = default)
+    public Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default)
     {
       Assert.Equal($"/{exerciseId}/SAMPLES.BPB", remotePath);
       DeleteCalls++;
@@ -665,6 +729,7 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
       RemoteExists = false;
       return Task.CompletedTask;
     }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
   }
 
   private sealed class FakeWakeSignal : IGarminActivityUploadWakeSignal
@@ -677,6 +742,9 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   {
     public int AcquireCalls { get; private set; }
     public int ReleaseCalls { get; private set; }
+
+    public Task<Guid> ResolveEnrollmentIdAsync(Guid? enrollmentId, CancellationToken cancellationToken = default) =>
+      Task.FromResult(enrollmentId ?? throw new InvalidOperationException());
 
     public Task<IPolarH10MemoryAccessLease> AcquireAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
     {

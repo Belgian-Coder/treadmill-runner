@@ -24,13 +24,34 @@ public sealed class PolarH10MemoryClientTests
     var broker = new AdvertisementBroker(
       new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService]));
     var locator = new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(store, factory, locator);
+    var client = new PolarH10MemoryClient(store, factory, locator, TimeProvider.System);
 
-    PolarH10DeviceRecordingStatus status = await client.GetStatusAsync(enrollment.Id);
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    PolarH10DeviceRecordingStatus status = await session.GetStatusAsync();
 
     Assert.Equal("AABBCCDDEEFF", Assert.Single(factory.DeviceIds));
     Assert.Equal(enrollment.DeviceId, status.DeviceId);
     Assert.False(status.IsRecording);
+  }
+
+  [Fact]
+  public async Task Operation_session_reuses_one_locator_and_connection_for_status_and_listing()
+  {
+    DeviceEnrollment enrollment = HeartRate("102030405060", "Polar H10");
+    var factory = new ConnectionFactory();
+    var broker = new AdvertisementBroker(
+      new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService]));
+    var client = new PolarH10MemoryClient(
+      new EnrollmentStore(enrollment), factory, new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25)), TimeProvider.System);
+
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    Assert.False((await session.GetStatusAsync()).IsRecording);
+    Assert.Empty(await session.ListAsync());
+    await session.DisposeAsync();
+
+    Assert.Equal(1, broker.ScanCalls);
+    Assert.Single(factory.DeviceIds);
+    Assert.Equal(1, factory.DisposedConnections);
   }
 
   [Fact]
@@ -42,11 +63,14 @@ public sealed class PolarH10MemoryClientTests
     var broker = new AdvertisementBroker(
       new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService]));
     var locator = new PolarH10ConnectionLocator(broker, TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(store, factory, locator);
+    var client = new PolarH10MemoryClient(store, factory, locator, TimeProvider.System);
 
-    PolarH10DeviceRecordingStatus status = await client.GetStatusAsync(enrollment.Id);
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    PolarH10DeviceRecordingStatus status = await session.GetStatusAsync();
+    await session.DisposeAsync();
 
     Assert.False(status.IsRecording);
+    Assert.Equal(2, broker.ScanCalls);
     Assert.Equal(2, factory.DeviceIds.Count);
     Assert.Equal(2, factory.DisposedConnections);
   }
@@ -59,9 +83,11 @@ public sealed class PolarH10MemoryClientTests
     var locator = new PolarH10ConnectionLocator(
       new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
       TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator, TimeProvider.System);
 
-    await Assert.ThrowsAsync<TimeoutException>(() => client.GetStatusAsync(enrollment.Id));
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    await Assert.ThrowsAsync<TimeoutException>(() => session.GetStatusAsync());
+    await session.DisposeAsync();
 
     Assert.Equal(2, factory.DeviceIds.Count);
     Assert.Equal(2, factory.DisposedConnections);
@@ -75,9 +101,11 @@ public sealed class PolarH10MemoryClientTests
     var locator = new PolarH10ConnectionLocator(
       new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
       TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator, TimeProvider.System);
 
-    await Assert.ThrowsAsync<PolarPftpProtocolException>(() => client.GetStatusAsync(enrollment.Id));
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    await Assert.ThrowsAsync<PolarPftpProtocolException>(() => session.GetStatusAsync());
+    await session.DisposeAsync();
 
     Assert.Single(factory.DeviceIds);
     Assert.Equal(1, factory.DisposedConnections);
@@ -92,12 +120,14 @@ public sealed class PolarH10MemoryClientTests
     var locator = new PolarH10ConnectionLocator(
       new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
       TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator, TimeProvider.System);
 
-    PolarH10StartResult start = await client.StartAsync(
-      enrollment.Id, exerciseId, PolarH10SampleType.HeartRate, 1);
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    PolarH10StartResult start = await session.StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1);
+    await session.DisposeAsync();
 
     Assert.True(start.StartIssued);
+    Assert.NotNull(start.StartIssuedAtUtc);
     Assert.True(start.Status.IsRecording);
     Assert.Equal(exerciseId, start.Status.ExerciseId);
     Assert.Equal([PolarPftpQueries.GetStatus, PolarPftpQueries.Start, PolarPftpQueries.GetStatus], factory.QueryIds);
@@ -115,15 +145,39 @@ public sealed class PolarH10MemoryClientTests
     var locator = new PolarH10ConnectionLocator(
       new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
       TimeSpan.FromMilliseconds(25));
-    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator);
+    var client = new PolarH10MemoryClient(new EnrollmentStore(enrollment), factory, locator, TimeProvider.System);
 
-    PolarH10StartResult start = await client.StartAsync(
-      enrollment.Id, requestedExerciseId, PolarH10SampleType.HeartRate, 1);
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    PolarH10StartResult start = await session.StartAsync(requestedExerciseId, PolarH10SampleType.HeartRate, 1);
+    await session.DisposeAsync();
 
     Assert.False(start.StartIssued);
     Assert.True(start.Status.IsRecording);
     Assert.Equal(activeExerciseId, start.Status.ExerciseId);
     Assert.Equal([PolarPftpQueries.GetStatus], factory.QueryIds);
+    Assert.Single(factory.DeviceIds);
+    Assert.Equal(1, factory.DisposedConnections);
+  }
+
+  [Fact]
+  public async Task Memory_start_never_reconnects_or_replays_after_the_mutation_was_dispatched()
+  {
+    const string exerciseId = "tr-uncertain-start";
+    DeviceEnrollment enrollment = HeartRate("102030405060", "Polar H10");
+    var factory = new RecordingConnectionFactory(exerciseId, timeoutOnConfirmation: true);
+    var client = new PolarH10MemoryClient(
+      new EnrollmentStore(enrollment),
+      factory,
+      new PolarH10ConnectionLocator(
+        new AdvertisementBroker(new BleAdvertisement("AABBCCDDEEFF", "Polar H10", -42, [HeartRateService])),
+        TimeSpan.FromMilliseconds(25)),
+      TimeProvider.System);
+
+    await using IPolarH10MemorySession session = await client.OpenAsync(enrollment.Id);
+    await Assert.ThrowsAsync<TimeoutException>(() => session.StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1));
+    await session.DisposeAsync();
+
+    Assert.Equal(1, factory.QueryIds.Count(query => query == PolarPftpQueries.Start));
     Assert.Single(factory.DeviceIds);
     Assert.Equal(1, factory.DisposedConnections);
   }
@@ -190,9 +244,12 @@ public sealed class PolarH10MemoryClientTests
 
   private sealed class AdvertisementBroker(params BleAdvertisement[] advertisements) : IBleAdvertisementBroker
   {
+    public int ScanCalls { get; private set; }
+
     public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
       [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+      ScanCalls++;
       foreach (BleAdvertisement advertisement in advertisements)
       {
         cancellationToken.ThrowIfCancellationRequested();
@@ -220,7 +277,10 @@ public sealed class PolarH10MemoryClientTests
     }
   }
 
-  private sealed class RecordingConnectionFactory(string requestedExerciseId, string? activeExerciseId = null) : IPolarPftpConnectionFactory
+  private sealed class RecordingConnectionFactory(
+    string requestedExerciseId,
+    string? activeExerciseId = null,
+    bool timeoutOnConfirmation = false) : IPolarPftpConnectionFactory
   {
     private bool recording = activeExerciseId is not null;
     private string? ExerciseId { get; set; } = activeExerciseId;
@@ -228,6 +288,8 @@ public sealed class PolarH10MemoryClientTests
     public List<string> DeviceIds { get; } = [];
     public List<ushort> QueryIds { get; } = [];
     public int DisposedConnections { get; private set; }
+    private int StatusCalls { get; set; }
+    private bool TimeoutOnConfirmation { get; } = timeoutOnConfirmation;
 
     public ValueTask<IPolarPftpConnection> ConnectAsync(
       string deviceId,
@@ -258,6 +320,9 @@ public sealed class PolarH10MemoryClientTests
         }
         if (queryId != PolarPftpQueries.GetStatus)
           return ValueTask.FromException<ReadOnlyMemory<byte>>(new InvalidOperationException("Unexpected PFTP query."));
+        owner.StatusCalls++;
+        if (owner.TimeoutOnConfirmation && owner.StatusCalls > 1)
+          return ValueTask.FromException<ReadOnlyMemory<byte>>(new TimeoutException("synthetic confirmation timeout"));
         if (!owner.recording)
           return ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
         byte[] status = PolarPftpProtobuf.EncodeFields((1, 1))

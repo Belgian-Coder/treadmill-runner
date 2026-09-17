@@ -6,6 +6,10 @@ namespace TreadmillRunner.Gateway.Polar;
 
 public interface IPolarH10MemoryAccessCoordinator
 {
+  Task<Guid> ResolveEnrollmentIdAsync(
+    Guid? enrollmentId,
+    CancellationToken cancellationToken = default);
+
   Task<IPolarH10MemoryAccessLease> AcquireAsync(
     Guid? enrollmentId,
     CancellationToken cancellationToken = default);
@@ -29,6 +33,30 @@ public sealed class PolarH10MemoryAccessCoordinator(
     Guid? enrollmentId,
     CancellationToken cancellationToken = default)
   {
+    Guid resolvedEnrollmentId = await ResolveEnrollmentIdAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
+
+    bool suspended;
+    try
+    {
+      suspended = await deviceCoordinator
+        .SuspendConnectionAsync(resolvedEnrollmentId, cancellationToken)
+        .ConfigureAwait(false);
+    }
+    catch
+    {
+      await ResumeBestEffortAsync(resolvedEnrollmentId).ConfigureAwait(false);
+      throw;
+    }
+    if (!suspended)
+      throw new InvalidOperationException("The exact H10 live connection could not be released for a memory operation.");
+
+    return new PolarH10MemoryAccessLease(resolvedEnrollmentId, deviceCoordinator, logger);
+  }
+
+  public async Task<Guid> ResolveEnrollmentIdAsync(
+    Guid? enrollmentId,
+    CancellationToken cancellationToken = default)
+  {
     DeviceEnrollment[] candidates = (await enrollments.ListActiveAsync(cancellationToken).ConfigureAwait(false))
       .Select(item => item.Enrollment)
       .Where(item => item.Role == DeviceRole.HeartRate)
@@ -36,29 +64,12 @@ public sealed class PolarH10MemoryAccessCoordinator(
       .Where(item => enrollmentId is null || item.Id == enrollmentId)
       .ToArray();
 
-    DeviceEnrollment enrollment = candidates.Length switch
+    return candidates.Length switch
     {
-      1 => candidates[0],
+      1 => candidates[0].Id,
       0 => throw new InvalidOperationException("The exact enrolled Polar H10 is not available."),
       _ => throw new InvalidOperationException("More than one Polar H10 is enrolled; choose the exact device before using memory operations."),
     };
-
-    bool suspended;
-    try
-    {
-      suspended = await deviceCoordinator
-        .SuspendConnectionAsync(enrollment.Id, cancellationToken)
-        .ConfigureAwait(false);
-    }
-    catch
-    {
-      await ResumeBestEffortAsync(enrollment.Id).ConfigureAwait(false);
-      throw;
-    }
-    if (!suspended)
-      throw new InvalidOperationException("The exact H10 live connection could not be released for a memory operation.");
-
-    return new PolarH10MemoryAccessLease(enrollment.Id, deviceCoordinator, logger);
   }
 
   private async Task ResumeBestEffortAsync(Guid enrollmentId)

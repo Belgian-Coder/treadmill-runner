@@ -12,6 +12,34 @@ namespace TreadmillRunner.IntegrationTests;
 public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) : IClassFixture<PlanningGatewayFactory>
 {
   [Fact]
+  public async Task Capability_reports_the_enrolled_H10_without_suspending_live_heart_rate()
+  {
+    Guid enrollmentId = Guid.NewGuid();
+    var memoryClient = new StubPolarH10MemoryClient(
+      new PolarH10DeviceRecordingStatus(enrollmentId, "synthetic-device", "Polar H10", false, null));
+    var accessCoordinator = new StubMemoryAccessCoordinator(enrollmentId);
+    using var application = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+    {
+      services.RemoveAll<IPolarH10MemoryClient>();
+      services.AddSingleton<IPolarH10MemoryClient>(memoryClient);
+      services.RemoveAll<IPolarH10MemoryAccessCoordinator>();
+      services.AddSingleton<IPolarH10MemoryAccessCoordinator>(accessCoordinator);
+    }));
+    using HttpClient client = application.CreateClient();
+    await using IAsyncDisposable heldGate = await application.Services
+      .GetRequiredService<PolarH10OperationGate>()
+      .EnterAsync(CancellationToken.None);
+
+    Task<HttpResponseMessage> responseTask = client.GetAsync("/api/polar-h10/capability");
+    using HttpResponseMessage response = await responseTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.Equal(1, accessCoordinator.ResolveCalls);
+    Assert.Equal(0, accessCoordinator.AcquireCalls);
+    Assert.Equal(0, memoryClient.OpenCalls);
+  }
+
+  [Fact]
   public async Task Status_reports_a_connected_memory_capability_through_the_hosted_gateway()
   {
     Guid enrollmentId = Guid.NewGuid();
@@ -83,7 +111,7 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     Assert.Equal("Unavailable", status.Connection);
   }
 
-  private sealed class StubPolarH10MemoryClient : IPolarH10MemoryClient
+  private sealed class StubPolarH10MemoryClient : IPolarH10MemoryClient, IPolarH10MemorySession
   {
     private readonly PolarH10DeviceRecordingStatus? _status;
     private readonly Exception? _exception;
@@ -91,21 +119,40 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     public StubPolarH10MemoryClient(PolarH10DeviceRecordingStatus status) => _status = status;
     public StubPolarH10MemoryClient(Exception exception) => _exception = exception;
 
-    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default) =>
+    public Guid EnrollmentId => _status?.EnrollmentId ?? Guid.Empty;
+    public string DeviceId => _status?.DeviceId ?? "synthetic-device";
+    public string DisplayName => _status?.DisplayName ?? "Polar H10";
+    public int OpenCalls { get; private set; }
+    public Task<IPolarH10MemorySession> OpenAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
+    {
+      OpenCalls++;
+      return Task.FromResult<IPolarH10MemorySession>(this);
+    }
+    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
       _exception is null ? Task.FromResult(_status!) : Task.FromException<PolarH10DeviceRecordingStatus>(_exception);
 
-    public Task<PolarH10StartResult> StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task DeleteAsync(Guid enrollmentId, string remotePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<PolarH10StartResult> StartAsync(string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task StopAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PolarH10RemoteRecording>>([]);
+    public Task<PolarH10MemoryRecord> FetchAsync(string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
   }
 
   private sealed class StubMemoryAccessCoordinator(Guid enrollmentId) : IPolarH10MemoryAccessCoordinator
   {
+    public int ResolveCalls { get; private set; }
+    public int AcquireCalls { get; private set; }
+    public Task<Guid> ResolveEnrollmentIdAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
+    {
+      ResolveCalls++;
+      return Task.FromResult(requestedEnrollmentId ?? enrollmentId);
+    }
+
     public Task<IPolarH10MemoryAccessLease> AcquireAsync(Guid? requestedEnrollmentId, CancellationToken cancellationToken = default)
     {
       cancellationToken.ThrowIfCancellationRequested();
+      AcquireCalls++;
       return Task.FromResult<IPolarH10MemoryAccessLease>(new StubMemoryAccessLease(requestedEnrollmentId ?? enrollmentId));
     }
   }

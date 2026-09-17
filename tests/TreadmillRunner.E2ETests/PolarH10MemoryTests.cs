@@ -13,11 +13,11 @@ public sealed class PolarH10MemoryTests(GatewayFixture gateway) : PageTest, ICla
   {
     GalleryScenario scenario = await gateway.GetOrCreateGalleryScenarioAsync();
     await scenario.ConfigureBrowserAsync(Page);
-    await Page.RouteAsync("**/api/polar-h10/status", route => route.FulfillAsync(new()
+    await Page.RouteAsync("**/api/polar-h10/capability", route => route.FulfillAsync(new()
     {
       Status = 200,
       ContentType = "application/json",
-      Body = "{\"memoryCapability\":true,\"isRecording\":false,\"connection\":\"Connected\"}",
+      Body = "{\"memoryCapability\":true,\"available\":true}",
     }));
     await Page.SetViewportSizeAsync(390, 844);
     await Page.GotoAsync(new Uri(gateway.BaseAddress, "/").ToString());
@@ -41,8 +41,7 @@ public sealed class PolarH10MemoryTests(GatewayFixture gateway) : PageTest, ICla
     int startCalls = 0;
     int deleteCalls = 0;
 
-    await Page.RouteAsync("**/api/polar-h10/status", route => route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "{\"memoryCapability\":true,\"isRecording\":false,\"connection\":\"Connected\",\"displayName\":\"Polar H10 A1B2C3D4\"}" }));
-    await Page.RouteAsync("**/api/polar-h10/recordings?source=remote", route => route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "{\"items\":[{\"id\":\"remote-1\",\"title\":\"Morning run\",\"status\":\"Available\",\"startedAtUtc\":\"2026-09-10T06:00:00Z\",\"endedAtUtc\":\"2026-09-10T06:30:00Z\",\"canDeleteRemote\":false,\"samples\":[{\"capturedAtUtc\":\"2026-09-10T06:00:00Z\",\"beatsPerMinute\":132}]}]}" }));
+    await Page.RouteAsync("**/api/polar-h10/overview", route => route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "{\"status\":{\"memoryCapability\":true,\"isRecording\":false,\"connection\":\"Connected\",\"displayName\":\"Polar H10 A1B2C3D4\"},\"items\":[{\"id\":\"remote-1\",\"title\":\"Morning run\",\"status\":\"Available\",\"startedAtUtc\":\"2026-09-10T06:00:00Z\",\"endedAtUtc\":\"2026-09-10T06:30:00Z\",\"canDeleteRemote\":false,\"samples\":[{\"capturedAtUtc\":\"2026-09-10T06:00:00Z\",\"beatsPerMinute\":132}]}]}" }));
     await Page.RouteAsync("**/api/polar-h10/recordings?source=local", route => route.FulfillAsync(new() { Status = 200, ContentType = "application/json", Body = "{\"items\":[{\"id\":\"11111111-1111-1111-1111-111111111111\",\"title\":\"Verified morning run\",\"status\":\"Retained\",\"canDeleteRemote\":true,\"samples\":[{\"capturedAtUtc\":\"2026-09-10T06:00:00Z\",\"beatsPerMinute\":132}]}]}" }));
     await Page.RouteAsync("**/api/polar-h10/recordings/start", async route => { startCalls++; await route.FulfillAsync(new() { Status = 202, ContentType = "application/json", Body = "{}" }); });
     await Page.RouteAsync("**/api/polar-h10/recordings/*/download", route => route.FulfillAsync(new() { Status = 202, ContentType = "application/json", Body = "{}" }));

@@ -3,16 +3,30 @@ namespace TreadmillRunner.Core.Sessions;
 /// <summary>Polar-only memory boundary. Every mutating operation names an exact enrollment and exercise.</summary>
 public interface IPolarH10MemoryClient
 {
-  Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default);
+  /// <summary>
+  /// Resolves the exact current H10 locator and opens one operation-scoped PFTP session.
+  /// Read-only reconnects refresh the locator without replaying mutations.
+  /// The caller must dispose the session before releasing exclusive memory access.
+  /// </summary>
+  Task<IPolarH10MemorySession> OpenAsync(Guid? enrollmentId, CancellationToken cancellationToken = default);
+}
+
+public interface IPolarH10MemorySession : IAsyncDisposable
+{
+  Guid EnrollmentId { get; }
+  string DeviceId { get; }
+  string DisplayName { get; }
+
+  Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default);
   /// <summary>
   /// Checks the current exact recording, starts only when idle, and confirms the requested recording
   /// without releasing the underlying PFTP connection between those steps.
   /// </summary>
-  Task<PolarH10StartResult> StartAsync(Guid enrollmentId, string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default);
-  Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default);
-  Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default);
-  Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default);
-  Task DeleteAsync(Guid enrollmentId, string remotePath, CancellationToken cancellationToken = default);
+  Task<PolarH10StartResult> StartAsync(string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default);
+  Task StopAsync(CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(CancellationToken cancellationToken = default);
+  Task<PolarH10MemoryRecord> FetchAsync(string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default);
+  Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default);
 }
 
 public enum PolarH10SampleType { HeartRate, RrInterval }
@@ -26,7 +40,8 @@ public sealed record PolarH10DeviceRecordingStatus(
 
 public sealed record PolarH10StartResult(
   PolarH10DeviceRecordingStatus Status,
-  bool StartIssued);
+  bool StartIssued,
+  DateTimeOffset? StartIssuedAtUtc = null);
 
 public sealed record PolarH10RemoteRecording(string RemotePath, long SizeBytes);
 

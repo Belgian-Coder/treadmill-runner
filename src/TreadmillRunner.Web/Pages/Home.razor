@@ -810,7 +810,7 @@
     {
         try
         {
-            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/status");
+            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/capability");
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<PolarMemoryCapability>() : null;
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { return null; }

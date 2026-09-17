@@ -84,7 +84,7 @@ internal sealed class WindowsPolarPftpGattTransport : IPolarPftpGattTransport
         .AsTask(operationCancellation).ConfigureAwait(false)
       : await BluetoothLEDevice.FromBluetoothAddressAsync(_bluetoothAddress)
         .AsTask(operationCancellation).ConfigureAwait(false))
-      ?? throw new InvalidOperationException(
+      ?? throw new WindowsBleException(
         "Windows could not open the Polar BLE device. Confirm that Windows already has access to the sensor.");
 
     _session = await WindowsGattSessionPolicy.TryOpenOptionalAsync(
@@ -96,7 +96,7 @@ internal sealed class WindowsPolarPftpGattTransport : IPolarPftpGattTransport
       .GetGattServicesForUuidAsync(PolarPftpConstants.ServiceUuid, BluetoothCacheMode.Uncached)
       .AsTask(operationCancellation).ConfigureAwait(false);
     if (services.Status != GattCommunicationStatus.Success || services.Services.Count == 0)
-      throw new InvalidOperationException(
+      throw new WindowsBleException(
         "Polar PFTP service was not found. The sensor may require existing Windows pairing or may not expose memory access.");
 
     _service = services.Services[0];
@@ -104,7 +104,7 @@ internal sealed class WindowsPolarPftpGattTransport : IPolarPftpGattTransport
     GattOpenStatus open = await _service.OpenAsync(GattSharingMode.SharedReadAndWrite)
       .AsTask(operationCancellation).ConfigureAwait(false);
     if (open is not (GattOpenStatus.Success or GattOpenStatus.AlreadyOpened))
-      throw new InvalidOperationException($"Could not open Polar PFTP service: {open}.");
+      throw new WindowsBleException($"Could not open Polar PFTP service: {open}.");
 
     _mtu = await GetRequiredCharacteristicAsync(
       PolarPftpConstants.MtuCharacteristicUuid,

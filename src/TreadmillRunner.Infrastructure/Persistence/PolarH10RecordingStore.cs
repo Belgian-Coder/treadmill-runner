@@ -321,7 +321,9 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     WorkoutSessionEntity? session = await context.WorkoutSessions.SingleOrDefaultAsync(candidate => candidate.Id == sessionId, cancellationToken);
     if (session?.StartedAtUtc is null || session.EndedAtUtc is null || row.StartConfirmedAtUtc is null)
       return await MarkReviewRequiredAsync(context, row, "The workout or H10 recording window is incomplete.", nowUtc, transaction, cancellationToken);
-    if (Math.Abs((row.StartConfirmedAtUtc.Value - session.StartedAtUtc.Value).TotalSeconds) > 30 ||
+    if (row.StartRequestedAtUtc is null ||
+        row.StartRequestedAtUtc.Value < session.ArmedAtUtc.AddSeconds(-5) ||
+        row.StartConfirmedAtUtc > session.StartedAtUtc.Value.AddSeconds(30) ||
         row.EndedAtUtc is null || row.EndedAtUtc < session.StartedAtUtc || row.EndedAtUtc > session.EndedAtUtc.Value.AddMinutes(5))
       return await MarkReviewRequiredAsync(context, row, "The H10 recording window does not safely match this workout.", nowUtc, transaction, cancellationToken);
 

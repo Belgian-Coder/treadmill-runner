@@ -62,11 +62,11 @@
             <label class="field">Heart-rate interval
                 <select @bind="manualIntervalSeconds" disabled="@(!CanRecord)"><option value="1">1 second</option><option value="5">5 seconds</option></select>
             </label>
-            <div class="field"><span>Recording</span><strong class="polar-recording-state" role="status">@(recording ? "Running" : manualStartPending ? "Starting…" : "Stopped")</strong></div>
+            <div class="field"><span>Recording</span><strong class="polar-recording-state" role="status">@(manualStopPending ? "Stopping…" : recording ? "Running" : manualStartPending ? "Starting…" : "Stopped")</strong></div>
         </div>
         <div class="form-actions">
-            <button class="primary-action touch-action" type="button" @onclick="StartManualAsync" disabled="@(!CanRecord || recording || manualStartPending || busy)">@(busy && !recording ? "Starting…" : "Start manual HR")</button>
-            <button class="danger-action touch-action" type="button" @onclick="StopManualAsync" disabled="@((!recording && !manualStartPending) || busy)">@(busy && (recording || manualStartPending) ? "Stopping…" : "Stop recording")</button>
+            <button class="primary-action touch-action" type="button" @onclick="StartManualAsync" disabled="@(!CanRecord || recording || manualStartPending || manualStopPending || busy)">@(busy && !recording ? "Starting…" : "Start manual HR")</button>
+            <button class="danger-action touch-action" type="button" @onclick="StopManualAsync" disabled="@((!recording && !manualStartPending) || manualStopPending || busy)">@(busy && (recording || manualStartPending) ? "Stopping…" : "Stop recording")</button>
         </div>
         <details class="advanced-settings">
             <summary>Advanced RR recording</summary>
@@ -126,6 +126,7 @@
     private bool busy;
     private bool recording;
     private bool manualStartPending;
+    private bool manualStopPending;
     private bool confirmDelete;
     private int manualIntervalSeconds = 1;
     private ElementReference deleteCancel;
@@ -156,16 +157,28 @@
         loading = true; errorMessage = string.Empty;
         try
         {
-            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/status");
-            if (response.IsSuccessStatusCode) { status = await response.Content.ReadFromJsonAsync<PolarStatus>(); recording = status?.IsRecording == true; manualStartPending = !recording && status?.ManualOperationPending == true; }
+            using HttpResponseMessage response = await Http.GetAsync("api/polar-h10/overview");
+            if (response.IsSuccessStatusCode)
+            {
+                PolarOverview? overview = await response.Content.ReadFromJsonAsync<PolarOverview>();
+                status = overview?.Status;
+                recordings = overview?.Items ?? [];
+                selectedRecording = recordings.FirstOrDefault();
+                bool wasStopping = manualStopPending;
+                recording = status?.IsRecording == true;
+                bool operationPending = status?.ManualOperationPending == true;
+                manualStopPending = operationPending && wasStopping;
+                manualStartPending = !recording && operationPending && !manualStopPending;
+                if (!operationPending) { manualStartPending = false; manualStopPending = false; }
+            }
             else if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden) status = new(false, "Unavailable", "Polar H10 memory is not enabled.", null);
             else errorMessage = "The H10 status could not be read. Review access and refresh.";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { errorMessage = "The local gateway could not read H10 status. Review the connection and refresh."; }
         finally { loading = false; }
-        if (status?.IsAvailable == true || source == "local")
+        if (source == "local")
             await LoadRecordingsAsync();
-        else
+        else if (status?.IsAvailable != true)
         {
             recordings = [];
             selectedRecording = null;
@@ -178,8 +191,19 @@
         listBusy = true; errorMessage = string.Empty;
         try
         {
-            PolarRecordingList? payload = await Http.GetFromJsonAsync<PolarRecordingList>($"api/polar-h10/recordings?source={source}");
-            recordings = payload?.Items ?? [];
+            if (source == "remote")
+            {
+                PolarOverview? overview = await Http.GetFromJsonAsync<PolarOverview>("api/polar-h10/overview");
+                status = overview?.Status;
+                recordings = overview?.Items ?? [];
+                recording = status?.IsRecording == true;
+                if (status?.ManualOperationPending != true) { manualStartPending = false; manualStopPending = false; }
+            }
+            else
+            {
+                PolarRecordingList? payload = await Http.GetFromJsonAsync<PolarRecordingList>($"api/polar-h10/recordings?source={source}");
+                recordings = payload?.Items ?? [];
+            }
             selectedRecording = recordings.FirstOrDefault();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { recordings = []; errorMessage = "The recording list could not be loaded. Review H10 access and try again."; }
@@ -204,18 +228,18 @@
 
     private async Task StopManualAsync()
     {
-        if ((!recording && !manualStartPending) || busy) return;
+        if ((!recording && !manualStartPending) || manualStopPending || busy) return;
         busy = true;
-        try { using HttpResponseMessage response = await Http.PostAsync("api/polar-h10/recordings/stop", null); if (!response.IsSuccessStatusCode) { errorMessage = "The H10 recording could not stop. Keep the H10 nearby and retry."; return; } manualStartPending = false; statusMessage = "Stop queued. Keep the H10 nearby while the recording is verified and archived."; await LoadRecordingsAsync(); }
+        try { using HttpResponseMessage response = await Http.PostAsync("api/polar-h10/recordings/stop", null); if (!response.IsSuccessStatusCode) { errorMessage = "The H10 recording could not stop. Keep the H10 nearby and retry."; return; } manualStartPending = false; manualStopPending = true; statusMessage = "Stop queued. Keep the H10 nearby while the recording is verified and archived."; }
         catch (HttpRequestException) { errorMessage = "The local gateway could not stop H10 recording."; }
         finally { busy = false; }
     }
 
-    private async Task DownloadAsync(PolarRecording item) { await RunRecordingActionAsync(item, "download", "Recording download queued. It will remain separate from workout History."); }
-    private async Task RunRecordingActionAsync(PolarRecording item, string action, string success)
+    private async Task DownloadAsync(PolarRecording item) { await RunRecordingActionAsync(item, "download", "Recording download queued. It will remain separate from workout History.", refreshAfter: false); }
+    private async Task RunRecordingActionAsync(PolarRecording item, string action, string success, bool refreshAfter = true)
     {
         busy = true; errorMessage = string.Empty; selectedRecording = item;
-        try { using HttpResponseMessage response = await Http.PostAsync($"api/polar-h10/recordings/{Uri.EscapeDataString(item.Id)}/{action}", null); if (!response.IsSuccessStatusCode) { errorMessage = response.StatusCode == HttpStatusCode.Conflict ? "The recording changed on the H10. Refresh the list before retrying." : "The recording action was denied. Review access and try again."; return; } statusMessage = success; await LoadRecordingsAsync(); }
+        try { using HttpResponseMessage response = await Http.PostAsync($"api/polar-h10/recordings/{Uri.EscapeDataString(item.Id)}/{action}", null); if (!response.IsSuccessStatusCode) { errorMessage = response.StatusCode == HttpStatusCode.Conflict ? "The recording changed on the H10. Refresh the list before retrying." : "The recording action was denied. Review access and try again."; return; } statusMessage = success; if (refreshAfter) await LoadRecordingsAsync(); }
         catch (HttpRequestException) { errorMessage = "The local gateway could not complete that H10 action."; }
         finally { busy = false; }
     }
@@ -243,6 +267,7 @@
         public bool IsAvailable => MemoryCapability || Available;
     }
     private sealed record PolarRecordingList(List<PolarRecording> Items);
+    private sealed record PolarOverview(PolarStatus? Status, List<PolarRecording> Items);
     private sealed record PolarRecording(string Id, string? Title, string? Status, DateTimeOffset? StartedAtUtc, DateTimeOffset? EndedAtUtc, List<PolarSample>? Samples, bool CanDeleteRemote = false);
     private sealed record PolarSample(DateTimeOffset CapturedAtUtc, ushort? BeatsPerMinute);
 }

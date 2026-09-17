@@ -8,108 +8,25 @@ namespace TreadmillRunner.Infrastructure.Bluetooth;
 public sealed class PolarH10MemoryClient(
   IDeviceEnrollmentStore enrollments,
   IPolarPftpConnectionFactory connections,
-  PolarH10ConnectionLocator connectionLocator) : IPolarH10MemoryClient
+  PolarH10ConnectionLocator connectionLocator,
+  TimeProvider timeProvider) : IPolarH10MemoryClient
 {
-  // Read-only status may reopen one fresh connection. Start is mutating and never reconnects or replays.
-  private const int MaximumStatusAttempts = 2;
-
-  public async Task<PolarH10DeviceRecordingStatus> GetStatusAsync(Guid? enrollmentId, CancellationToken cancellationToken = default)
-  {
-    PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    for (var attempt = 1; ; attempt++)
-    {
-      try
-      {
-        await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-        PolarRecordingStatus status = await new PolarPftpClient(connection).GetStatusAsync(cancellationToken).ConfigureAwait(false);
-        return new(target.Enrollment.Id, target.Enrollment.DeviceId, target.Enrollment.DisplayName, status.IsRecording, status.EntryId);
-      }
-      catch (Exception exception) when (
-        attempt < MaximumStatusAttempts &&
-        !cancellationToken.IsCancellationRequested &&
-        (exception is TimeoutException or WindowsBleException ||
-          exception is IOException and not PolarPftpProtocolException))
-      {
-        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
-      }
-    }
-  }
-
-  public async Task<PolarH10StartResult> StartAsync(
-    Guid enrollmentId,
-    string exerciseId,
-    PolarH10SampleType sampleType,
-    int intervalSeconds,
+  public async Task<IPolarH10MemorySession> OpenAsync(
+    Guid? enrollmentId,
     CancellationToken cancellationToken = default)
   {
     PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    var client = new PolarPftpClient(connection);
-    PolarRecordingStatus current = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
-    bool startIssued = false;
-    if (!current.IsRecording)
-    {
-      await client.StartAsync(
-        exerciseId,
-        sampleType == PolarH10SampleType.RrInterval ? PolarRecordingSampleType.RrInterval : PolarRecordingSampleType.HeartRate,
-        intervalSeconds,
-        cancellationToken).ConfigureAwait(false);
-      startIssued = true;
-      current = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
-    }
-    return new(MapStatus(target, current), startIssued);
-  }
-
-  public async Task StopAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
-  {
-    PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    await new PolarPftpClient(connection).StopAsync(cancellationToken).ConfigureAwait(false);
-  }
-
-  public async Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(Guid enrollmentId, CancellationToken cancellationToken = default)
-  {
-    PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    IReadOnlyList<PolarExerciseSummary> recordings = await new PolarPftpClient(connection).ListExercisesAsync(cancellationToken).ConfigureAwait(false);
-    return recordings.Select(recording => new PolarH10RemoteRecording(recording.Identifier, recording.SizeBytes)).ToArray();
-  }
-
-  public async Task<PolarH10MemoryRecord> FetchAsync(Guid enrollmentId, string remotePath, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default)
-  {
-    PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    PolarExerciseSamples recording = await new PolarPftpClient(connection).FetchExerciseAsync(remotePath, cancellationToken).ConfigureAwait(false);
-    PolarH10SampleType sampleType = recording.SampleType == PolarRecordingSampleType.RrInterval ? PolarH10SampleType.RrInterval : PolarH10SampleType.HeartRate;
-    PolarH10HeartRateSample[] samples = recording.HeartRateSamples
-      .Select((heartRate, index) => new PolarH10HeartRateSample(startedAtUtc.AddSeconds((long)index * recording.IntervalSeconds), heartRate))
-      .ToArray();
-    DateTimeOffset endedAt = sampleType == PolarH10SampleType.RrInterval
-      ? startedAtUtc.AddMilliseconds(recording.RrIntervalsMilliseconds.Aggregate<uint, long>(0, (total, value) => checked(total + value)))
-      : startedAtUtc.AddSeconds((long)recording.HeartRateSamples.Count * recording.IntervalSeconds);
-    string recordingId = remotePath.Split('/', StringSplitOptions.RemoveEmptyEntries).First();
-    return new(recordingId, remotePath, startedAtUtc, endedAt, sampleType, recording.IntervalSeconds,
-      recording.Payload, samples, recording.RrIntervalsMilliseconds);
-  }
-
-  public async Task DeleteAsync(Guid enrollmentId, string remotePath, CancellationToken cancellationToken = default)
-  {
-    PolarH10Target target = await ResolveAsync(enrollmentId, cancellationToken).ConfigureAwait(false);
-    await using IPolarPftpConnection connection = await ConnectAsync(target, cancellationToken).ConfigureAwait(false);
-    await new PolarPftpClient(connection).RemoveExerciseAsync(remotePath, cancellationToken).ConfigureAwait(false);
-  }
-
-  private async ValueTask<IPolarPftpConnection> ConnectAsync(
-    PolarH10Target target,
-    CancellationToken cancellationToken)
-  {
     string deviceId = await connectionLocator.ResolveAsync(
       target.Enrollment,
       target.ActiveHeartRateEnrollments,
       cancellationToken).ConfigureAwait(false);
-    return await connections.ConnectAsync(
+    return new Session(
+      target.Enrollment,
+      target.ActiveHeartRateEnrollments,
       deviceId,
-      cancellationToken: cancellationToken).ConfigureAwait(false);
+      connections,
+      connectionLocator,
+      timeProvider);
   }
 
   private async Task<PolarH10Target> ResolveAsync(Guid? enrollmentId, CancellationToken cancellationToken)
@@ -136,10 +53,155 @@ public sealed class PolarH10MemoryClient(
     enrollment.DisplayName.Contains("polar h10", StringComparison.OrdinalIgnoreCase) ||
     string.Equals(enrollment.ModelNumber?.Trim(), "H10", StringComparison.OrdinalIgnoreCase);
 
-  private static PolarH10DeviceRecordingStatus MapStatus(PolarH10Target target, PolarRecordingStatus status) =>
-    new(target.Enrollment.Id, target.Enrollment.DeviceId, target.Enrollment.DisplayName, status.IsRecording, status.EntryId);
-
   private sealed record PolarH10Target(
     DeviceEnrollment Enrollment,
     IReadOnlyCollection<DeviceEnrollment> ActiveHeartRateEnrollments);
+
+  private sealed class Session(
+    DeviceEnrollment enrollment,
+    IReadOnlyCollection<DeviceEnrollment> activeHeartRateEnrollments,
+    string currentDeviceId,
+    IPolarPftpConnectionFactory connections,
+    PolarH10ConnectionLocator connectionLocator,
+    TimeProvider timeProvider) : IPolarH10MemorySession
+  {
+    private const int MaximumReadAttempts = 2;
+    private static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(500);
+    private IPolarPftpConnection? _connection;
+    private string _currentDeviceId = currentDeviceId;
+    private bool _refreshLocator;
+    private int _disposed;
+
+    public Guid EnrollmentId { get; } = enrollment.Id;
+    public string DeviceId { get; } = enrollment.DeviceId;
+    public string DisplayName { get; } = enrollment.DisplayName;
+
+    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
+      ExecuteReadAsync(async (client, token) => MapStatus(await client.GetStatusAsync(token).ConfigureAwait(false)), cancellationToken);
+
+    public async Task<PolarH10StartResult> StartAsync(
+      string exerciseId,
+      PolarH10SampleType sampleType,
+      int intervalSeconds,
+      CancellationToken cancellationToken = default)
+    {
+      PolarH10DeviceRecordingStatus current = await GetStatusAsync(cancellationToken).ConfigureAwait(false);
+      if (current.IsRecording) return new(current, false);
+
+      PolarPftpClient client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+      // Mark the mutation as dispatched before awaiting it. Any failure from this point has an
+      // uncertain physical outcome and must be reconciled by a later status read, never replayed here.
+      DateTimeOffset startIssuedAtUtc = timeProvider.GetUtcNow();
+      await client.StartAsync(
+        exerciseId,
+        sampleType == PolarH10SampleType.RrInterval ? PolarRecordingSampleType.RrInterval : PolarRecordingSampleType.HeartRate,
+        intervalSeconds,
+        cancellationToken).ConfigureAwait(false);
+      PolarRecordingStatus confirmed = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+      return new(MapStatus(confirmed), true, startIssuedAtUtc);
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
+    {
+      PolarPftpClient client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+      await client.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PolarH10RemoteRecording>> ListAsync(CancellationToken cancellationToken = default)
+    {
+      IReadOnlyList<PolarExerciseSummary> recordings = await ExecuteReadAsync<IReadOnlyList<PolarExerciseSummary>>(
+        async (client, token) => await client.ListExercisesAsync(token).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+      return recordings.Select(recording => new PolarH10RemoteRecording(recording.Identifier, recording.SizeBytes)).ToArray();
+    }
+
+    public async Task<PolarH10MemoryRecord> FetchAsync(
+      string remotePath,
+      DateTimeOffset startedAtUtc,
+      CancellationToken cancellationToken = default)
+    {
+      PolarExerciseSamples recording = await ExecuteReadAsync<PolarExerciseSamples>(
+        async (client, token) => await client.FetchExerciseAsync(remotePath, token).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+      PolarH10SampleType sampleType = recording.SampleType == PolarRecordingSampleType.RrInterval
+        ? PolarH10SampleType.RrInterval
+        : PolarH10SampleType.HeartRate;
+      PolarH10HeartRateSample[] samples = recording.HeartRateSamples
+        .Select((heartRate, index) => new PolarH10HeartRateSample(startedAtUtc.AddSeconds((long)index * recording.IntervalSeconds), heartRate))
+        .ToArray();
+      DateTimeOffset endedAt = sampleType == PolarH10SampleType.RrInterval
+        ? startedAtUtc.AddMilliseconds(recording.RrIntervalsMilliseconds.Aggregate<uint, long>(0, (total, value) => checked(total + value)))
+        : startedAtUtc.AddSeconds((long)recording.HeartRateSamples.Count * recording.IntervalSeconds);
+      string recordingId = remotePath.Split('/', StringSplitOptions.RemoveEmptyEntries).First();
+      return new(recordingId, remotePath, startedAtUtc, endedAt, sampleType, recording.IntervalSeconds,
+        recording.Payload, samples, recording.RrIntervalsMilliseconds);
+    }
+
+    public async Task DeleteAsync(string remotePath, CancellationToken cancellationToken = default)
+    {
+      PolarPftpClient client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+      await client.RemoveExerciseAsync(remotePath, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+      if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+      IPolarPftpConnection? connection = Interlocked.Exchange(ref _connection, null);
+      if (connection is not null) await connection.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private async Task<T> ExecuteReadAsync<T>(
+      Func<PolarPftpClient, CancellationToken, Task<T>> operation,
+      CancellationToken cancellationToken)
+    {
+      for (var attempt = 1; ; attempt++)
+      {
+        try
+        {
+          PolarPftpClient client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+          return await operation(client, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+          attempt < MaximumReadAttempts &&
+          !cancellationToken.IsCancellationRequested &&
+          IsTransientReadFailure(exception))
+        {
+          await ResetConnectionAsync().ConfigureAwait(false);
+          await Task.Delay(ReadRetryDelay, cancellationToken).ConfigureAwait(false);
+        }
+      }
+    }
+
+    private async Task<PolarPftpClient> GetClientAsync(CancellationToken cancellationToken)
+    {
+      ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+      if (_connection is null)
+      {
+        if (_refreshLocator)
+        {
+          _currentDeviceId = await connectionLocator.ResolveAsync(
+            enrollment,
+            activeHeartRateEnrollments,
+            cancellationToken).ConfigureAwait(false);
+          _refreshLocator = false;
+        }
+        _connection = await connections.ConnectAsync(
+          _currentDeviceId,
+          cancellationToken: cancellationToken).ConfigureAwait(false);
+      }
+      return new PolarPftpClient(_connection);
+    }
+
+    private async Task ResetConnectionAsync()
+    {
+      IPolarPftpConnection? connection = Interlocked.Exchange(ref _connection, null);
+      if (connection is not null) await connection.DisposeAsync().ConfigureAwait(false);
+      _refreshLocator = true;
+    }
+
+    private PolarH10DeviceRecordingStatus MapStatus(PolarRecordingStatus status) =>
+      new(EnrollmentId, DeviceId, DisplayName, status.IsRecording, status.EntryId);
+
+    private static bool IsTransientReadFailure(Exception exception) =>
+      exception is TimeoutException or WindowsBleException ||
+      exception is IOException and not PolarPftpProtocolException;
+  }
 }
