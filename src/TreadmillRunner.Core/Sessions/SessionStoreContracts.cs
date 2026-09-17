@@ -25,7 +25,9 @@ public sealed record WorkoutSessionSelection(
   WorkoutSelectionSource Source,
   Guid? ProgramRunId = null,
   Guid? ProgramItemId = null,
-  bool RecordPolarH10Memory = false)
+  bool RecordPolarH10Memory = false,
+  bool ReplaceExistingPolarH10Recording = false,
+  string? ReplacePolarH10ExerciseId = null)
 {
   public static WorkoutSessionSelection Library { get; } = new(WorkoutSelectionSource.Library);
 }

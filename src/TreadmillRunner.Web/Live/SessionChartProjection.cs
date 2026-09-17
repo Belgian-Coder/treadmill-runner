@@ -35,6 +35,19 @@ public sealed class SessionChartProjectionCache
     int zoneFingerprint = session.HeartRateZones is null
       ? 0
       : session.HeartRateZones.Aggregate(17, static (hash, zone) => HashCode.Combine(hash, zone.Number, zone.MinimumBpm, zone.MaximumBpm));
+    var sampleFingerprint = new HashCode();
+    foreach (SessionSample sample in session.Samples)
+    {
+      sampleFingerprint.Add(sample.Sequence);
+      sampleFingerprint.Add(sample.Elapsed.Ticks);
+      sampleFingerprint.Add(sample.PlannedSpeedKph);
+      sampleFingerprint.Add(sample.RequestedSpeedKph);
+      sampleFingerprint.Add(sample.MeasuredSpeedKph);
+      sampleFingerprint.Add(sample.PlannedInclinePercent);
+      sampleFingerprint.Add(sample.RequestedInclinePercent);
+      sampleFingerprint.Add(sample.MeasuredInclinePercent);
+      sampleFingerprint.Add(sample.HeartRateBpm);
+    }
     var key = new ProjectionKey(
       session.Definition.SessionId,
       session.Samples.Count,
@@ -42,6 +55,7 @@ public sealed class SessionChartProjectionCache
       last?.Sequence ?? -1,
       last?.Elapsed.Ticks ?? 0,
       session.Duration.Ticks,
+      sampleFingerprint.ToHashCode(),
       zoneFingerprint);
     if (cachedKey == key && cachedProjection is not null) return cachedProjection;
     cachedKey = key;
@@ -157,5 +171,6 @@ public sealed class SessionChartProjectionCache
     long LastSequence,
     long LastElapsedTicks,
     long DurationTicks,
+    int SampleFingerprint,
     int ZoneFingerprint);
 }

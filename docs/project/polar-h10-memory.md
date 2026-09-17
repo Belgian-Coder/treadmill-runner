@@ -15,7 +15,7 @@ Before each PFTP operation, the memory client performs one bounded scan through 
 
 Live heart-rate and PFTP response subscriptions request `GattSession.MaintainConnection` when Windows reports that capability. This is a best-effort Windows connection policy, not a guarantee against radio, contact, battery, firmware, or adapter disconnects. Existing bounded reconnect, stale-value removal, source fallback, and preserved-gap behavior remain authoritative.
 
-Each workout starts with the memory option unchecked. For an opted-in hardware session, Prepare durably creates the session-specific automatic job and synchronously confirms exercise `tr-{sessionId:N}` before the armed session is published. If the H10 already has an active recording, Prepare stops it once and verifies idle. A gateway-owned recording that has not yet been downloaded is fetched and durably hashed before its exact `/.../SAMPLES.BPB` path is removed; an unowned recording is removed only by that exact reported path. Prepare verifies removal and then starts the new session-specific recording. The PFTP session is released and fresh normal live H10 telemetry must return before Prepare succeeds, while the operation gate prevents another memory request from interrupting that recovery. Physical `Running` does not issue a second start, so memory coverage begins before workout movement.
+Each workout starts with the memory option unchecked. For an opted-in hardware session, Prepare durably creates the session-specific automatic job and synchronously confirms exercise `tr-{sessionId:N}` before the armed session is published. If the H10 already has an active recording, Prepare returns its exact identifier without mutating it. Replacement requires a second request carrying that same user-confirmed identifier; if the H10 has changed recordings, the request fails closed. A gateway-owned recording that has not yet been downloaded is fetched and durably hashed before its exact `/.../SAMPLES.BPB` path is removed; an unowned recording is removed only by that exact reported path. Prepare verifies removal and then starts the new session-specific recording. The PFTP session is released so normal live H10 telemetry reconnects asynchronously; confirmed onboard memory coverage prevents loss during that short handoff, and physical-start readiness still requires current device preflight. Physical `Running` does not issue a second start, so memory coverage begins before workout movement.
 
 Session finalization only queues recovery: it does not wait for BLE. Recovery checks the exact enrolled device and recording identifier, stops that exact recording, lists and fetches its exact `/tr-{sessionId:N}/SAMPLES.BPB` path, stores an 8 MiB-bounded raw payload and SHA-256, and aligns only samples that match the workout timeline. Pre-run samples captured between Prepare and physical start remain in the verified payload but are not merged into History. A transaction fills null heart-rate values, recalculates aggregates, and records a warning event. Existing heart-rate values are never replaced.
 
@@ -33,7 +33,7 @@ sequenceDiagram
     Run->>Store: Create tr-session during Prepare
     Run->>H10: Stop and remove exact active stale recording, if any
     Run->>H10: Start and confirm exact tr-session
-    H10-->>Run: Resume fresh normal live HR
+    H10-->>Run: Release memory access; reconnect live HR asynchronously
     Run->>Store: Queue stop at terminal state
     Worker->>H10: Status, stop, list, exact fetch
     Worker->>Store: Store payload and hash

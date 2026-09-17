@@ -84,6 +84,38 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Verified_payload_fills_a_disconnect_gap_despite_live_sampling_phase_drift()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity[] samples = await context.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
+      double[] offsets = [1.5, 2.5, 3.968, 4.5];
+      for (var index = 0; index < samples.Length; index++)
+        samples[index].CapturedAtUtc = seed.Start.AddSeconds(offsets[index]);
+      await context.SaveChangesAsync();
+    }
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(
+      seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await store.MarkRecordingAsync(job.Id, seed.Start);
+    var recorded = new PolarH10MemoryRecord(
+      job.ExerciseId, $"/{job.ExerciseId}/SAMPLES.BPB", seed.Start, seed.Start.AddSeconds(4),
+      PolarH10SampleType.HeartRate, 1, new byte[] { 1, 2, 3, 4 },
+      new ushort[] { 100, 101, 102, 103 }
+        .Select((value, index) => new PolarH10HeartRateSample(seed.Start.AddSeconds(index), value)).ToArray(), []);
+    await store.StoreDownloadedAsync(job.Id, recorded, seed.Start.AddMinutes(21));
+
+    Assert.Equal(PolarH10RecordingOutcome.Merged, await store.MergeDownloadedAsync(job.Id, seed.Start.AddMinutes(21).AddSeconds(1)));
+
+    await using TreadmillRunnerDbContext verification = await factory.CreateDbContextAsync();
+    SessionSampleEntity[] merged = await verification.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
+    Assert.Equal(new ushort?[] { 100, 101, 102, 103 }, merged.Select(row => row.HeartRateBpm));
+    Assert.Equal(1, (await verification.PolarH10Recordings.SingleAsync()).MergeCount);
+  }
+
+  [Fact]
   public async Task Prepare_time_recording_ignores_pre_run_samples_and_merges_the_exact_workout_window()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();

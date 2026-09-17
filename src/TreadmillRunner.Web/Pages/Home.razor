@@ -404,7 +404,7 @@
                     <div><dt>Intensity</dt><dd>@(profileSelectionLoading ? "Loading…" : preflight?.IntensityLabel ?? "Select a workout")</dd></div>
                 </dl>
                 <section class="run-memory-option" aria-labelledby="run-memory-title">
-                    <label class="run-memory-option__label"><input id="run-memory-checkbox" type="checkbox" @bind="recordPolarH10Memory" disabled="@(!polarH10MemoryAvailable)" /><span><strong id="run-memory-title">Record Polar H10 memory for this run</strong><small>Keep the H10 recording available for review after the run.</small></span></label>
+                    <label class="run-memory-option__label"><input id="run-memory-checkbox" type="checkbox" @bind="recordPolarH10Memory" @bind:after="OnPolarMemoryOptionChanged" disabled="@(!polarH10MemoryAvailable)" /><span><strong id="run-memory-title">Record Polar H10 memory for this run</strong><small>Keep the H10 recording available for review after the run.</small></span></label>
                     @if (!polarH10MemoryAvailable)
                     {
                         <p class="field-hint" role="note">Available only when the exact Polar H10 memory capability is connected. A live heart-rate sensor alone does not enable this option. <a href="/devices/polar-h10-memory">Review H10 memory status</a></p>
@@ -414,13 +414,37 @@
                     <p>Only one screen can control the treadmill at a time.</p>
                     @if (preflight?.IsReady == true)
                     {
-                        <button class="primary-action touch-action" type="button" @onclick="PrepareSelectedRunAsync" disabled="@(!CanTakeControl)">Prepare run</button>
+                        <button class="primary-action touch-action" type="button" @onclick="PrepareSelectedRunAsync" disabled="@(!CanTakeControl || isPreparingRun)">@(isPreparingRun ? "Preparing…" : "Prepare run")</button>
                     }
                     else
                     {
                         <button class="primary-action touch-action" type="button" @onclick="ConnectRunDevicesAsync" disabled="@(!CanConnectRunDevices)">Connect devices for this run</button>
                     }
                     <span role="status" class="action-status">@DisplayedActionStatus</span>
+                    @if (hasPolarRecordingConflict)
+                    {
+                        <section class="inline-confirmation" role="alertdialog" aria-labelledby="active-h10-recording-title" aria-describedby="active-h10-recording-description">
+                            @if (!string.IsNullOrWhiteSpace(activePolarExerciseId))
+                            {
+                                <p><strong id="active-h10-recording-title">The Polar H10 is already recording.</strong> <span id="active-h10-recording-description">Active recording: <code>@activePolarExerciseId</code>. Stop it, preserve a local copy when it belongs to this app, remove its exact remote copy, then start a new recording for this run?</span></p>
+                            }
+                            else
+                            {
+                                <p><strong id="active-h10-recording-title">The Polar H10 is already recording.</strong> <span id="active-h10-recording-description">Its recording ID could not be verified, so the app will not stop or remove it. Open H10 memory to resolve it safely.</span></p>
+                            }
+                            <div class="form-actions">
+                                <button class="secondary-action touch-action" type="button" @onclick="CancelPolarReplacement" disabled="@isPreparingRun">Keep existing recording</button>
+                                @if (!string.IsNullOrWhiteSpace(activePolarExerciseId))
+                                {
+                                    <button class="danger-action touch-action" type="button" @onclick="ReplacePolarRecordingAndPrepareAsync" disabled="@(!CanTakeControl || !recordPolarH10Memory || isPreparingRun)">Stop it and start this run</button>
+                                }
+                                else
+                                {
+                                    <a class="secondary-action touch-action" href="/devices/polar-h10-memory">Open H10 memory</a>
+                                }
+                            </div>
+                        </section>
+                    }
                 </div>
             </article>
 
@@ -550,6 +574,9 @@
     private bool soundEnabled;
     private bool polarH10MemoryAvailable;
     private bool recordPolarH10Memory;
+    private bool isPreparingRun;
+    private bool hasPolarRecordingConflict;
+    private string? activePolarExerciseId;
     private RunCuePreferences cuePreferences = RunCuePreferences.Default;
     private double liveSpeedAxisMinimum;
     private double liveSpeedAxisMaximum = 10;
@@ -981,6 +1008,8 @@
         selectedProgramRunId = choice.ProgramRunId;
         selectedProgramItemId = choice.ProgramItemId;
         recordPolarH10Memory = false;
+        hasPolarRecordingConflict = false;
+        activePolarExerciseId = null;
         preflight = null;
         actionStatus = "Checking readiness in the background…";
         await InvokeAsync(StateHasChanged);
@@ -1466,10 +1495,10 @@
         });
     }
 
-    private async Task ArmAsync()
+    private async Task ArmAsync(string? replacePolarH10ExerciseId = null)
     {
         if (selectedProfileId is not { } profileId || selectedRevisionId is not { } revisionId || lease is null) return;
-        HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/arm", new
+        using HttpResponseMessage response = await Http.PostAsJsonAsync("api/live/sessions/arm", new
         {
             operationId = Guid.NewGuid(),
             profileId,
@@ -1480,9 +1509,13 @@
             programRunId = selectedProgramRunId,
             programItemId = selectedProgramItemId,
             recordPolarH10Memory,
+            replaceExistingPolarH10Recording = !string.IsNullOrWhiteSpace(replacePolarH10ExerciseId),
+            replacePolarH10ExerciseId,
         });
         if (response.IsSuccessStatusCode)
         {
+            hasPolarRecordingConflict = false;
+            activePolarExerciseId = null;
             session = await response.Content.ReadFromJsonAsync<ActiveSessionSnapshot>();
             actionStatus = session?.CanStartRemotely == true
                 ? $"Ready — hold to start at {session.MinimumStartSpeedKph:0.0} km/h."
@@ -1491,20 +1524,141 @@
         }
         else
         {
-            actionStatus = "The workout could not be armed.";
+            GatewayErrorView error = await ReadGatewayErrorAsync(response, "The workout could not be armed.");
+            actionStatus = error.Message;
+            hasPolarRecordingConflict = string.Equals(error.Code, "PolarH10RecordingActive", StringComparison.Ordinal);
+            activePolarExerciseId = hasPolarRecordingConflict ? error.ExerciseId : null;
         }
     }
 
     private async Task PrepareSelectedRunAsync()
     {
-        if (!CanTakeControl) return;
-        if (lease is null)
+        if (!CanTakeControl || isPreparingRun) return;
+        isPreparingRun = true;
+        actionStatus = recordPolarH10Memory
+            ? "Preparing the run and Polar H10 memory…"
+            : "Preparing the run with live heart rate…";
+        try
         {
-            await TakeControlAsync();
-            if (lease is null) return;
+            if (lease is null)
+            {
+                await TakeControlAsync();
+                if (lease is null) return;
+            }
+            await ArmAsync();
         }
-        await ArmAsync();
+        catch (HttpRequestException exception)
+        {
+            actionStatus = $"The gateway connection failed while preparing the run: {exception.Message}";
+        }
+        catch (OperationCanceledException)
+        {
+            actionStatus = "Preparing the run timed out. No replacement permission was retained; review the current H10 recording and try again.";
+        }
+        finally
+        {
+            isPreparingRun = false;
+        }
     }
+
+    private async Task ReplacePolarRecordingAndPrepareAsync()
+    {
+        if (string.IsNullOrWhiteSpace(activePolarExerciseId) || !recordPolarH10Memory || isPreparingRun) return;
+        if (!CanTakeControl)
+        {
+            actionStatus = "Waiting for the Polar H10 live connection to recover before replacing the confirmed recording.";
+            return;
+        }
+
+        string confirmedExerciseId = activePolarExerciseId;
+        isPreparingRun = true;
+        actionStatus = $"Stopping {confirmedExerciseId} and preparing this run…";
+        try
+        {
+            if (lease is null)
+            {
+                await TakeControlAsync();
+                if (lease is null) return;
+            }
+            await ArmAsync(confirmedExerciseId);
+        }
+        catch (HttpRequestException exception)
+        {
+            actionStatus = $"The gateway connection failed while replacing the H10 recording: {exception.Message}";
+        }
+        catch (OperationCanceledException)
+        {
+            actionStatus = "Replacing the H10 recording timed out. Refresh H10 memory status before trying again.";
+        }
+        finally
+        {
+            isPreparingRun = false;
+        }
+    }
+
+    private void CancelPolarReplacement()
+    {
+        hasPolarRecordingConflict = false;
+        activePolarExerciseId = null;
+        actionStatus = "The existing H10 recording was left running. This run was not prepared.";
+    }
+
+    private void OnPolarMemoryOptionChanged()
+    {
+        if (recordPolarH10Memory) return;
+        hasPolarRecordingConflict = false;
+        activePolarExerciseId = null;
+    }
+
+    private static async Task<GatewayErrorView> ReadGatewayErrorAsync(HttpResponseMessage response, string fallback)
+    {
+        try
+        {
+            string payload = await response.Content.ReadAsStringAsync();
+            using System.Text.Json.JsonDocument problem = System.Text.Json.JsonDocument.Parse(payload);
+            System.Text.Json.JsonElement root = problem.RootElement;
+            string? code = root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                root.TryGetProperty("code", out System.Text.Json.JsonElement codeValue) &&
+                codeValue.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? codeValue.GetString()
+                    : null;
+            string? exerciseId = root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                root.TryGetProperty("exerciseId", out System.Text.Json.JsonElement exerciseValue) &&
+                exerciseValue.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? exerciseValue.GetString()
+                    : null;
+            foreach (string propertyName in new[] { "error", "detail", "message", "title" })
+            {
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                    root.TryGetProperty(propertyName, out System.Text.Json.JsonElement value) &&
+                    value.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    value.GetString() is { Length: > 0 } message)
+                    return new(message, code, exerciseId);
+            }
+
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                root.TryGetProperty("errors", out System.Text.Json.JsonElement errors) &&
+                errors.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (System.Text.Json.JsonProperty error in errors.EnumerateObject())
+                {
+                    if (error.Value.ValueKind == System.Text.Json.JsonValueKind.Array &&
+                        error.Value.GetArrayLength() > 0 &&
+                        error.Value[0].ValueKind == System.Text.Json.JsonValueKind.String &&
+                        error.Value[0].GetString() is { Length: > 0 } validationMessage)
+                        return new(validationMessage, code, exerciseId);
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // The local gateway may return an empty or non-JSON error response.
+        }
+
+        return new(fallback, null, null);
+    }
+
+    private sealed record GatewayErrorView(string Message, string? Code, string? ExerciseId);
 
     private async Task ConnectRunDevicesAsync()
     {

@@ -48,6 +48,8 @@
                 <div><dt>Connection</dt><dd>@(status.Connection ?? "Unknown")</dd></div>
                 <div><dt>Memory capability</dt><dd>@(status.IsAvailable ? "Available" : "Unavailable")</dd></div>
                 <div><dt>Last seen</dt><dd>@(status.LastSeenUtc is { } seen ? seen.ToLocalTime().ToString("d MMM yyyy · HH:mm:ss") : "Not reported")</dd></div>
+                <div><dt>Recording</dt><dd>@(status.IsRecording ? "Running" : "Stopped")</dd></div>
+                <div><dt>Recording ID</dt><dd>@(status.ExerciseId ?? "—")</dd></div>
             </dl>
             @if (!status.IsAvailable)
             {
@@ -62,7 +64,7 @@
             <label class="field">Heart-rate interval
                 <select @bind="manualIntervalSeconds" disabled="@(!CanRecord)"><option value="1">1 second</option><option value="5">5 seconds</option></select>
             </label>
-            <div class="field"><span>Recording</span><strong class="polar-recording-state" role="status">@(manualStopPending ? "Stopping…" : recording ? "Running" : manualStartPending ? "Starting…" : "Stopped")</strong></div>
+            <div class="field"><span>Recording</span><strong class="polar-recording-state" role="status">@(manualStopPending ? "Stopping…" : recording ? $"Running · {status?.ExerciseId ?? "unknown ID"}" : manualStartPending ? "Starting…" : "Stopped")</strong></div>
         </div>
         <div class="form-actions">
             <button class="primary-action touch-action" type="button" @onclick="StartManualAsync" disabled="@(!CanRecord || recording || manualStartPending || manualStopPending || busy)">@(busy && !recording ? "Starting…" : "Start manual HR")</button>
@@ -229,9 +231,23 @@
     private async Task StopManualAsync()
     {
         if ((!recording && !manualStartPending) || manualStopPending || busy) return;
-        busy = true;
-        try { using HttpResponseMessage response = await Http.PostAsync("api/polar-h10/recordings/stop", null); if (!response.IsSuccessStatusCode) { errorMessage = "The H10 recording could not stop. Keep the H10 nearby and retry."; return; } manualStartPending = false; manualStopPending = true; statusMessage = "Stop queued. Keep the H10 nearby while the recording is verified and archived."; }
-        catch (HttpRequestException) { errorMessage = "The local gateway could not stop H10 recording."; }
+        busy = true; errorMessage = string.Empty;
+        try
+        {
+            using HttpResponseMessage response = await Http.PostAsync("api/polar-h10/recordings/stop", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                PolarError? error = await response.Content.ReadFromJsonAsync<PolarError>();
+                errorMessage = error?.Error ?? "The H10 recording could not stop. Keep the H10 nearby and retry.";
+                return;
+            }
+            manualStartPending = false; manualStopPending = true;
+            statusMessage = "Stop queued. Keep the H10 nearby while the recording is verified and archived.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            errorMessage = "The local gateway could not stop H10 recording.";
+        }
         finally { busy = false; }
     }
 
@@ -262,10 +278,11 @@
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    private sealed record PolarStatus(bool MemoryCapability, string? Connection, string? DisplayName, DateTimeOffset? LastSeenUtc, bool Available = false, bool IsRecording = false, bool ManualOperationPending = false)
+    private sealed record PolarStatus(bool MemoryCapability, string? Connection, string? DisplayName, DateTimeOffset? LastSeenUtc, bool Available = false, bool IsRecording = false, bool ManualOperationPending = false, string? ExerciseId = null)
     {
         public bool IsAvailable => MemoryCapability || Available;
     }
+    private sealed record PolarError(string? Error);
     private sealed record PolarRecordingList(List<PolarRecording> Items);
     private sealed record PolarOverview(PolarStatus? Status, List<PolarRecording> Items);
     private sealed record PolarRecording(string Id, string? Title, string? Status, DateTimeOffset? StartedAtUtc, DateTimeOffset? EndedAtUtc, List<PolarSample>? Samples, bool CanDeleteRemote = false);

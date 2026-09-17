@@ -1,10 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using TreadmillRunner.Core.Devices;
 using TreadmillRunner.Core.Sessions;
-using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Infrastructure.Persistence;
 
@@ -19,26 +16,28 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
   public Task DisposeAsync() { SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); return Task.CompletedTask; }
 
   [Fact]
-  public async Task Prepare_replaces_exact_active_recording_and_restores_live_hr_before_success()
+  public async Task Prepare_replaces_exact_active_recording_when_confirmed_by_the_caller()
   {
     (PolarH10RecordingStore store, Seed seed) = await CreateStoreAsync();
     var calls = new List<string>();
     var client = new TrackingMemoryClient(seed.EnrollmentId, "stale-exercise", calls);
     var access = new TrackingAccessCoordinator(seed.EnrollmentId, calls);
-    var devices = new ReadyHeartRateCoordinator(seed.EnrollmentId);
     var wake = new TrackingWakeSignal();
     var service = new PolarH10AutomaticPreparationService(
       Options.Create(new PolarH10MemoryOptions { Enabled = true }),
       store,
       client,
       access,
-      devices,
       new PolarH10OperationGate(),
       wake,
-      TimeProvider.System,
-      NullLogger<PolarH10AutomaticPreparationService>.Instance);
+      TimeProvider.System);
 
-    await service.PrepareAsync(seed.SessionId, seed.ProfileId, seed.EnrollmentId);
+    await service.PrepareAsync(
+      seed.SessionId,
+      seed.ProfileId,
+      seed.EnrollmentId,
+      replaceExistingRecording: true,
+      expectedExistingExerciseId: "stale-exercise");
 
     string requested = $"tr-{seed.SessionId:N}";
     Assert.Equal(requested, client.ActiveExerciseId);
@@ -55,7 +54,7 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Prepare_fails_closed_when_active_recording_has_no_exact_identifier()
+  public async Task Prepare_reports_an_active_recording_without_mutating_it_until_confirmed()
   {
     (PolarH10RecordingStore store, Seed seed) = await CreateStoreAsync();
     var client = new TrackingMemoryClient(seed.EnrollmentId, activeExerciseId: null, []) { ReportsAnonymousRecording = true };
@@ -65,21 +64,82 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
       store,
       client,
       new TrackingAccessCoordinator(seed.EnrollmentId, []),
-      new ReadyHeartRateCoordinator(seed.EnrollmentId),
       new PolarH10OperationGate(),
       wake,
-      TimeProvider.System,
-      NullLogger<PolarH10AutomaticPreparationService>.Instance);
+      TimeProvider.System);
 
-    await Assert.ThrowsAsync<InvalidOperationException>(() =>
+    PolarH10ActiveRecordingException error = await Assert.ThrowsAsync<PolarH10ActiveRecordingException>(() =>
       service.PrepareAsync(seed.SessionId, seed.ProfileId, seed.EnrollmentId));
 
+    Assert.Null(error.ExerciseId);
     Assert.Equal(0, client.StopCalls);
     Assert.Equal(0, client.StartMutationCalls);
     Assert.Empty(client.DeletedPaths);
-    PolarH10RecordingJob job = Assert.IsType<PolarH10RecordingJob>(await store.FindAsync(seed.SessionId));
-    Assert.Equal(PolarH10RecordingOutcome.DiscardCleanupPending, job.Outcome);
-    Assert.Equal(1, wake.Count);
+    Assert.Null(await store.FindAsync(seed.SessionId));
+    Assert.Equal(0, wake.Count);
+  }
+
+  [Fact]
+  public async Task Prepare_does_not_replace_a_recording_that_changed_after_confirmation()
+  {
+    (PolarH10RecordingStore store, Seed seed) = await CreateStoreAsync();
+    var client = new TrackingMemoryClient(seed.EnrollmentId, "new-unconfirmed-recording", []);
+    var service = new PolarH10AutomaticPreparationService(
+      Options.Create(new PolarH10MemoryOptions { Enabled = true }),
+      store,
+      client,
+      new TrackingAccessCoordinator(seed.EnrollmentId, []),
+      new PolarH10OperationGate(),
+      new TrackingWakeSignal(),
+      TimeProvider.System);
+
+    PolarH10ActiveRecordingException error = await Assert.ThrowsAsync<PolarH10ActiveRecordingException>(() =>
+      service.PrepareAsync(
+        seed.SessionId,
+        seed.ProfileId,
+        seed.EnrollmentId,
+        replaceExistingRecording: true,
+        expectedExistingExerciseId: "recording-the-user-confirmed"));
+
+    Assert.Equal("new-unconfirmed-recording", error.ExerciseId);
+    Assert.Equal(0, client.StopCalls);
+    Assert.Equal(0, client.StartMutationCalls);
+    Assert.Empty(client.DeletedPaths);
+    Assert.Null(await store.FindAsync(seed.SessionId));
+  }
+
+  [Fact]
+  public async Task Prepare_finishes_confirmed_replacement_when_recording_appears_during_start_and_request_cancels()
+  {
+    (PolarH10RecordingStore store, Seed seed) = await CreateStoreAsync();
+    using var cancellation = new CancellationTokenSource();
+    var client = new TrackingMemoryClient(seed.EnrollmentId, null, [])
+    {
+      ActivateAfterFirstStatus = "confirmed-race",
+      AfterStop = cancellation.Cancel,
+    };
+    var service = new PolarH10AutomaticPreparationService(
+      Options.Create(new PolarH10MemoryOptions { Enabled = true }),
+      store,
+      client,
+      new TrackingAccessCoordinator(seed.EnrollmentId, []),
+      new PolarH10OperationGate(),
+      new TrackingWakeSignal(),
+      TimeProvider.System);
+
+    await service.PrepareAsync(
+      seed.SessionId,
+      seed.ProfileId,
+      seed.EnrollmentId,
+      cancellation.Token,
+      replaceExistingRecording: true,
+      expectedExistingExerciseId: "confirmed-race");
+
+    Assert.True(cancellation.IsCancellationRequested);
+    Assert.Equal($"tr-{seed.SessionId:N}", client.ActiveExerciseId);
+    Assert.Equal(1, client.StopCalls);
+    Assert.Equal(1, client.StartMutationCalls);
+    Assert.Equal(PolarH10RecordingOutcome.Recording, (await store.FindAsync(seed.SessionId))?.Outcome);
   }
 
   [Fact]
@@ -95,11 +155,15 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
     var wake = new TrackingWakeSignal();
     var service = new PolarH10AutomaticPreparationService(
       Options.Create(new PolarH10MemoryOptions { Enabled = true }), store, client,
-      new TrackingAccessCoordinator(seed.EnrollmentId, []), new ReadyHeartRateCoordinator(seed.EnrollmentId),
-      new PolarH10OperationGate(), wake, TimeProvider.System,
-      NullLogger<PolarH10AutomaticPreparationService>.Instance);
+      new TrackingAccessCoordinator(seed.EnrollmentId, []),
+      new PolarH10OperationGate(), wake, TimeProvider.System);
 
-    await service.PrepareAsync(seed.SessionId, seed.ProfileId, seed.EnrollmentId);
+    await service.PrepareAsync(
+      seed.SessionId,
+      seed.ProfileId,
+      seed.EnrollmentId,
+      replaceExistingRecording: true,
+      expectedExistingExerciseId: staleExercise);
 
     PolarH10RecordingJob preserved = Assert.IsType<PolarH10RecordingJob>(await store.FindByIdAsync(stale.Id));
     Assert.Equal(PolarH10RecordingOutcome.Downloaded, preserved.Outcome);
@@ -116,9 +180,8 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
     var wake = new TrackingWakeSignal();
     var service = new PolarH10AutomaticPreparationService(
       Options.Create(new PolarH10MemoryOptions { Enabled = true }), store, client,
-      new TrackingAccessCoordinator(seed.EnrollmentId, []), new ReadyHeartRateCoordinator(seed.EnrollmentId),
-      new PolarH10OperationGate(), wake, TimeProvider.System,
-      NullLogger<PolarH10AutomaticPreparationService>.Instance);
+      new TrackingAccessCoordinator(seed.EnrollmentId, []),
+      new PolarH10OperationGate(), wake, TimeProvider.System);
 
     await Assert.ThrowsAsync<InvalidOperationException>(() =>
       service.PrepareAsync(seed.SessionId, seed.ProfileId, seed.EnrollmentId));
@@ -141,9 +204,8 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
     var wake = new TrackingWakeSignal();
     var service = new PolarH10AutomaticPreparationService(
       Options.Create(new PolarH10MemoryOptions { Enabled = true }), store, client,
-      new TrackingAccessCoordinator(seed.EnrollmentId, []), new ReadyHeartRateCoordinator(seed.EnrollmentId),
-      new PolarH10OperationGate(), wake, TimeProvider.System,
-      NullLogger<PolarH10AutomaticPreparationService>.Instance);
+      new TrackingAccessCoordinator(seed.EnrollmentId, []),
+      new PolarH10OperationGate(), wake, TimeProvider.System);
 
     await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
       service.PrepareAsync(seed.SessionId, seed.ProfileId, seed.EnrollmentId, cancellation.Token));
@@ -207,6 +269,8 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
     public int FetchCalls { get; private set; }
     public bool ThrowAfterStart { get; set; }
     public Action? AfterStart { get; set; }
+    public Action? AfterStop { get; set; }
+    public string? ActivateAfterFirstStatus { get; set; }
     public List<string> DeletedPaths { get; } = [];
     public Guid EnrollmentId => enrollmentId;
     public string DeviceId => "001122334455";
@@ -219,8 +283,17 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
       return Task.FromResult<IPolarH10MemorySession>(this);
     }
 
-    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
-      Task.FromResult(Status());
+    public Task<PolarH10DeviceRecordingStatus> GetStatusAsync(CancellationToken cancellationToken = default)
+    {
+      PolarH10DeviceRecordingStatus status = Status();
+      if (ActivateAfterFirstStatus is { } exerciseId)
+      {
+        ActiveExerciseId = exerciseId;
+        remotePaths.Add($"/{exerciseId}/SAMPLES.BPB");
+        ActivateAfterFirstStatus = null;
+      }
+      return Task.FromResult(status);
+    }
 
     public Task<PolarH10StartResult> StartAsync(string exerciseId, PolarH10SampleType sampleType, int intervalSeconds, CancellationToken cancellationToken = default)
     {
@@ -242,6 +315,7 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
       StopCalls++;
       ActiveExerciseId = null;
       ReportsAnonymousRecording = false;
+      AfterStop?.Invoke();
       return Task.CompletedTask;
     }
 
@@ -300,23 +374,6 @@ public sealed class PolarH10AutomaticPreparationServiceTests : IAsyncLifetime
         calls.Add("access-release");
         return ValueTask.CompletedTask;
       }
-    }
-  }
-
-  private sealed class ReadyHeartRateCoordinator(Guid enrollmentId) : IReadOnlyDeviceCoordinator
-  {
-    public DeviceTelemetrySnapshot Current => Snapshot();
-    public DeviceTelemetrySnapshot CurrentForProfile(Guid? profileId) => Snapshot();
-
-    private DeviceTelemetrySnapshot Snapshot()
-    {
-      DateTimeOffset now = DateTimeOffset.UtcNow;
-      var treadmill = new DeviceConnectionSnapshot(DeviceRole.Treadmill, DeviceConnectionState.Disconnected, 0, null, null, null, null, null);
-      var heartRate = new DeviceConnectionSnapshot(DeviceRole.HeartRate, DeviceConnectionState.Ready, 1, "Polar H10", "heart-rate", "ChestStrap", now, null);
-      var source = new HeartRateSourceSnapshot(enrollmentId, "Polar H10", HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar,
-        DeviceConnectionState.Ready, 1, 90, now, null, 100, now, HeartRateSignalQuality.Valid, HeartRateContactState.Detected);
-      return new DeviceTelemetrySnapshot(now, treadmill, heartRate, null, 90, now, null, [source], enrollmentId,
-        HeartRateDeviceKind.ChestStrap, HeartRateDeviceFamily.Polar, 1, "test", 100, now, HeartRateSignalQuality.Valid, HeartRateContactState.Detected);
     }
   }
 

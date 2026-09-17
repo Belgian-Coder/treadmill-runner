@@ -1,7 +1,5 @@
 using Microsoft.Extensions.Options;
-using TreadmillRunner.Core.Devices;
 using TreadmillRunner.Core.Sessions;
-using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Infrastructure.Persistence;
 
 namespace TreadmillRunner.Gateway.Polar;
@@ -9,26 +7,24 @@ namespace TreadmillRunner.Gateway.Polar;
 /// <summary>
 /// Prepares the exact enrolled H10 memory recorder as part of arming a workout.
 /// The operation is deliberately synchronous: Prepare only succeeds after the
-/// workout-specific recording is confirmed and normal live HR is fresh again.
+/// workout-specific recording is confirmed and exclusive memory access is released.
 /// </summary>
 public sealed class PolarH10AutomaticPreparationService(
   IOptions<PolarH10MemoryOptions> options,
   IPolarH10RecordingStore store,
   IPolarH10MemoryClient client,
   IPolarH10MemoryAccessCoordinator accessCoordinator,
-  IReadOnlyDeviceCoordinator deviceCoordinator,
   PolarH10OperationGate operationGate,
   IPolarH10MemoryWakeSignal worker,
-  TimeProvider timeProvider,
-  ILogger<PolarH10AutomaticPreparationService> logger)
+  TimeProvider timeProvider)
 {
-  private static readonly TimeSpan LiveHeartRateRecoveryTimeout = TimeSpan.FromSeconds(15);
-
   public async Task PrepareAsync(
     Guid sessionId,
     Guid profileId,
     Guid enrollmentId,
-    CancellationToken cancellationToken = default)
+    CancellationToken cancellationToken = default,
+    bool replaceExistingRecording = false,
+    string? expectedExistingExerciseId = null)
   {
     if (!options.Value.Enabled)
       throw new InvalidOperationException("Polar H10 memory recording is disabled.");
@@ -42,6 +38,33 @@ public sealed class PolarH10AutomaticPreparationService(
         .AcquireAsync(enrollmentId, cancellationToken)
         .ConfigureAwait(false))
       {
+        await using IPolarH10MemorySession memory = await client
+          .OpenAsync(access.EnrollmentId, cancellationToken)
+          .ConfigureAwait(false);
+
+        CancellationToken mutationCancellationToken = cancellationToken;
+        PolarH10DeviceRecordingStatus current = await memory.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        if (current.IsRecording &&
+            !string.Equals(current.ExerciseId, exerciseId, StringComparison.Ordinal))
+        {
+          if (!replaceExistingRecording)
+            throw new PolarH10ActiveRecordingException(current.ExerciseId);
+          if (!string.Equals(current.ExerciseId, expectedExistingExerciseId, StringComparison.Ordinal))
+            throw new PolarH10ActiveRecordingException(current.ExerciseId);
+
+          // Once the user confirms this exact recording, finish the mutation transaction even
+          // if the browser request disappears. The PFTP transport remains independently bounded,
+          // and uncertain mutations are never replayed.
+          mutationCancellationToken = CancellationToken.None;
+
+          await RemoveSupersededRecordingAsync(
+            memory,
+            enrollmentId,
+            excludedJobId: null,
+            current,
+            mutationCancellationToken).ConfigureAwait(false);
+        }
+
         job = await store.EnqueueAsync(
           sessionId,
           profileId,
@@ -51,21 +74,27 @@ public sealed class PolarH10AutomaticPreparationService(
           PolarH10SampleType.HeartRate,
           1,
           timeProvider.GetUtcNow(),
-          cancellationToken).ConfigureAwait(false);
-
-        await using IPolarH10MemorySession memory = await client
-          .OpenAsync(access.EnrollmentId, cancellationToken)
-          .ConfigureAwait(false);
+          mutationCancellationToken).ConfigureAwait(false);
 
         PolarH10StartResult start = await memory
-          .StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1, cancellationToken)
+          .StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1, mutationCancellationToken)
           .ConfigureAwait(false);
         if (start.Status.IsRecording &&
             !string.Equals(start.Status.ExerciseId, exerciseId, StringComparison.Ordinal))
         {
-          await RemoveSupersededRecordingAsync(memory, job, start.Status, cancellationToken).ConfigureAwait(false);
+          if (!replaceExistingRecording)
+            throw new PolarH10ActiveRecordingException(start.Status.ExerciseId);
+          if (!string.Equals(start.Status.ExerciseId, expectedExistingExerciseId, StringComparison.Ordinal))
+            throw new PolarH10ActiveRecordingException(start.Status.ExerciseId);
+          mutationCancellationToken = CancellationToken.None;
+          await RemoveSupersededRecordingAsync(
+            memory,
+            job.DeviceEnrollmentId,
+            job.Id,
+            start.Status,
+            mutationCancellationToken).ConfigureAwait(false);
           start = await memory
-            .StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1, cancellationToken)
+            .StartAsync(exerciseId, PolarH10SampleType.HeartRate, 1, mutationCancellationToken)
             .ConfigureAwait(false);
         }
 
@@ -78,8 +107,6 @@ public sealed class PolarH10AutomaticPreparationService(
           : job.StartRequestedAtUtc ?? timeProvider.GetUtcNow();
         await store.MarkRecordingAsync(job.Id, confirmedAt, CancellationToken.None).ConfigureAwait(false);
       }
-
-      await WaitForLiveHeartRateAsync(profileId, enrollmentId, cancellationToken).ConfigureAwait(false);
     }
     catch (Exception exception)
     {
@@ -91,15 +118,17 @@ public sealed class PolarH10AutomaticPreparationService(
 
       if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
         throw;
-      throw new InvalidOperationException(
-        "The workout was not prepared because Polar H10 memory recording or live HR recovery could not be confirmed.",
-        exception);
+      if (exception is PolarH10ActiveRecordingException)
+        throw;
+      string reason = exception.GetBaseException().Message;
+      throw new InvalidOperationException($"Polar H10 memory preparation failed: {reason}", exception);
     }
   }
 
   private async Task RemoveSupersededRecordingAsync(
     IPolarH10MemorySession memory,
-    PolarH10RecordingJob requestedJob,
+    Guid enrollmentId,
+    Guid? excludedJobId,
     PolarH10DeviceRecordingStatus current,
     CancellationToken cancellationToken)
   {
@@ -114,13 +143,13 @@ public sealed class PolarH10AutomaticPreparationService(
       throw new InvalidOperationException("The existing H10 recording did not stop; the new workout recording was not started.");
 
     PolarH10RecordingJob? staleJob = await store
-      .FindByExerciseAsync(requestedJob.DeviceEnrollmentId, staleExerciseId, CancellationToken.None)
+      .FindByExerciseAsync(enrollmentId, staleExerciseId, CancellationToken.None)
       .ConfigureAwait(false);
     PolarH10RemoteRecording? staleRemote = (await memory.ListAsync(cancellationToken).ConfigureAwait(false))
       .SingleOrDefault(item => string.Equals(item.RemotePath, stalePath, StringComparison.Ordinal));
     if (staleRemote is not null &&
         staleJob is not null &&
-        staleJob.Id != requestedJob.Id &&
+        staleJob.Id != excludedJobId &&
         staleJob.Outcome != PolarH10RecordingOutcome.DiscardCleanupPending &&
         string.IsNullOrWhiteSpace(staleJob.PayloadSha256))
     {
@@ -135,7 +164,7 @@ public sealed class PolarH10AutomaticPreparationService(
       .Any(item => string.Equals(item.RemotePath, stalePath, StringComparison.Ordinal)))
       throw new InvalidOperationException("The superseded H10 recording still exists after exact-path removal.");
 
-    if (staleJob is not null && staleJob.Id != requestedJob.Id)
+    if (staleJob is not null && staleJob.Id != excludedJobId)
     {
       if (staleJob.Outcome == PolarH10RecordingOutcome.DiscardCleanupPending)
         await store.CompleteDiscardCleanupAsync(staleJob.Id, CancellationToken.None).ConfigureAwait(false);
@@ -144,27 +173,13 @@ public sealed class PolarH10AutomaticPreparationService(
     }
   }
 
-  private async Task WaitForLiveHeartRateAsync(
-    Guid profileId,
-    Guid enrollmentId,
-    CancellationToken cancellationToken)
-  {
-    DateTimeOffset deadline = timeProvider.GetUtcNow() + LiveHeartRateRecoveryTimeout;
-    while (timeProvider.GetUtcNow() < deadline)
-    {
-      HeartRateSourceSnapshot? source = deviceCoordinator.CurrentForProfile(profileId).HeartRateSources?
-        .SingleOrDefault(candidate => candidate.EnrollmentId == enrollmentId);
-      if (source is not null &&
-          source.IsFresh(timeProvider.GetUtcNow(), TimeSpan.FromSeconds(5)) &&
-          source.ContactState != HeartRateContactState.NotDetected)
-        return;
+}
 
-      await Task.Delay(TimeSpan.FromMilliseconds(250), timeProvider, cancellationToken).ConfigureAwait(false);
-    }
-
-    logger.LogWarning(
-      "The H10 memory recording was confirmed, but live HR did not recover within {TimeoutSeconds} seconds.",
-      LiveHeartRateRecoveryTimeout.TotalSeconds);
-    throw new TimeoutException("Normal live H10 heart-rate telemetry did not recover after memory preparation.");
-  }
+public sealed class PolarH10ActiveRecordingException(string? exerciseId)
+  : InvalidOperationException(
+    string.IsNullOrWhiteSpace(exerciseId)
+      ? "The Polar H10 is already recording an unidentified session."
+      : $"The Polar H10 is already recording {exerciseId}.")
+{
+  public string? ExerciseId { get; } = exerciseId;
 }

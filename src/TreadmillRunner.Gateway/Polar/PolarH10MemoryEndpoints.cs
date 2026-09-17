@@ -15,7 +15,8 @@ public sealed record PolarH10StatusResponse(
   string? DeviceId,
   string? DisplayName,
   DateTimeOffset? LastSeenUtc,
-  bool ManualOperationPending = false)
+  bool ManualOperationPending = false,
+  string? ExerciseId = null)
 {
   public bool Available => MemoryCapability;
 }
@@ -87,7 +88,8 @@ public static class PolarH10MemoryEndpoints
       await using IPolarH10MemorySession session = await client.OpenAsync(access.EnrollmentId, operationCancellation.Token);
       PolarH10DeviceRecordingStatus status = await session.GetStatusAsync(operationCancellation.Token);
       bool pending = await store.FindActiveManualAsync(operationCancellation.Token) is not null;
-      return Results.Ok(new PolarH10StatusResponse(true, status.IsRecording, "Connected", status.DeviceId, status.DisplayName, clock.GetUtcNow(), pending));
+      return Results.Ok(new PolarH10StatusResponse(
+        true, status.IsRecording, "Connected", status.DeviceId, status.DisplayName, clock.GetUtcNow(), pending, status.ExerciseId));
     }
     catch (Exception exception) when (
       exception is InvalidOperationException or IOException or TimeoutException or WindowsBleException ||
@@ -124,7 +126,7 @@ public static class PolarH10MemoryEndpoints
           stored?.StartConfirmedAtUtc ?? stored?.StartRequestedAtUtc, null, CanDeleteRemote: false));
       }
       var status = new PolarH10StatusResponse(true, deviceStatus.IsRecording, "Connected", deviceStatus.DeviceId,
-        deviceStatus.DisplayName, clock.GetUtcNow(), pending);
+        deviceStatus.DisplayName, clock.GetUtcNow(), pending, deviceStatus.ExerciseId);
       return Results.Ok(new { status, items });
     }
     catch (Exception exception) when (
@@ -217,17 +219,36 @@ public static class PolarH10MemoryEndpoints
       worker.Wake();
       return Results.Accepted();
     }
-    await using IPolarH10MemoryAccessLease access = await accessCoordinator.AcquireAsync(null, cancellationToken);
-    await using IPolarH10MemorySession session = await client.OpenAsync(access.EnrollmentId, cancellationToken);
-    PolarH10DeviceRecordingStatus status = await session.GetStatusAsync(cancellationToken);
-    if (!status.IsRecording) return Results.NoContent();
-    if (string.IsNullOrWhiteSpace(status.ExerciseId)) return Results.Conflict(new { error = "The active H10 recording has no verified identifier and was left untouched." });
-    PolarH10RecordingJob? job = await store.FindByExerciseAsync(status.EnrollmentId, status.ExerciseId, cancellationToken);
-    if (job is null) return Results.Conflict(new { error = "The active H10 recording is not owned by this gateway and was left untouched." });
-    if (job.Origin != "Manual") return Results.Conflict(new { error = "The active H10 recording belongs to a workout and was left untouched." });
-    await store.QueueStopByIdAsync(job.Id, clock.GetUtcNow(), cancellationToken);
-    worker.Wake();
-    return Results.Accepted();
+    using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    operationCancellation.CancelAfter(TimeSpan.FromSeconds(20));
+    try
+    {
+      await using IPolarH10MemoryAccessLease access = await accessCoordinator.AcquireAsync(null, operationCancellation.Token);
+      await using IPolarH10MemorySession session = await client.OpenAsync(access.EnrollmentId, operationCancellation.Token);
+      PolarH10DeviceRecordingStatus status = await session.GetStatusAsync(operationCancellation.Token);
+      if (!status.IsRecording) return Results.NoContent();
+      if (string.IsNullOrWhiteSpace(status.ExerciseId)) return Results.Conflict(new { error = "The active H10 recording has no verified identifier and was left untouched." });
+      PolarH10RecordingJob? job = await store.FindByExerciseAsync(status.EnrollmentId, status.ExerciseId, operationCancellation.Token);
+      if (job is null) return Results.Conflict(new { error = "The active H10 recording is not owned by this gateway and was left untouched." });
+      if (job.Origin != "Manual")
+      {
+        if (job.SessionId is not { } sessionId)
+          return Results.Conflict(new { error = "The gateway owns this H10 recording, but it is not linked to a workout. Review or download it before removing the remote copy." });
+        if (await store.IsSessionActiveAsync(sessionId, operationCancellation.Token))
+          return Results.Conflict(new { error = "The active H10 recording belongs to the current workout. Stop the workout from the Run screen before archiving its H10 recording." });
+      }
+      await store.QueueStopByIdAsync(job.Id, clock.GetUtcNow(), operationCancellation.Token);
+      worker.Wake();
+      return Results.Accepted();
+    }
+    catch (Exception exception) when (
+      exception is InvalidOperationException or IOException or TimeoutException or WindowsBleException ||
+      exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+    {
+      return Results.Json(
+        new { error = $"The exact H10 recording could not be inspected or stopped: {exception.GetBaseException().Message}" },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
   }
 
   private static async Task<IResult> DownloadAsync(

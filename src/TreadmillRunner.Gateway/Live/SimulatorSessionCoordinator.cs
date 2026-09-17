@@ -475,11 +475,17 @@ public sealed class LiveSessionCoordinator(
           Guid h10Id = active.HeartRateEnrollmentId
             ?? throw new InvalidOperationException("The per-run memory option requires the exact selected Polar H10.");
           await scope.ServiceProvider.GetRequiredService<PolarH10AutomaticPreparationService>()
-            .PrepareAsync(definition.SessionId, definition.UserProfileId, h10Id, cancellationToken);
+            .PrepareAsync(
+              definition.SessionId,
+              definition.UserProfileId,
+              h10Id,
+              cancellationToken,
+              definition.Selection.ReplaceExistingPolarH10Recording,
+              definition.Selection.ReplacePolarH10ExerciseId);
           polarMemoryPrepared = true;
         }
       }
-      catch
+      catch (Exception exception)
       {
         if (persisted)
         {
@@ -487,7 +493,7 @@ public sealed class LiveSessionCoordinator(
           {
             await store.InterruptUnfinishedAsync(
               timeProvider.GetUtcNow(),
-              "Session arm could not hold the required device connections.",
+              $"Session arm failed during device or H10 preparation: {exception.GetBaseException().Message}",
               CancellationToken.None);
           }
           catch (Exception cleanupException)
@@ -508,7 +514,7 @@ public sealed class LiveSessionCoordinator(
 
       string? admissionFailure = null;
       DateTimeOffset? leaseExpiry = null;
-      await _gate.WaitAsync(cancellationToken);
+      await _gate.WaitAsync(polarMemoryPrepared ? CancellationToken.None : cancellationToken);
       try
       {
         if (!_startupRecoveryComplete)

@@ -342,11 +342,19 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
       return await MarkReviewRequiredAsync(context, row, "The H10 recording alignment is ambiguous and requires review.", nowUtc, transaction, cancellationToken);
 
     int merged = 0;
-    foreach (PolarH10RecordingSampleEntity source in recorded)
+    var usedRecordingSequences = new HashSet<long>();
+    foreach (SessionSampleEntity target in sessionSamples.Where(sample => sample.HeartRateBpm is null))
     {
-      DateTimeOffset targetTime = source.CapturedAtUtc + candidates[0].Offset;
-      SessionSampleEntity? target = Nearest(sessionSamples, targetTime, TimeSpan.FromMilliseconds(375));
-      if (target is not null && target.HeartRateBpm is null) { target.HeartRateBpm = source.BeatsPerMinute; merged++; }
+      DateTimeOffset expectedRecordingTime = target.CapturedAtUtc - candidates[0].Offset;
+      PolarH10RecordingSampleEntity? source = NearestUnused(
+        recorded,
+        usedRecordingSequences,
+        expectedRecordingTime,
+        TimeSpan.FromMilliseconds(600));
+      if (source?.BeatsPerMinute is not { } heartRate) continue;
+      target.HeartRateBpm = heartRate;
+      usedRecordingSequences.Add(source.Sequence);
+      merged++;
     }
     ushort[] heartRates = sessionSamples.Where(sample => sample.HeartRateBpm is not null).Select(sample => sample.HeartRateBpm!.Value).ToArray();
     session.AverageHeartRateBpm = heartRates.Length == 0 ? null : heartRates.Average(value => (double)value);
@@ -522,6 +530,23 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     TimeSpan distance = TimeSpan.MaxValue;
     foreach (SessionSampleEntity sample in samples)
     {
+      TimeSpan current = (sample.CapturedAtUtc - timestamp).Duration();
+      if (current < distance) { nearest = sample; distance = current; }
+    }
+    return distance <= tolerance ? nearest : null;
+  }
+
+  private static PolarH10RecordingSampleEntity? NearestUnused(
+    PolarH10RecordingSampleEntity[] samples,
+    HashSet<long> usedSequences,
+    DateTimeOffset timestamp,
+    TimeSpan tolerance)
+  {
+    PolarH10RecordingSampleEntity? nearest = null;
+    TimeSpan distance = TimeSpan.MaxValue;
+    foreach (PolarH10RecordingSampleEntity sample in samples)
+    {
+      if (usedSequences.Contains(sample.Sequence)) continue;
       TimeSpan current = (sample.CapturedAtUtc - timestamp).Duration();
       if (current < distance) { nearest = sample; distance = current; }
     }

@@ -7,6 +7,7 @@ using TreadmillRunner.Core.Sessions;
 using TreadmillRunner.Gateway.Planning;
 using TreadmillRunner.Gateway.Devices;
 using TreadmillRunner.Gateway.Garmin;
+using TreadmillRunner.Gateway.Polar;
 using TreadmillRunner.Infrastructure.Persistence;
 using TreadmillRunner.Protocols.Exports;
 
@@ -22,7 +23,9 @@ public sealed record ArmSessionRequest(
   string SelectionSource = "Library",
   Guid? ProgramRunId = null,
   Guid? ProgramItemId = null,
-  bool RecordPolarH10Memory = false);
+  bool RecordPolarH10Memory = false,
+  bool ReplaceExistingPolarH10Recording = false,
+  string? ReplacePolarH10ExerciseId = null);
 public sealed record PhysicalMotionRequest(bool IsMoving, double MeasuredSpeedKph, double MeasuredInclinePercent);
 public sealed record SimulatedHeartRateRequest(ushort? BeatsPerMinute);
 public sealed record SpeedOverrideRequest(
@@ -244,8 +247,8 @@ public static class LiveSessionEndpoints
       var receipt = new OperationReceipt(
         Guid.NewGuid(), request.OperationId, operationType, StatusCodes.Status200OK,
         outcome, timeProvider.GetUtcNow(), fingerprint);
-      if (!await receiptStore.TryAddAsync(receipt, cancellationToken) &&
-          await receiptStore.FindAsync(request.OperationId, cancellationToken) is { } raced &&
+      if (!await receiptStore.TryAddAsync(receipt, CancellationToken.None) &&
+          await receiptStore.FindAsync(request.OperationId, CancellationToken.None) is { } raced &&
           (raced.OperationType != operationType || raced.RequestFingerprint != fingerprint))
         return Results.Conflict(new { error = "That operation ID was already used for another action or request." });
       return Results.Ok(snapshot);
@@ -295,6 +298,8 @@ public static class LiveSessionEndpoints
       request.ProgramRunId,
       request.ProgramItemId,
       request.RecordPolarH10Memory,
+      request.ReplaceExistingPolarH10Recording,
+      request.ReplacePolarH10ExerciseId,
     });
     try
     {
@@ -322,7 +327,23 @@ public static class LiveSessionEndpoints
         });
       }
 
-      var selection = new WorkoutSessionSelection(source, request.ProgramRunId, request.ProgramItemId, request.RecordPolarH10Memory);
+      if (request.ReplaceExistingPolarH10Recording &&
+          (!request.RecordPolarH10Memory || string.IsNullOrWhiteSpace(request.ReplacePolarH10ExerciseId)))
+      {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+          [nameof(request.ReplaceExistingPolarH10Recording)] =
+            ["Replacing an H10 recording requires memory recording to remain enabled and the exact confirmed recording ID."],
+        });
+      }
+
+      var selection = new WorkoutSessionSelection(
+        source,
+        request.ProgramRunId,
+        request.ProgramItemId,
+        request.RecordPolarH10Memory,
+        request.ReplaceExistingPolarH10Recording,
+        request.ReplacePolarH10ExerciseId);
       if (source == WorkoutSelectionSource.Program)
       {
         if (request.ProgramRunId is not { } runId || request.ProgramItemId is not { } itemId ||
@@ -365,6 +386,15 @@ public static class LiveSessionEndpoints
     catch (KeyNotFoundException exception)
     {
       return Results.NotFound(new { error = exception.Message });
+    }
+    catch (PolarH10ActiveRecordingException exception)
+    {
+      return Results.Conflict(new
+      {
+        code = "PolarH10RecordingActive",
+        error = exception.Message,
+        exerciseId = exception.ExerciseId,
+      });
     }
     catch (InvalidOperationException exception)
     {
