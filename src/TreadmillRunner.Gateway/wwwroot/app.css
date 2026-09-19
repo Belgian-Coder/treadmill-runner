@@ -1096,22 +1096,96 @@ body.immersive-view { overflow: hidden; }
 
 /* A Pro Max portrait viewport has enough width to expose every manual target.
    Use that width instead of turning the two target rails into nested scrollers. */
-@media (min-width: 381px) and (max-width: 650px) and (min-height: 501px) {
+@media (min-width: 381px) and (max-width: 427px) and (min-height: 501px) {
   .app-shell:has(.control-page) { min-height: 0; }
-  .control-page { gap: .35rem; padding-bottom: max(.35rem, env(safe-area-inset-bottom)); }
+  .control-page { gap: .25rem; padding-bottom: max(.15rem, env(safe-area-inset-bottom)); }
   .control-page.control-page--highcontrast { padding: .2rem; }
   .control-console-grid--balanced { grid-template-columns: 96px minmax(0, 1fr) 96px; gap: .3rem; }
-  .control-console-grid--balanced .control-rail {
-    max-height: none;
-    gap: .25rem;
-    padding: .25rem;
-    overflow: visible;
-  }
+  .control-console-grid--balanced .control-rail { max-height: none; gap: .25rem; padding: .25rem; overflow: visible; }
   .control-console-grid--balanced .control-rail__heading::after { display: none; }
   .control-console-grid--balanced .rail-stepper,
   .control-console-grid--balanced .rail-presets { grid-template-columns: repeat(2, minmax(44px, 1fr)); gap: .2rem; }
   .control-console-grid--balanced .rail-stepper .touch-action,
   .control-console-grid--balanced .rail-presets .quick-target { min-width: 44px; min-height: 44px; padding-inline: .15rem; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock { position: static; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock .media-control { flex-direction: column; gap: .15rem; }
+  .control-page--chart .control-action-dock { position: fixed; }
+  .control-page--chart .control-action-dock .media-control { flex-direction: row; gap: .45rem; }
+  .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock .media-control > span:last-child,
+  .control-page--chart .control-action-dock .media-control > span:last-child { white-space: nowrap; }
+  .control-details { display: none; }
+  .control-page--controls .control-details { display: block; margin-top: 0; }
+}
+
+@media (min-width: 428px) and (max-width: 650px) and (min-height: 501px) {
+  .app-shell:has(.control-page) { min-height: 0; }
+  .control-page { gap: .35rem; padding-bottom: max(.35rem, env(safe-area-inset-bottom)); }
+  .control-page.control-page--highcontrast { padding: .2rem; }
+  .control-console-grid--balanced {
+    grid-template-areas: "speed" "center" "incline";
+    grid-template-columns: minmax(0, 1fr);
+    gap: .35rem;
+  }
+  .control-console-grid--balanced .control-rail--speed { grid-area: speed; }
+  .control-console-grid--balanced .control-center { grid-area: center; }
+  .control-console-grid--balanced .control-rail--incline { grid-area: incline; }
+  .control-console-grid--balanced .control-primary-metrics {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  .control-page--largetext .control-console-grid--balanced .control-primary-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+  .control-console-grid--balanced .control-rail {
+    display: grid;
+    grid-template-areas: "heading" "presets";
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+    gap: .2rem .35rem;
+    padding: .25rem;
+    overflow: visible;
+  }
+  .control-console-grid--balanced .control-rail__heading {
+    grid-area: heading;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem;
+  }
+  .control-console-grid--balanced .control-rail__heading::after {
+    display: inline;
+    content: "± in Controls";
+    color: #8ee6c4;
+    font-size: .55rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+  }
+  .control-console-grid--balanced .control-rail h2 { display: flex; align-items: baseline; gap: .2rem; font-size: 1rem; white-space: nowrap; }
+  .control-console-grid--balanced .rail-stepper {
+    display: none;
+  }
+  .control-console-grid--balanced .rail-presets {
+    grid-area: presets;
+    grid-template-columns: repeat(8, minmax(44px, 1fr));
+    grid-auto-flow: row;
+    gap: .2rem;
+    min-width: 0;
+    overflow: visible;
+  }
+  .control-console-grid--balanced .rail-presets .quick-target { min-width: 44px; min-height: 44px; padding-inline: .15rem; }
+  .control-console-grid--balanced .control-live-chart .control-chart { height: clamp(155px, 18dvh, 185px); }
+  .control-console-grid--balanced .control-chart-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .35rem;
+    font-size: .62rem;
+    line-height: 1.2;
+  }
+  .control-console-grid--balanced .control-chart-legend__group { justify-content: flex-start; gap: .3rem; }
+  .control-console-grid--balanced .chart-time-scale span { display: block; }
+  .control-console-grid--balanced .chart-time-scale::after { content: none; }
   .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock { position: static; }
   .control-page--balanced:not(.control-page--chart):not(.control-page--controls) .control-action-dock .media-control { flex-direction: column; gap: .15rem; }
   .control-page--chart .control-action-dock { position: fixed; }
@@ -1133,17 +1207,29 @@ body.immersive-view { overflow: hidden; }
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --control-safe-left: env(safe-area-inset-left);
+    --control-safe-right: env(safe-area-inset-right);
+    --control-safe-bottom: env(safe-area-inset-bottom);
+  }
   .runner-page > .maintenance-advisory--treadmill { display: none; }
   body:has(.control-page) .site-header { display: none; }
-  .app-shell:has(.control-page) { padding: .35rem max(.45rem, env(safe-area-inset-right)) .35rem max(.45rem, env(safe-area-inset-left)); }
-  .control-page, .control-page:fullscreen, .control-page.control-page--immersive { width: 100%; max-width: none; gap: .3rem; padding: .35rem max(.45rem, env(safe-area-inset-right)) .35rem max(.45rem, env(safe-area-inset-left)); }
+  .app-shell:has(.control-page) { padding: .2rem max(.45rem, var(--control-safe-right)) max(.2rem, var(--control-safe-bottom)) max(.45rem, var(--control-safe-left)); }
+  .control-page, .control-page:fullscreen, .control-page.control-page--immersive { width: 100%; max-width: none; gap: .2rem; padding: 0; }
+  .control-page:fullscreen, .control-page.control-page--immersive {
+    padding: max(.2rem, env(safe-area-inset-top)) max(.45rem, var(--control-safe-right)) max(.2rem, var(--control-safe-bottom)) max(.45rem, var(--control-safe-left));
+  }
   .control-page__header { min-height: 44px; padding: 0; }
   .control-focus-switcher { grid-column: auto; order: initial; }
   .control-header-actions { display: flex; }
   .control-run-nav { display: inline-flex; }
   .control-page__header .eyebrow { display: none; }
-  .control-page h1 { font-size: 1.55rem; }
-  .control-runner-context { display: inline-flex; max-width: 9rem; }
+  .control-page h1 { font-size: 1.25rem; }
+  .control-title-line { gap: .25rem; }
+  .control-runner-context { display: inline-flex; max-width: 3.25rem; gap: .2rem; }
+  .control-runner-context > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .control-header-actions { gap: .25rem; }
+  .control-focus-switcher button { padding-inline: .4rem; }
   .control-console-grid { grid-template-columns: 120px minmax(0, 1fr) 120px; gap: .45rem; }
   .control-console-grid--chart { grid-template-columns: 72px minmax(0, 1fr) 72px; }
   .control-console-grid--controls { grid-template-columns: 156px minmax(0, 1fr) 156px; }
@@ -1226,8 +1312,9 @@ body.immersive-view { overflow: hidden; }
   .control-console-grid--chart { grid-template-columns: minmax(0, 1fr); }
   .control-console-grid--chart .control-rail { display: none; }
   .control-console-grid--chart .control-center {
+    position: relative;
     grid-template-columns: minmax(0, 1fr) 118px;
-    grid-template-rows: calc(100dvh - 88px - env(safe-area-inset-bottom));
+    grid-template-rows: calc(100dvh - 88px - var(--control-safe-bottom));
     min-height: 0;
     gap: .35rem;
     padding: .4rem;
@@ -1263,12 +1350,23 @@ body.immersive-view { overflow: hidden; }
   .control-console-grid--chart .control-live-chart--focused .chart-focus-action { width: auto; min-width: 4.7rem; gap: .3rem; }
   .control-console-grid--chart .control-live-chart--focused .chart-focus-action__label { display: inline; font-size: .68rem; }
   .control-console-grid--chart .control-action-dock {
+    position: absolute;
+    top: .4rem;
+    right: .4rem;
+    bottom: .4rem;
+    left: auto;
     grid-column: 2;
     grid-row: 1;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto repeat(2, minmax(44px, 1fr));
+    width: calc(118px - .8rem);
+    height: auto;
     min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
   }
-  .control-console-grid--chart .control-action-dock .touch-action { width: 100%; min-width: 0; }
+  .control-console-grid--chart .control-action-dock .touch-action { width: 100%; height: auto; min-width: 0; min-height: 44px; }
 }
 
 /* Compact, auto-hiding daily-use shell. The primary phone baseline is 440x956 CSS px. */

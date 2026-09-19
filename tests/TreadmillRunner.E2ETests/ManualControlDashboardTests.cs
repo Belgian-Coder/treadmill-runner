@@ -16,6 +16,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     { "phone-narrow", 320, 800 },
     { "phone-portrait", 390, 844 },
     { "iphone13-pro-max", 428, 926 },
+    { "iphone13-pro-max-landscape", 926, 428 },
     { "iphone17-pro-max", 440, 956 },
     { "phone-landscape", 844, 390 },
     { "iphone17-pro-max-landscape", 956, 440 },
@@ -37,6 +38,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
   public static TheoryData<string, string, int, int> ReadabilityViewports => new()
   {
     { "LargeText", "phone-portrait", 390, 844 },
+    { "LargeText", "iphone13-pro-max", 428, 926 },
     { "LargeText", "phone-landscape", 844, 390 },
     { "LargeText", "tablet", 1180, 820 },
     { "LargeText", "desktop", 1920, 1080 },
@@ -92,6 +94,11 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
           "element => Number.parseFloat(getComputedStyle(element).fontSize)");
         Assert.True(metricFontSize >= 29,
           $"Large-text metrics must remain conspicuously readable at {width}x{height}; actual {metricFontSize}px.");
+        foreach (ILocator metric in await Page.Locator(".control-primary-metrics strong").AllAsync())
+        {
+          bool metricIsClipped = await metric.EvaluateAsync<bool>("element => element.scrollWidth > element.clientWidth + 1");
+          Assert.False(metricIsClipped, $"A large-text metric was clipped at {width}x{height}: {await metric.TextContentAsync()}.");
+        }
       }
       else
       {
@@ -204,6 +211,12 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         await Expect(compactRunnerContext).ToBeVisibleAsync();
         await Expect(compactRunnerContext).ToContainTextAsync(plan.ProfileName);
         await Expect(compactRunnerContext).ToHaveAttributeAsync("aria-label", $"Active runner: {plan.ProfileName}");
+        ILocator compactRunnerName = compactRunnerContext.Locator(":scope > span");
+        await Expect(compactRunnerName).ToBeVisibleAsync();
+        LocatorBoundingBoxResult? compactRunnerNameBox = await compactRunnerName.BoundingBoxAsync();
+        Assert.NotNull(compactRunnerNameBox);
+        Assert.True(compactRunnerNameBox.Width >= 24 && compactRunnerNameBox.Height >= 12,
+          $"The short-landscape header must visibly identify the active runner at {width}x{height}: {compactRunnerNameBox}.");
 
         ILocator runNavigation = Page.GetByRole(AriaRole.Link, new() { Name = "Back to Run", Exact = true });
         await Expect(runNavigation).ToBeVisibleAsync();
@@ -552,6 +565,8 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     await Expect(controlsFocus).ToHaveAttributeAsync("aria-pressed", "true");
     await Expect(Page.Locator("#control-dashboard")).ToHaveClassAsync(
       new System.Text.RegularExpressions.Regex("control-page--controls"));
+    if (width is >= 428 and <= 650 && height > 500)
+      await Expect(Page.Locator(".control-console-grid--controls .rail-stepper").First).ToBeVisibleAsync();
     bool isPhoneViewport = width <= 650 || (height <= 500 && width <= 1000);
     if (isPhoneViewport)
     {
@@ -591,9 +606,12 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     if (isPhoneViewport)
     {
       await AssertFocusedMobileChartAsync(viewport, width, height);
-      if (viewport is "iphone13-pro-max" or "iphone17-pro-max")
+      if (viewport is "iphone13-pro-max" or "iphone17-pro-max" ||
+          viewport.EndsWith("landscape", StringComparison.Ordinal))
         await AssertDocumentFitsViewportAsync("Chart", viewport);
       await SaveTr039EvidenceAsync(gateway.ProjectRoot, $"chart-{viewport}");
+      if (viewport == "iphone13-pro-max-landscape")
+        await AssertLandscapeSafeAreaAsync(viewport, width, height);
       await Page.GetByRole(AriaRole.Button, new() { Name = "Collapse live graph", Exact = true }).ClickAsync();
     }
     else
@@ -606,8 +624,49 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     Assert.NotNull(speedRail);
     Assert.NotNull(center);
     Assert.NotNull(inclineRail);
-    Assert.True(speedRail.X < center.X && center.X < inclineRail.X,
-      "Speed and incline presets must remain vertical rails around the center controls.");
+    if (width is >= 428 and <= 650 && height > 500)
+    {
+      Assert.True(speedRail.Y < center.Y && center.Y < inclineRail.Y,
+        "Portrait speed and incline controls must frame the live center as compact horizontal rows.");
+      Assert.True(speedRail.Width >= width - 40 && inclineRail.Width >= width - 40,
+        $"Portrait control rows must return the viewport width to the live chart: speed={speedRail}, incline={inclineRail}.");
+      foreach (string railSelector in new[] { ".control-rail--speed", ".control-rail--incline" })
+      {
+        LocatorBoundingBoxResult railBox = railSelector.EndsWith("speed", StringComparison.Ordinal) ? speedRail : inclineRail;
+        ILocator presetContainer = Page.Locator($"{railSelector} .rail-presets");
+        bool presetsOverflowHorizontally = await presetContainer.EvaluateAsync<bool>("el => el.scrollWidth > el.clientWidth + 1");
+        Assert.False(presetsOverflowHorizontally, $"{railSelector} must expose every quick target without a nested horizontal scroller.");
+
+        ILocator buttons = presetContainer.Locator("button");
+        Assert.Equal(8, await buttons.CountAsync());
+        LocatorBoundingBoxResult? firstButton = await buttons.First.BoundingBoxAsync();
+        Assert.NotNull(firstButton);
+        for (int index = 0; index < await buttons.CountAsync(); index++)
+        {
+          LocatorBoundingBoxResult? button = await buttons.Nth(index).BoundingBoxAsync();
+          Assert.NotNull(button);
+          Assert.InRange(Math.Abs(button.Y - firstButton.Y), 0, 1);
+          Assert.True(button.Width >= 44 && button.Height >= 44,
+            $"{railSelector} quick target {index} was smaller than 44px: {button}.");
+          Assert.True(button.X >= railBox.X - 1 && button.X + button.Width <= railBox.X + railBox.Width + 1,
+            $"{railSelector} quick target {index} escaped its full-width portrait row: rail={railBox}, button={button}.");
+        }
+      }
+
+      await Expect(Page.Locator(".control-console-grid--balanced .rail-stepper").First).ToBeHiddenAsync();
+
+      LocatorBoundingBoxResult? balancedChart = await Page.Locator(".control-console-grid--balanced .control-live-chart").BoundingBoxAsync();
+      Assert.NotNull(balancedChart);
+      Assert.True(balancedChart.Width >= width - 64,
+        $"Portrait live chart remained horizontally squeezed at {width}x{height}: {balancedChart}.");
+      Assert.True(balancedChart.Height >= 200,
+        $"Portrait live chart did not reclaim enough visual space at {width}x{height}: {balancedChart}.");
+    }
+    else
+    {
+      Assert.True(speedRail.X < center.X && center.X < inclineRail.X,
+        "Speed and incline presets must remain vertical rails around the center controls.");
+    }
 
     if (viewport.EndsWith("landscape", StringComparison.Ordinal))
     {
@@ -657,7 +716,7 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
         Assert.False(needsInternalScroll, $"Balanced mode retained an internally scrolling rail at {viewport}.");
       }
 
-      foreach (ILocator target in await Page.Locator(".control-console-grid--balanced .control-rail button").AllAsync())
+      foreach (ILocator target in await Page.Locator(".control-console-grid--balanced .control-rail button:visible").AllAsync())
       {
         LocatorBoundingBoxResult? box = await target.BoundingBoxAsync();
         Assert.NotNull(box);
@@ -1391,12 +1450,28 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
     {
       LocatorBoundingBoxResult? consoleBox = await Page.Locator(".control-console-grid--chart").BoundingBoxAsync();
       LocatorBoundingBoxResult? dockBox = await Page.Locator(".control-console-grid--chart .control-action-dock").BoundingBoxAsync();
+      LocatorBoundingBoxResult? headerActionsBox = await Page.Locator(".control-header-actions").BoundingBoxAsync();
+      LocatorBoundingBoxResult? legendBox = await focusedGraph.Locator(".control-chart-legend").BoundingBoxAsync();
       Assert.NotNull(consoleBox);
       Assert.NotNull(dockBox);
-      double availableGraphWidth = consoleBox.Width - dockBox.Width - 16;
-      Assert.True(graphBox.Width >= availableGraphWidth * .98 && graphBox.Height >= height - 100,
+      Assert.NotNull(headerActionsBox);
+      Assert.NotNull(legendBox);
+      bool dockClearsHeader = dockBox.X >= headerActionsBox.X + headerActionsBox.Width - 1 ||
+                              dockBox.X + dockBox.Width <= headerActionsBox.X + 1 ||
+                              dockBox.Y >= headerActionsBox.Y + headerActionsBox.Height - 1 ||
+                              dockBox.Y + dockBox.Height <= headerActionsBox.Y + 1;
+      Assert.True(dockClearsHeader,
+        $"Focused landscape motion controls overlapped the view switcher or header actions at {viewport}: " +
+        $"header=({headerActionsBox.X:F1},{headerActionsBox.Y:F1},{headerActionsBox.Width:F1},{headerActionsBox.Height:F1}), " +
+        $"dock=({dockBox.X:F1},{dockBox.Y:F1},{dockBox.Width:F1},{dockBox.Height:F1}).");
+      double availableGraphWidth = consoleBox.Width - Math.Max(dockBox.Width, 118) - 16;
+      Assert.True(graphBox.Width >= availableGraphWidth * .98 && graphBox.Height >= height - 140,
         $"Focused landscape graph did not fill the space beside Pause/Stop at {viewport}: " +
-        $"graph={graphBox.Width:F1}x{graphBox.Height:F1}, available={availableGraphWidth:F1}x{height - 100}.");
+        $"graph={graphBox.Width:F1}x{graphBox.Height:F1}, availableWidth={availableGraphWidth:F1}.");
+      Assert.True(graphBox.Y + graphBox.Height <= height - 2,
+        $"Focused landscape graph escaped the safe viewport at {viewport}: graph={graphBox}, viewportHeight={height}.");
+      Assert.True(legendBox.Y + legendBox.Height <= graphBox.Y + graphBox.Height + 1 && legendBox.Y + legendBox.Height <= height - 2,
+        $"Focused landscape chart legend was clipped at {viewport}: graph={graphBox}, legend={legendBox}, viewportHeight={height}.");
     }
     else
     {
@@ -1429,6 +1504,38 @@ public sealed class ManualControlDashboardTests(GatewayFixture gateway) : PageTe
       Assert.True(box.Width >= 44 && box.Height >= 44 && box.X >= -1 && box.X + box.Width <= width + 1 && box.Y >= -1 && box.Y + box.Height <= height + 1,
         $"{name} was not safely visible with the focused graph at {viewport}: " +
         $"x={box.X:F1}, y={box.Y:F1}, width={box.Width:F1}, height={box.Height:F1}, viewport={width}x{height}.");
+    }
+  }
+
+  private async Task AssertLandscapeSafeAreaAsync(string viewport, int width, int height)
+  {
+    await Page.EvaluateAsync("""
+    () => {
+      document.documentElement.style.setProperty('--control-safe-left', '47px');
+      document.documentElement.style.setProperty('--control-safe-right', '47px');
+      document.documentElement.style.setProperty('--control-safe-bottom', '21px');
+    }
+    """);
+    try
+    {
+      await Page.WaitForTimeoutAsync(50);
+      LocatorBoundingBoxResult? headerBox = await Page.Locator(".control-page__header").BoundingBoxAsync();
+      Assert.NotNull(headerBox);
+      Assert.True(headerBox.X >= 46 && headerBox.X + headerBox.Width <= width - 46 && headerBox.Height <= 60,
+        $"Landscape header did not remain a single safe-area row at {viewport}: " +
+        $"x={headerBox.X:F1}, y={headerBox.Y:F1}, width={headerBox.Width:F1}, height={headerBox.Height:F1}.");
+      await AssertFocusedMobileChartAsync($"{viewport}-safe-area", width, height);
+      await AssertDocumentFitsViewportAsync("Chart safe area", viewport);
+    }
+    finally
+    {
+      await Page.EvaluateAsync("""
+      () => {
+        document.documentElement.style.removeProperty('--control-safe-left');
+        document.documentElement.style.removeProperty('--control-safe-right');
+        document.documentElement.style.removeProperty('--control-safe-bottom');
+      }
+      """);
     }
   }
 
