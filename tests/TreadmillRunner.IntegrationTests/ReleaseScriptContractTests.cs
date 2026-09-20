@@ -92,7 +92,7 @@ public sealed class ReleaseScriptContractTests
     Assert.Contains("Get-GhReleaseView", release, StringComparison.Ordinal);
     Assert.Contains("Could not inspect GitHub release", release, StringComparison.Ordinal);
     Assert.Contains("not found", release, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("SkipValidation is allowed only when resuming", release, StringComparison.Ordinal);
+    Assert.Contains("[switch] $Validate", release, StringComparison.Ordinal);
     Assert.Contains("TREADMILLRUNNER_UPDATE_SHOWCASE = '0'", release, StringComparison.Ordinal);
     Assert.Contains("full-acceptance.json", release, StringComparison.Ordinal);
     Assert.Contains("sourceRevision -eq $head", release, StringComparison.Ordinal);

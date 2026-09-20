@@ -16,7 +16,7 @@ As the maintainer, I want GitHub Actions disabled completely so commits and rele
 ## Acceptance criteria
 
 - GitHub Actions is disabled in repository settings; no workflow or Dependabot update configuration remains, so commits, pull requests, tags, manual dispatches, and dependency updates cannot start a hosted build.
-- `eng/create-github-release.ps1` remains the supported publisher and performs validation, build, signing, packaging, tag creation, asset upload, checksum verification, and publication on the release workstation.
+- `eng/create-github-release.ps1` remains the supported publisher and performs build, signing, packaging, tag creation, asset upload, checksum verification, and publication on the release workstation; release validation is an explicit optional `-Validate` step.
 - The non-exportable signing key and all Garmin runtime assembly remain local.
 - Release documentation and repository instructions explicitly prohibit GitHub-hosted builds.
 - The active hosted run is cancelled and the policy change is committed and pushed without creating another run.

@@ -119,12 +119,13 @@ The local signer is deliberately non-exportable and must not be placed in GitHub
 ```powershell
 .\eng\create-github-release.ps1 `
   -Version 1.5.10 `
-  -ReleaseNotes 'Describe the user-visible changes in this version.'
+  -ReleaseNotes 'Describe the user-visible changes in this version.' `
+  -Validate
 ```
 
-The script requires a version newer than every published release and requires `main` to exactly match `origin/main`. It runs Release and browser validation locally, then rechecks that validation changed neither the commit nor any tracked or untracked file and that `origin/main` is still the validated commit. Only then does it publish and sign locally, create the end-user installer and checksum file, push an annotated `v<version>` tag, create a draft, upload and verify every expected asset, and publish it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
+The script requires a version newer than every published release and requires `main` to exactly match `origin/main`. Validation is an explicit, optional `-Validate` choice; use it when the change warrants another release acceptance pass, and omit it when existing evidence is already proportionate. With `-Validate`, the script runs Release and risk-selected browser validation locally. In either mode it rechecks that the commit and worktree did not change and that `origin/main` is still the publishing commit. It then publishes and signs locally, creates the end-user installer and checksum file, pushes an annotated `v<version>` tag, creates a draft, uploads and verifies every expected asset, and publishes it as latest. Pushing the tag starts no GitHub workflow. The script never accepts a token, PFX, private-key path, or signing password.
 
-When `eng/verify-change.ps1 -Release` has already passed on the same clean commit within eight hours, it writes an ignored local acceptance receipt. The routine gate runs all Core and Protocol tests, a tagged critical integration set, and a tagged five-journey browser smoke set only for browser-affecting changes. The release script reuses that exact commit-bound receipt instead of rerunning acceptance. Backend-only release diffs use `-NoBrowser`. `eng/verify-change.ps1 -Full` remains the deliberate exhaustive test, browser, and performance gate. A missing, stale, malformed, insufficiently scoped, differently configured, or different-commit receipt falls back to one risk-selected release run; it never bypasses required validation.
+When `eng/verify-change.ps1 -Release` has already passed on the same clean commit within eight hours, it writes an ignored local acceptance receipt. If `-Validate` is selected, the release script reuses that exact commit-bound receipt instead of rerunning acceptance. Otherwise it runs the risk-selected release gate, including browser smoke only for browser-affecting changes. `eng/verify-change.ps1 -Full` remains the deliberate exhaustive test, browser, and performance gate. Without `-Validate`, release packaging proceeds without consulting or creating acceptance evidence.
 
 The publisher has a ten-minute default budget from validation lookup through verified draft publication. It checks the budget before creating a tag and again before publishing the verified draft. If the latter check fails, the draft remains resumable; raise `-BudgetMinutes` only as an explicit exception with a recorded reason. Routine browser smoke uses the non-native WebAssembly build, while signed packaging performs the optimized native build exactly once.
 
@@ -150,7 +151,7 @@ To run validation deliberately without creating a release, use the local scripts
 ./eng/playwright.ps1 -Configuration Release
 ```
 
-These commands do not create a tag, package, signature, or GitHub Release. `create-github-release.ps1` runs them automatically unless `-SkipValidation` is explicitly used to resume an already validated interrupted release with identical immutable inputs.
+These commands do not create a tag, package, signature, or GitHub Release. `create-github-release.ps1` runs release acceptance only when `-Validate` is explicitly supplied. Validation is never required merely to package, sign, or publish a release.
 
 Release assets are `stable.manifest.json`, `treadmillrunner-<version>-win-x64.zip`, `treadmillrunner-<version>-offline-update.zip`, `TreadmillRunner-<version>-Windows-x64.zip`, the public `.cer`, and `SHA256SUMS.txt`.
 

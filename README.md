@@ -156,7 +156,10 @@ GitHub Actions is disabled in repository settings, and no workflow or Dependabot
 ```powershell
 .\eng\create-github-release.ps1 `
   -Version 1.5.10 `
-  -ReleaseNotes 'Describe the user-visible changes in this version.'
+  -ReleaseNotes 'Describe the user-visible changes in this version.' `
+  -Validate
 ```
+
+`-Validate` is optional. Include it when another release acceptance pass is proportionate; omit it when the existing evidence is sufficient.
 
 Do not create or move tags manually. See [release operations](docs/project/release-operations.md) for prerequisites, assets, interruption recovery, and update activation.

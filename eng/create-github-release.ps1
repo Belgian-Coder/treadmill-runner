@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string] $Version,
     [Parameter(Mandatory)][ValidateLength(1, 4000)][string] $ReleaseNotes,
     [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string] $Repository = 'belgian-coder/treadmill-runner',
-    [switch] $SkipValidation,
+    [switch] $Validate,
     [ValidateRange(1, 60)][int] $BudgetMinutes = 10
 )
 
@@ -426,10 +426,6 @@ try {
         $existingDraft = $true
     }
 
-    if ($SkipValidation -and -not $existingDraft) {
-        throw 'SkipValidation is allowed only when resuming an existing verified draft release.'
-    }
-
     $previousVersion = Get-MaxPublishedReleaseVersion -Repository $Repository
     if ($null -ne $previousVersion -and [version]$Version -le [version]$previousVersion) {
         throw "Version $Version must be newer than every published release."
@@ -445,7 +441,7 @@ try {
 
     $acceptanceReceiptPath = Join-Path $projectRoot 'artifacts\validation\full-acceptance.json'
     $freshAcceptanceReceipt = $false
-    if (-not $SkipValidation -and (Test-Path -LiteralPath $acceptanceReceiptPath -PathType Leaf)) {
+    if ($Validate -and (Test-Path -LiteralPath $acceptanceReceiptPath -PathType Leaf)) {
         try {
             $acceptanceReceipt = Get-Content -LiteralPath $acceptanceReceiptPath -Raw | ConvertFrom-Json
             $completedAt = if ($acceptanceReceipt.completedAtUtc -is [DateTime]) {
@@ -475,10 +471,10 @@ try {
         }
     }
 
-    if ($freshAcceptanceReceipt) {
+    if ($Validate -and $freshAcceptanceReceipt) {
         Write-Host "Reusing full acceptance already completed for $head."
     }
-    elseif (-not $SkipValidation) {
+    elseif ($Validate) {
         $previousShowcaseMode = $env:TREADMILLRUNNER_UPDATE_SHOWCASE
         try {
             $env:TREADMILLRUNNER_UPDATE_SHOWCASE = '0'
