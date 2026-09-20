@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using TreadmillRunner.Core.Control;
 using TreadmillRunner.Core.Live;
 using TreadmillRunner.Core.Sessions;
@@ -233,6 +234,19 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     Assert.Equal(
       detail.RootElement.GetProperty("samples").GetArrayLength(),
       detail.RootElement.GetProperty("totalSampleCount").GetInt32());
+    JsonElement[] persistedSamples = detail.RootElement.GetProperty("samples").EnumerateArray().ToArray();
+    Assert.NotEmpty(persistedSamples);
+    Assert.Equal(
+      persistedSamples.Length - 1,
+      persistedSamples[^1].GetProperty("sequence").GetInt64());
+    Assert.InRange(
+      persistedSamples[^1].GetProperty("distanceKilometers").GetDouble(),
+      0,
+      completed.Live.DistanceKilometers);
+    Assert.InRange(
+      persistedSamples[^1].GetProperty("estimatedKilocalories").GetDouble(),
+      0,
+      completed.Live.EstimatedKilocalories);
     JsonElement analytics = detail.RootElement.GetProperty("analytics");
     Assert.Equal("Aerobic", analytics.GetProperty("heartRateZones")[0].GetProperty("name").GetString());
     JsonElement zoneSnapshots = detail.RootElement.GetProperty("heartRateZones");
@@ -281,6 +295,56 @@ public sealed class LiveSessionEndpointTests(PlanningGatewayFactory factory) :
     JsonElement weekly = await client.GetFromJsonAsync<JsonElement>(
       $"/api/history/weekly?profileId={profileId}");
     Assert.Equal(1, weekly.GetProperty("completedSessionCount").GetInt32());
+  }
+
+  [Fact]
+  public async Task Completed_session_snapshot_remains_frozen_across_background_ticks()
+  {
+    using HttpClient client = factory.CreateClient();
+    await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    (Guid profileId, Guid revisionId) = await SeedPlanAsync(client);
+    string holderId = $"terminal-freeze-{Guid.NewGuid():N}";
+    ControlLease lease = Assert.IsType<ControlLease>(await (await client.PostAsJsonAsync(
+      "/api/live/lease/acquire",
+      new { holderId })).Content.ReadFromJsonAsync<ControlLease>());
+    using HttpResponseMessage arm = await client.PostAsJsonAsync("/api/live/sessions/arm", new
+    {
+      profileId,
+      workoutRevisionId = revisionId,
+      holderId,
+      leaseId = lease.Id,
+      operationId = Guid.NewGuid(),
+    });
+    Assert.Equal(HttpStatusCode.Created, arm.StatusCode);
+    using HttpResponseMessage start = await client.PostAsJsonAsync(
+      "/api/live/simulator/physical-motion",
+      new { isMoving = true, measuredSpeedKph = 6.5, measuredInclinePercent = 1.0 });
+    Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
+    using HttpResponseMessage complete = await client.PostAsJsonAsync(
+      "/api/live/simulator/complete-physical-session",
+      new { });
+    Assert.Equal(HttpStatusCode.NoContent, complete.StatusCode);
+    ActiveSessionSnapshot terminal = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(SessionControlAccess.Controller, terminal.ControlAccess);
+    Assert.True(factory.Services.GetRequiredService<IControlLeaseCoordinator>().Release(lease.Id, holderId));
+
+    await Task.Delay(TimeSpan.FromMilliseconds(750));
+
+    ActiveSessionSnapshot afterTicks = Assert.IsType<ActiveSessionSnapshot>(
+      await client.GetFromJsonAsync<ActiveSessionSnapshot>("/api/live/session"));
+    Assert.Equal(SessionState.Completed, afterTicks.Live.SessionState);
+    Assert.Equal(terminal.Live.CapturedAt, afterTicks.Live.CapturedAt);
+    Assert.Equal(terminal.Live, afterTicks.Live);
+    Assert.Equal(terminal.Version, afterTicks.Version);
+    Assert.Equal(terminal.ConnectionPhase, afterTicks.ConnectionPhase);
+    Assert.Equal(terminal.RecoveryState, afterTicks.RecoveryState);
+    Assert.Equal(terminal.Warnings, afterTicks.Warnings);
+    Assert.Equal(SessionControlAccess.Observer, afterTicks.ControlAccess);
+    Assert.Null(afterTicks.LeaseExpiresAt);
+
+    using HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { });
+    Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
   }
 
   [Fact]

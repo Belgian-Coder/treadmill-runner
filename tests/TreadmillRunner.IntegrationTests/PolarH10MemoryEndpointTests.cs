@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -98,7 +99,7 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
       services.RemoveAll<IPolarH10MemoryAccessCoordinator>();
       services.AddSingleton<IPolarH10MemoryAccessCoordinator>(new StubMemoryAccessCoordinator(enrollmentId));
       services.RemoveAll<IPolarH10RecordingStore>();
-      services.AddSingleton<IPolarH10RecordingStore>(new StatusFailingPolarH10RecordingStore());
+      services.AddSingleton<IPolarH10RecordingStore>(new StubPolarH10RecordingStore(failActiveLookup: true));
     }));
     using HttpClient client = application.CreateClient();
 
@@ -109,6 +110,64 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     Assert.NotNull(status);
     Assert.False(status.MemoryCapability);
     Assert.Equal("Unavailable", status.Connection);
+  }
+
+  [Fact]
+  public async Task Session_status_uses_the_string_outcome_contract_consumed_by_history_detail()
+  {
+    Guid sessionId = Guid.NewGuid();
+    Guid profileId = Guid.NewGuid();
+    Guid jobId = Guid.NewGuid();
+    var job = new PolarH10RecordingJob(
+      jobId,
+      sessionId,
+      profileId,
+      Guid.NewGuid(),
+      $"tr-{sessionId:N}",
+      "Automatic",
+      PolarH10SampleType.HeartRate,
+      1,
+      PolarH10RecordingOutcome.ReviewRequired,
+      2,
+      null,
+      DateTimeOffset.UtcNow.AddMinutes(-20),
+      DateTimeOffset.UtcNow.AddMinutes(-20),
+      DateTimeOffset.UtcNow.AddMinutes(-1),
+      "/recording/SAMPLES.BPB",
+      null,
+      0,
+      0,
+      0,
+      "Synthetic review reason.",
+      1);
+    using var application = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+    {
+      services.RemoveAll<IPolarH10RecordingStore>();
+      services.AddSingleton<IPolarH10RecordingStore>(new StubPolarH10RecordingStore(job));
+    }));
+    using HttpClient client = application.CreateClient();
+
+    using HttpResponseMessage response = await client.GetAsync($"/api/polar-h10/sessions/{sessionId}");
+    string responseJson = await response.Content.ReadAsStringAsync();
+    var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+    HistoryPolarMemoryJob? status = JsonSerializer.Deserialize<HistoryPolarMemoryJob>(responseJson, jsonOptions);
+    PolarH10SessionResponse? fullStatus = JsonSerializer.Deserialize<PolarH10SessionResponse>(responseJson, jsonOptions);
+
+    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    Assert.NotNull(status);
+    Assert.NotNull(fullStatus);
+    Assert.Equal(jobId, status.Id);
+    Assert.Equal(sessionId, status.SessionId);
+    Assert.Equal(profileId, status.UserProfileId);
+    Assert.Equal("ReviewRequired", status.Outcome);
+    Assert.Equal(job.LastError, status.LastError);
+    Assert.Equal(job.DeviceEnrollmentId, fullStatus.DeviceEnrollmentId);
+    Assert.Equal(job.ExerciseId, fullStatus.ExerciseId);
+    Assert.Equal("Automatic", fullStatus.Origin);
+    Assert.Equal("HeartRate", fullStatus.SampleType);
+    Assert.Equal("ReviewRequired", fullStatus.Outcome);
+    Assert.Equal(job.RemotePath, fullStatus.RemotePath);
+    Assert.Equal(job.Version, fullStatus.Version);
   }
 
   private sealed class StubPolarH10MemoryClient : IPolarH10MemoryClient, IPolarH10MemorySession
@@ -163,16 +222,30 @@ public sealed class PolarH10MemoryEndpointTests(PlanningGatewayFactory factory) 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
   }
 
-  private sealed class StatusFailingPolarH10RecordingStore : IPolarH10RecordingStore
+  private sealed record HistoryPolarMemoryJob(
+    Guid Id,
+    Guid? SessionId,
+    Guid? UserProfileId,
+    string Outcome,
+    int AttemptCount,
+    DateTimeOffset? LeaseExpiresAtUtc,
+    string? LastError);
+
+  private sealed class StubPolarH10RecordingStore(
+    PolarH10RecordingJob? sessionJob = null,
+    bool failActiveLookup = false) : IPolarH10RecordingStore
   {
     public Task<PolarH10RecordingJob?> FindActiveManualAsync(CancellationToken cancellationToken = default) =>
-      Task.FromException<PolarH10RecordingJob?>(new InvalidOperationException("Synthetic storage failure."));
+      failActiveLookup
+        ? Task.FromException<PolarH10RecordingJob?>(new InvalidOperationException("Synthetic storage failure."))
+        : Task.FromResult<PolarH10RecordingJob?>(null);
 
     public Task<PolarH10RecordingJob?> LeaseNextAsync(DateTimeOffset nowUtc, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Task.FromResult<PolarH10RecordingJob?>(null);
     public Task<PolarH10RecordingJob> EnqueueAsync(Guid? sessionId, Guid? userProfileId, string exerciseId, Guid enrollmentId, string origin, PolarH10SampleType sampleType, int intervalSeconds, DateTimeOffset queuedAtUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<bool> QueueStopAsync(Guid sessionId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<bool> QueueDiscardCleanupAsync(Guid sessionId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<PolarH10RecordingJob?> FindAsync(Guid sessionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<PolarH10RecordingJob?> FindAsync(Guid sessionId, CancellationToken cancellationToken = default) =>
+      Task.FromResult(sessionJob?.SessionId == sessionId ? sessionJob : null);
     public Task<PolarH10RecordingJob?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<PolarH10RecordingJob?> FindByExerciseAsync(Guid enrollmentId, string exerciseId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<bool> IsSessionActiveAsync(Guid sessionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

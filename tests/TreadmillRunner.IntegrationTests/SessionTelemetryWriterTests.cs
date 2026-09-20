@@ -49,6 +49,67 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
   }
 
   [Fact]
+  public async Task Session_flush_waits_for_a_blocked_queued_write_to_be_durable()
+  {
+    var store = new RecordingSessionStore
+    {
+      PersistRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      static (_, _) => Task.FromResult(true));
+    Guid sessionId = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 0, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    Task run = writer.RunAsync(CancellationToken.None);
+
+    await store.PersistStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    Task flush = writer.FlushSessionAsync(sessionId);
+    Assert.False(flush.IsCompleted);
+
+    store.PersistRelease.SetResult(true);
+    await flush.WaitAsync(TimeSpan.FromSeconds(2));
+    Assert.Single(store.Batches);
+    writer.Complete();
+    await run.WaitAsync(TimeSpan.FromSeconds(2));
+  }
+
+  [Fact]
+  public async Task Canceling_a_blocked_writer_cancels_the_flush_instead_of_reporting_durability()
+  {
+    var store = new RecordingSessionStore
+    {
+      PersistRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      static (_, _) => Task.FromResult(true));
+    Guid sessionId = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 0, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    using var cancellation = new CancellationTokenSource();
+    Task run = writer.RunAsync(cancellation.Token);
+
+    await store.PersistStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    Task flush = writer.FlushSessionAsync(sessionId);
+    cancellation.Cancel();
+
+    await run.WaitAsync(TimeSpan.FromSeconds(2));
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => flush);
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.FlushSessionAsync(sessionId));
+    Assert.False(writer.TryEnqueue(CreateWrite(sessionId, 1, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    Assert.Empty(store.Batches);
+  }
+
+  [Fact]
   public async Task Queued_write_is_discarded_when_generation_is_stale_before_database_write()
   {
     var store = new RecordingSessionStore();
@@ -66,13 +127,111 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
         return Task.FromResult(false);
       });
 
-    Assert.True(writer.TryEnqueue(CreateWrite(Guid.NewGuid(), 0, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    Guid sessionId = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 0, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    Task flush = writer.FlushSessionAsync(sessionId);
     Task run = writer.RunAsync(CancellationToken.None);
     await checkedCurrent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    await Assert.ThrowsAsync<InvalidOperationException>(() => flush.WaitAsync(TimeSpan.FromSeconds(2)));
     Assert.Empty(store.Batches);
 
     writer.Complete();
     await run.WaitAsync(TimeSpan.FromSeconds(2));
+  }
+
+  [Fact]
+  public async Task Flush_started_after_a_discard_keeps_the_failure_sticky_for_terminal_retries()
+  {
+    var store = new RecordingSessionStore();
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      static (_, _) => Task.FromResult(false));
+    Guid sessionId = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 0, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    writer.Complete();
+    await writer.RunAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+
+    await Assert.ThrowsAsync<InvalidOperationException>(() => writer.FlushSessionAsync(sessionId));
+    await Assert.ThrowsAsync<InvalidOperationException>(() => writer.FlushSessionAsync(sessionId));
+    Assert.Empty(store.Batches);
+  }
+
+  [Fact]
+  public async Task Earlier_completed_failure_does_not_short_circuit_waiting_for_newer_pending_writes()
+  {
+    var store = new RecordingSessionStore
+    {
+      PersistRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+    };
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var firstChecked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var checks = 0;
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      (_, _) =>
+      {
+        bool current = Interlocked.Increment(ref checks) > 1;
+        if (!current) firstChecked.TrySetResult();
+        return Task.FromResult(current);
+      });
+    Guid sessionId = Guid.NewGuid();
+    DateTimeOffset capturedAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 0, capturedAt, Guid.NewGuid())));
+    Task run = writer.RunAsync(CancellationToken.None);
+    await firstChecked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    await Task.Delay(50);
+
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 1, capturedAt.AddSeconds(1), Guid.NewGuid())));
+    await store.PersistStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    Task flush = writer.FlushSessionAsync(sessionId);
+    Assert.False(flush.IsCompleted);
+    store.PersistRelease.SetResult(true);
+    await Assert.ThrowsAsync<InvalidOperationException>(() => flush.WaitAsync(TimeSpan.FromSeconds(2)));
+
+    writer.Complete();
+    await run.WaitAsync(TimeSpan.FromSeconds(2));
+    Assert.Single(store.Batches);
+  }
+
+  [Fact]
+  public async Task Overflow_eviction_faults_the_displaced_session_flush()
+  {
+    var store = new RecordingSessionStore();
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      static (_, _) => Task.FromResult(true));
+    DateTimeOffset capturedAt = DateTimeOffset.UtcNow;
+
+    for (int index = 0; index < 256; index++)
+      Assert.True(writer.TryEnqueue(CreateWrite(
+        Guid.NewGuid(), index, capturedAt.AddTicks(index), Guid.NewGuid())));
+
+    Guid displacedSession = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(
+      displacedSession, 256, capturedAt.AddSeconds(1), Guid.NewGuid())));
+    Task flush = writer.FlushSessionAsync(displacedSession);
+
+    for (int index = 0; index < 256; index++)
+      Assert.True(writer.TryEnqueue(CreateWrite(
+        Guid.NewGuid(), 257 + index, capturedAt.AddSeconds(2).AddTicks(index), Guid.NewGuid())));
+
+    InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => flush);
+    Assert.Contains("queue saturation", error.Message, StringComparison.Ordinal);
+    writer.Complete();
   }
 
   [Fact]
@@ -163,7 +322,7 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
   }
 
   [Fact]
-  public async Task Retry_and_nonretryable_discard_have_distinct_sanitized_phases()
+  public async Task Transient_io_and_store_rejections_are_retried_without_leaking_details()
   {
     string directory = Path.Combine(Path.GetTempPath(), $"telemetry-diagnostics-{Guid.NewGuid():N}");
     var retryStore = new RecordingSessionStore { Failure = new IOException("sensitive"), FailuresRemaining = 1 };
@@ -198,15 +357,43 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
       Assert.Contains(retryEvents, entry => entry.GetProperty("Phase").GetString() == "sample-retry" &&
         entry.GetProperty("Failure").GetString() == nameof(IOException));
       Assert.Contains(retryEvents, entry => entry.GetProperty("Phase").GetString() == "sample-committed");
-      JsonElement nonretryable = Assert.Single(await ReadEventsAsync(directory, nonretryableSession),
-        entry => entry.GetProperty("Phase").GetString() == "sample-nonretryable-discarded");
-      Assert.Equal(nameof(InvalidOperationException), nonretryable.GetProperty("Failure").GetString());
+      JsonElement[] rejectedEvents = await ReadEventsAsync(directory, nonretryableSession);
+      Assert.Contains(rejectedEvents, entry => entry.GetProperty("Phase").GetString() == "sample-retry" &&
+        entry.GetProperty("Failure").GetString() == nameof(InvalidOperationException));
+      Assert.Contains(rejectedEvents, entry => entry.GetProperty("Phase").GetString() == "sample-committed");
       Assert.DoesNotContain("sensitive", string.Join('\n', await File.ReadAllLinesAsync(Path.Combine(directory, "bluetooth.jsonl"))));
     }
     finally
     {
       if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
     }
+  }
+
+  [Fact]
+  public async Task Accepted_telemetry_keeps_retrying_after_the_normal_retry_budget()
+  {
+    var store = new RecordingSessionStore
+    {
+      Failure = new IOException("persistent"),
+      FailuresRemaining = 3,
+    };
+    using ServiceProvider services = new ServiceCollection()
+      .AddSingleton<ISessionStore>(store)
+      .BuildServiceProvider();
+    var writer = new SessionTelemetryWriter(
+      services.GetRequiredService<IServiceScopeFactory>(),
+      NullLogger.Instance,
+      TimeProvider.System,
+      static (_, _) => Task.FromResult(true),
+      telemetryRetryBudget: TimeSpan.FromMilliseconds(250));
+    Guid sessionId = Guid.NewGuid();
+    Assert.True(writer.TryEnqueue(CreateWrite(sessionId, 1, DateTimeOffset.UtcNow, Guid.NewGuid())));
+    Task run = writer.RunAsync(CancellationToken.None);
+
+    await writer.FlushSessionAsync(sessionId).WaitAsync(TimeSpan.FromSeconds(5));
+    Assert.Single(store.Batches);
+    writer.Complete();
+    await run.WaitAsync(TimeSpan.FromSeconds(2));
   }
 
   [Fact]
@@ -382,10 +569,12 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
     public List<IReadOnlyList<SessionSample>> Batches { get; } = [];
     public SessionRecoveryCheckpoint? LastCheckpoint { get; private set; }
     public TaskCompletionSource<bool> Persisted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource<bool> PersistStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource<bool>? PersistRelease { get; init; }
     public Exception? Failure { get; init; }
     public int FailuresRemaining { get; set; }
 
-    public Task AppendSamplesAndRecoveryCheckpointAsync(
+    public async Task AppendSamplesAndRecoveryCheckpointAsync(
       IReadOnlyList<SessionSample> samples,
       SessionRecoveryCheckpoint checkpoint,
       CancellationToken cancellationToken = default)
@@ -393,12 +582,13 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
       if (FailuresRemaining > 0)
       {
         FailuresRemaining--;
-        return Task.FromException(Failure ?? new IOException());
+        throw Failure ?? new IOException();
       }
+      PersistStarted.TrySetResult(true);
+      if (PersistRelease is not null) await PersistRelease.Task.WaitAsync(cancellationToken);
       Batches.Add(samples);
       LastCheckpoint = checkpoint;
       Persisted.TrySetResult(true);
-      return Task.CompletedTask;
     }
 
     public Task CreateAsync(NewWorkoutSession session, CancellationToken cancellationToken = default) => Unsupported();
@@ -417,6 +607,7 @@ public sealed class SessionTelemetryWriterTests(ITestOutputHelper output)
     public Task<HistoryDeletionPreview?> PreviewDeletionAsync(Guid sessionId, Guid userProfileId, CancellationToken cancellationToken = default) => Task.FromResult<HistoryDeletionPreview?>(null);
     public Task<HistoryDeletionResult> DeleteAsync(DeleteHistorySessionOperation operation, CancellationToken cancellationToken = default) => Unsupported<HistoryDeletionResult>();
     public Task<int> InterruptUnfinishedAsync(DateTimeOffset interruptedAt, string reason, CancellationToken cancellationToken = default) => Unsupported<int>();
+    public Task<bool> InterruptAsync(Guid sessionId, DateTimeOffset interruptedAt, string reason, CancellationToken cancellationToken = default) => Unsupported<bool>();
     public Task SaveRecoveryCheckpointAsync(SessionRecoveryCheckpoint checkpoint, CancellationToken cancellationToken = default) => Unsupported();
     public Task<RecoverableWorkoutSession?> FindRecoverableAsync(CancellationToken cancellationToken = default) => Task.FromResult<RecoverableWorkoutSession?>(null);
     public Task<int> ReconcileActiveSessionsAsync(DateTimeOffset reconciledAtUtc, CancellationToken cancellationToken = default) => Unsupported<int>();

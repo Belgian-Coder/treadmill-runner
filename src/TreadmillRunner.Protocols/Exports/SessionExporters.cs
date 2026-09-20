@@ -12,9 +12,11 @@ public static class SessionCsvExporter
     ArgumentNullException.ThrowIfNull(session);
     var output = new StringBuilder(16 * 1024);
     double? weight = SessionCalorieCalculator.ReadWeightKilograms(session.Definition.ControllerConfigurationJson);
-    IReadOnlyList<double>? calculatedCalories = weight is { } weightKilograms
-      ? SessionCalorieCalculator.CalculateCumulative(session.Samples, weightKilograms)
-      : null;
+    IReadOnlyList<double>? calculatedCalories =
+      session.Definition.MetricAlgorithmVersion != SessionMetricAlgorithms.EstimatedCaloriesV2 &&
+      weight is { } weightKilograms
+        ? SessionCalorieCalculator.CalculateCumulative(session.Samples, weightKilograms)
+        : null;
     output.AppendLine("captured_at_utc,elapsed_seconds,planned_speed_kph,requested_speed_kph,measured_speed_kph,planned_incline_percent,requested_incline_percent,measured_incline_percent,heart_rate_bpm,distance_km,estimated_kcal,telemetry_age_ms");
     for (var index = 0; index < session.Samples.Count; index++)
     {
@@ -29,7 +31,11 @@ public static class SessionCsvExporter
       Append(output, sample.MeasuredInclinePercent);
       Append(output, sample.HeartRateBpm);
       Append(output, sample.DistanceKilometers);
-      Append(output, calculatedCalories?[index] ?? sample.EstimatedKilocalories);
+      double exportedCalories = calculatedCalories?[index] ?? sample.EstimatedKilocalories;
+      if (session.Definition.MetricAlgorithmVersion == SessionMetricAlgorithms.EstimatedCaloriesV2 &&
+          index == session.Samples.Count - 1)
+        exportedCalories = Math.Max(exportedCalories, session.EstimatedKilocalories);
+      Append(output, exportedCalories);
       output.Append(sample.TelemetryAge.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture));
       output.AppendLine();
     }
@@ -47,17 +53,21 @@ public static class SessionCsvExporter
 
 public static class SessionFitActivityExporter
 {
+  private const byte MaximumValidFitHeartRate = byte.MaxValue - 1;
+
   public static byte[] Export(StoredWorkoutSession session)
   {
     ArgumentNullException.ThrowIfNull(session);
     if (session.StartedAt is null || session.EndedAt is null)
       throw new InvalidOperationException("Only a completed session with start and end timestamps can be exported as FIT Activity.");
+    session = session with { Samples = SessionSampleTimeline.Normalize(session.Samples) };
 
     using var stream = new MemoryStream();
     var encoder = new Encode(ProtocolVersion.V20);
     encoder.Open(stream);
+    DateTimeOffset effectiveEnd = GetEffectiveEnd(session);
     var start = new Dynastream.Fit.DateTime(session.StartedAt.Value.UtcDateTime);
-    var end = new Dynastream.Fit.DateTime(session.EndedAt.Value.UtcDateTime);
+    var end = new Dynastream.Fit.DateTime(effectiveEnd.UtcDateTime);
     uint serial = BitConverter.ToUInt32(session.Definition.SessionId.ToByteArray(), 0);
     SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
       session.Samples,
@@ -72,8 +82,11 @@ public static class SessionFitActivityExporter
     float? maximumSpeed = statistics.MaximumSpeedKph is { } maximumSpeedKph
       ? (float)(maximumSpeedKph / 3.6)
       : null;
+    double authoritativeCalories = session.Definition.MetricAlgorithmVersion == SessionMetricAlgorithms.EstimatedCaloriesV2
+      ? Math.Max(session.EstimatedKilocalories, session.Samples.LastOrDefault()?.EstimatedKilocalories ?? 0)
+      : statistics.EstimatedKilocalories ?? session.EstimatedKilocalories;
     ushort totalCalories = (ushort)Math.Clamp(
-      Math.Round(statistics.EstimatedKilocalories ?? session.EstimatedKilocalories),
+      Math.Round(authoritativeCalories),
       0,
       ushort.MaxValue);
 
@@ -94,17 +107,26 @@ public static class SessionFitActivityExporter
     deviceInfo.SetProductName("TreadmillRunner");
     encoder.Write(deviceInfo);
 
-    encoder.Write(TimerEvent(start, EventType.Start));
+    IReadOnlyList<EventMesg> timerEvents = BuildTimerEvents(session, start, end);
+    encoder.Write(timerEvents[0]);
+    var nextTimerEvent = 1;
     for (var sampleIndex = 0; sampleIndex < session.Samples.Count; sampleIndex++)
     {
       SessionSample sample = session.Samples[sampleIndex];
+      while (nextTimerEvent < timerEvents.Count - 1 &&
+             timerEvents[nextTimerEvent].GetTimestamp()?.GetTimeStamp() <=
+               new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime).GetTimeStamp())
+      {
+        encoder.Write(timerEvents[nextTimerEvent++]);
+      }
+
       var record = new RecordMesg();
       record.SetTimestamp(new Dynastream.Fit.DateTime(sample.CapturedAt.UtcDateTime));
       float speed = (float)(sample.MeasuredSpeedKph / 3.6);
       record.SetSpeed(speed);
       record.SetEnhancedSpeed(speed);
       record.SetDistance((float)(sample.DistanceKilometers * 1000));
-      if (sample.HeartRateBpm is { } heartRate) record.SetHeartRate((byte)Math.Min(heartRate, byte.MaxValue));
+      if (sample.HeartRateBpm is { } heartRate) record.SetHeartRate((byte)Math.Min(heartRate, MaximumValidFitHeartRate));
       record.SetGrade((float)sample.MeasuredInclinePercent);
       float altitude = (float)elevation.Points[sampleIndex].ElevationMeters;
       record.SetAltitude(altitude);
@@ -114,16 +136,19 @@ public static class SessionFitActivityExporter
       if (fitMetrics.HeartRateZoneBySequence.TryGetValue(sample.Sequence, out byte zone)) record.SetZone(zone);
       encoder.Write(record);
     }
-    encoder.Write(TimerEvent(end, EventType.StopAll));
+    while (nextTimerEvent < timerEvents.Count - 1)
+      encoder.Write(timerEvents[nextTimerEvent++]);
+    encoder.Write(timerEvents[^1]);
 
-    float elapsed = (float)session.Duration.TotalSeconds;
+    float timer = (float)session.Duration.TotalSeconds;
+    float elapsed = (float)Math.Max(timer, (effectiveEnd - session.StartedAt.Value).TotalSeconds);
     float distance = (float)(session.DistanceKilometers * 1000);
     var lap = new LapMesg();
     lap.SetMessageIndex(0);
     lap.SetTimestamp(end);
     lap.SetStartTime(start);
     lap.SetTotalElapsedTime(elapsed);
-    lap.SetTotalTimerTime(elapsed);
+    lap.SetTotalTimerTime(timer);
     lap.SetTotalDistance(distance);
     lap.SetSport(Sport.Running);
     lap.SetSubSport(SubSport.Treadmill);
@@ -168,7 +193,7 @@ public static class SessionFitActivityExporter
     sessionMessage.SetTimestamp(end);
     sessionMessage.SetStartTime(start);
     sessionMessage.SetTotalElapsedTime(elapsed);
-    sessionMessage.SetTotalTimerTime(elapsed);
+    sessionMessage.SetTotalTimerTime(timer);
     sessionMessage.SetTotalDistance(distance);
     sessionMessage.SetSport(Sport.Running);
     sessionMessage.SetSubSport(SubSport.Treadmill);
@@ -212,7 +237,7 @@ public static class SessionFitActivityExporter
 
     var activity = new ActivityMesg();
     activity.SetTimestamp(end);
-    activity.SetTotalTimerTime(elapsed);
+    activity.SetTotalTimerTime(timer);
     activity.SetNumSessions(1);
     activity.SetType(Activity.Manual);
     activity.SetEvent(Event.Activity);
@@ -220,6 +245,31 @@ public static class SessionFitActivityExporter
     encoder.Write(activity);
     encoder.Close();
     return stream.ToArray();
+  }
+
+  internal static DateTimeOffset GetEffectiveEnd(StoredWorkoutSession session)
+  {
+    DateTimeOffset start = session.StartedAt
+      ?? throw new InvalidOperationException("A FIT Activity requires a start timestamp.");
+    DateTimeOffset persistedEnd = session.EndedAt
+      ?? throw new InvalidOperationException("A FIT Activity requires an end timestamp.");
+    if (session.State is not (SessionState.Interrupted or SessionState.Faulted))
+      return persistedEnd;
+
+    DateTimeOffset durationEnd = start + session.Duration;
+    DateTimeOffset timelineEnd = session.Samples.Count > 0
+      ? session.Samples[^1].CapturedAt
+      : durationEnd;
+    DateTimeOffset? lastTimerEvent = session.Events
+      .Where(static item => item is SessionPausedEvent or SessionResumedEvent)
+      .Where(item => item.OccurredAt >= start && item.OccurredAt <= persistedEnd)
+      .Select(static item => (DateTimeOffset?)item.OccurredAt)
+      .Max();
+    if (lastTimerEvent is { } timerEventEnd && timerEventEnd > timelineEnd)
+      timelineEnd = timerEventEnd;
+    DateTimeOffset effectiveEnd = timelineEnd > durationEnd ? timelineEnd : durationEnd;
+    if (effectiveEnd > persistedEnd) effectiveEnd = persistedEnd;
+    return effectiveEnd < start ? start : effectiveEnd;
   }
 
   private static EventMesg TimerEvent(Dynastream.Fit.DateTime timestamp, EventType eventType)
@@ -231,8 +281,63 @@ public static class SessionFitActivityExporter
     return message;
   }
 
+  private static IReadOnlyList<EventMesg> BuildTimerEvents(
+    StoredWorkoutSession session,
+    Dynastream.Fit.DateTime start,
+    Dynastream.Fit.DateTime end)
+  {
+    var events = new List<EventMesg>
+    {
+      TimerEvent(start, EventType.Start),
+    };
+
+    foreach (SessionEvent sessionEvent in NormalizeTimerHistory(session))
+    {
+      if (sessionEvent is SessionPausedEvent)
+      {
+        events.Add(TimerEvent(new Dynastream.Fit.DateTime(sessionEvent.OccurredAt.UtcDateTime), EventType.Stop));
+      }
+      else
+      {
+        events.Add(TimerEvent(new Dynastream.Fit.DateTime(sessionEvent.OccurredAt.UtcDateTime), EventType.Start));
+      }
+    }
+
+    events.Add(TimerEvent(end, EventType.StopAll));
+    return events;
+  }
+
+  internal static IReadOnlyList<SessionEvent> NormalizeTimerHistory(StoredWorkoutSession session)
+  {
+    DateTimeOffset startedAt = session.StartedAt!.Value;
+    DateTimeOffset endedAt = GetEffectiveEnd(session);
+    var normalized = new List<SessionEvent>();
+    var timerRunning = true;
+    foreach (SessionEvent sessionEvent in session.Events
+      .Where(static item => item is SessionPausedEvent or SessionResumedEvent)
+      .OrderBy(static item => item.OccurredAt)
+      .ThenBy(static item => item is SessionPausedEvent ? 0 : 1))
+    {
+      if (sessionEvent.OccurredAt < startedAt || sessionEvent.OccurredAt > endedAt)
+        continue;
+
+      if (sessionEvent is SessionPausedEvent)
+      {
+        if (!timerRunning) continue;
+        timerRunning = false;
+      }
+      else
+      {
+        if (timerRunning) continue;
+        timerRunning = true;
+      }
+      normalized.Add(sessionEvent);
+    }
+    return normalized;
+  }
+
   private static byte ToFitHeartRate(double heartRate) =>
-    (byte)Math.Clamp(Math.Round(heartRate, MidpointRounding.AwayFromZero), 0, byte.MaxValue);
+    (byte)Math.Clamp(Math.Round(heartRate, MidpointRounding.AwayFromZero), 0, MaximumValidFitHeartRate);
 
   private static void SetElevationTotals(Action<ushort?> setWhole, Action<float?> setFraction, double meters)
   {

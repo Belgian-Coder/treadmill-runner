@@ -4,6 +4,8 @@ public sealed class FixedIntervalCadence
 {
   private readonly TimeSpan _interval;
   private DateTimeOffset _lastEmission;
+  private DateTimeOffset _lastActualEmission;
+  private DateTimeOffset _lastObservedNow;
 
   public FixedIntervalCadence(TimeSpan interval, DateTimeOffset startedAt)
   {
@@ -14,21 +16,28 @@ public sealed class FixedIntervalCadence
 
     _interval = interval;
     _lastEmission = startedAt;
+    _lastActualEmission = startedAt;
+    _lastObservedNow = startedAt;
   }
 
   public bool TryAdvance(DateTimeOffset now)
   {
-    if (now < _lastEmission)
+    if (now < _lastObservedNow)
     {
-      throw new ArgumentOutOfRangeException(nameof(now), "Cadence time cannot move backwards.");
+      _lastObservedNow = now;
+      return false;
     }
+    _lastObservedNow = now;
 
-    if (now - _lastEmission < _interval)
+    if (now - _lastActualEmission < _interval || now - _lastEmission < _interval)
     {
       return false;
     }
 
-    _lastEmission = now;
+    long elapsedTicks = (now - _lastEmission).Ticks;
+    long elapsedIntervals = (elapsedTicks + (_interval.Ticks / 2)) / _interval.Ticks;
+    _lastEmission = _lastEmission.AddTicks(elapsedIntervals * _interval.Ticks);
+    _lastActualEmission = now;
     return true;
   }
 }

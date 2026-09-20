@@ -133,6 +133,31 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     Assert.True(Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(2));
   }
 
+  [Fact]
+  public async Task Silent_optional_battery_subscription_cancels_move_next_and_bounds_non_cooperative_teardown()
+  {
+    var connection = new NonCooperativeBatteryConnection();
+    using var cancellation = new CancellationTokenSource();
+    await using IAsyncEnumerator<BleNotification> subscription =
+      ReadOnlyDeviceCoordinator.SubscribeWithoutSilenceTimeoutAsync(
+        connection,
+        Guid.Parse("0000180f-0000-1000-8000-00805f9b34fb"),
+        Guid.Parse("00002a19-0000-1000-8000-00805f9b34fb"),
+        TimeSpan.FromMilliseconds(25),
+        TimeProvider.System,
+        cancellation.Token).GetAsyncEnumerator(cancellation.Token);
+
+    Task<bool> moveNext = subscription.MoveNextAsync().AsTask();
+    await connection.MoveNextStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    long cancelledAt = Stopwatch.GetTimestamp();
+    cancellation.Cancel();
+
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => moveNext.WaitAsync(TimeSpan.FromSeconds(2)));
+    Assert.True(connection.SubscriptionToken.IsCancellationRequested);
+    Assert.True(connection.DisposeCalled);
+    Assert.True(Stopwatch.GetElapsedTime(cancelledAt) < TimeSpan.FromSeconds(2));
+  }
+
   public async Task InitializeAsync()
   {
     Directory.CreateDirectory(_directory);
@@ -1136,6 +1161,53 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
       await coordinator.StopAsync(CancellationToken.None);
       coordinator.Dispose();
     }
+  }
+
+  [Fact]
+  public async Task Silent_optional_battery_notifications_do_not_emit_a_telemetry_failure()
+  {
+    DateTimeOffset now = DateTimeOffset.UtcNow;
+    var clock = new ManualTimerTimeProvider(now);
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment heartRate = HeartRate("POLAR-SILENT-BATTERY", "Polar H10");
+    await store.EnrollAsync(heartRate, now, Op("device.enroll", now));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new ScriptedBleTransport { SuppressBatteryNotifications = true };
+    string journalDirectory = Path.Combine(_directory, "silent-battery-journal");
+    using var journal = new BleDiagnosticJournal(journalDirectory, NullLogger<BleDiagnosticJournal>.Instance);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(),
+      transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      clock,
+      new ApplicationMaintenanceState(),
+      NullLogger<ReadOnlyDeviceCoordinator>.Instance,
+      journal);
+
+    await journal.StartAsync(CancellationToken.None);
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      Assert.True(await coordinator.RetryConnectionAsync(heartRate.Id));
+      await transport.BatterySubscriptionStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+      Assert.Equal(DeviceConnectionState.Ready, coordinator.Current.HeartRate.State);
+
+      clock.Advance(TimeSpan.FromSeconds(16));
+      await Task.Delay(100);
+
+      Assert.Equal(DeviceConnectionState.Ready, coordinator.Current.HeartRate.State);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+      await journal.StopAsync(CancellationToken.None);
+    }
+
+    string evidence = await File.ReadAllTextAsync(Path.Combine(journalDirectory, "bluetooth.jsonl"));
+    Assert.DoesNotContain("optional-battery-notifications-ended", evidence);
+    Assert.DoesNotContain("TelemetrySilent", evidence);
   }
 
   [Fact]
@@ -2569,6 +2641,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     public bool BlockTreadmillDeviceInformationReads { get; set; }
     public bool ThrowTreadmillDeviceInformationReads { get; set; }
     public bool OmitTreadmillDeviceInformationService { get; set; }
+    public bool SuppressBatteryNotifications { get; set; }
     public string TreadmillModelNumber { get; set; } = "OMEGA Z";
     public string TreadmillFirmwareRevision { get; set; } = "V10.23.17";
     public bool DisconnectFirstHeartRateSubscription { get; set; }
@@ -2579,6 +2652,7 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     public TaskCompletionSource TreadmillDeviceInformationReadAttempted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource TreadmillDeviceInformationReadCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource FirstVendorNotificationConsumed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource BatterySubscriptionStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public bool DisconnectAfterFirstTreadmillNotification { get; set; }
     public byte[] HeartRateNotificationValue { get; set; } = [0x00, 142];
     public DateTimeOffset? HeartRateObservedAt { get; set; }
@@ -2749,7 +2823,15 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
           yield break;
         }
         if (characteristicUuid == BatteryLevel)
+        {
           owner.FirstBatterySubscriptionAt ??= DateTimeOffset.UtcNow;
+          owner.BatterySubscriptionStarted.TrySetResult();
+          if (owner.SuppressBatteryNotifications)
+          {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            yield break;
+          }
+        }
         if (characteristicUuid == TreadmillData)
         {
           for (int index = 0; index < owner.TreadmillNotificationValues.Count; index++)
@@ -3479,6 +3561,140 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
     private long _utcTicks = initial.UtcTicks;
     public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _utcTicks), TimeSpan.Zero);
     public void Set(DateTimeOffset value) => Interlocked.Exchange(ref _utcTicks, value.UtcTicks);
+  }
+
+  private sealed class ManualTimerTimeProvider(DateTimeOffset initial) : TimeProvider
+  {
+    private readonly object _sync = new();
+    private readonly List<ManualTimer> _timers = [];
+    private long _utcTicks = initial.UtcTicks;
+
+    public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _utcTicks), TimeSpan.Zero);
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+      ArgumentNullException.ThrowIfNull(callback);
+      var timer = new ManualTimer(this, callback, state);
+      lock (_sync) _timers.Add(timer);
+      timer.Change(dueTime, period);
+      return timer;
+    }
+
+    public void Advance(TimeSpan duration)
+    {
+      if (duration < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(duration));
+      long now = Interlocked.Add(ref _utcTicks, duration.Ticks);
+      ManualTimer[] due;
+      lock (_sync) due = _timers.Where(timer => timer.TakeIfDue(now)).ToArray();
+      foreach (ManualTimer timer in due) timer.Invoke();
+    }
+
+    private void Remove(ManualTimer timer)
+    {
+      lock (_sync) _timers.Remove(timer);
+    }
+
+    private sealed class ManualTimer(
+      ManualTimerTimeProvider owner,
+      TimerCallback callback,
+      object? state) : ITimer
+    {
+      private long? _dueTicks;
+      private TimeSpan _period = Timeout.InfiniteTimeSpan;
+      private bool _disposed;
+
+      public bool Change(TimeSpan dueTime, TimeSpan period)
+      {
+        lock (owner._sync)
+        {
+          if (_disposed) return false;
+          _dueTicks = dueTime == Timeout.InfiniteTimeSpan
+            ? null
+            : checked(owner.GetUtcNow().UtcTicks + dueTime.Ticks);
+          _period = period;
+          return true;
+        }
+      }
+
+      public void Dispose()
+      {
+        lock (owner._sync)
+        {
+          if (_disposed) return;
+          _disposed = true;
+          _dueTicks = null;
+        }
+        owner.Remove(this);
+      }
+
+      public ValueTask DisposeAsync()
+      {
+        Dispose();
+        return ValueTask.CompletedTask;
+      }
+
+      public bool TakeIfDue(long now)
+      {
+        if (_disposed || _dueTicks is not { } due || due > now) return false;
+        _dueTicks = _period == Timeout.InfiniteTimeSpan ? null : checked(now + _period.Ticks);
+        return true;
+      }
+
+      public void Invoke() => callback(state);
+    }
+  }
+
+  private sealed class NonCooperativeBatteryConnection : IBleConnection
+  {
+    public string DeviceId => "A1B2C3D4E5F6";
+    public CancellationToken SubscriptionToken { get; private set; }
+    public bool DisposeCalled { get; private set; }
+    public TaskCompletionSource MoveNextStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromResult<IReadOnlyList<BleService>>([]);
+
+    public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+      Guid serviceUuid,
+      Guid characteristicUuid,
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromResult(ReadOnlyMemory<byte>.Empty);
+
+    public IAsyncEnumerable<BleNotification> SubscribeAsync(
+      Guid serviceUuid,
+      Guid characteristicUuid,
+      CancellationToken cancellationToken = default)
+    {
+      SubscriptionToken = cancellationToken;
+      return new NonCooperativeBatterySubscription(this);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    private sealed class NonCooperativeBatterySubscription(NonCooperativeBatteryConnection owner) :
+      IAsyncEnumerable<BleNotification>,
+      IAsyncEnumerator<BleNotification>
+    {
+      private readonly TaskCompletionSource<bool> _neverMoves = new(TaskCreationOptions.RunContinuationsAsynchronously);
+      private readonly TaskCompletionSource _neverDisposes = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+      public BleNotification Current => default!;
+
+      public IAsyncEnumerator<BleNotification> GetAsyncEnumerator(CancellationToken cancellationToken = default) => this;
+
+      public ValueTask<bool> MoveNextAsync()
+      {
+        owner.MoveNextStarted.TrySetResult();
+        return new ValueTask<bool>(_neverMoves.Task);
+      }
+
+      public ValueTask DisposeAsync()
+      {
+        owner.DisposeCalled = true;
+        return new ValueTask(_neverDisposes.Task);
+      }
+    }
   }
 
   private sealed class NonCooperativeAsyncDisposable : IAsyncDisposable

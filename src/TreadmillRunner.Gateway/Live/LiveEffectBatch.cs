@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Collections.Generic;
 
 namespace TreadmillRunner.Gateway.Live;
@@ -10,9 +11,17 @@ internal sealed record LiveEffectMetadata(
 
 internal sealed class LiveEffectBatch
 {
-  private const int MaximumTerminalAttempts = 3;
   private static readonly TimeSpan TerminalRetryDelay = TimeSpan.FromMilliseconds(100);
+  private static readonly TimeSpan DefaultTerminalRetryBudget = TimeSpan.FromMinutes(1);
   private readonly List<LiveEffect> effects = [];
+  private readonly TimeSpan terminalRetryBudget;
+
+  public LiveEffectBatch(TimeSpan? terminalRetryBudget = null)
+  {
+    this.terminalRetryBudget = terminalRetryBudget ?? DefaultTerminalRetryBudget;
+    if (this.terminalRetryBudget <= TimeSpan.Zero)
+      throw new ArgumentOutOfRangeException(nameof(terminalRetryBudget));
+  }
 
   public bool IsEmpty => effects.Count == 0;
 
@@ -42,8 +51,9 @@ internal sealed class LiveEffectBatch
     }
   }
 
-  private static async Task ApplyAsync(LiveEffect effect, CancellationToken cancellationToken)
+  private async Task ApplyAsync(LiveEffect effect, CancellationToken cancellationToken)
   {
+    long retryStartedAt = 0;
     for (var attempt = 1; ; attempt++)
     {
       try
@@ -51,16 +61,21 @@ internal sealed class LiveEffectBatch
         await effect.Apply(cancellationToken);
         return;
       }
-      catch (OperationCanceledException)
+      catch (OperationCanceledException) when (
+        !effect.Terminal || cancellationToken.IsCancellationRequested)
       {
         throw;
       }
       catch (Exception exception) when (
         effect.Terminal &&
-        exception is not InvalidOperationException &&
-        attempt < MaximumTerminalAttempts)
+        exception is not InvalidOperationException)
       {
-        await Task.Delay(TerminalRetryDelay * attempt, cancellationToken);
+        if (retryStartedAt == 0) retryStartedAt = Stopwatch.GetTimestamp();
+        TimeSpan remaining = terminalRetryBudget - Stopwatch.GetElapsedTime(retryStartedAt);
+        if (remaining <= TimeSpan.Zero) throw;
+        TimeSpan delay = TimeSpan.FromMilliseconds(
+          Math.Min(2_000, TerminalRetryDelay.TotalMilliseconds * attempt));
+        await Task.Delay(delay < remaining ? delay : remaining, cancellationToken);
       }
     }
   }

@@ -114,7 +114,8 @@ public static class GarminWatchEndpoints
     GarminWatchBinding? binding = await store.FindByTokenHashAsync(hash, timeProvider.GetUtcNow(), cancellationToken);
     if (binding is null) return TypedResults.Unauthorized();
     ActiveSessionSnapshot? active = sessions.CurrentSession;
-    bool ownsSession = active?.UserProfileId == binding.UserProfileId;
+    bool ownsSession = active?.UserProfileId == binding.UserProfileId &&
+      active.Live.SessionState is not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted);
     return TypedResults.Ok(new
     {
       runnerName = binding.RunnerName,

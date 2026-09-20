@@ -328,7 +328,12 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
       return await MarkReviewRequiredAsync(context, row, "The H10 recording window does not safely match this workout.", nowUtc, transaction, cancellationToken);
 
     PolarH10RecordingSampleEntity[] recorded = await context.PolarH10RecordingSamples.AsNoTracking()
-      .Where(sample => sample.PolarH10RecordingId == id && sample.BeatsPerMinute != null).OrderBy(sample => sample.Sequence).ToArrayAsync(cancellationToken);
+      .Where(sample =>
+        sample.PolarH10RecordingId == id &&
+        sample.BeatsPerMinute >= 30 &&
+        sample.BeatsPerMinute <= 250)
+      .OrderBy(sample => sample.Sequence)
+      .ToArrayAsync(cancellationToken);
     SessionSampleEntity[] sessionSamples = await context.SessionSamples
       .Where(sample => sample.WorkoutSessionId == sessionId).OrderBy(sample => sample.Sequence).ToArrayAsync(cancellationToken);
     if (recorded.Length == 0 || sessionSamples.Length == 0)
@@ -343,7 +348,8 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
 
     int merged = 0;
     var usedRecordingSequences = new HashSet<long>();
-    foreach (SessionSampleEntity target in sessionSamples.Where(sample => sample.HeartRateBpm is null))
+    foreach (SessionSampleEntity target in sessionSamples.Where(
+      sample => sample.HeartRateBpm is null or < 30 or > 250))
     {
       DateTimeOffset expectedRecordingTime = target.CapturedAtUtc - candidates[0].Offset;
       PolarH10RecordingSampleEntity? source = NearestUnused(
@@ -356,9 +362,10 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
       usedRecordingSequences.Add(source.Sequence);
       merged++;
     }
-    ushort[] heartRates = sessionSamples.Where(sample => sample.HeartRateBpm is not null).Select(sample => sample.HeartRateBpm!.Value).ToArray();
-    session.AverageHeartRateBpm = heartRates.Length == 0 ? null : heartRates.Average(value => (double)value);
-    session.MaximumHeartRateBpm = heartRates.Length == 0 ? null : heartRates.Max();
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      NormalizeSessionSamples(sessionSamples));
+    session.AverageHeartRateBpm = statistics.AverageHeartRateBpm;
+    session.MaximumHeartRateBpm = statistics.MaximumHeartRateBpm;
     row.Status = PolarH10RecordingOutcome.Merged.ToString(); row.MergeCount = merged; row.LeaseExpiresAtUtc = null; row.LastError = null; row.UpdatedAtUtc = nowUtc;
     context.SessionEvents.Add(new SessionEventEntity
     {
@@ -372,6 +379,27 @@ public sealed class PolarH10RecordingStore(IDbContextFactory<TreadmillRunnerDbCo
     await transaction.CommitAsync(cancellationToken);
     return PolarH10RecordingOutcome.Merged;
   }
+
+  private static SessionSample MapSessionSample(SessionSampleEntity sample) => new(
+    sample.WorkoutSessionId,
+    sample.Sequence,
+    sample.CapturedAtUtc,
+    TimeSpan.FromMilliseconds(sample.ElapsedMilliseconds),
+    sample.PlannedSpeedKph,
+    sample.RequestedSpeedKph,
+    sample.MeasuredSpeedKph,
+    sample.PlannedInclinePercent,
+    sample.RequestedInclinePercent,
+    sample.MeasuredInclinePercent,
+    sample.HeartRateBpm is >= 30 and <= 250 ? sample.HeartRateBpm : null,
+    sample.DistanceKilometers,
+    sample.EstimatedCalories,
+    TimeSpan.FromMilliseconds(sample.TelemetryAgeMilliseconds),
+    sample.MetricAlgorithmVersion);
+
+  private static IReadOnlyList<SessionSample> NormalizeSessionSamples(
+    IReadOnlyList<SessionSampleEntity> samples) =>
+    SessionSampleTimeline.Normalize(samples.Select(MapSessionSample).ToArray());
 
   public async Task MarkRemoteRemovedAsync(Guid id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
   {

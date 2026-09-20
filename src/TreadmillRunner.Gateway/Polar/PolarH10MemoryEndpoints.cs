@@ -33,6 +33,28 @@ public sealed record PolarH10RecordingResponse(
 
 public sealed record PolarH10SampleResponse(DateTimeOffset CapturedAtUtc, ushort? BeatsPerMinute);
 public sealed record StartPolarH10RecordingRequest(int IntervalSeconds = 1, bool RrIntervals = false);
+public sealed record PolarH10SessionResponse(
+  Guid Id,
+  Guid? SessionId,
+  Guid? UserProfileId,
+  Guid DeviceEnrollmentId,
+  string ExerciseId,
+  string Origin,
+  string SampleType,
+  int IntervalSeconds,
+  string Outcome,
+  int AttemptCount,
+  DateTimeOffset? LeaseExpiresAtUtc,
+  DateTimeOffset? StartRequestedAtUtc,
+  DateTimeOffset? StartConfirmedAtUtc,
+  DateTimeOffset? StopRequestedAtUtc,
+  string? RemotePath,
+  string? PayloadSha256,
+  int PayloadBytes,
+  int MergeCount,
+  int RemovalCount,
+  string? LastError,
+  int Version);
 
 public static class PolarH10MemoryEndpoints
 {
@@ -329,7 +351,30 @@ public static class PolarH10MemoryEndpoints
   {
     if (!options.Value.Enabled) return Results.NotFound();
     PolarH10RecordingJob? job = await store.FindAsync(sessionId, cancellationToken);
-    return job is null ? Results.NoContent() : Results.Ok(job);
+    return job is null
+      ? Results.NoContent()
+      : Results.Ok(new PolarH10SessionResponse(
+        job.Id,
+        job.SessionId,
+        job.UserProfileId,
+        job.DeviceEnrollmentId,
+        job.ExerciseId,
+        job.Origin,
+        job.SampleType.ToString(),
+        job.IntervalSeconds,
+        job.Outcome.ToString(),
+        job.AttemptCount,
+        job.LeaseExpiresAtUtc,
+        job.StartRequestedAtUtc,
+        job.StartConfirmedAtUtc,
+        job.StopRequestedAtUtc,
+        job.RemotePath,
+        job.PayloadSha256,
+        job.PayloadBytes,
+        job.MergeCount,
+        job.RemovalCount,
+        job.LastError,
+        job.Version));
   }
 
   private static async Task<IResult> RetrySessionAsync(

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -18,13 +19,21 @@ internal sealed class SessionTelemetryWriter(
   ILogger logger,
   TimeProvider timeProvider,
   Func<SessionTelemetryWrite, CancellationToken, Task<bool>> isCurrent,
-  BleDiagnosticJournal? diagnosticJournal = null)
+  BleDiagnosticJournal? diagnosticJournal = null,
+  TimeSpan? telemetryRetryBudget = null)
 {
   private const int QueueCapacity = 256;
   private const int MaximumOverflowSessions = 256;
   private const int MaximumBatchSize = 32;
+  private static readonly TimeSpan DefaultTelemetryRetryBudget = TimeSpan.FromSeconds(30);
   private readonly object queueGate = new();
   private readonly Dictionary<Guid, SessionTelemetryWrite> overflow = [];
+  private readonly Dictionary<Guid, int> pendingWrites = [];
+  private readonly Dictionary<Guid, List<TaskCompletionSource>> flushWaiters = [];
+  private readonly Dictionary<Guid, Exception> pendingFailures = [];
+  private readonly Dictionary<Guid, Exception> terminalFailures = [];
+  private readonly TimeSpan persistenceRetryBudget = ValidateRetryBudget(
+    telemetryRetryBudget ?? DefaultTelemetryRetryBudget);
   private readonly Channel<SessionTelemetryWrite> writes = Channel.CreateBounded<SessionTelemetryWrite>(
     new BoundedChannelOptions(QueueCapacity)
     {
@@ -34,6 +43,9 @@ internal sealed class SessionTelemetryWriter(
     });
   private SessionTelemetryWrite? lookahead;
   private bool completed;
+  private bool canceled;
+  private CancellationToken canceledToken;
+  private Exception? fatalFailure;
 
   /// <summary>
   /// Enqueues without waiting for the writer or database. When the channel is
@@ -51,6 +63,7 @@ internal sealed class SessionTelemetryWriter(
       }
       if (writes.Writer.TryWrite(write))
       {
+        IncrementPendingLocked(write.SessionId);
         Record(write, "sample-enqueued");
         return true;
       }
@@ -71,13 +84,69 @@ internal sealed class SessionTelemetryWriter(
           .First();
         SessionTelemetryWrite displaced = overflow[oldest];
         overflow.Remove(oldest);
+        pendingFailures.TryAdd(
+          displaced.SessionId,
+          new InvalidOperationException("The coalesced telemetry write was displaced by queue saturation."));
+        CompletePendingLocked(displaced.SessionId, 1);
         Record(displaced, "sample-overflow-replaced");
         logger.LogWarning("The live-session telemetry queue is saturated; an older coalesced session write was replaced.");
       }
 
       overflow[write.SessionId] = write;
+      IncrementPendingLocked(write.SessionId);
       Record(write, "sample-enqueued");
       return true;
+    }
+  }
+
+  public Task FlushSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
+  {
+    TaskCompletionSource waiter;
+    lock (queueGate)
+    {
+      if (canceled) return Task.FromCanceled(canceledToken);
+      if (fatalFailure is not null) return Task.FromException(fatalFailure);
+      if (!pendingWrites.TryGetValue(sessionId, out int count) || count == 0)
+      {
+        return terminalFailures.TryGetValue(sessionId, out Exception? completedFailure)
+          ? Task.FromException(completedFailure)
+          : Task.CompletedTask;
+      }
+      if (terminalFailures.TryGetValue(sessionId, out Exception? earlierFailure))
+        pendingFailures.TryAdd(sessionId, earlierFailure);
+      waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+      if (!flushWaiters.TryGetValue(sessionId, out List<TaskCompletionSource>? waiters))
+      {
+        waiters = [];
+        flushWaiters[sessionId] = waiters;
+      }
+      waiters.Add(waiter);
+    }
+    return AwaitFlushWaiterAsync(sessionId, waiter, cancellationToken);
+  }
+
+  private async Task AwaitFlushWaiterAsync(
+    Guid sessionId,
+    TaskCompletionSource waiter,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      await waiter.Task.WaitAsync(cancellationToken);
+    }
+    finally
+    {
+      if (!waiter.Task.IsCompleted)
+      {
+        lock (queueGate)
+        {
+          if (flushWaiters.TryGetValue(sessionId, out List<TaskCompletionSource>? waiters))
+          {
+            waiters.Remove(waiter);
+            if (waiters.Count == 0) flushWaiters.Remove(sessionId);
+          }
+        }
+      }
     }
   }
 
@@ -115,7 +184,8 @@ internal sealed class SessionTelemetryWriter(
             .ToArray();
           if (ordered.Length == 0) continue;
 
-          await PersistBatchAsync(group.Key, ordered, cancellationToken);
+          Exception? failure = await PersistBatchAsync(group.Key, ordered, cancellationToken);
+          CompletePending(ordered, failure);
         }
       }
     }
@@ -123,6 +193,12 @@ internal sealed class SessionTelemetryWriter(
     {
       // Shutdown cancellation is bounded by the coordinator. A later session
       // can persist a fresh checkpoint after restart.
+      CancelAllPending(cancellationToken);
+    }
+    catch (Exception exception)
+    {
+      logger.LogError(exception, "The live-session telemetry writer stopped unexpectedly.");
+      FailAllPending(exception);
     }
   }
 
@@ -207,12 +283,86 @@ internal sealed class SessionTelemetryWriter(
     }
   }
 
-  private async Task PersistBatchAsync(
+  private void IncrementPendingLocked(Guid sessionId) =>
+    pendingWrites[sessionId] = pendingWrites.GetValueOrDefault(sessionId) + 1;
+
+  private void CompletePending(
+    IReadOnlyList<SessionTelemetryWrite> completedWrites,
+    Exception? failure)
+  {
+    lock (queueGate)
+    {
+      foreach (IGrouping<Guid, SessionTelemetryWrite> group in completedWrites.GroupBy(static write => write.SessionId))
+      {
+        if (failure is not null) pendingFailures.TryAdd(group.Key, failure);
+        CompletePendingLocked(group.Key, group.Count());
+      }
+    }
+  }
+
+  private void CompletePendingLocked(Guid sessionId, int completedCount)
+  {
+    if (!pendingWrites.TryGetValue(sessionId, out int count)) return;
+    int remaining = Math.Max(0, count - completedCount);
+    if (remaining > 0)
+    {
+      pendingWrites[sessionId] = remaining;
+      return;
+    }
+
+    pendingWrites.Remove(sessionId);
+    pendingFailures.Remove(sessionId, out Exception? failure);
+    if (failure is not null) terminalFailures.TryAdd(sessionId, failure);
+    if (!flushWaiters.Remove(sessionId, out List<TaskCompletionSource>? waiters))
+      return;
+    foreach (TaskCompletionSource waiter in waiters)
+    {
+      if (failure is null) waiter.TrySetResult();
+      else waiter.TrySetException(failure);
+    }
+  }
+
+  private void CancelAllPending(CancellationToken cancellationToken)
+  {
+    lock (queueGate)
+    {
+      canceled = true;
+      canceledToken = cancellationToken;
+      completed = true;
+      writes.Writer.TryComplete(new OperationCanceledException(cancellationToken));
+      pendingWrites.Clear();
+      pendingFailures.Clear();
+      foreach (List<TaskCompletionSource> waiters in flushWaiters.Values)
+        foreach (TaskCompletionSource waiter in waiters)
+          waiter.TrySetCanceled(cancellationToken);
+      flushWaiters.Clear();
+    }
+  }
+
+  private void FailAllPending(Exception exception)
+  {
+    lock (queueGate)
+    {
+      completed = true;
+      fatalFailure = exception;
+      writes.Writer.TryComplete(exception);
+      pendingWrites.Clear();
+      pendingFailures.Clear();
+      foreach (List<TaskCompletionSource> waiters in flushWaiters.Values)
+        foreach (TaskCompletionSource waiter in waiters)
+          waiter.TrySetException(exception);
+      flushWaiters.Clear();
+    }
+  }
+
+  private async Task<Exception?> PersistBatchAsync(
     TelemetryMetadata metadata,
     IReadOnlyList<SessionTelemetryWrite> writesToPersist,
     CancellationToken cancellationToken)
   {
     var attempt = 0;
+    long startedAt = Stopwatch.GetTimestamp();
+    var retryBudgetExceededLogged = false;
     while (true)
     {
       try
@@ -228,7 +378,8 @@ internal sealed class SessionTelemetryWriter(
             metadata.ConnectionGeneration,
             metadata.AuthorityId);
           RecordAll(writesToPersist, "sample-stale-generation-discarded");
-          return;
+          return new InvalidOperationException(
+            "The telemetry batch no longer belongs to the active session authority.");
         }
 
         using IServiceScope scope = scopeFactory.CreateScope();
@@ -236,14 +387,15 @@ internal sealed class SessionTelemetryWriter(
         if (!await isCurrent(writesToPersist[^1], cancellationToken))
         {
           RecordAll(writesToPersist, "sample-stale-generation-discarded");
-          return;
+          return new InvalidOperationException(
+            "The telemetry batch no longer belongs to the active session authority.");
         }
         await store.AppendSamplesAndRecoveryCheckpointAsync(
           writesToPersist.Select(static write => write.Sample).ToArray(),
           writesToPersist[^1].Checkpoint,
           cancellationToken);
         RecordAll(writesToPersist, "sample-committed");
-        return;
+        return null;
       }
       catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
       {
@@ -251,18 +403,37 @@ internal sealed class SessionTelemetryWriter(
       }
       catch (InvalidOperationException exception)
       {
-        // The store rejected this batch as nonretryable. Retrying it forever
-        // would block every later session in the single writer.
+        attempt++;
+        if (Stopwatch.GetElapsedTime(startedAt) >= persistenceRetryBudget)
+        {
+          logger.LogError(
+            exception,
+            "The live-session telemetry batch for {SessionId} remained nonretryable through its persistence retry budget.",
+            metadata.SessionId);
+          RecordAll(writesToPersist, "sample-nonretryable-failed", exception.GetType().Name);
+          return exception;
+        }
+        TimeSpan delay = TimeSpan.FromMilliseconds(Math.Min(2_000, 100 * attempt));
         logger.LogWarning(
           exception,
-          "The live-session telemetry batch for {SessionId} was rejected as nonretryable and discarded.",
-          metadata.SessionId);
-        RecordAll(writesToPersist, "sample-nonretryable-discarded", exception.GetType().Name);
-        return;
+          "The live-session telemetry batch for {SessionId} was rejected; retrying in {DelayMs} ms.",
+          metadata.SessionId,
+          delay.TotalMilliseconds);
+        RecordAll(writesToPersist, "sample-retry", exception.GetType().Name, delay.TotalSeconds);
+        await Task.Delay(delay, cancellationToken);
       }
       catch (Exception exception)
       {
         attempt++;
+        if (!retryBudgetExceededLogged && Stopwatch.GetElapsedTime(startedAt) >= persistenceRetryBudget)
+        {
+          logger.LogError(
+            exception,
+            "The live-session telemetry batch for {SessionId} exceeded its normal persistence retry budget; retaining accepted telemetry and continuing retries.",
+            metadata.SessionId);
+          RecordAll(writesToPersist, "sample-retry-budget-exceeded", exception.GetType().Name);
+          retryBudgetExceededLogged = true;
+        }
         TimeSpan delay = TimeSpan.FromMilliseconds(Math.Min(2_000, 100 * attempt));
         logger.LogWarning(
           exception,
@@ -274,6 +445,11 @@ internal sealed class SessionTelemetryWriter(
       }
     }
   }
+
+  private static TimeSpan ValidateRetryBudget(TimeSpan value) =>
+    value > TimeSpan.Zero
+      ? value
+      : throw new ArgumentOutOfRangeException("telemetryRetryBudget");
 
   private static DateTimeOffset TruncateToSecond(DateTimeOffset value)
   {

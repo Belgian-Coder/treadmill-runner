@@ -110,6 +110,30 @@ public sealed class SessionStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Legacy_out_of_range_persisted_heart_rate_is_read_as_missing()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset started = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(New(sessionId, ids, started));
+    await store.MarkRunningAsync(sessionId, started);
+    await store.AppendSampleAsync(Sample(sessionId, 0, started, 0, 6, 6, 120));
+    await using (TreadmillRunnerDbContext context = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity sample = Assert.Single(context.SessionSamples);
+      sample.HeartRateBpm = 0;
+      await context.SaveChangesAsync();
+    }
+
+    StoredWorkoutSession stored = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+
+    Assert.Null(Assert.Single(stored.Samples).HeartRateBpm);
+  }
+
+  [Fact]
   public async Task Retried_terminal_effect_does_not_duplicate_event_or_finalization()
   {
     var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
@@ -149,6 +173,128 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.Equal(SessionState.Completed, stored.State);
     Assert.Single(stored.Events);
     Assert.IsType<SessionCompletedEvent>(stored.Events[0]);
+  }
+
+  [Theory]
+  [InlineData(12.5, 12.5)]
+  [InlineData(11.0, 12.0)]
+  public async Task Current_calorie_algorithm_preserves_terminal_accumulator_without_falling_below_final_sample(
+    double terminalCalories,
+    double expectedCalories)
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset startedAt = DateTimeOffset.Parse("2026-09-19T13:49:33Z");
+    Guid sessionId = Guid.NewGuid();
+
+    await store.CreateAsync(new NewWorkoutSession(
+      sessionId,
+      ids.ProfileId,
+      "Runner",
+      ids.RevisionId,
+      "Terminal calorie regression",
+      startedAt.AddSeconds(-1),
+      "{}",
+      SessionMetricAlgorithms.EstimatedCaloriesV2));
+    await store.MarkRunningAsync(sessionId, startedAt);
+    await store.AppendSampleAsync(Sample(
+      sessionId,
+      0,
+      startedAt,
+      0,
+      6.5,
+      6.5,
+      120,
+      SessionMetricAlgorithms.EstimatedCaloriesV2,
+      estimatedKilocalories: 10));
+    await store.AppendSampleAsync(Sample(
+      sessionId,
+      1,
+      startedAt.AddSeconds(1),
+      1,
+      6.5,
+      6.5,
+      121,
+      SessionMetricAlgorithms.EstimatedCaloriesV2,
+      estimatedKilocalories: 12));
+    await store.FinalizeAsync(new SessionSummary(
+      sessionId,
+      ids.ProfileId,
+      "Runner",
+      ids.RevisionId,
+      "Terminal calorie regression",
+      SessionState.Completed,
+      startedAt,
+      startedAt.AddSeconds(2),
+      TimeSpan.FromSeconds(2),
+      .0036,
+      terminalCalories,
+      120.5,
+      121,
+      6.5,
+      1));
+
+    StoredWorkoutSession stored = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+    Assert.Equal(expectedCalories, stored.EstimatedKilocalories, precision: 6);
+    Assert.True(stored.EstimatedKilocalories >= stored.Samples[^1].EstimatedKilocalories);
+  }
+
+  [Fact]
+  public async Task Legacy_calorie_algorithm_keeps_its_recalculated_total_without_a_v2_sample_floor()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset startedAt = DateTimeOffset.Parse("2026-09-19T13:49:33Z");
+    Guid sessionId = Guid.NewGuid();
+    string configuration = JsonSerializer.Serialize(new SessionExecutionConfiguration(
+      "simulator",
+      "disabled",
+      new SessionProfileSnapshot(70, null, null, [])));
+
+    await store.CreateAsync(new NewWorkoutSession(
+      sessionId,
+      ids.ProfileId,
+      "Runner",
+      ids.RevisionId,
+      "Legacy calorie regression",
+      startedAt.AddSeconds(-1),
+      configuration,
+      SessionMetricAlgorithms.EstimatedCaloriesV1));
+    await store.MarkRunningAsync(sessionId, startedAt);
+    await store.AppendSampleAsync(Sample(
+      sessionId, 0, startedAt, 0, 6.5, 6.5, 120,
+      SessionMetricAlgorithms.EstimatedCaloriesV1,
+      estimatedKilocalories: 10));
+    await store.AppendSampleAsync(Sample(
+      sessionId, 1, startedAt.AddSeconds(1), 1, 6.5, 6.5, 121,
+      SessionMetricAlgorithms.EstimatedCaloriesV1,
+      estimatedKilocalories: 12));
+    await store.FinalizeAsync(new SessionSummary(
+      sessionId,
+      ids.ProfileId,
+      "Runner",
+      ids.RevisionId,
+      "Legacy calorie regression",
+      SessionState.Completed,
+      startedAt,
+      startedAt.AddSeconds(2),
+      TimeSpan.FromSeconds(2),
+      .0036,
+      11,
+      120.5,
+      121,
+      6.5,
+      1));
+
+    StoredWorkoutSession stored = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+    double recalculated = Assert.IsType<double>(
+      SessionSampleStatisticsCalculator.Calculate(stored.Samples, 70).EstimatedKilocalories);
+    Assert.Equal(recalculated, stored.EstimatedKilocalories, precision: 6);
+    Assert.True(stored.EstimatedKilocalories < stored.Samples[^1].EstimatedKilocalories);
   }
 
   [Fact]
@@ -306,8 +452,10 @@ public sealed class SessionStoreTests : IAsyncLifetime
       146,
       6.5,
       1));
-    await store.CreateAsync(New(activeId, ids, now));
-    await store.MarkRunningAsync(activeId, now.AddSeconds(3));
+    await store.CreateAsync(New(activeId, ids, now.AddMinutes(-1)));
+    await store.MarkRunningAsync(activeId, now.AddMinutes(-1).AddSeconds(3));
+    await store.AppendSampleAsync(Sample(activeId, 0, now.AddMinutes(-1).AddSeconds(3), 0, 6, 6, 120));
+    await store.AppendSampleAsync(Sample(activeId, 1, now.AddMinutes(-1).AddSeconds(13), 10, 6, 6, 125));
 
     int interrupted = await store.InterruptUnfinishedAsync(now, "Gateway restarted.");
 
@@ -315,9 +463,74 @@ public sealed class SessionStoreTests : IAsyncLifetime
     StoredWorkoutSession active = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(activeId));
     Assert.Equal(SessionState.Interrupted, active.State);
     Assert.Equal(now, active.EndedAt);
+    Assert.Equal(TimeSpan.FromSeconds(10), active.Duration);
+    Assert.True(active.DistanceKilometers > 0);
+    Assert.True(active.EstimatedKilocalories > 0);
+    Assert.Equal((ushort)125, active.MaximumHeartRateBpm);
+    Assert.True(active.AverageSpeedKph > 0);
+    Assert.Equal(1, active.AverageInclinePercent);
     SessionInterruptedEvent interruption = Assert.IsType<SessionInterruptedEvent>(Assert.Single(active.Events));
     Assert.Equal("Gateway restarted.", interruption.Reason);
     Assert.Equal(SessionState.Completed, (await store.FindAsync(completedId))?.State);
+  }
+
+  [Fact]
+  public async Task Session_scoped_interruption_targets_the_requested_session_and_is_idempotent()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid resetSessionId = Guid.NewGuid();
+    await store.CreateAsync(New(resetSessionId, ids, now.AddMinutes(-1)));
+    await store.MarkRunningAsync(resetSessionId, now.AddMinutes(-1).AddSeconds(2));
+    await store.AppendSampleAsync(Sample(
+      resetSessionId, 0, now.AddMinutes(-1).AddSeconds(2), 0, 6, 6, 120));
+    await store.AppendSampleAsync(Sample(
+      resetSessionId, 1, now.AddMinutes(-1).AddSeconds(12), 10, 6, 6, 140));
+
+    Assert.True(await store.InterruptAsync(resetSessionId, now.AddMinutes(-2), "Simulator reset."));
+
+    StoredWorkoutSession reset = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(resetSessionId));
+    Assert.Equal(SessionState.Interrupted, reset.State);
+    Assert.True(reset.EndedAt >= reset.Samples[^1].CapturedAt);
+    Assert.True(reset.EndedAt >= reset.StartedAt + reset.Duration);
+    Assert.Equal("Simulator reset.", Assert.IsType<SessionInterruptedEvent>(Assert.Single(reset.Events)).Reason);
+    Assert.Equal(TimeSpan.FromSeconds(10), reset.Duration);
+    Assert.True(reset.DistanceKilometers > 0);
+    Assert.True(reset.EstimatedKilocalories > 0);
+    Assert.Equal((ushort)140, reset.MaximumHeartRateBpm);
+    Assert.True(reset.AverageSpeedKph > 0);
+    Assert.Equal(1, reset.AverageInclinePercent);
+    Assert.False(await store.InterruptAsync(resetSessionId, now.AddSeconds(1), "Duplicate reset."));
+  }
+
+  [Fact]
+  public async Task Startup_interruption_skips_a_malformed_out_of_order_legacy_sample()
+  {
+    var factory = TreadmillRunnerDatabase.CreateFactory(DatabasePath);
+    await MigrateAndSeedAsync(factory);
+    ISessionStore store = new SessionStore(factory);
+    SeedIds ids = await ReadSeedIdsAsync(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-02T10:00:00Z");
+    Guid sessionId = Guid.NewGuid();
+    await store.CreateAsync(New(sessionId, ids, now.AddMinutes(-1)));
+    await store.MarkRunningAsync(sessionId, now.AddMinutes(-1).AddSeconds(1));
+    await store.AppendSampleAsync(Sample(sessionId, 0, now.AddMinutes(-1).AddSeconds(1), 0, 6, 6, 120));
+    await store.AppendSampleAsync(Sample(sessionId, 1, now.AddMinutes(-1).AddSeconds(11), 10, 6, 6, 125));
+    await using (TreadmillRunnerDbContext legacy = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity malformed = await legacy.SessionSamples.SingleAsync(sample => sample.Sequence == 1);
+      malformed.CapturedAtUtc = now.AddMinutes(-2);
+      await legacy.SaveChangesAsync();
+    }
+
+    Assert.Equal(1, await store.InterruptUnfinishedAsync(now, "Gateway restarted."));
+
+    StoredWorkoutSession interrupted = Assert.IsType<StoredWorkoutSession>(await store.FindAsync(sessionId));
+    Assert.Equal(SessionState.Interrupted, interrupted.State);
+    Assert.Equal((ushort)120, interrupted.MaximumHeartRateBpm);
   }
 
   [Fact]
@@ -344,6 +557,16 @@ public sealed class SessionStoreTests : IAsyncLifetime
 
     Assert.Equal(SessionState.Running, recovered.Session.State);
     Assert.Equal(checkpoint, recovered.Checkpoint);
+
+    SessionRecoveryCheckpoint newerStateAfterClockRollback = checkpoint with
+    {
+      SavedAtUtc = started.AddMinutes(-5),
+      SessionVersion = checkpoint.SessionVersion + 1,
+      State = SessionState.PausedWaitingForPhysicalResume,
+    };
+    await store.SaveRecoveryCheckpointAsync(newerStateAfterClockRollback);
+    recovered = Assert.IsType<RecoverableWorkoutSession>(await store.FindRecoverableAsync());
+    Assert.Equal(newerStateAfterClockRollback, recovered.Checkpoint);
   }
 
   [Fact]
@@ -381,6 +604,14 @@ public sealed class SessionStoreTests : IAsyncLifetime
     Assert.Equal(checkpoint, recovered.Checkpoint);
     Assert.Single(recovered.Session.Samples);
     Assert.Equal((ushort)120, recovered.Session.Samples[0].HeartRateBpm!.Value);
+
+    SessionSample implausibleHeartRate = Sample(
+      sessionId, 1, started.AddSeconds(2), 2, 6, 6, 20);
+    await store.AppendSampleAndRecoveryCheckpointAsync(implausibleHeartRate, replacement);
+    await store.AppendSampleAndRecoveryCheckpointAsync(implausibleHeartRate, replacement);
+    recovered = Assert.IsType<RecoverableWorkoutSession>(await store.FindRecoverableAsync());
+    Assert.Equal(2, recovered.Session.Samples.Count);
+    Assert.Null(recovered.Session.Samples[1].HeartRateBpm);
   }
 
   [Fact]
@@ -769,7 +1000,9 @@ public sealed class SessionStoreTests : IAsyncLifetime
     double elapsedSeconds,
     double requestedSpeed,
     double measuredSpeed,
-    ushort heartRate) => new(
+    ushort heartRate,
+    string metricAlgorithmVersion = SessionMetricAlgorithms.EstimatedCaloriesV1,
+    double? estimatedKilocalories = null) => new(
       sessionId,
       sequence,
       capturedAt,
@@ -782,9 +1015,9 @@ public sealed class SessionStoreTests : IAsyncLifetime
       measuredInclinePercent: 1,
       heartRate,
       distanceKilometers: measuredSpeed * elapsedSeconds / 3600,
-      estimatedKilocalories: elapsedSeconds * 0.12,
+      estimatedKilocalories: estimatedKilocalories ?? elapsedSeconds * 0.12,
       telemetryAge: TimeSpan.FromMilliseconds(40),
-      SessionMetricAlgorithms.EstimatedCaloriesV1);
+      metricAlgorithmVersion);
 
   private static async Task<Guid> CreateTerminalSessionAsync(
     ISessionStore store,

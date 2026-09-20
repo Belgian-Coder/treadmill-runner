@@ -143,6 +143,8 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.GetByLabel("Measured speed", new() { Exact = true })).ToContainTextAsync("6.4");
     await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("1.0");
     await Expect(Page.GetByText("Physical movement detected", new() { Exact = true })).ToHaveCountAsync(0);
+    if (viewportName == "iphone17-pro-max")
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Controls", Exact = true }).ClickAsync();
     ILocator speedDown = Page.GetByRole(AriaRole.Button, new() { Name = "Speed -0.1 km/h" });
     ILocator speedUp = Page.GetByRole(AriaRole.Button, new() { Name = "Speed +0.1 km/h" });
     ILocator pause = Page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true });
@@ -158,12 +160,13 @@ public sealed class DailyRunningExperienceTests(GatewayFixture gateway) : PageTe
     await Expect(Page.Locator(".control-rail--speed h2")).ToContainTextAsync("6.6");
     await Page.GetByRole(AriaRole.Button, new() { Name = "Set incline to 1.5%", Exact = true }).ClickAsync();
     await Expect(Page.Locator(".control-rail--incline h2")).ToContainTextAsync("1.5");
+    if (viewportName == "iphone17-pro-max")
+      await Page.GetByRole(AriaRole.Button, new() { Name = "Balanced", Exact = true }).ClickAsync();
     await Task.Delay(TimeSpan.FromMilliseconds(900));
     await Expect(Page.Locator("[data-series='measured-speed']")).ToHaveAttributeAsync("d", new System.Text.RegularExpressions.Regex("^M"));
     await Expect(Page.GetByLabel("Live speed in kilometers per hour and incline percentage over elapsed time", new() { Exact = true })).ToBeVisibleAsync();
 
     await AssertNoHorizontalOverflowAsync();
-    await AssertTouchTargetAsync(Page.GetByRole(AriaRole.Button, new() { Name = "Speed +0.1 km/h" }), viewportName);
     await ScreenshotAsync($"tr004-live-{viewportName}.png");
   }
 

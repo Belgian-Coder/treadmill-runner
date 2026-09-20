@@ -246,6 +246,12 @@ public interface ISessionStore
     string reason,
     CancellationToken cancellationToken = default);
 
+  Task<bool> InterruptAsync(
+    Guid sessionId,
+    DateTimeOffset interruptedAt,
+    string reason,
+    CancellationToken cancellationToken = default);
+
   Task SaveRecoveryCheckpointAsync(
     SessionRecoveryCheckpoint checkpoint,
     CancellationToken cancellationToken = default);

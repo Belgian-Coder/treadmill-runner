@@ -171,6 +171,22 @@ public sealed class SessionStore(
     SessionSample? previous = null;
     foreach (SessionSample sample in samples)
     {
+      SessionSample canonicalSample = new(
+        sample.SessionId,
+        sample.Sequence,
+        sample.CapturedAt,
+        sample.Elapsed,
+        sample.PlannedSpeedKph,
+        sample.RequestedSpeedKph,
+        sample.MeasuredSpeedKph,
+        sample.PlannedInclinePercent,
+        sample.RequestedInclinePercent,
+        sample.MeasuredInclinePercent,
+        SanitizePersistedHeartRate(sample.HeartRateBpm),
+        sample.DistanceKilometers,
+        sample.EstimatedKilocalories,
+        sample.TelemetryAge,
+        sample.MetricAlgorithmVersion);
       if (previous is not null &&
           (sample.Sequence <= previous.Sequence ||
            sample.CapturedAt < previous.CapturedAt ||
@@ -180,12 +196,12 @@ public sealed class SessionStore(
       }
       if (existing.TryGetValue(sample.Sequence, out SessionSampleEntity? persisted))
       {
-        if (MapSample(persisted) != sample)
+        if (!MatchesStoredSample(persisted, CreateSampleEntity(canonicalSample)))
           throw new InvalidOperationException($"Sample sequence {sample.Sequence} already exists with different telemetry.");
       }
       else
       {
-        context.SessionSamples.Add(CreateSampleEntity(sample));
+        context.SessionSamples.Add(CreateSampleEntity(canonicalSample));
       }
       previous = sample;
     }
@@ -254,16 +270,24 @@ public sealed class SessionStore(
       .Where(candidate => candidate.WorkoutSessionId == summary.SessionId)
       .OrderBy(candidate => candidate.Sequence)
       .ToArrayAsync(cancellationToken);
+    IReadOnlyList<SessionSample> normalizedSamples = SessionSampleTimeline.Normalize(
+      persistedSamples.Select(MapSample).ToArray());
     SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
-      persistedSamples.Select(MapSample).ToArray(),
+      normalizedSamples,
       SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson));
+    double calculatedCalories = session.MetricAlgorithmVersion == SessionMetricAlgorithms.EstimatedCaloriesV2
+      ? summary.EstimatedKilocalories
+      : statistics.EstimatedKilocalories ?? summary.EstimatedKilocalories;
+    double finalSampleCalories = normalizedSamples.LastOrDefault()?.EstimatedKilocalories ?? 0;
 
     session.State = summary.Status.ToString();
     session.StartedAtUtc = summary.StartedAt;
     session.EndedAtUtc = summary.EndedAt;
     session.DurationSeconds = summary.Duration.TotalSeconds;
     session.DistanceKilometers = summary.DistanceKilometers;
-    session.EstimatedCalories = statistics.EstimatedKilocalories ?? summary.EstimatedKilocalories;
+    session.EstimatedCalories = session.MetricAlgorithmVersion == SessionMetricAlgorithms.EstimatedCaloriesV2
+      ? Math.Max(calculatedCalories, finalSampleCalories)
+      : calculatedCalories;
     session.AverageHeartRateBpm = statistics.AverageHeartRateBpm ?? summary.AverageHeartRateBpm;
     session.MaximumHeartRateBpm = statistics.MaximumHeartRateBpm ?? summary.MaximumHeartRateBpm;
     session.AverageSpeedKph = summary.AverageSpeedKph;
@@ -275,26 +299,24 @@ public sealed class SessionStore(
     {
       WorkoutProgramRunEntity run = await context.WorkoutProgramRuns
         .SingleAsync(candidate => candidate.Id == runId, cancellationToken);
-      if (run.Status != nameof(WorkoutProgramRunStatus.Active))
+      if (run.Status == nameof(WorkoutProgramRunStatus.Active))
       {
-        throw new InvalidOperationException("The linked workout program run is not active.");
-      }
-
-      int totalItems = await context.WorkoutProgramItems.CountAsync(
-        item => item.WorkoutProgramRevisionId == run.WorkoutProgramRevisionId,
-        cancellationToken);
-      int completedItems = await context.WorkoutSessions.AsNoTracking()
-        .Where(candidate => candidate.WorkoutProgramRunId == runId &&
-          candidate.State == nameof(SessionState.Completed))
-        .Select(candidate => candidate.WorkoutProgramItemId)
-        .Distinct()
-        .CountAsync(cancellationToken);
-      if (completedItems == totalItems)
-      {
-        run.Status = nameof(WorkoutProgramRunStatus.Completed);
-        run.EndedAtUtc = summary.EndedAt;
-        run.Version++;
-        await context.SaveChangesAsync(cancellationToken);
+        int totalItems = await context.WorkoutProgramItems.CountAsync(
+          item => item.WorkoutProgramRevisionId == run.WorkoutProgramRevisionId,
+          cancellationToken);
+        int completedItems = await context.WorkoutSessions.AsNoTracking()
+          .Where(candidate => candidate.WorkoutProgramRunId == runId &&
+            candidate.State == nameof(SessionState.Completed))
+          .Select(candidate => candidate.WorkoutProgramItemId)
+          .Distinct()
+          .CountAsync(cancellationToken);
+        if (completedItems == totalItems)
+        {
+          run.Status = nameof(WorkoutProgramRunStatus.Completed);
+          run.EndedAtUtc = summary.EndedAt;
+          run.Version++;
+          await context.SaveChangesAsync(cancellationToken);
+        }
       }
     }
 
@@ -616,23 +638,57 @@ public sealed class SessionStore(
         session.State != nameof(SessionState.Interrupted) &&
         session.State != nameof(SessionState.Faulted))
       .ToArrayAsync(cancellationToken);
-
     foreach (WorkoutSessionEntity session in unfinished)
     {
+      SessionSampleEntity[] persistedSamples = await context.SessionSamples.AsNoTracking()
+        .Where(sample => sample.WorkoutSessionId == session.Id)
+        .OrderBy(static sample => sample.Sequence)
+        .ToArrayAsync(cancellationToken);
+      SessionSample[] samples = persistedSamples.Select(MapSample).ToArray();
+      DateTimeOffset effectiveInterruptedAt = ClampTerminalTimestamp(session, interruptedAt, samples);
       session.State = SessionState.Interrupted.ToString();
-      session.EndedAtUtc = interruptedAt;
-      if (session.StartedAtUtc is { } startedAt)
-      {
-        session.DurationSeconds = Math.Max(session.DurationSeconds, (interruptedAt - startedAt).TotalSeconds);
-      }
+      session.EndedAtUtc = effectiveInterruptedAt;
+      if (samples.Length > 0)
+        ApplyInterruptedSummary(session, samples);
 
       context.SessionEvents.Add(CreateEventEntity(
         session.Id,
-        new SessionInterruptedEvent(reason.Trim(), interruptedAt)));
+        new SessionInterruptedEvent(reason.Trim(), effectiveInterruptedAt)));
     }
 
     await context.SaveChangesAsync(cancellationToken);
     return unfinished.Length;
+  }
+
+  public async Task<bool> InterruptAsync(
+    Guid sessionId,
+    DateTimeOffset interruptedAt,
+    string reason,
+    CancellationToken cancellationToken = default)
+  {
+    RequireId(sessionId, nameof(sessionId));
+    RequireUtc(interruptedAt, nameof(interruptedAt));
+    ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+    await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+    WorkoutSessionEntity session = await FindRequiredAsync(context, sessionId, cancellationToken);
+    if (IsTerminal(ParseState(session.State))) return false;
+
+    SessionSampleEntity[] persistedSamples = await context.SessionSamples.AsNoTracking()
+      .Where(candidate => candidate.WorkoutSessionId == sessionId)
+      .OrderBy(candidate => candidate.Sequence)
+      .ToArrayAsync(cancellationToken);
+    SessionSample[] samples = persistedSamples.Select(MapSample).ToArray();
+    DateTimeOffset effectiveInterruptedAt = ClampTerminalTimestamp(session, interruptedAt, samples);
+    session.State = SessionState.Interrupted.ToString();
+    session.EndedAtUtc = effectiveInterruptedAt;
+    ApplyInterruptedSummary(session, samples);
+    context.SessionEvents.Add(CreateEventEntity(
+      session.Id,
+      new SessionInterruptedEvent(reason.Trim(), effectiveInterruptedAt)));
+    await context.SaveChangesAsync(cancellationToken);
+    await transaction.CommitAsync(cancellationToken);
+    return true;
   }
 
   public async Task SaveRecoveryCheckpointAsync(
@@ -711,10 +767,15 @@ public sealed class SessionStore(
 
     foreach (WorkoutSessionEntity stale in active.Skip(1))
     {
+      SessionSample[] durableSamples = (await context.SessionSamples.AsNoTracking()
+        .Where(sample => sample.WorkoutSessionId == stale.Id)
+        .OrderBy(static sample => sample.Sequence)
+        .ToArrayAsync(cancellationToken))
+        .Select(MapSample)
+        .ToArray();
       stale.State = nameof(SessionState.Interrupted);
       stale.EndedAtUtc = reconciledAtUtc;
-      if (stale.StartedAtUtc is { } startedAt)
-        stale.DurationSeconds = Math.Max(stale.DurationSeconds, (reconciledAtUtc - startedAt).TotalSeconds);
+      ApplyInterruptedSummary(stale, durableSamples);
       context.SessionEvents.Add(CreateEventEntity(
         stale.Id,
         new SessionInterruptedEvent(
@@ -987,11 +1048,61 @@ public sealed class SessionStore(
     entity.PlannedInclinePercent,
     entity.RequestedInclinePercent,
     entity.MeasuredInclinePercent,
-    entity.HeartRateBpm,
+    SanitizePersistedHeartRate(entity.HeartRateBpm),
     entity.DistanceKilometers,
     entity.EstimatedCalories,
     TimeSpan.FromMilliseconds(entity.TelemetryAgeMilliseconds),
     entity.MetricAlgorithmVersion);
+
+  private static ushort? SanitizePersistedHeartRate(ushort? value) =>
+    value is >= 30 and <= 250 ? value : null;
+
+  private static void ApplyInterruptedSummary(
+    WorkoutSessionEntity session,
+    IReadOnlyList<SessionSample> samples)
+  {
+    // Imported/legacy databases can contain individually valid samples whose
+    // ordering is corrupt. Keep the longest monotonic sequence so recovery can
+    // still terminalize the row instead of retrying forever on one bad point.
+    IReadOnlyList<SessionSample> normalized = SessionSampleTimeline.Normalize(samples);
+    SessionSampleStatistics statistics = SessionSampleStatisticsCalculator.Calculate(
+      normalized,
+      SessionCalorieCalculator.ReadWeightKilograms(session.ControllerConfigurationJson));
+    SessionSample? finalSample = normalized.LastOrDefault();
+    if (finalSample is not null)
+    {
+      session.DurationSeconds = Math.Max(session.DurationSeconds, finalSample.Elapsed.TotalSeconds);
+      session.DistanceKilometers = Math.Max(session.DistanceKilometers, finalSample.DistanceKilometers);
+    }
+    session.EstimatedCalories = session.MetricAlgorithmVersion == SessionMetricAlgorithms.EstimatedCaloriesV2
+      ? Math.Max(session.EstimatedCalories, finalSample?.EstimatedKilocalories ?? 0)
+      : statistics.EstimatedKilocalories ?? session.EstimatedCalories;
+    session.AverageHeartRateBpm = statistics.AverageHeartRateBpm ?? session.AverageHeartRateBpm;
+    session.MaximumHeartRateBpm = statistics.MaximumHeartRateBpm ?? session.MaximumHeartRateBpm;
+    session.AverageSpeedKph = session.DurationSeconds > 0
+      ? session.DistanceKilometers / (session.DurationSeconds / 3600d)
+      : session.AverageSpeedKph;
+    session.AverageInclinePercent = statistics.AverageInclinePercent ?? session.AverageInclinePercent;
+  }
+
+  private static DateTimeOffset ClampTerminalTimestamp(
+    WorkoutSessionEntity session,
+    DateTimeOffset requestedAt,
+    IReadOnlyList<SessionSample> samples)
+  {
+    IReadOnlyList<SessionSample> normalized = SessionSampleTimeline.Normalize(samples);
+    SessionSample? finalSample = normalized.LastOrDefault();
+    DateTimeOffset minimum = session.StartedAtUtc ?? session.ArmedAtUtc;
+    if (session.StartedAtUtc is { } startedAt)
+    {
+      double durationSeconds = Math.Max(session.DurationSeconds, finalSample?.Elapsed.TotalSeconds ?? 0);
+      DateTimeOffset elapsedEnd = startedAt.AddSeconds(durationSeconds);
+      if (elapsedEnd > minimum) minimum = elapsedEnd;
+    }
+    if (finalSample is not null && finalSample.CapturedAt > minimum)
+      minimum = finalSample.CapturedAt;
+    return requestedAt < minimum ? minimum : requestedAt;
+  }
 
   private static SessionSampleEntity CreateSampleEntity(SessionSample sample) => new()
   {
@@ -1005,12 +1116,29 @@ public sealed class SessionStore(
     PlannedInclinePercent = sample.PlannedInclinePercent,
     RequestedInclinePercent = sample.RequestedInclinePercent,
     MeasuredInclinePercent = sample.MeasuredInclinePercent,
-    HeartRateBpm = sample.HeartRateBpm,
+    HeartRateBpm = SanitizePersistedHeartRate(sample.HeartRateBpm),
     DistanceKilometers = sample.DistanceKilometers,
     EstimatedCalories = sample.EstimatedKilocalories,
     TelemetryAgeMilliseconds = sample.TelemetryAge.TotalMilliseconds,
     MetricAlgorithmVersion = sample.MetricAlgorithmVersion,
   };
+
+  private static bool MatchesStoredSample(SessionSampleEntity persisted, SessionSampleEntity expected) =>
+    persisted.WorkoutSessionId == expected.WorkoutSessionId &&
+    persisted.Sequence == expected.Sequence &&
+    persisted.CapturedAtUtc == expected.CapturedAtUtc &&
+    persisted.ElapsedMilliseconds.Equals(expected.ElapsedMilliseconds) &&
+    persisted.PlannedSpeedKph == expected.PlannedSpeedKph &&
+    persisted.RequestedSpeedKph.Equals(expected.RequestedSpeedKph) &&
+    persisted.MeasuredSpeedKph.Equals(expected.MeasuredSpeedKph) &&
+    persisted.PlannedInclinePercent == expected.PlannedInclinePercent &&
+    persisted.RequestedInclinePercent.Equals(expected.RequestedInclinePercent) &&
+    persisted.MeasuredInclinePercent.Equals(expected.MeasuredInclinePercent) &&
+    persisted.HeartRateBpm == expected.HeartRateBpm &&
+    persisted.DistanceKilometers.Equals(expected.DistanceKilometers) &&
+    persisted.EstimatedCalories.Equals(expected.EstimatedCalories) &&
+    persisted.TelemetryAgeMilliseconds.Equals(expected.TelemetryAgeMilliseconds) &&
+    string.Equals(persisted.MetricAlgorithmVersion, expected.MetricAlgorithmVersion, StringComparison.Ordinal);
 
   private static string SerializeRecoveryCheckpoint(SessionRecoveryCheckpoint checkpoint)
   {
@@ -1031,15 +1159,18 @@ public sealed class SessionStore(
     context.Database.ExecuteSqlInterpolatedAsync($"""
       UPDATE "WorkoutSessions"
       SET "RecoveryCheckpointJson" = {checkpointJson},
-          "RecoveryCheckpointUpdatedAtUtc" = {checkpoint.SavedAtUtc}
+          "RecoveryCheckpointUpdatedAtUtc" = CASE
+            WHEN "RecoveryCheckpointUpdatedAtUtc" IS NULL OR "RecoveryCheckpointUpdatedAtUtc" < {checkpoint.SavedAtUtc}
+              THEN {checkpoint.SavedAtUtc}
+            ELSE "RecoveryCheckpointUpdatedAtUtc"
+          END
       WHERE "Id" = {checkpoint.SessionId}
         AND "State" NOT IN ('Completed', 'Stopped', 'Interrupted', 'Faulted')
         AND (
-          "RecoveryCheckpointUpdatedAtUtc" IS NULL OR
-          "RecoveryCheckpointUpdatedAtUtc" < {checkpoint.SavedAtUtc} OR
+          COALESCE(CAST(json_extract("RecoveryCheckpointJson", '$.sessionVersion') AS INTEGER), -1) < {checkpoint.SessionVersion} OR
           (
-            "RecoveryCheckpointUpdatedAtUtc" = {checkpoint.SavedAtUtc} AND
-            COALESCE(CAST(json_extract("RecoveryCheckpointJson", '$.sessionVersion') AS INTEGER), -1) < {checkpoint.SessionVersion}
+            COALESCE(CAST(json_extract("RecoveryCheckpointJson", '$.sessionVersion') AS INTEGER), -1) = {checkpoint.SessionVersion} AND
+            ("RecoveryCheckpointUpdatedAtUtc" IS NULL OR "RecoveryCheckpointUpdatedAtUtc" < {checkpoint.SavedAtUtc})
           )
         )
       """, cancellationToken);

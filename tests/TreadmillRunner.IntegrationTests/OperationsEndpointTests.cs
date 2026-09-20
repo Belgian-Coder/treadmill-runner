@@ -12,11 +12,41 @@ public sealed class OperationsEndpointTests(PlanningGatewayFactory factory) :
   IClassFixture<PlanningGatewayFactory>
 {
   [Fact]
+  public void Restore_preview_can_be_returned_after_a_retryable_pre_restore_conflict()
+  {
+    string path = Path.Combine(Path.GetTempPath(), $"restore-return-{Guid.NewGuid():N}.db");
+    File.WriteAllBytes(path, [1]);
+    try
+    {
+      var previews = new RestorePreviewStore(TimeProvider.System);
+      Guid token = Guid.NewGuid();
+      var preview = new RestorePreview(token, 1, new string('0', 64), 0, 0, 0, 0, DateTimeOffset.UtcNow.AddMinutes(1));
+      previews.Add(path, preview);
+
+      RestorePreviewStore.StoredPreview taken = previews.Take(token);
+      previews.Return(taken);
+
+      Assert.Equal(path, previews.Take(token).Path);
+    }
+    finally
+    {
+      if (File.Exists(path)) File.Delete(path);
+    }
+  }
+
+  [Fact]
   public async Task Idle_backup_diagnostics_and_update_status_are_bounded_and_available()
   {
     using HttpClient client = factory.CreateClient();
     using (HttpResponseMessage reset = await client.PostAsJsonAsync("/api/live/simulator/reset", new { }))
       Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+    using (HttpResponseMessage missing = await client.PostAsJsonAsync(
+      "/api/operations/restore/confirm",
+      new { token = Guid.NewGuid(), confirmation = "RESTORE" }))
+    {
+      Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
 
     byte[] backup = await client.GetByteArrayAsync("/api/operations/backup");
     Assert.True(backup.Length > 16);

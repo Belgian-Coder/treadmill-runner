@@ -53,9 +53,17 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
   }
 
   [Fact]
-  public async Task Verified_payload_fills_only_null_hr_and_recalculates_aggregates()
+  public async Task Verified_payload_fills_only_null_hr_and_recalculates_time_weighted_aggregates()
   {
     (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    await using (TreadmillRunnerDbContext setupContext = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity[] setupSamples = await setupContext.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
+      double[] elapsedMilliseconds = [0, 1000, 5000, 6000];
+      for (var index = 0; index < setupSamples.Length; index++)
+        setupSamples[index].ElapsedMilliseconds = elapsedMilliseconds[index];
+      await setupContext.SaveChangesAsync();
+    }
     var store = new PolarH10RecordingStore(factory);
     PolarH10RecordingJob job = await store.EnqueueAsync(seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
       "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
@@ -70,7 +78,7 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     SessionSampleEntity[] samples = await context.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
     Assert.Equal(new ushort?[] { 100, 101, 102, 103 }, samples.Select(row => row.HeartRateBpm));
     WorkoutSessionEntity session = await context.WorkoutSessions.SingleAsync();
-    Assert.Equal(101.5, session.AverageHeartRateBpm);
+    Assert.Equal(102, session.AverageHeartRateBpm);
     Assert.Equal((ushort)103, session.MaximumHeartRateBpm);
     Assert.Single(context.SessionEvents, row => row.Kind == "session-warning" && row.DetailsJson.Contains("polar-h10-memory-merged"));
     PolarH10RecordingEntity stored = await context.PolarH10Recordings.SingleAsync();
@@ -81,6 +89,83 @@ public sealed class PolarH10RecordingStoreTests : IAsyncLifetime
     var garmin = new GarminActivityUploadStore(factory);
     await garmin.ConnectAsync(seed.ProfileId, "runner", "protected", true, seed.Start.AddHours(-1));
     Assert.True(await garmin.ReconcileCompletedSessionsAsync(seed.Start.AddMinutes(22)) > 0);
+  }
+
+  [Fact]
+  public async Task Legacy_implausible_session_heart_rate_is_repaired_from_plausible_memory()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    await using (TreadmillRunnerDbContext legacy = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity poisoned = await legacy.SessionSamples.SingleAsync(row => row.Sequence == 2);
+      poisoned.HeartRateBpm = 0;
+      await legacy.SaveChangesAsync();
+    }
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(
+      seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await store.MarkRecordingAsync(job.Id, seed.Start);
+    var recorded = new PolarH10MemoryRecord(
+      job.ExerciseId,
+      $"/{job.ExerciseId}/SAMPLES.BPB",
+      seed.Start,
+      seed.Start.AddSeconds(4),
+      PolarH10SampleType.HeartRate,
+      1,
+      new byte[] { 1, 2, 3, 4 },
+      new ushort[] { 100, 101, 102, 103 }
+        .Select((value, index) => new PolarH10HeartRateSample(seed.Start.AddSeconds(index), value))
+        .ToArray(),
+      []);
+    await store.StoreDownloadedAsync(job.Id, recorded, seed.Start.AddMinutes(21));
+
+    Assert.Equal(
+      PolarH10RecordingOutcome.Merged,
+      await store.MergeDownloadedAsync(job.Id, seed.Start.AddMinutes(21).AddSeconds(1)));
+
+    await using TreadmillRunnerDbContext verification = await factory.CreateDbContextAsync();
+    SessionSampleEntity[] samples = await verification.SessionSamples.OrderBy(row => row.Sequence).ToArrayAsync();
+    Assert.Equal(new ushort?[] { 100, 101, 102, 103 }, samples.Select(row => row.HeartRateBpm));
+    Assert.Equal(1, (await verification.PolarH10Recordings.SingleAsync()).MergeCount);
+  }
+
+  [Fact]
+  public async Task Legacy_nonmonotonic_elapsed_sample_does_not_block_verified_memory_merge()
+  {
+    (IDbContextFactory<TreadmillRunnerDbContext> factory, Seed seed) = await CreateDatabaseAsync();
+    await using (TreadmillRunnerDbContext legacy = await factory.CreateDbContextAsync())
+    {
+      SessionSampleEntity malformed = await legacy.SessionSamples.SingleAsync(row => row.Sequence == 3);
+      malformed.ElapsedMilliseconds = 500;
+      await legacy.SaveChangesAsync();
+    }
+    var store = new PolarH10RecordingStore(factory);
+    PolarH10RecordingJob job = await store.EnqueueAsync(
+      seed.SessionId, seed.ProfileId, $"tr-{seed.SessionId:N}", seed.EnrollmentId,
+      "Automatic", PolarH10SampleType.HeartRate, 1, seed.Start);
+    await store.MarkRecordingAsync(job.Id, seed.Start);
+    var recorded = new PolarH10MemoryRecord(
+      job.ExerciseId,
+      $"/{job.ExerciseId}/SAMPLES.BPB",
+      seed.Start,
+      seed.Start.AddSeconds(4),
+      PolarH10SampleType.HeartRate,
+      1,
+      new byte[] { 1, 2, 3, 4 },
+      new ushort[] { 100, 101, 102, 103 }
+        .Select((value, index) => new PolarH10HeartRateSample(seed.Start.AddSeconds(index), value))
+        .ToArray(),
+      []);
+    await store.StoreDownloadedAsync(job.Id, recorded, seed.Start.AddMinutes(21));
+
+    Assert.Equal(
+      PolarH10RecordingOutcome.Merged,
+      await store.MergeDownloadedAsync(job.Id, seed.Start.AddMinutes(21).AddSeconds(1)));
+
+    await using TreadmillRunnerDbContext verification = await factory.CreateDbContextAsync();
+    Assert.Equal(1, (await verification.PolarH10Recordings.SingleAsync()).MergeCount);
+    Assert.NotNull((await verification.WorkoutSessions.SingleAsync()).AverageHeartRateBpm);
   }
 
   [Fact]

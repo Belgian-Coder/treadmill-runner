@@ -1466,10 +1466,12 @@ public sealed class ReadOnlyDeviceCoordinator(
     if (!battery.CanNotify || cancellationToken.IsCancellationRequested) return;
     try
     {
-      await foreach (BleNotification notification in SubscribeWithWatchdogAsync(
+      await foreach (BleNotification notification in SubscribeWithoutSilenceTimeoutAsync(
         connection,
         Uuids.BatteryService,
         Uuids.BatteryLevel,
+        SubscriptionDisposeTimeout,
+        timeProvider,
         cancellationToken))
       {
         if (BatteryLevelParser.TryParse(notification.Value.Span, out byte percent))
@@ -1491,6 +1493,42 @@ public sealed class ReadOnlyDeviceCoordinator(
         "optional-battery-notifications-ended", ClassifyFailure(exception).ToString(), exception.HResult,
         FailureDetails: BleDiagnosticFailureDetails.From(exception)));
       logger.LogDebug(exception, "Optional heart-rate battery notifications ended.");
+    }
+  }
+
+  internal static async IAsyncEnumerable<BleNotification> SubscribeWithoutSilenceTimeoutAsync(
+    IBleConnection connection,
+    Guid serviceUuid,
+    Guid characteristicUuid,
+    TimeSpan disposalTimeout,
+    TimeProvider operationTimeProvider,
+    [EnumeratorCancellation] CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(connection);
+    ArgumentNullException.ThrowIfNull(operationTimeProvider);
+    if (disposalTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(disposalTimeout));
+
+    using var subscriptionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    IAsyncEnumerator<BleNotification> enumerator = connection.SubscribeAsync(
+      serviceUuid,
+      characteristicUuid,
+      subscriptionCancellation.Token).GetAsyncEnumerator(subscriptionCancellation.Token);
+    try
+    {
+      while (await enumerator.MoveNextAsync().AsTask()
+        .WaitAsync(cancellationToken)
+        .ConfigureAwait(false))
+      {
+        yield return enumerator.Current;
+      }
+    }
+    finally
+    {
+      subscriptionCancellation.Cancel();
+      await DisposeSubscriptionBoundedAsync(
+        enumerator,
+        disposalTimeout,
+        operationTimeProvider).ConfigureAwait(false);
     }
   }
 

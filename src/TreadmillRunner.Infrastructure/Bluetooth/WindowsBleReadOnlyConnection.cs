@@ -19,6 +19,7 @@ internal sealed class WindowsBleReadOnlyConnection :
   private readonly CancellationTokenSource _disposeCancellation = new();
   private readonly AsyncNativeResourceOwner<BluetoothLEDevice> _device = new();
   private readonly AsyncNativeResourceOwner<GattSession> _session = new();
+  private int _targetedHeartRateCachePrimed;
   private int _disposed;
 
   public WindowsBleReadOnlyConnection(string deviceId)
@@ -186,6 +187,14 @@ internal sealed class WindowsBleReadOnlyConnection :
           nativeService.Dispose();
         }
       }
+    }
+
+    if (services.Any(service =>
+          service.Uuid == HeartRateServiceUuid &&
+          service.Characteristics.Any(characteristic =>
+            characteristic.CharacteristicUuid == HeartRateMeasurementUuid)))
+    {
+      Volatile.Write(ref _targetedHeartRateCachePrimed, 1);
     }
 
     ThrowIfDisposed();
@@ -479,9 +488,75 @@ internal sealed class WindowsBleReadOnlyConnection :
     Guid characteristicUuid,
     CancellationToken cancellationToken)
   {
+    bool isValidatedHeartRateMeasurement =
+      serviceUuid == HeartRateServiceUuid &&
+      characteristicUuid == HeartRateMeasurementUuid &&
+      Volatile.Read(ref _targetedHeartRateCachePrimed) != 0;
+    try
+    {
+      NativeCharacteristicHandle handle = await OpenWithSystemCacheFallbackAsync(
+        isValidatedHeartRateMeasurement,
+        (cacheMode, operationCancellation) => OpenCharacteristicCoreAsync(
+          serviceUuid,
+          characteristicUuid,
+          cacheMode,
+          operationCancellation),
+        cancellationToken).ConfigureAwait(false);
+      if (serviceUuid == HeartRateServiceUuid && characteristicUuid == HeartRateMeasurementUuid)
+      {
+        Volatile.Write(ref _targetedHeartRateCachePrimed, 1);
+      }
+      return handle;
+    }
+    catch
+    {
+      if (serviceUuid == HeartRateServiceUuid && characteristicUuid == HeartRateMeasurementUuid)
+      {
+        Volatile.Write(ref _targetedHeartRateCachePrimed, 0);
+      }
+      throw;
+    }
+  }
+
+  internal static async Task<T> OpenWithSystemCacheFallbackAsync<T>(
+    bool preferSystemCache,
+    Func<BluetoothCacheMode, CancellationToken, Task<T>> operation,
+    CancellationToken cancellationToken = default)
+  {
+    ArgumentNullException.ThrowIfNull(operation);
+    cancellationToken.ThrowIfCancellationRequested();
+    if (!preferSystemCache)
+    {
+      return await operation(BluetoothCacheMode.Uncached, cancellationToken).ConfigureAwait(false);
+    }
+
+    try
+    {
+      // Windows serves a populated GATT cache without another wire discovery
+      // and retrieves a missing cache entry from the device. The preceding
+      // targeted HRS validation has already populated the system-wide cache;
+      // Windows invalidates it on a remote service change or unpairing.
+      return await operation(BluetoothCacheMode.Cached, cancellationToken).ConfigureAwait(false);
+    }
+    catch (Exception exception) when (
+      !cancellationToken.IsCancellationRequested &&
+      exception is COMException or WindowsBleException { IsDeviceUnavailable: false })
+    {
+      // A failed status or missing service/characteristic can indicate stale
+      // cached GATT metadata. Bypass it once so Windows refreshes the entry.
+      return await operation(BluetoothCacheMode.Uncached, cancellationToken).ConfigureAwait(false);
+    }
+  }
+
+  private async Task<NativeCharacteristicHandle> OpenCharacteristicCoreAsync(
+    Guid serviceUuid,
+    Guid characteristicUuid,
+    BluetoothCacheMode cacheMode,
+    CancellationToken cancellationToken)
+  {
     BluetoothLEDevice device = await OpenDeviceAsync(cancellationToken);
     GattDeviceServicesResult servicesResult = await device
-      .GetGattServicesForUuidAsync(serviceUuid, BluetoothCacheMode.Uncached)
+      .GetGattServicesForUuidAsync(serviceUuid, cacheMode)
       .AsTask(cancellationToken)
       .ConfigureAwait(false);
     GattDeviceService? service = NativeResourceOwnership.TransferFirst(
@@ -516,7 +591,7 @@ internal sealed class WindowsBleReadOnlyConnection :
       // discovery in the same WinRT completion turn as service discovery.
       await Task.Yield();
       GattCharacteristicsResult characteristicsResult = await service
-        .GetCharacteristicsForUuidAsync(characteristicUuid, BluetoothCacheMode.Uncached)
+        .GetCharacteristicsForUuidAsync(characteristicUuid, cacheMode)
         .AsTask(cancellationToken)
         .ConfigureAwait(false);
       WindowsBleStatus.ThrowIfFailed(
@@ -584,6 +659,8 @@ internal sealed class WindowsBleReadOnlyConnection :
 
   private static readonly Guid HeartRateServiceUuid =
     Guid.Parse("0000180d-0000-1000-8000-00805f9b34fb");
+  private static readonly Guid HeartRateMeasurementUuid =
+    Guid.Parse("00002a37-0000-1000-8000-00805f9b34fb");
 
   private static byte[] ReadBuffer(IBuffer buffer)
   {

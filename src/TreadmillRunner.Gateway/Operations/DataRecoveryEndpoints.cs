@@ -42,6 +42,16 @@ public sealed class RestorePreviewStore(TimeProvider timeProvider)
       : throw new KeyNotFoundException("The restore preview expired or was already consumed.");
   }
 
+  public void Return(StoredPreview stored)
+  {
+    if (!File.Exists(stored.Path)) return;
+    DateTimeOffset minimumExpiry = timeProvider.GetUtcNow().AddMinutes(5);
+    RestorePreview preview = stored.Preview.ExpiresAtUtc >= minimumExpiry
+      ? stored.Preview
+      : stored.Preview with { ExpiresAtUtc = minimumExpiry };
+    _previews[preview.Token] = new StoredPreview(stored.Path, preview);
+  }
+
   private void RemoveExpired()
   {
     DateTimeOffset now = timeProvider.GetUtcNow();
@@ -271,13 +281,86 @@ public static class DataRecoveryEndpoints
       return Results.NotFound(new { error = exception.Message });
     }
 
-    bool restored = false;
     try
     {
-      await restore.RestoreAsync(preview.Path, cancellationToken);
+      bool resetReady = await live.ResetAsync(
+        CancellationToken.None,
+        abandonStartupRecovery: true);
+      if (!resetReady)
+      {
+        string? recoveryError = null;
+        try { await live.RestartStartupRecoveryAsync(CancellationToken.None); }
+        catch (InvalidOperationException restartException) { recoveryError = restartException.Message; }
+        previews.Return(preview);
+        await live.CancelMaintenanceAsync(CancellationToken.None);
+        return Results.Conflict(new
+        {
+          error = recoveryError is null
+            ? "Live session reset finished after the client wait; retry restore."
+            : $"Live session reset did not recover: {recoveryError}",
+        });
+      }
+    }
+    catch (InvalidOperationException exception)
+    {
+      string? recoveryError = null;
+      try { await live.RestartStartupRecoveryAsync(CancellationToken.None); }
+      catch (InvalidOperationException restartException) { recoveryError = restartException.Message; }
+      previews.Return(preview);
+      await live.CancelMaintenanceAsync(CancellationToken.None);
+      return Results.Conflict(new
+      {
+        error = recoveryError is null
+          ? exception.Message
+          : $"{exception.Message} Startup recovery also failed: {recoveryError}",
+      });
+    }
+
+    bool restored = false;
+    bool stateReloaded = false;
+    string? stateReloadError = null;
+    try
+    {
+      try
+      {
+        await restore.RestoreAsync(preview.Path, cancellationToken);
+      }
+      catch
+      {
+        try { await live.RestartStartupRecoveryAsync(CancellationToken.None); }
+        catch (Exception) { }
+        throw;
+      }
       restored = true;
+      try
+      {
+        stateReloaded = await live.ResetAsync(
+          CancellationToken.None,
+          abandonStartupRecovery: true,
+          reconcileRestoredDatabase: true);
+        if (!stateReloaded)
+        {
+          stateReloadError = "Restored session reconciliation is still finishing in the background.";
+          try { await live.RestartStartupRecoveryAsync(CancellationToken.None); }
+          catch (Exception exception)
+          {
+            stateReloadError += $" {exception.Message}";
+          }
+        }
+      }
+      catch (InvalidOperationException exception)
+      {
+        stateReloaded = false;
+        stateReloadError = exception.Message;
+        try { await live.RestartStartupRecoveryAsync(CancellationToken.None); }
+        catch (Exception restartException)
+        {
+          stateReloadError += $" Startup recovery also failed: {restartException.Message}";
+        }
+      }
+      // The restored database must be reconciled (or recovery re-armed) before
+      // a device-refresh failure can release the maintenance boundary.
       await devices.RefreshAsync(CancellationToken.None);
-      await live.ResetAsync(CancellationToken.None);
     }
     finally
     {
@@ -290,7 +373,8 @@ public static class DataRecoveryEndpoints
     {
       restored,
       preview = preview.Preview,
-      stateReloaded = true,
+      stateReloaded,
+      stateReloadError,
       databaseIntegrity = integrity,
     });
   }

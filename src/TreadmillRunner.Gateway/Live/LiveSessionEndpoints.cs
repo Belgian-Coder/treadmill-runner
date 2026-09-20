@@ -406,8 +406,18 @@ public static class LiveSessionEndpoints
     ILiveSessionCoordinator coordinator,
     CancellationToken cancellationToken)
   {
-    await coordinator.ResetAsync(cancellationToken);
-    return Results.NoContent();
+    try
+    {
+      bool completed = await coordinator.ResetAsync(cancellationToken);
+      if (completed) return Results.NoContent();
+      return Results.Accepted(
+        "/api/live/session",
+        new { status = "ResetPending", message = "Reset persistence and device cleanup are still finishing." });
+    }
+    catch (InvalidOperationException exception)
+    {
+      return Results.Conflict(new { error = exception.Message });
+    }
   }
 
   private static async Task<IResult> AdjustSpeedAsync(

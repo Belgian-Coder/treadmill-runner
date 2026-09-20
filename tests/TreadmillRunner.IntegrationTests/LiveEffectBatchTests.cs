@@ -69,8 +69,9 @@ public sealed class LiveEffectBatchTests
   }
 
   [Fact]
-  public async Task Terminal_effect_retry_budget_is_bounded_when_storage_stays_unavailable()
+  public async Task Terminal_effect_keeps_retrying_persistent_storage_until_shutdown_cancellation()
   {
+    using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(550));
     var batch = new LiveEffectBatch();
     var metadata = new LiveEffectMetadata(Guid.NewGuid(), 4, 7, Guid.NewGuid());
     var attempts = 0;
@@ -80,10 +81,10 @@ public sealed class LiveEffectBatchTests
       return Task.FromException(new IOException("persistent"));
     }, terminal: true);
 
-    await Assert.ThrowsAsync<IOException>(() =>
-      batch.ExecuteAsync((_, _) => Task.FromResult(false), CancellationToken.None));
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+      batch.ExecuteAsync((_, _) => Task.FromResult(false), cancellation.Token));
 
-    Assert.Equal(3, attempts);
+    Assert.InRange(attempts, 2, 6);
   }
 
   [Fact]
@@ -104,5 +105,64 @@ public sealed class LiveEffectBatchTests
       batch.ExecuteAsync((_, _) => Task.FromResult(false), cancellation.Token));
 
     Assert.Equal(1, attempts);
+  }
+
+  [Fact]
+  public async Task Terminal_effect_stops_retrying_after_the_bounded_budget()
+  {
+    var batch = new LiveEffectBatch(TimeSpan.FromMilliseconds(250));
+    var metadata = new LiveEffectMetadata(Guid.NewGuid(), 4, 7, Guid.NewGuid());
+    var attempts = 0;
+    batch.Add(metadata, _ =>
+    {
+      attempts++;
+      return Task.FromException(new IOException("persistent"));
+    }, terminal: true);
+
+    IOException exception = await Assert.ThrowsAsync<IOException>(() =>
+      batch.ExecuteAsync((_, _) => Task.FromResult(false), CancellationToken.None));
+
+    Assert.Equal("persistent", exception.Message);
+    Assert.InRange(attempts, 2, 5);
+  }
+
+  [Fact]
+  public async Task Terminal_retry_budget_starts_after_a_slow_first_attempt_fails()
+  {
+    var batch = new LiveEffectBatch(TimeSpan.FromMilliseconds(250));
+    var metadata = new LiveEffectMetadata(Guid.NewGuid(), 4, 7, Guid.NewGuid());
+    var attempts = 0;
+    batch.Add(metadata, async _ =>
+    {
+      attempts++;
+      if (attempts == 1)
+      {
+        await Task.Delay(350);
+        throw new IOException("first attempt failed after a slow prerequisite");
+      }
+    }, terminal: true);
+
+    await batch.ExecuteAsync((_, _) => Task.FromResult(false), CancellationToken.None);
+
+    Assert.Equal(2, attempts);
+  }
+
+  [Fact]
+  public async Task Terminal_internal_timeout_is_retryable_when_shutdown_was_not_requested()
+  {
+    var batch = new LiveEffectBatch(TimeSpan.FromMilliseconds(250));
+    var metadata = new LiveEffectMetadata(Guid.NewGuid(), 4, 7, Guid.NewGuid());
+    var attempts = 0;
+    batch.Add(metadata, _ =>
+    {
+      attempts++;
+      return attempts == 1
+        ? Task.FromCanceled(new CancellationToken(canceled: true))
+        : Task.CompletedTask;
+    }, terminal: true);
+
+    await batch.ExecuteAsync((_, _) => Task.FromResult(false), CancellationToken.None);
+
+    Assert.Equal(2, attempts);
   }
 }

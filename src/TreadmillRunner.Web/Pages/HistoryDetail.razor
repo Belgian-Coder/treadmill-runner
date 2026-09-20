@@ -675,7 +675,7 @@ else
         string State,
         string Message);
     private sealed record GarminRecoveryErrorView(string Error);
-    private sealed record PolarMemoryJob(Guid Id, Guid SessionId, Guid UserProfileId, string Outcome, int AttemptCount, DateTimeOffset? LeaseExpiresAtUtc, string? ExternalRecordingId, string? LastError);
+    private sealed record PolarMemoryJob(Guid Id, Guid? SessionId, Guid? UserProfileId, string Outcome, int AttemptCount, DateTimeOffset? LeaseExpiresAtUtc, string? LastError);
     private static string FormatDelta(TimeSpan value) =>
         $"{(value < TimeSpan.Zero ? "−" : value > TimeSpan.Zero ? "+" : string.Empty)}{value.Duration().ToString(@"hh\:mm\:ss")}";
 

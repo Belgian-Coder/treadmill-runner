@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Infrastructure.Bluetooth;
+using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace TreadmillRunner.IntegrationTests;
@@ -176,6 +178,99 @@ public sealed class WindowsBleReadOnlyContractTests
     Assert.False(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(batteryService, unreachable));
     Assert.False(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(heartRateService, protectedService));
     Assert.True(WindowsBleReadOnlyConnection.IsSafeOptionalDiscoveryFailure(batteryService, protectedService));
+  }
+
+  [Fact]
+  public async Task Validated_heart_rate_lookup_reuses_the_Windows_system_cache()
+  {
+    var modes = new List<BluetoothCacheMode>();
+
+    int result = await WindowsBleReadOnlyConnection.OpenWithSystemCacheFallbackAsync(
+      preferSystemCache: true,
+      (mode, _) =>
+      {
+        modes.Add(mode);
+        return Task.FromResult(42);
+      });
+
+    Assert.Equal(42, result);
+    Assert.Equal([BluetoothCacheMode.Cached], modes);
+  }
+
+  [Fact]
+  public async Task Failed_or_missing_cached_heart_rate_lookup_refreshes_once_uncached()
+  {
+    var modes = new List<BluetoothCacheMode>();
+
+    int result = await WindowsBleReadOnlyConnection.OpenWithSystemCacheFallbackAsync(
+      preferSystemCache: true,
+      (mode, _) =>
+      {
+        modes.Add(mode);
+        return mode == BluetoothCacheMode.Cached
+          ? Task.FromException<int>(new WindowsBleException("Cached HRS metadata was missing."))
+          : Task.FromResult(42);
+      });
+
+    Assert.Equal(42, result);
+    Assert.Equal([BluetoothCacheMode.Cached, BluetoothCacheMode.Uncached], modes);
+  }
+
+  [Fact]
+  public async Task Native_cached_heart_rate_failure_refreshes_once_uncached()
+  {
+    var modes = new List<BluetoothCacheMode>();
+
+    int result = await WindowsBleReadOnlyConnection.OpenWithSystemCacheFallbackAsync(
+      preferSystemCache: true,
+      (mode, _) =>
+      {
+        modes.Add(mode);
+        return mode == BluetoothCacheMode.Cached
+          ? Task.FromException<int>(new COMException("The cached WinRT GATT lookup failed."))
+          : Task.FromResult(42);
+      });
+
+    Assert.Equal(42, result);
+    Assert.Equal([BluetoothCacheMode.Cached, BluetoothCacheMode.Uncached], modes);
+  }
+
+  [Fact]
+  public async Task Unreachable_cached_heart_rate_lookup_returns_to_outer_reconnect_without_uncached_retry()
+  {
+    var modes = new List<BluetoothCacheMode>();
+    var unreachable = new WindowsBleException(
+      "characteristic discovery",
+      GattCommunicationStatus.Unreachable,
+      protocolError: null);
+
+    WindowsBleException thrown = await Assert.ThrowsAsync<WindowsBleException>(() =>
+      WindowsBleReadOnlyConnection.OpenWithSystemCacheFallbackAsync(
+        preferSystemCache: true,
+        (mode, _) =>
+        {
+          modes.Add(mode);
+          return Task.FromException<int>(unreachable);
+        }));
+
+    Assert.Same(unreachable, thrown);
+    Assert.Equal([BluetoothCacheMode.Cached], modes);
+  }
+
+  [Fact]
+  public async Task Unvalidated_characteristic_lookup_remains_uncached()
+  {
+    var modes = new List<BluetoothCacheMode>();
+
+    await WindowsBleReadOnlyConnection.OpenWithSystemCacheFallbackAsync(
+      preferSystemCache: false,
+      (mode, _) =>
+      {
+        modes.Add(mode);
+        return Task.FromResult(0);
+      });
+
+    Assert.Equal([BluetoothCacheMode.Uncached], modes);
   }
 
   [Fact]

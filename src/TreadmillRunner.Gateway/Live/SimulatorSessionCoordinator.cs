@@ -115,7 +115,12 @@ public interface ILiveSessionCoordinator : ITreadmillCommandContextValidator
     string holderId,
     CancellationToken cancellationToken = default);
 
-  Task ResetAsync(CancellationToken cancellationToken = default);
+  Task<bool> ResetAsync(
+    CancellationToken cancellationToken = default,
+    bool abandonStartupRecovery = false,
+    bool reconcileRestoredDatabase = false);
+
+  Task RestartStartupRecoveryAsync(CancellationToken cancellationToken = default);
 
   Task<bool> TryBeginMaintenanceAsync(CancellationToken cancellationToken = default);
 
@@ -139,12 +144,21 @@ public sealed class LiveSessionCoordinator(
 {
   private static readonly TimeSpan UpdateInterval = TimeSpan.FromMilliseconds(250);
   private static readonly TimeSpan PersistenceInterval = TimeSpan.FromSeconds(1);
+  private static readonly TimeSpan TerminalPersistenceClientWaitTimeout = TimeSpan.FromSeconds(5);
+  private static readonly TimeSpan ShutdownFinalPersistenceTimeout = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan FreshTelemetryLimit = TimeSpan.FromSeconds(5);
   private readonly SemaphoreSlim _gate = new(1, 1);
+  private readonly SemaphoreSlim _startupRecoveryGate = new(1, 1);
   private readonly SemaphoreSlim _armAdmission = new(1, 1);
   private readonly SemaphoreSlim _effectsGate = new(1, 1);
+  private readonly CancellationTokenSource _effectsStop = new();
+  private readonly CancellationTokenSource _shutdownStop = new();
   private readonly object _effectsQueueGate = new();
   private Task _effectsTail = Task.CompletedTask;
+  private Task _terminalPersistenceTail = Task.CompletedTask;
+  private Task _resetTail = Task.CompletedTask;
+  private bool _resetPersistencePending;
+  private bool _unfinishedSweepPending;
   private ActiveRun? _active;
   private LiveSnapshot _current = DisconnectedIdleSnapshot(timeProvider.GetUtcNow());
   private bool _startupRecoveryComplete;
@@ -152,6 +166,7 @@ public sealed class LiveSessionCoordinator(
   private int _startupRecoveryAttempt;
   private DateTimeOffset _nextStartupRecoveryAttemptUtc;
   private bool _maintenanceActive;
+  private volatile bool _shutdownStarted;
   private readonly Guid _serviceInstanceId = Guid.NewGuid();
   private SessionTelemetryWriter? _telemetryWriter;
   private readonly LatestLiveSnapshotBroadcaster _snapshotBroadcaster = new(hubContext, logger, timeProvider);
@@ -342,10 +357,20 @@ public sealed class LiveSessionCoordinator(
     CancellationToken cancellationToken = default,
     WorkoutSessionSelection? selection = null)
   {
-    await _armAdmission.WaitAsync(cancellationToken);
+    using var armCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+      cancellationToken,
+      _shutdownStop.Token);
+    CancellationToken armToken = armCancellation.Token;
+    await _armAdmission.WaitAsync(armToken);
     try
     {
+      await WaitForTerminalPersistenceBarrierAsync(
+        Volatile.Read(ref _resetTail),
+        TerminalPersistenceClientWaitTimeout,
+        armToken);
       var terminalSessionWasActive = false;
+      LiveEffectMetadata? terminalRetryMetadata = null;
+      Func<CancellationToken, Task>? terminalPersistenceRetry = null;
       ActiveSessionSnapshot? armedSnapshot = null;
       if (leaseCoordinator.Current is not ControlLease initialLease ||
           initialLease.Id != leaseId ||
@@ -354,16 +379,26 @@ public sealed class LiveSessionCoordinator(
         throw new InvalidOperationException("A current controller lease is required to arm a workout.");
       }
 
-      await _gate.WaitAsync(cancellationToken);
+      await _gate.WaitAsync(armToken);
       try
       {
+        ThrowIfShutdownStarted();
         if (!_startupRecoveryComplete)
           throw new InvalidOperationException("Gateway startup recovery is still in progress; try arming again shortly.");
+        if (_resetPersistencePending)
+          throw new InvalidOperationException("A previous reset did not complete; retry reset before arming another workout.");
+        if (_unfinishedSweepPending)
+          throw new InvalidOperationException("Restored session reconciliation is still incomplete; retry recovery before arming another workout.");
         if (_maintenanceActive)
           throw new InvalidOperationException("A software update is being activated; new sessions are temporarily unavailable.");
         if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted) })
           throw new InvalidOperationException("Another workout session is already active.");
         terminalSessionWasActive = _active is { Machine.State: SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted };
+        if (terminalSessionWasActive && _active is { TerminalPersistenceEffect: not null } retainedTerminal)
+        {
+          terminalRetryMetadata = CaptureEffectMetadata(retainedTerminal);
+          terminalPersistenceRetry = retainedTerminal.TerminalPersistenceEffect;
+        }
       }
       finally
       {
@@ -371,8 +406,8 @@ public sealed class LiveSessionCoordinator(
       }
 
       (VersionedUserProfile profile, StoredWorkoutRevision revision, WorkoutDefinition workout) =
-        await LoadPlanAsync(profileId, workoutRevisionId, cancellationToken);
-      PreflightSnapshot preflight = await GetPreflightAsync(profileId, workoutRevisionId, cancellationToken);
+        await LoadPlanAsync(profileId, workoutRevisionId, armToken);
+      PreflightSnapshot preflight = await GetPreflightAsync(profileId, workoutRevisionId, armToken);
       if (!preflight.IsReady)
         throw new InvalidOperationException("Preflight is not ready; fresh required device telemetry is missing.");
 
@@ -382,7 +417,7 @@ public sealed class LiveSessionCoordinator(
       DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(profileId);
       bool hardwareMode = !SimulatorAvailable;
       bool requiresHeartRate = ContainsHeartRateTarget(workout.Blocks);
-      TreadmillControlAvailability control = await LoadControlAvailabilityAsync(cancellationToken);
+      TreadmillControlAvailability control = await LoadControlAvailabilityAsync(armToken);
       if (!hardwareMode) control = TreadmillControlAvailability.Simulated;
       WorkoutCapabilityResult capabilityResult = WorkoutCapabilityPolicy.Evaluate(
         workout,
@@ -460,16 +495,40 @@ public sealed class LiveSessionCoordinator(
       if (terminalSessionWasActive)
       {
         Task pendingTerminalEffects;
-        lock (_effectsQueueGate) pendingTerminalEffects = _effectsTail;
-        await pendingTerminalEffects.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        await _gate.WaitAsync(armToken);
+        try
+        {
+          ThrowIfShutdownStarted();
+          lock (_effectsQueueGate) pendingTerminalEffects = _terminalPersistenceTail;
+          if ((pendingTerminalEffects.IsFaulted || pendingTerminalEffects.IsCanceled) &&
+              terminalRetryMetadata is { } retryMetadata &&
+              terminalPersistenceRetry is not null)
+          {
+            var retryEffects = new LiveEffectBatch();
+            retryEffects.Add(retryMetadata, terminalPersistenceRetry, terminal: true);
+            pendingTerminalEffects = QueueEffects(
+              retryEffects,
+              _effectsStop.Token,
+              deferExecution: true,
+              propagateFailure: true);
+          }
+        }
+        finally
+        {
+          _gate.Release();
+        }
+        await WaitForTerminalPersistenceBarrierAsync(
+          pendingTerminalEffects,
+          TerminalPersistenceClientWaitTimeout,
+          armToken);
       }
       bool persisted = false;
       bool polarMemoryPrepared = false;
       try
       {
-        await store.CreateAsync(definition, cancellationToken);
+        await store.CreateAsync(definition, armToken);
         persisted = true;
-        await deviceCoordinator.HoldRunConnectionsAsync(profileId, requiresHeartRate, cancellationToken);
+        await deviceCoordinator.HoldRunConnectionsAsync(profileId, requiresHeartRate, armToken);
         if (hardwareMode && definition.Selection.RecordPolarH10Memory)
         {
           Guid h10Id = active.HeartRateEnrollmentId
@@ -479,7 +538,7 @@ public sealed class LiveSessionCoordinator(
               definition.SessionId,
               definition.UserProfileId,
               h10Id,
-              cancellationToken,
+              armToken,
               definition.Selection.ReplaceExistingPolarH10Recording,
               definition.Selection.ReplacePolarH10ExerciseId);
           polarMemoryPrepared = true;
@@ -514,10 +573,12 @@ public sealed class LiveSessionCoordinator(
 
       string? admissionFailure = null;
       DateTimeOffset? leaseExpiry = null;
-      await _gate.WaitAsync(polarMemoryPrepared ? CancellationToken.None : cancellationToken);
+      await _gate.WaitAsync(polarMemoryPrepared ? CancellationToken.None : armToken);
       try
       {
-        if (!_startupRecoveryComplete)
+        if (_shutdownStarted)
+          admissionFailure = "The live-session coordinator is stopping.";
+        else if (!_startupRecoveryComplete)
           admissionFailure = "Gateway startup recovery is still in progress; try arming again shortly.";
         else if (_maintenanceActive)
           admissionFailure = "A software update is being activated; new sessions are temporarily unavailable.";
@@ -608,6 +669,7 @@ public sealed class LiveSessionCoordinator(
     }
 
     LiveEffectBatch effects = new();
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -630,22 +692,23 @@ public sealed class LiveSessionCoordinator(
       MarkRunningIfTransitioned(active, previous, now, effects);
 
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
       _gate.Release();
     }
-
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
   }
 
   public async Task SetSimulatedHeartRateAsync(
     ushort? beatsPerMinute,
     CancellationToken cancellationToken = default)
   {
-    if (beatsPerMinute is 0 or > 250)
-      throw new ArgumentOutOfRangeException(nameof(beatsPerMinute), "Heart rate must be between 1 and 250 bpm, or null to simulate stale telemetry.");
+    if (beatsPerMinute is < 30 or > 250)
+      throw new ArgumentOutOfRangeException(nameof(beatsPerMinute), "Heart rate must be between 30 and 250 bpm, or null to simulate stale telemetry.");
     ActiveSessionSnapshot? snapshotToPublish = null;
     await _gate.WaitAsync(cancellationToken);
     try
@@ -684,19 +747,25 @@ public sealed class LiveSessionCoordinator(
 
       var now = timeProvider.GetUtcNow();
       UpdateMotion(active, now);
+      DateTimeOffset completedAt = GetTerminalTimestamp(active, now);
+      SessionSummary summary = CreateSummary(active, SessionState.Completed, completedAt);
       active.Machine.Complete();
       active.IsMoving = false;
       active.MeasuredSpeedKph = 0;
       LiveEffectMetadata metadata = CaptureEffectMetadata(active);
-      SessionCompletedEvent completed = new(now);
-      SessionSummary summary = CreateSummary(active, SessionState.Completed, now);
-      effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, completed, summary), terminal: true);
+      SessionCompletedEvent completed = new(completedAt);
+      active.TerminalPersistenceEffect = CreateTerminalPersistenceEffect(metadata.SessionId, completed, summary);
+      effects.Add(metadata, active.TerminalPersistenceEffect, terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
       releaseConnections = true;
       if (!effects.IsEmpty)
-        terminalEffects = QueueEffects(effects, CancellationToken.None, deferExecution: true);
+        terminalEffects = QueueEffects(
+          effects,
+          _effectsStop.Token,
+          deferExecution: true,
+          propagateFailure: true);
     }
     finally
     {
@@ -706,7 +775,7 @@ public sealed class LiveSessionCoordinator(
     if (releaseConnections)
       await ReleaseDeviceConnectionsAsync(cancellationToken);
     if (terminalEffects is not null)
-      await terminalEffects.ConfigureAwait(false);
+      _ = await AwaitTerminalPersistenceForClientAsync(terminalEffects, cancellationToken);
   }
 
   public async Task<TreadmillCommandResult> StopSimulatorAsync(
@@ -727,6 +796,7 @@ public sealed class LiveSessionCoordinator(
     LiveEffectBatch effects = new();
     ActiveSessionSnapshot? snapshotToPublish = null;
     TreadmillCommandResult? resultToReturn = null;
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -781,14 +851,16 @@ public sealed class LiveSessionCoordinator(
       PublishSnapshot(active, result.CompletedAt, SessionControlAccess.Controller, lease.ExpiresAt);
       snapshotToPublish = active.Snapshot;
       resultToReturn = result;
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
       _gate.Release();
     }
     _snapshotBroadcaster.Publish(null, snapshotToPublish);
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
     return resultToReturn!;
   }
 
@@ -816,18 +888,24 @@ public sealed class LiveSessionCoordinator(
         throw new InvalidOperationException("End session requires a confirmed stopped treadmill and a paused session.");
 
       DateTimeOffset now = timeProvider.GetUtcNow();
+      DateTimeOffset stoppedAt = GetTerminalTimestamp(active, now);
+      SessionSummary summary = CreateSummary(active, SessionState.Stopped, stoppedAt);
       active.Machine.Stop();
       active.ProcessedOperationIds.Add(operationId);
       LiveEffectMetadata metadata = CaptureEffectMetadata(active);
-      SessionStoppedEvent stopped = new(now);
-      SessionSummary summary = CreateSummary(active, SessionState.Stopped, now);
-      effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, stopped, summary), terminal: true);
+      SessionStoppedEvent stopped = new(stoppedAt);
+      active.TerminalPersistenceEffect = CreateTerminalPersistenceEffect(metadata.SessionId, stopped, summary);
+      effects.Add(metadata, active.TerminalPersistenceEffect, terminal: true);
       active.DeviceConnectionsReleased = true;
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
       releaseConnections = true;
       if (!effects.IsEmpty)
-        terminalEffects = QueueEffects(effects, CancellationToken.None, deferExecution: true);
+        terminalEffects = QueueEffects(
+          effects,
+          _effectsStop.Token,
+          deferExecution: true,
+          propagateFailure: true);
     }
     finally
     {
@@ -837,7 +915,7 @@ public sealed class LiveSessionCoordinator(
     if (releaseConnections)
       await ReleaseDeviceConnectionsAsync(cancellationToken);
     if (terminalEffects is not null)
-      await terminalEffects.ConfigureAwait(false);
+      _ = await AwaitTerminalPersistenceForClientAsync(terminalEffects, cancellationToken);
     return snapshotToPublish!;
   }
 
@@ -851,6 +929,7 @@ public sealed class LiveSessionCoordinator(
     ValidateSessionAction(operationId, leaseId, holderId);
     LiveEffectBatch effects = new();
     ActiveSessionSnapshot? snapshotToPublish = null;
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -894,14 +973,16 @@ public sealed class LiveSessionCoordinator(
       });
       PublishSnapshot(active, now, SessionControlAccess.Controller, leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
       _gate.Release();
     }
     _snapshotBroadcaster.Publish(null, snapshotToPublish);
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
     return snapshotToPublish!;
   }
 
@@ -941,6 +1022,7 @@ public sealed class LiveSessionCoordinator(
 
     LiveEffectBatch effects = new();
     ActiveSessionSnapshot? snapshotToPublish = null;
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -992,14 +1074,16 @@ public sealed class LiveSessionCoordinator(
       });
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
       snapshotToPublish = active.Snapshot;
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
       _gate.Release();
     }
     _snapshotBroadcaster.Publish(null, snapshotToPublish);
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
     return snapshotToPublish!;
   }
 
@@ -1032,6 +1116,7 @@ public sealed class LiveSessionCoordinator(
 
     LiveEffectBatch effects = new();
     ActiveSessionSnapshot? snapshotToPublish = null;
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
@@ -1080,14 +1165,16 @@ public sealed class LiveSessionCoordinator(
       });
       PublishSnapshot(active, timeProvider.GetUtcNow(), SessionControlAccess.Controller, lease.ExpiresAt);
       snapshotToPublish = active.Snapshot;
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
       _gate.Release();
     }
     _snapshotBroadcaster.Publish(null, snapshotToPublish);
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
     return snapshotToPublish!;
   }
 
@@ -1280,9 +1367,11 @@ public sealed class LiveSessionCoordinator(
 
     ActiveSessionSnapshot? snapshotToPublish = null;
     var effects = new LiveEffectBatch();
+    Task? queuedEffects = null;
     await _gate.WaitAsync(cancellationToken);
     try
     {
+      ThrowIfShutdownStarted();
       if (_active is not { } active || active.Definition.SessionId != intent.SessionId)
       {
         return;
@@ -1446,6 +1535,8 @@ public sealed class LiveSessionCoordinator(
       var capturedAt = timeProvider.GetUtcNow();
       PublishSnapshot(active, capturedAt, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
       snapshotToPublish = active.Snapshot;
+      if (!effects.IsEmpty)
+        queuedEffects = QueueEffects(effects, _effectsStop.Token);
     }
     finally
     {
@@ -1453,8 +1544,8 @@ public sealed class LiveSessionCoordinator(
     }
 
     _snapshotBroadcaster.Publish(null, snapshotToPublish);
-    if (!effects.IsEmpty)
-      _ = QueueEffects(effects, CancellationToken.None);
+    if (queuedEffects is not null && intent.Origin == TreadmillCommandOrigin.Manual)
+      await AwaitQueuedEffectsForClientAsync(queuedEffects, cancellationToken);
   }
 
   public async Task<ActiveSessionSnapshot> SetHeartRateAutomationAsync(
@@ -1573,33 +1664,225 @@ public sealed class LiveSessionCoordinator(
     return snapshotToPublish!;
   }
 
-  public async Task ResetAsync(CancellationToken cancellationToken = default)
+  public async Task<bool> ResetAsync(
+    CancellationToken cancellationToken = default,
+    bool abandonStartupRecovery = false,
+    bool reconcileRestoredDatabase = false)
   {
-    DateTimeOffset? interruptAt = null;
-    await _gate.WaitAsync(cancellationToken);
+    await _armAdmission.WaitAsync(cancellationToken);
+    var startupRecoveryEntered = false;
     try
     {
-      if (_active is { } active &&
-          active.Machine.State is not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted))
+      if (abandonStartupRecovery)
       {
-        interruptAt = timeProvider.GetUtcNow();
+        await _startupRecoveryGate.WaitAsync(cancellationToken);
+        startupRecoveryEntered = true;
+      }
+      DateTimeOffset resetAt = timeProvider.GetUtcNow();
+      Guid? sessionId = null;
+      var resetEffects = new LiveEffectBatch();
+      Task? persistenceCompletion = null;
+      await _gate.WaitAsync(cancellationToken);
+      try
+      {
+        ThrowIfShutdownStarted();
+        if (!_startupRecoveryComplete)
+        {
+          if (!abandonStartupRecovery)
+            throw new InvalidOperationException("Gateway startup recovery is still in progress; try resetting again shortly.");
+          _startupRecoveryComplete = true;
+        }
+        _resetPersistencePending = true;
+        if (reconcileRestoredDatabase) _unfinishedSweepPending = true;
+        if (_active is { } active)
+        {
+          sessionId = active.Definition.SessionId;
+          if (active.Machine.State is not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted))
+            active.Machine.Interrupt();
+
+          if (active.Machine.State is SessionState.Interrupted or SessionState.Faulted)
+          {
+            LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+            active.TerminalPersistenceEffect = CreateInterruptionPersistenceEffect(
+              metadata.SessionId,
+              resetAt,
+              "Simulator reset.",
+              sweepUnfinished: true,
+              missingSessionIsSuccess: true,
+              allowIncompleteTelemetry: true);
+            resetEffects.Add(
+              metadata,
+              active.TerminalPersistenceEffect,
+              terminal: true);
+          }
+          else if ((active.Machine.State is SessionState.Completed or SessionState.Stopped) &&
+                   active.TerminalPersistenceEffect is not null)
+          {
+            bool terminalPersistenceFailed;
+            lock (_effectsQueueGate) terminalPersistenceFailed = _terminalPersistenceTail.IsFaulted;
+            if (terminalPersistenceFailed)
+            {
+              active.TerminalPersistenceEffect = CreateInterruptionPersistenceEffect(
+                active.Definition.SessionId,
+                resetAt,
+                "Terminal persistence failed; reset recovered the session as interrupted.",
+                sweepUnfinished: true,
+                missingSessionIsSuccess: true,
+                allowIncompleteTelemetry: true);
+            }
+            resetEffects.Add(
+              CaptureEffectMetadata(active),
+              active.TerminalPersistenceEffect,
+              terminal: true);
+          }
+        }
+        else if (_unfinishedSweepPending)
+        {
+          resetEffects.Add(
+            new LiveEffectMetadata(Guid.Empty, 0, 0, Guid.Empty),
+            CreateUnfinishedSweepPersistenceEffect(
+              resetAt,
+              "Database restore reconciled a session that was not active in this gateway process."),
+            terminal: true);
+        }
+        leaseCoordinator.RevokeCurrent();
+        persistenceCompletion = QueueEffects(
+          resetEffects,
+          _effectsStop.Token,
+          deferExecution: true,
+          propagateFailure: true);
+      }
+      finally
+      {
+        _gate.Release();
       }
 
-      _active = null;
-      leaseCoordinator.RevokeCurrent();
-      Volatile.Write(ref _current, CreateIdleSnapshot(timeProvider.GetUtcNow()));
+      // Persistence must finish before cleanup, but cleanup is not another
+      // effect in the same batch: a failed effect would otherwise prevent the
+      // cleanup/failure handler from ever running.
+      Task resetCompletion = CompleteResetPipelineAsync(sessionId, persistenceCompletion!);
+      Volatile.Write(ref _resetTail, IgnoreEffectFailureAsync(resetCompletion));
+      return await AwaitTerminalPersistenceForClientAsync(resetCompletion, cancellationToken);
+    }
+    finally
+    {
+      if (startupRecoveryEntered) _startupRecoveryGate.Release();
+      _armAdmission.Release();
+    }
+  }
+
+  private async Task CompleteResetPipelineAsync(Guid? sessionId, Task persistenceCompletion)
+  {
+    try
+    {
+      await persistenceCompletion.ConfigureAwait(false);
+      await CompleteResetAfterPersistenceAsync(sessionId).ConfigureAwait(false);
+    }
+    catch
+    {
+      // Retain the terminal in-memory session/effect (and any unfinished sweep)
+      // for retry, but release the in-flight latch. Arm retries a retained
+      // terminal effect; restored-database recovery remains blocked by the
+      // unfinished-sweep flag until startup recovery reconciles it.
+      await ReleaseConnectionsAfterFailedResetAsync(sessionId).ConfigureAwait(false);
+      await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+      try
+      {
+        _resetPersistencePending = false;
+        if (_unfinishedSweepPending)
+        {
+          _startupRecoveryComplete = false;
+          _startupRecoveryWaitLogged = false;
+          _startupRecoveryAttempt = 0;
+          _nextStartupRecoveryAttemptUtc = DateTimeOffset.MinValue;
+        }
+      }
+      finally { _gate.Release(); }
+      throw;
+    }
+  }
+
+  private async Task CompleteResetAfterPersistenceAsync(Guid? sessionId)
+  {
+    await _gate.WaitAsync(CancellationToken.None);
+    try
+    {
+      bool targetStillCurrent = sessionId is { } targetSessionId
+        ? _active is null || _active.Definition.SessionId == targetSessionId
+        : _active is null;
+      if (!targetStillCurrent)
+        throw new InvalidOperationException("The active session changed while reset persistence was completing.");
     }
     finally
     {
       _gate.Release();
     }
-    if (interruptAt is { } resetAt)
+
+    await ReleaseDeviceConnectionsAsync(CancellationToken.None);
+
+    await _gate.WaitAsync(CancellationToken.None);
+    try
     {
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      await store.InterruptUnfinishedAsync(resetAt, "Simulator reset.", cancellationToken);
+      bool targetStillCurrent = sessionId is { } targetSessionId
+        ? _active is null || _active.Definition.SessionId == targetSessionId
+        : _active is null;
+      if (!targetStillCurrent)
+        throw new InvalidOperationException("The active session changed while reset device cleanup was completing.");
+      if (_active is not null)
+      {
+        _active = null;
+        Volatile.Write(ref _current, CreateIdleSnapshot(timeProvider.GetUtcNow()));
+      }
+      _unfinishedSweepPending = false;
+      _resetPersistencePending = false;
     }
-    await ReleaseDeviceConnectionsAsync(cancellationToken);
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  private async Task ReleaseConnectionsAfterFailedResetAsync(Guid? sessionId)
+  {
+    var releaseConnections = false;
+    await _gate.WaitAsync(CancellationToken.None);
+    try
+    {
+      bool targetStillCurrent = sessionId is { } targetSessionId
+        ? _active is null || _active.Definition.SessionId == targetSessionId
+        : _active is null;
+      releaseConnections = targetStillCurrent;
+    }
+    finally
+    {
+      _gate.Release();
+    }
+
+    if (!releaseConnections) return;
+    try
+    {
+      await ReleaseDeviceConnectionsAsync(CancellationToken.None);
+      await _gate.WaitAsync(CancellationToken.None);
+      try
+      {
+        if (sessionId is { } targetSessionId &&
+            _active is { } active &&
+            active.Definition.SessionId == targetSessionId &&
+            !active.DeviceConnectionsReleased)
+        {
+          active.DeviceConnectionsReleased = true;
+          PublishSnapshot(active, timeProvider.GetUtcNow(), AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+        }
+      }
+      finally
+      {
+        _gate.Release();
+      }
+    }
+    catch (Exception exception)
+    {
+      logger.LogWarning(exception, "Run device connections could not be released after reset persistence failed.");
+    }
   }
 
   public async Task<bool> TryBeginMaintenanceAsync(CancellationToken cancellationToken = default)
@@ -1608,7 +1891,7 @@ public sealed class LiveSessionCoordinator(
     try
     {
       if (_maintenanceActive) return false;
-      if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped) }) return false;
+      if (_active is { Machine.State: not (SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted) }) return false;
       if (!applicationMaintenance.TryBegin()) return false;
       _maintenanceActive = true;
       return true;
@@ -1658,8 +1941,52 @@ public sealed class LiveSessionCoordinator(
     }
     finally
     {
+      // Close admission immediately. An Arm already in preparation will see
+      // this flag in its final admission check and execute its normal cleanup;
+      // commands already inside _gate may still enqueue before we snapshot.
+      _shutdownStarted = true;
+      _shutdownStop.Cancel();
       Task pendingEffects;
-      lock (_effectsQueueGate) pendingEffects = _effectsTail;
+      bool armAdmissionDrained = await _armAdmission.WaitAsync(
+        TimeSpan.FromSeconds(5),
+        CancellationToken.None);
+      if (!armAdmissionDrained)
+        logger.LogWarning("An in-flight arm did not stop during the bounded shutdown admission window.");
+      try
+      {
+        await _gate.WaitAsync(CancellationToken.None);
+        try
+        {
+          lock (_effectsQueueGate) pendingEffects = _effectsTail;
+        }
+        finally
+        {
+          _gate.Release();
+        }
+      }
+      finally
+      {
+        if (armAdmissionDrained) _armAdmission.Release();
+      }
+
+      // Once the authoritative loop has stopped there are no legitimate new
+      // telemetry producers. Close and drain the writer before canceling a
+      // terminal effect that may be waiting on its flush barrier. Otherwise a
+      // canceled barrier could let finalization run while the writer still
+      // accepts a late sample, leaving that sample behind the terminal row.
+      TelemetryWriter.Complete();
+      try
+      {
+        await telemetryWriter.WaitAsync(TimeSpan.FromSeconds(5));
+      }
+      catch (TimeoutException)
+      {
+        logger.LogWarning("Live-session telemetry did not drain during the bounded shutdown window.");
+        backgroundStop.Cancel();
+        try { await telemetryWriter; }
+        catch (OperationCanceledException) { }
+      }
+
       try
       {
         await pendingEffects.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1667,18 +1994,25 @@ public sealed class LiveSessionCoordinator(
       catch (TimeoutException)
       {
         logger.LogWarning("Live-session persistence effects did not drain during the bounded shutdown window.");
+        _effectsStop.Cancel();
+        try { await pendingEffects.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (TimeoutException)
+        {
+          logger.LogWarning("Live-session persistence effects did not stop after shutdown cancellation.");
+        }
+        catch (OperationCanceledException) { }
       }
-      TelemetryWriter.Complete();
+
       _snapshotBroadcaster.Complete();
       try
       {
-        await Task.WhenAll(telemetryWriter, snapshotBroadcaster).WaitAsync(TimeSpan.FromSeconds(5));
+        await snapshotBroadcaster.WaitAsync(TimeSpan.FromSeconds(5));
       }
       catch (TimeoutException)
       {
-        logger.LogWarning("Live-session telemetry or SignalR publication did not drain during the bounded shutdown window.");
+        logger.LogWarning("Live-session SignalR publication did not drain during the bounded shutdown window.");
         backgroundStop.Cancel();
-        try { await Task.WhenAll(telemetryWriter, snapshotBroadcaster); }
+        try { await snapshotBroadcaster; }
         catch (OperationCanceledException) { }
       }
     }
@@ -1689,7 +2023,6 @@ public sealed class LiveSessionCoordinator(
     AutomatedCommandRequest? automatedCommand = null;
     LiveSnapshot? liveSnapshotToPublish = null;
     ActiveSessionSnapshot? sessionSnapshotToPublish = null;
-    SessionTelemetryWrite? telemetryToQueue = null;
     var startupRecoveryNeeded = false;
     var effectsQueued = false;
     var effects = new LiveEffectBatch();
@@ -1713,116 +2046,152 @@ public sealed class LiveSessionCoordinator(
         }
         else
         {
-          DeviceTelemetrySnapshot? hardwareTelemetry = ApplyHardwareTelemetry(active, now, effects);
-          if (active.RecoveryState == SessionRecoveryState.Recovered &&
-              active.LastReconciledAtUtc is { } reconciledAt &&
-              now - reconciledAt >= TimeSpan.FromSeconds(5))
+          if (ShouldFreezeTerminalSnapshot(active.Machine.State, active.DeviceConnectionsReleased))
           {
-            active.RecoveryState = SessionRecoveryState.None;
-            active.ConnectionPhase = SessionConnectionPhase.Ready;
+            // Keep terminal workout telemetry immutable, but continue to expose
+            // current lease and device-connection metadata after release.
+            RefreshFrozenTerminalSnapshotMetadata(
+              active,
+              AccessForCurrentLease(),
+              leaseCoordinator.Current?.ExpiresAt);
+            liveSnapshotToPublish = Current;
+            sessionSnapshotToPublish = active.Snapshot;
           }
-          if (active.RecoveredAfterRestart && active.RestartRecoveryDeadlineUtc <= now &&
-              active.RecoveryState == SessionRecoveryState.RestartTracking && !active.IsMoving)
+          else
           {
-            active.Machine.Interrupt();
-            active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
-            active.CommandsSuspendedReason = "Session recovery timed out without fresh treadmill movement.";
-            LiveEffectMetadata metadata = CaptureEffectMetadata(active);
-            effects.Add(metadata, async token =>
+            DeviceTelemetrySnapshot? hardwareTelemetry = ApplyHardwareTelemetry(active, now, effects);
+            if (active.RecoveryState == SessionRecoveryState.Recovered &&
+                active.LastReconciledAtUtc is { } reconciledAt &&
+                now - reconciledAt >= TimeSpan.FromSeconds(5))
             {
-              using IServiceScope interruptedScope = scopeFactory.CreateScope();
-              await interruptedScope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+              active.RecoveryState = SessionRecoveryState.None;
+              active.ConnectionPhase = SessionConnectionPhase.Ready;
+            }
+            if (active.RecoveredAfterRestart && active.RestartRecoveryDeadlineUtc <= now &&
+                active.RecoveryState == SessionRecoveryState.RestartTracking && !active.IsMoving)
+            {
+              active.Machine.Interrupt();
+              active.ConnectionPhase = SessionConnectionPhase.NeedsAttention;
+              active.CommandsSuspendedReason = "Session recovery timed out without fresh treadmill movement.";
+              LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+              active.TerminalPersistenceEffect = CreateInterruptionPersistenceEffect(
+                metadata.SessionId,
                 now,
                 "Fresh movement from the enrolled treadmill was not confirmed after gateway restart.",
-                token);
-            });
-          }
-          if (!active.HardwareMode)
-          {
-            active.HeartRateAge = active.HeartRateObservedAt is null
-              ? TimeSpan.MaxValue
-              : NonNegative(now - active.HeartRateObservedAt.Value);
-            if (active.HeartRateAge > FreshTelemetryLimit)
-              active.HeartRateBpm = null;
-          }
-          UpdateMotion(active, now);
-          if (active.Machine.State == SessionState.Running)
-          {
-            int previousStepIndex = active.Progression.CurrentStepIndex;
-            foreach (WorkoutStepTransition transition in active.Progression.Advance(active.Elapsed, active.DistanceKilometers))
-            {
-              LiveEffectMetadata metadata = CaptureEffectMetadata(active);
-              WorkoutStepTransitionEvent transitionEvent = new(
-                transition.CompletedStepIndex,
-                transition.CurrentStepIndex,
-                active.Progression.CurrentStep?.Cue,
-                now);
-              effects.Add(metadata, async token =>
-              {
-                using IServiceScope transitionScope = scopeFactory.CreateScope();
-                await transitionScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
-                  metadata.SessionId,
-                  transitionEvent,
-                  token);
-              });
+                allowIncompleteTelemetry: true);
+              effects.Add(metadata, active.TerminalPersistenceEffect, terminal: true);
             }
-
-            if (active.Progression.CurrentStepIndex != previousStepIndex)
+            if (!active.HardwareMode)
             {
-              active.SpeedOverrideKph = null;
-              active.InclineOverridePercent = null;
+              active.HeartRateAge = active.HeartRateObservedAt is null
+                ? TimeSpan.MaxValue
+                : NonNegative(now - active.HeartRateObservedAt.Value);
+              if (active.HeartRateAge > FreshTelemetryLimit)
+                active.HeartRateBpm = null;
             }
-
-            if (active.Progression.IsComplete)
+            UpdateMotion(active, now);
+            if (active.Machine.State == SessionState.Running)
             {
-              if (CompletionAction(active) == WorkoutCompletionAction.Finalize)
+              int previousStepIndex = active.Progression.CurrentStepIndex;
+              foreach (WorkoutStepTransition transition in active.Progression.Advance(active.Elapsed, active.DistanceKilometers))
               {
-                FinalizeCompletedSession(active, now, effects);
+                LiveEffectMetadata metadata = CaptureEffectMetadata(active);
+                WorkoutStepTransitionEvent transitionEvent = new(
+                  transition.CompletedStepIndex,
+                  transition.CurrentStepIndex,
+                  active.Progression.CurrentStep?.Cue,
+                  now);
+                effects.Add(metadata, async token =>
+                {
+                  using IServiceScope transitionScope = scopeFactory.CreateScope();
+                  await transitionScope.ServiceProvider.GetRequiredService<ISessionStore>().AppendEventAsync(
+                    metadata.SessionId,
+                    transitionEvent,
+                    token);
+                });
+              }
+
+              if (active.Progression.CurrentStepIndex != previousStepIndex)
+              {
+                active.SpeedOverrideKph = null;
+                active.InclineOverridePercent = null;
+              }
+
+              if (active.Progression.IsComplete)
+              {
+                if (CompletionAction(active) == WorkoutCompletionAction.Finalize)
+                {
+                  FinalizeCompletedSession(active, now, effects);
+                }
+                else
+                {
+                  AddWarningOnce(active,
+                    "Workout steps are complete. The session will stay open until the treadmill confirms a physical stop; use the physical Stop control if needed.");
+                }
               }
               else
               {
-                AddWarningOnce(active,
-                  "Workout steps are complete. The session will stay open until the treadmill confirms a physical stop; use the physical Stop control if needed.");
+                DateTimeOffset sampleAt = GetLogicalSessionTimestamp(active, now);
+                if (active.SampleCadence.TryAdvance(sampleAt))
+                {
+                  SessionSample sample = CreateSample(active, sampleAt);
+                  SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, sampleAt);
+                  SessionTelemetryWrite telemetry = new(
+                    active.Definition.SessionId,
+                    sample,
+                    checkpoint,
+                    active.Machine.Version,
+                    active.ConnectionGeneration,
+                    active.AutomationAuthorityId,
+                    hardwareTelemetry is null
+                      ? null
+                      : CaptureHeartRateDiagnostic(
+                        active.Definition.UserProfileId,
+                        hardwareTelemetry,
+                        sample,
+                        FreshTelemetryLimit));
+                  // Reserve the write while the authoritative gate is still held.
+                  // A terminal transition cannot begin its flush until this write
+                  // is visible to the writer, so the final sample cannot slip into
+                  // the capture-to-enqueue gap after the database row is terminal.
+                  if (!TelemetryWriter.TryEnqueue(telemetry))
+                  {
+                    logger.LogDebug(
+                      "The live-session telemetry writer has completed; the next gateway startup will recover from the latest durable checkpoint.");
+                  }
+                }
               }
             }
-            else if (active.SampleCadence.TryAdvance(now))
+
+            if (ShouldReleaseDeviceConnections(
+                  active.Machine.State,
+                  active.DeviceConnectionsReleased,
+                  active.IsMoving,
+                  active.MeasuredSpeedKph,
+                  _resetPersistencePending))
             {
-              SessionSample sample = CreateSample(active, now);
-              SessionRecoveryCheckpoint checkpoint = CreateRecoveryCheckpoint(active, now);
-              SessionTelemetryWrite telemetry = new(
-                active.Definition.SessionId,
-                sample,
-                checkpoint,
-                active.Machine.Version,
-                active.ConnectionGeneration,
-                active.AutomationAuthorityId,
-                hardwareTelemetry is null
-                  ? null
-                  : CaptureHeartRateDiagnostic(
-                    active.Definition.UserProfileId,
-                    hardwareTelemetry,
-                    sample,
-                    FreshTelemetryLimit));
-              telemetryToQueue = telemetry;
+              active.DeviceConnectionsReleased = true;
+              releaseConnections = true;
             }
-          }
 
-          if (!active.DeviceConnectionsReleased &&
-              active.Machine.State is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted &&
-              !active.IsMoving && active.MeasuredSpeedKph <= 0.05)
-          {
-            active.DeviceConnectionsReleased = true;
-            releaseConnections = true;
-          }
-
-          PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
-          automatedCommand = BuildAutomatedCommand(active, now);
-          liveSnapshotToPublish = Current;
-          sessionSnapshotToPublish = active.Snapshot;
-          if (effects.HasTerminalEffects)
-          {
-            _ = QueueEffects(effects, CancellationToken.None, deferExecution: true);
-            effectsQueued = true;
+            PublishSnapshot(active, now, AccessForCurrentLease(), leaseCoordinator.Current?.ExpiresAt);
+            automatedCommand = BuildAutomatedCommand(active, now);
+            liveSnapshotToPublish = Current;
+            sessionSnapshotToPublish = active.Snapshot;
+            if (effects.HasTerminalEffects)
+            {
+              _ = QueueEffects(
+                effects,
+                _effectsStop.Token,
+                deferExecution: true,
+                propagateFailure: true);
+              effectsQueued = true;
+            }
+            if (!effects.IsEmpty && !effectsQueued)
+            {
+              _ = QueueEffects(effects, _effectsStop.Token);
+              effectsQueued = true;
+            }
           }
         }
       }
@@ -1844,12 +2213,6 @@ public sealed class LiveSessionCoordinator(
 
     _snapshotBroadcaster.Publish(liveSnapshotToPublish, sessionSnapshotToPublish);
 
-    if (telemetryToQueue is not null && !TelemetryWriter.TryEnqueue(telemetryToQueue))
-      logger.LogDebug("The live-session telemetry writer has completed; the next gateway startup will recover from the latest durable checkpoint.");
-
-    if (!effects.IsEmpty && !effectsQueued)
-      _ = QueueEffects(effects, CancellationToken.None);
-
     if (automatedCommand is not null)
     {
       await ExecuteAutomatedCommandAsync(automatedCommand, cancellationToken);
@@ -1857,50 +2220,67 @@ public sealed class LiveSessionCoordinator(
 
   }
 
-  private async Task RunEffectsAsync(LiveEffectBatch effects, CancellationToken cancellationToken)
+  private async Task RunEffectsAsync(
+    LiveEffectBatch effects,
+    CancellationToken cancellationToken,
+    bool propagateFailure)
   {
-    await _effectsGate.WaitAsync(cancellationToken);
+    var entered = false;
     try
     {
+      await _effectsGate.WaitAsync(effects.HasTerminalEffects ? CancellationToken.None : cancellationToken);
+      entered = true;
       await effects.ExecuteAsync(IsCurrentEffectAsync, cancellationToken);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       // Host shutdown owns cancellation; no new physical command is issued by an
       // effect runner after the authoritative loop stops.
+      if (propagateFailure) throw;
     }
     catch (Exception exception)
     {
       logger.LogError(exception, "A live-session effect batch failed outside the authoritative state lock.");
+      if (propagateFailure) throw;
     }
     finally
     {
-      _effectsGate.Release();
+      if (entered) _effectsGate.Release();
     }
   }
 
   private Task QueueEffects(
     LiveEffectBatch effects,
     CancellationToken cancellationToken,
-    bool deferExecution = false)
+    bool deferExecution = false,
+    bool propagateFailure = false)
   {
     lock (_effectsQueueGate)
     {
       Task previous = _effectsTail;
-      _effectsTail = deferExecution
-        ? Task.Run(() => RunQueuedEffectsAsync(previous, effects, cancellationToken))
-        : RunQueuedEffectsAsync(previous, effects, cancellationToken);
-      return _effectsTail;
+      Task operation = deferExecution
+        ? Task.Run(() => RunQueuedEffectsAsync(previous, effects, cancellationToken, propagateFailure))
+        : RunQueuedEffectsAsync(previous, effects, cancellationToken, propagateFailure);
+      _effectsTail = propagateFailure ? IgnoreEffectFailureAsync(operation) : operation;
+      if (effects.HasTerminalEffects) _terminalPersistenceTail = operation;
+      return operation;
     }
   }
 
   private async Task RunQueuedEffectsAsync(
     Task previous,
     LiveEffectBatch effects,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken,
+    bool propagateFailure)
   {
     await previous.ConfigureAwait(false);
-    await RunEffectsAsync(effects, cancellationToken).ConfigureAwait(false);
+    await RunEffectsAsync(effects, cancellationToken, propagateFailure).ConfigureAwait(false);
+  }
+
+  private static async Task IgnoreEffectFailureAsync(Task operation)
+  {
+    try { await operation.ConfigureAwait(false); }
+    catch { }
   }
 
   private async Task<bool> IsCurrentEffectAsync(
@@ -1922,22 +2302,66 @@ public sealed class LiveSessionCoordinator(
     }
   }
 
-  private Task<bool> IsCurrentTelemetryAsync(
+  private async Task<bool> IsCurrentTelemetryAsync(
     SessionTelemetryWrite write,
-    CancellationToken cancellationToken) =>
-    IsCurrentEffectAsync(
-      new LiveEffectMetadata(
-        write.SessionId,
-        write.SessionVersion,
-        write.ConnectionGeneration,
-        write.AuthorityId),
-      cancellationToken);
+    CancellationToken cancellationToken)
+  {
+    await _gate.WaitAsync(cancellationToken);
+    try
+    {
+      return _active is { } active && IsTelemetryWriteCurrent(
+        write,
+        active.Definition.SessionId,
+        active.Machine.Version,
+        active.ConnectionGeneration,
+        active.AutomationAuthorityId);
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  internal static bool IsTelemetryWriteCurrent(
+    SessionTelemetryWrite write,
+    Guid activeSessionId,
+    long activeVersion,
+    long activeConnectionGeneration,
+    Guid activeAuthorityId)
+  {
+    // A captured sample remains valid across later state-only transitions and
+    // reconnects. The authority changes when ownership is replaced; generation
+    // only rejects impossible future writes because a queued sample from the
+    // immediately preceding connection still belongs to this session authority.
+    bool currentOrPriorVersion = write.SessionVersion <= activeVersion;
+    bool currentOrPriorConnectionGeneration = write.ConnectionGeneration <= activeConnectionGeneration;
+    return write.SessionId == activeSessionId &&
+      currentOrPriorConnectionGeneration &&
+      write.AuthorityId == activeAuthorityId &&
+      currentOrPriorVersion;
+  }
 
   private static LiveEffectMetadata CaptureEffectMetadata(ActiveRun active) => new(
     active.Definition.SessionId,
     active.Machine.Version,
     active.ConnectionGeneration,
     active.AutomationAuthorityId);
+
+  internal static bool ShouldFreezeTerminalSnapshot(SessionState state, bool deviceConnectionsReleased) =>
+    deviceConnectionsReleased &&
+    state is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted;
+
+  internal static bool ShouldReleaseDeviceConnections(
+    SessionState state,
+    bool deviceConnectionsReleased,
+    bool isMoving,
+    double measuredSpeedKph,
+    bool resetPersistencePending = false) =>
+    !resetPersistencePending &&
+    !deviceConnectionsReleased &&
+    state is SessionState.Completed or SessionState.Stopped or SessionState.Interrupted or SessionState.Faulted &&
+    !isMoving &&
+    measuredSpeedKph <= 0.05;
 
   private AutomatedCommandRequest? BuildAutomatedCommand(ActiveRun active, DateTimeOffset now)
   {
@@ -2132,11 +2556,13 @@ public sealed class LiveSessionCoordinator(
   {
     if (active.Machine.State == SessionState.Completed) return;
 
+    DateTimeOffset terminalAt = GetTerminalTimestamp(active, completedAt);
+    SessionSummary summary = CreateSummary(active, SessionState.Completed, terminalAt);
     active.Machine.Complete();
     LiveEffectMetadata metadata = CaptureEffectMetadata(active);
-    SessionCompletedEvent completedEvent = new(completedAt);
-    SessionSummary summary = CreateSummary(active, SessionState.Completed, completedAt);
-    effects.Add(metadata, CreateTerminalPersistenceEffect(metadata.SessionId, completedEvent, summary), terminal: true);
+    SessionCompletedEvent completedEvent = new(terminalAt);
+    active.TerminalPersistenceEffect = CreateTerminalPersistenceEffect(metadata.SessionId, completedEvent, summary);
+    effects.Add(metadata, active.TerminalPersistenceEffect, terminal: true);
   }
 
   private Func<CancellationToken, Task> CreateTerminalPersistenceEffect(
@@ -2150,20 +2576,210 @@ public sealed class LiveSessionCoordinator(
     {
       if (finalized) return;
 
-      using IServiceScope scope = scopeFactory.CreateScope();
-      ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
-      if (!eventAppended)
+      // The terminal state transition increments the machine version. Drain the
+      // immediately preceding telemetry before making the database row terminal,
+      // otherwise the store correctly rejects a late append and loses the tail.
+      await PersistAfterTelemetryFlushAsync(
+        TelemetryWriter.FlushSessionAsync(sessionId, cancellationToken),
+        async () =>
+        {
+          using var persistenceAttempt = new CancellationTokenSource();
+          using CancellationTokenRegistration shutdownDeadline = RegisterShutdownPersistenceDeadline(
+            cancellationToken,
+            persistenceAttempt);
+          CancellationToken persistenceToken = persistenceAttempt.Token;
+          try
+          {
+            using IServiceScope scope = scopeFactory.CreateScope();
+            ISessionStore store = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+            if (!eventAppended)
+            {
+              await store.AppendEventAsync(sessionId, terminalEvent, persistenceToken);
+              eventAppended = true;
+            }
+
+            if (finalized) return;
+            await store.FinalizeAsync(summary, persistenceToken);
+            await scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>()
+              .QueueStopAsync(sessionId, timeProvider.GetUtcNow(), persistenceToken);
+            finalized = true;
+          }
+          catch (KeyNotFoundException)
+          {
+            // Stop-and-discard may intentionally delete the row while a slow
+            // terminal effect is still draining. Deletion is already durable.
+            finalized = true;
+          }
+        });
+    };
+  }
+
+  private Func<CancellationToken, Task> CreateInterruptionPersistenceEffect(
+    Guid sessionId,
+    DateTimeOffset interruptedAt,
+    string reason,
+    bool sweepUnfinished = false,
+    bool missingSessionIsSuccess = false,
+    bool allowIncompleteTelemetry = false) =>
+    async cancellationToken =>
+    {
+      string effectiveReason = reason;
+      async Task PersistInterruptionAsync()
       {
-        await store.AppendEventAsync(sessionId, terminalEvent, cancellationToken);
-        eventAppended = true;
+        using var persistenceAttempt = new CancellationTokenSource();
+        using CancellationTokenRegistration shutdownDeadline = RegisterShutdownPersistenceDeadline(
+          cancellationToken,
+          persistenceAttempt);
+        CancellationToken persistenceToken = persistenceAttempt.Token;
+        using IServiceScope scope = scopeFactory.CreateScope();
+        ISessionStore sessionStore = scope.ServiceProvider.GetRequiredService<ISessionStore>();
+        try
+        {
+          await sessionStore.InterruptAsync(sessionId, interruptedAt, effectiveReason, persistenceToken);
+        }
+        catch (KeyNotFoundException) when (missingSessionIsSuccess)
+        {
+          // History deletion already made the requested reset durable.
+        }
+        if (sweepUnfinished)
+          await sessionStore.InterruptUnfinishedAsync(interruptedAt, effectiveReason, persistenceToken);
+        await scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>()
+          .QueueStopAsync(sessionId, timeProvider.GetUtcNow(), persistenceToken);
       }
 
-      if (finalized) return;
-      await store.FinalizeAsync(summary, cancellationToken);
-      await scope.ServiceProvider.GetRequiredService<IPolarH10RecordingStore>()
-        .QueueStopAsync(sessionId, timeProvider.GetUtcNow(), cancellationToken);
-      finalized = true;
+      Task flush = TelemetryWriter.FlushSessionAsync(sessionId, cancellationToken);
+      if (!allowIncompleteTelemetry)
+      {
+        await PersistAfterTelemetryFlushAsync(flush, PersistInterruptionAsync);
+        return;
+      }
+      try
+      {
+        await flush;
+      }
+      catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+      {
+        throw;
+      }
+      catch (Exception exception)
+      {
+        effectiveReason = $"{reason} Accepted telemetry was incomplete and the session was not eligible for automatic export.";
+        logger.LogWarning(
+          exception,
+          "Interrupting session {SessionId} with an explicitly incomplete telemetry tail after reset/recovery.",
+          sessionId);
+      }
+      await PersistInterruptionAsync();
     };
+
+  private Func<CancellationToken, Task> CreateUnfinishedSweepPersistenceEffect(
+    DateTimeOffset interruptedAt,
+    string reason) =>
+    async cancellationToken =>
+    {
+      using var persistenceAttempt = new CancellationTokenSource();
+      using CancellationTokenRegistration shutdownDeadline = RegisterShutdownPersistenceDeadline(
+        cancellationToken,
+        persistenceAttempt);
+      using IServiceScope scope = scopeFactory.CreateScope();
+      await scope.ServiceProvider.GetRequiredService<ISessionStore>().InterruptUnfinishedAsync(
+        interruptedAt,
+        reason,
+        persistenceAttempt.Token);
+    };
+
+  private static CancellationTokenRegistration RegisterShutdownPersistenceDeadline(
+    CancellationToken shutdownToken,
+    CancellationTokenSource persistenceAttempt) =>
+    shutdownToken.Register(static state =>
+    {
+      var attempt = (CancellationTokenSource)state!;
+      attempt.CancelAfter(ShutdownFinalPersistenceTimeout);
+    }, persistenceAttempt);
+
+  internal static async Task PersistAfterTelemetryFlushAsync(
+    Task telemetryFlush,
+    Func<Task> terminalPersistence)
+  {
+    // Never make a session terminal after accepted telemetry failed to persist.
+    // A normal store outage is retried by the writer; cancellation leaves the
+    // row unfinished so startup recovery cannot mistake an incomplete timeline
+    // for a coherent completed activity suitable for export.
+    await telemetryFlush;
+    await terminalPersistence();
+  }
+
+  internal static async Task WaitForTerminalPersistenceBarrierAsync(
+    Task barrier,
+    TimeSpan timeout,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      await barrier.WaitAsync(timeout, cancellationToken);
+    }
+    catch (TimeoutException)
+    {
+      throw new InvalidOperationException(
+        "A previous terminal session operation is still finishing; try again shortly.");
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+      throw new InvalidOperationException(
+        "A previous terminal session operation failed; retry starting the workout to retry persistence.",
+        exception);
+    }
+    catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+    {
+      throw new InvalidOperationException(
+        "A previous terminal session operation was interrupted; retry starting the workout to retry persistence.",
+        exception);
+    }
+  }
+
+  private async Task AwaitQueuedEffectsForClientAsync(
+    Task queuedEffects,
+    CancellationToken cancellationToken)
+  {
+    try
+    {
+      await queuedEffects.WaitAsync(TerminalPersistenceClientWaitTimeout, cancellationToken);
+    }
+    catch (TimeoutException exception)
+    {
+      logger.LogWarning(
+        exception,
+        "Session persistence is still queued after {TimeoutSeconds} seconds; the state change was accepted but durability is not yet confirmed.",
+        TerminalPersistenceClientWaitTimeout.TotalSeconds);
+    }
+  }
+
+  private async Task<bool> AwaitTerminalPersistenceForClientAsync(Task terminalPersistence, CancellationToken cancellationToken)
+  {
+    try
+    {
+      await terminalPersistence.WaitAsync(TerminalPersistenceClientWaitTimeout, cancellationToken);
+      return true;
+    }
+    catch (TimeoutException)
+    {
+      logger.LogWarning(
+        "Terminal persistence is still draining telemetry after {TimeoutSeconds} seconds; it will continue in the background before the database row becomes terminal.",
+        TerminalPersistenceClientWaitTimeout.TotalSeconds);
+      return false;
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+      throw new InvalidOperationException(
+        "Terminal persistence or device cleanup failed; retry the operation after the underlying problem is resolved.",
+        exception);
+    }
+    catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+    {
+      throw new InvalidOperationException(
+        "Terminal persistence was interrupted; retry the operation after the underlying problem is resolved.",
+        exception);
+    }
   }
 
   private async Task<bool> ApplySimulatedCommandMeasurementAsync(
@@ -2213,12 +2829,12 @@ public sealed class LiveSessionCoordinator(
 
   private async Task TryCompleteStartupRecoveryAsync(CancellationToken cancellationToken)
   {
-    if (_startupRecoveryComplete) return;
+    await _startupRecoveryGate.WaitAsync(cancellationToken);
     DateTimeOffset now = timeProvider.GetUtcNow();
-    if (now < _nextStartupRecoveryAttemptUtc) return;
-
     try
     {
+      if (_startupRecoveryComplete) return;
+      if (now < _nextStartupRecoveryAttemptUtc) return;
       using IServiceScope recoveryScope = scopeFactory.CreateScope();
       ISessionStore sessionStore = recoveryScope.ServiceProvider.GetRequiredService<ISessionStore>();
       await sessionStore.ReconcileActiveSessionsAsync(now, cancellationToken);
@@ -2266,6 +2882,10 @@ public sealed class LiveSessionCoordinator(
         ScheduleStartupRecoveryRetry(now);
       }
     }
+    finally
+    {
+      _startupRecoveryGate.Release();
+    }
   }
 
   private async Task MarkStartupRecoveryCompleteAsync(
@@ -2275,6 +2895,7 @@ public sealed class LiveSessionCoordinator(
     await _gate.WaitAsync(cancellationToken);
     try
     {
+      if (_startupRecoveryComplete) return;
       if (restored is not null)
       {
         if (_active is not null)
@@ -2284,6 +2905,8 @@ public sealed class LiveSessionCoordinator(
       }
 
       _startupRecoveryComplete = true;
+      _unfinishedSweepPending = false;
+      _resetPersistencePending = false;
       _startupRecoveryAttempt = 0;
       _nextStartupRecoveryAttemptUtc = DateTimeOffset.MinValue;
     }
@@ -2291,6 +2914,58 @@ public sealed class LiveSessionCoordinator(
     {
       _gate.Release();
     }
+  }
+
+  public async Task RestartStartupRecoveryAsync(CancellationToken cancellationToken = default)
+  {
+    // A reset returning false has only exceeded the client wait; its terminal
+    // persistence may still be running. Re-arm recovery only after that tail
+    // settles, and preserve fail-closed admission if persistence actually
+    // failed and left reset cleanup pending.
+    try
+    {
+      await Volatile.Read(ref _resetTail).WaitAsync(
+        TerminalPersistenceClientWaitTimeout,
+        cancellationToken);
+    }
+    catch (TimeoutException exception)
+    {
+      throw new InvalidOperationException(
+        "Reset persistence is still running; retry startup recovery shortly.",
+        exception);
+    }
+    await _armAdmission.WaitAsync(cancellationToken);
+    try
+    {
+      await _startupRecoveryGate.WaitAsync(cancellationToken);
+      try
+      {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+          if (_resetPersistencePending)
+            throw new InvalidOperationException("Startup recovery cannot restart while reset persistence is unresolved.");
+          _startupRecoveryComplete = false;
+          _startupRecoveryWaitLogged = false;
+          _startupRecoveryAttempt = 0;
+          _nextStartupRecoveryAttemptUtc = DateTimeOffset.MinValue;
+        }
+        finally
+        {
+          _gate.Release();
+        }
+      }
+      finally
+      {
+        _startupRecoveryGate.Release();
+      }
+    }
+    finally
+    {
+      _armAdmission.Release();
+    }
+
+    await TryCompleteStartupRecoveryAsync(cancellationToken);
   }
 
   private void ScheduleStartupRecoveryRetry(DateTimeOffset nowUtc)
@@ -2346,6 +3021,7 @@ public sealed class LiveSessionCoordinator(
       : HeartRateControllerSettings.Default;
     TreadmillCapabilities? capabilities = configuration.Treadmill?.Capabilities;
     DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(stored.Definition.UserProfileId);
+    IReadOnlyList<SessionSample> normalizedStoredSamples = SessionSampleTimeline.Normalize(stored.Samples);
     var active = new ActiveRun(
       stored.Definition,
       workout,
@@ -2387,8 +3063,9 @@ public sealed class LiveSessionCoordinator(
       NextSequence = stored.Samples.Count == 0
         ? 0
         : checked(stored.Samples.Max(static sample => sample.Sequence) + 1),
+      LastSampleCapturedAt = normalizedStoredSamples.LastOrDefault()?.CapturedAt,
       EstimatedKilocalories = SessionCalorieCalculator.Calculate(
-        stored.Samples,
+        normalizedStoredSamples,
         configuration.Profile.WeightKilograms),
     };
     active.DesiredHeartRateAutomationMode = checkpoint.DesiredHeartRateAutomationMode;
@@ -2875,6 +3552,66 @@ public sealed class LiveSessionCoordinator(
       active.Progression.ElapsedSinceRestart);
   }
 
+  private void RefreshFrozenTerminalSnapshotMetadata(
+    ActiveRun active,
+    SessionControlAccess access,
+    DateTimeOffset? leaseExpiresAt)
+  {
+    ActiveSessionSnapshot frozen = active.Snapshot;
+    DeviceTelemetrySnapshot devices = deviceCoordinator.CurrentForProfile(active.Definition.UserProfileId);
+    LiveSnapshot live = frozen.Live with
+    {
+      TreadmillConnectionState = active.HardwareMode
+        ? devices.Treadmill.State
+        : DeviceConnectionState.Ready,
+      HeartRateConnectionState = active.HardwareMode
+        ? devices.HeartRate.State
+        : DeviceConnectionState.Ready,
+    };
+    Volatile.Write(ref _current, live);
+    active.Snapshot = new ActiveSessionSnapshot(
+      frozen.SessionId,
+      frozen.UserProfileId,
+      frozen.UserProfileName,
+      frozen.WorkoutRevisionId,
+      frozen.WorkoutTitle,
+      live,
+      frozen.Version,
+      frozen.CurrentStep,
+      frozen.NextStep,
+      frozen.Remaining,
+      frozen.PlannedSpeedKph,
+      frozen.RequestedSpeedKph,
+      frozen.PlannedInclinePercent,
+      frozen.RequestedInclinePercent,
+      frozen.HeartRateTarget,
+      frozen.HeartRateSource,
+      frozen.HeartRateAge,
+      access,
+      leaseExpiresAt,
+      frozen.Warnings,
+      frozen.LastCommandResult,
+      frozen.CanStartRemotely,
+      frozen.CanStopRemotely,
+      frozen.MinimumStartSpeedKph,
+      frozen.CanSetSpeedRemotely,
+      frozen.CanSetInclineRemotely,
+      frozen.CanPauseRemotely,
+      frozen.SpeedRange,
+      frozen.InclineRange,
+      frozen.HeartRateAutomationMode,
+      frozen.HeartRateAutomationReason,
+      frozen.WorkoutPlan,
+      frozen.ConnectionPhase,
+      frozen.ServiceInstanceId,
+      frozen.RecoveryState,
+      frozen.CommandsSuspendedReason,
+      frozen.TelemetryGapStartedAtUtc,
+      frozen.CanResumePlannedControls,
+      frozen.LastReconciledAtUtc,
+      frozen.WorkoutElapsed);
+  }
+
   private static IReadOnlyList<WorkoutPlanPoint> BuildWorkoutPlan(WorkoutDefinition definition)
   {
     var steps = new List<WorkoutStep>();
@@ -2957,22 +3694,45 @@ public sealed class LiveSessionCoordinator(
     _ => null,
   };
 
-  private static SessionSample CreateSample(ActiveRun active, DateTimeOffset now) => new(
-    active.Definition.SessionId,
-    active.NextSequence++,
-    now,
-    active.Elapsed,
-    active.Progression.PlannedSpeedKph,
-    active.RequestedSpeedKph,
-    active.MeasuredSpeedKph,
-    active.Progression.PlannedInclinePercent,
-    active.RequestedInclinePercent,
-    active.MeasuredInclinePercent,
-    active.HeartRateBpm,
-    active.DistanceKilometers,
-    active.EstimatedKilocalories,
-    active.TelemetryAge,
-    active.Definition.MetricAlgorithmVersion);
+  private static SessionSample CreateSample(ActiveRun active, DateTimeOffset now)
+  {
+    active.LastSampleCapturedAt = now;
+    return new SessionSample(
+      active.Definition.SessionId,
+      active.NextSequence++,
+      now,
+      active.Elapsed,
+      active.Progression.PlannedSpeedKph,
+      active.RequestedSpeedKph,
+      active.MeasuredSpeedKph,
+      active.Progression.PlannedInclinePercent,
+      active.RequestedInclinePercent,
+      active.MeasuredInclinePercent,
+      active.HeartRateBpm,
+      active.DistanceKilometers,
+      active.EstimatedKilocalories,
+      active.TelemetryAge,
+      active.Definition.MetricAlgorithmVersion);
+  }
+
+  private static DateTimeOffset GetLogicalSessionTimestamp(ActiveRun active, DateTimeOffset observedAt)
+  {
+    DateTimeOffset logicalAt = active.StartedAt is { } startedAt
+      ? startedAt + active.Elapsed
+      : active.Definition.ArmedAt;
+    if (observedAt > logicalAt) logicalAt = observedAt;
+    if (active.LastSampleCapturedAt is { } previous && logicalAt <= previous)
+      logicalAt = previous.AddTicks(1);
+    return logicalAt;
+  }
+
+  private static DateTimeOffset GetTerminalTimestamp(ActiveRun active, DateTimeOffset observedAt)
+  {
+    DateTimeOffset terminalAt = GetLogicalSessionTimestamp(active, observedAt);
+    DateTimeOffset startedAt = active.StartedAt ?? active.Definition.ArmedAt;
+    DateTimeOffset minimumEnd = startedAt + (active.StartedAt is null ? TimeSpan.Zero : active.Elapsed);
+    return terminalAt < minimumEnd ? minimumEnd : terminalAt;
+  }
 
   private static SessionSummary CreateSummary(
     ActiveRun active,
@@ -2999,8 +3759,17 @@ public sealed class LiveSessionCoordinator(
       active.MeasuredInclinePercent);
   }
 
-  private ActiveRun RequireActive() => _active
-    ?? throw new InvalidOperationException("No simulator workout is armed.");
+  private ActiveRun RequireActive()
+  {
+    ThrowIfShutdownStarted();
+    return _active ?? throw new InvalidOperationException("No simulator workout is armed.");
+  }
+
+  private void ThrowIfShutdownStarted()
+  {
+    if (_shutdownStarted)
+      throw new InvalidOperationException("The live-session coordinator is stopping.");
+  }
 
   private static TimeSpan NonNegative(TimeSpan value) =>
     value < TimeSpan.Zero ? TimeSpan.Zero : value;
@@ -3173,6 +3942,7 @@ public sealed class LiveSessionCoordinator(
     public bool RecoveredAfterRestart { get; set; }
     public DateTimeOffset? RestartRecoveryDeadlineUtc { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? LastSampleCapturedAt { get; set; }
     public DateTimeOffset LastTickAt { get; set; } = createdAt;
     public FixedIntervalCadence SampleCadence { get; } = new(PersistenceInterval, createdAt);
     public TimeSpan Elapsed { get; set; }
@@ -3182,6 +3952,7 @@ public sealed class LiveSessionCoordinator(
     public double MeasuredInclinePercent { get; set; }
     public bool IsMoving { get; set; }
     public bool DeviceConnectionsReleased { get; set; }
+    public Func<CancellationToken, Task>? TerminalPersistenceEffect { get; set; }
     public bool CompletionStopAttempted { get; set; }
     public ushort? HeartRateBpm { get; set; } = hardwareMode ? null : (ushort)132;
     public TimeSpan? HeartRateAge { get; set; } = hardwareMode ? null : TimeSpan.Zero;
