@@ -432,6 +432,40 @@ public sealed class GarminActivityUploadStoreTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Failed_watch_fit_merge_can_be_retried_before_any_remote_mutation()
+  {
+    IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();
+    (Guid profileId, _) = await SeedCompletedSessionAsync(factory, "Marc");
+    var store = new GarminActivityUploadStore(factory);
+    DateTimeOffset now = DateTimeOffset.Parse("2026-08-05T08:00:00Z");
+    await store.ConnectAsync(
+      profileId,
+      "marc",
+      "protected-token-json",
+      enabled: true,
+      watchActivityHandling: GarminWatchActivityHandling.MergeAndReplace,
+      nowUtc: now.AddHours(-2));
+    Assert.True(await store.ReconcileCompletedSessionsAsync(now) > 0);
+    GarminActivityUploadJob leased = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now, TimeSpan.FromMinutes(2)));
+    Assert.Equal("WatchSearch", leased.OperationPhase);
+    await store.MarkRejectedAsync(
+      leased.Id,
+      "merge-source",
+      "The retained watch FIT could not be merged.",
+      now.AddSeconds(1),
+      expectedLeaseExpiresAtUtc: leased.LeaseExpiresAtUtc);
+
+    GarminActivityUploadJob failed = Assert.Single(await store.ListJobsAsync(profileId));
+    Assert.True(failed.CanRetry);
+    Assert.Null(failed.MatchedRemoteId);
+    Assert.True(await store.RetryFailedAsync(leased.Id, profileId, now.AddMinutes(1)));
+    GarminActivityUploadJob retried = Assert.IsType<GarminActivityUploadJob>(
+      await store.LeaseNextAsync(now.AddMinutes(1), TimeSpan.FromMinutes(2)));
+    Assert.Equal("WatchSearch", retried.OperationPhase);
+  }
+
+  [Fact]
   public async Task Historical_recovery_preserves_durable_remote_identities_when_resumed()
   {
     IDbContextFactory<TreadmillRunnerDbContext> factory = await CreateDatabaseAsync();

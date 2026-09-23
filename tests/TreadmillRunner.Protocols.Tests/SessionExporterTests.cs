@@ -353,7 +353,9 @@ public sealed class SessionExporterTests
     Assert.All(records, record => Assert.Equal((sbyte)21, record.GetTemperature()));
     Assert.All(records, record => Assert.Equal(37.2f, record.GetCoreTemperature()));
     Assert.All(records, record => Assert.Equal(45f, record.GetLeftPowerPhase(0)));
-    Assert.All(records, record => Assert.Null(record.GetZone()));
+    // The FIT SDK decodes an omitted record zone as its 255 invalid sentinel
+    // after encode/decode; both forms mean no derived zone was emitted.
+    Assert.All(records, record => Assert.True(record.GetZone() is null or byte.MaxValue));
     Assert.All(records, record => Assert.Null(record.GetField("compressed_speed_distance")));
     Assert.All(records, record => Assert.Empty(record.DeveloperFields));
     Assert.All(decodedMessages, message => Assert.Empty(message.DeveloperFields));

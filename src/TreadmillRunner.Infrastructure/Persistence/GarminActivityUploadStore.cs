@@ -1496,7 +1496,9 @@ public sealed class GarminActivityUploadStore(
     await using TreadmillRunnerDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
     GarminActivityUploadJobEntity? entity = await context.GarminActivityUploadJobs.Include(item => item.Account).SingleOrDefaultAsync(
       item => item.Id == jobId && item.UserProfileId == profileId && item.Status == from &&
-        (item.FailureKind == "provider" || item.FailureKind == "provider-unavailable" || item.FailureKind == "duplicate"), cancellationToken);
+        (item.FailureKind == "provider" || item.FailureKind == "provider-unavailable" || item.FailureKind == "duplicate" ||
+          (item.FailureKind == "merge-source" && item.OperationPhase == "WatchSearch" &&
+            item.RemoteId == null && item.MatchedRemoteId == null && item.ReplacementRemoteId == null)), cancellationToken);
     if (entity is null) return false;
     string? failureKind = entity.FailureKind;
     entity.Status = to; entity.AttemptCount = 0; entity.AvailableAtUtc = nowUtc; entity.FailureKind = null; entity.LastError = null; entity.UpdatedAtUtc = nowUtc;
@@ -1549,7 +1551,9 @@ public sealed class GarminActivityUploadStore(
   private static GarminActivityUploadJob Map(GarminActivityUploadJobEntity entity, WorkoutSessionEntity? session = null)
   {
     bool canRetry = entity.Status == "Failed" &&
-      (entity.FailureKind is "provider" or "provider-unavailable" or "duplicate");
+      (entity.FailureKind is "provider" or "provider-unavailable" or "duplicate" ||
+        entity.FailureKind == "merge-source" && entity.OperationPhase == "WatchSearch" &&
+        entity.RemoteId is null && entity.MatchedRemoteId is null && entity.ReplacementRemoteId is null);
     DateTimeOffset? retryAtUtc = entity.Status == "Pending" || canRetry
       ? entity.AvailableAtUtc
       : null;

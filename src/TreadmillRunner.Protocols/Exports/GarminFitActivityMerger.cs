@@ -559,7 +559,10 @@ public static class GarminFitActivityMerger
         NormalizeMissingFitHeartRate(records[index].GetHeartRate()) ==
         NormalizeMissingFitHeartRate(expectedHeartRates[index]),
         "The merged FIT heart-rate timeline does not match the canonical source selection.");
-      Require(records[index].GetZone() is null, "The merged FIT contains a derived record heart-rate zone.");
+      // Dynastream.Fit exposes an absent zone as the FIT invalid sentinel 255
+      // after an encode/decode round trip; accept that representation as well
+      // as a genuinely absent field. A real 1..5 zone remains rejected.
+      Require(records[index].GetZone() is null or byte.MaxValue, "The merged FIT contains an invalid record heart-rate zone.");
       Require(!records[index].DeveloperFields.Any(), "The merged FIT contains a watch developer field on a local record.");
     }
 
