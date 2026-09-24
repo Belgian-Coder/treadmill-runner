@@ -1,0 +1,926 @@
+{
+  "description": "Run-time segment cursor (WorkoutProgression) traces. Inputs are authoritative monotonic elapsed seconds and distance km.",
+  "vectors": [
+    {
+      "id": "time-and-distance-advance",
+      "notes": "Unit test 'Time_and_distance_steps_advance_from_monotonic_authoritative_totals'.",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Mixed",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 100000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "repeat",
+            "repetitions": 2,
+            "blocks": [
+              {
+                "kind": "step",
+                "goal": {
+                  "kind": "distance",
+                  "kilometers": 0.1
+                },
+                "speed": {
+                  "kind": "ramp",
+                  "startKilometersPerHour": 8,
+                  "endKilometersPerHour": 10
+                },
+                "incline": {
+                  "kind": "ramp",
+                  "startPercent": 1,
+                  "endPercent": 3
+                },
+                "cue": "Work",
+                "notes": null
+              }
+            ]
+          }
+        ]
+      },
+      "expandedStepCount": 3,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 8,
+            "plannedInclinePercent": 1,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": "Warm up",
+            "nextCue": "Work"
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 10,
+          "distanceKm": 0.02,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": 1,
+              "atElapsedSeconds": 10,
+              "atDistanceKm": 0.02
+            }
+          ],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 8,
+            "plannedInclinePercent": 1,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 10,
+            "currentCue": "Work",
+            "nextCue": "Work"
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 12,
+          "distanceKm": 0.07,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": false,
+            "progressFraction": 0.5,
+            "plannedSpeedKph": 9,
+            "plannedInclinePercent": 2,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 12,
+            "currentCue": "Work",
+            "nextCue": "Work"
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 15,
+          "distanceKm": 0.12,
+          "transitions": [
+            {
+              "completedStepIndex": 1,
+              "currentStepIndex": 2,
+              "atElapsedSeconds": 15,
+              "atDistanceKm": 0.12000000000000001
+            }
+          ],
+          "state": {
+            "currentStepIndex": 2,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 8,
+            "plannedInclinePercent": 1,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 15,
+            "currentCue": "Work",
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 20,
+          "distanceKm": 0.22,
+          "transitions": [
+            {
+              "completedStepIndex": 2,
+              "currentStepIndex": null,
+              "atElapsedSeconds": 20,
+              "atDistanceKm": 0.22000000000000003
+            }
+          ],
+          "state": {
+            "currentStepIndex": 3,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 20,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 25,
+          "distanceKm": 0.3,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 3,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 25,
+            "currentCue": null,
+            "nextCue": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "large-elapsed-jump-and-restore",
+      "notes": "Unit test 'Large_elapsed_jump_advances_every_completed_timed_step_and_checkpoint_restores_position'. Transition times are step-start + duration, not the observed elapsed.",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Reconnect",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "expandedStepCount": 3,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 5,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 180,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 130,
+          "distanceKm": 0.2,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": 1,
+              "atElapsedSeconds": 60,
+              "atDistanceKm": 0.2
+            },
+            {
+              "completedStepIndex": 1,
+              "currentStepIndex": 2,
+              "atElapsedSeconds": 120,
+              "atDistanceKm": 0.2
+            }
+          ],
+          "state": {
+            "currentStepIndex": 2,
+            "isComplete": false,
+            "progressFraction": 0.16666666666666666,
+            "plannedSpeedKph": 7,
+            "plannedInclinePercent": 2,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 50,
+            "elapsedSinceRestartSeconds": 130,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "checkpoint-restore",
+          "state": {
+            "currentStepIndex": 2,
+            "isComplete": false,
+            "progressFraction": 0.16666666666666666,
+            "plannedSpeedKph": 7,
+            "plannedInclinePercent": 2,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 50,
+            "elapsedSinceRestartSeconds": 130,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 180,
+          "distanceKm": 0.3,
+          "transitions": [
+            {
+              "completedStepIndex": 2,
+              "currentStepIndex": null,
+              "atElapsedSeconds": 180,
+              "atDistanceKm": 0.3
+            }
+          ],
+          "state": {
+            "currentStepIndex": 3,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 180,
+            "currentCue": null,
+            "nextCue": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "restart",
+      "notes": "Unit test 'Restart_returns_to_the_first_step_without_erasing_authoritative_totals'.",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Restart",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "expandedStepCount": 2,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 5,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 120,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 75,
+          "distanceKm": 0.15,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": 1,
+              "atElapsedSeconds": 60,
+              "atDistanceKm": 0.15
+            }
+          ],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": false,
+            "progressFraction": 0.25,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 1,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 45,
+            "elapsedSinceRestartSeconds": 75,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "restart",
+          "elapsedSeconds": 75,
+          "distanceKm": 0.15,
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 5,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 120,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 90,
+          "distanceKm": 0.18,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.25,
+            "plannedSpeedKph": 5,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 105,
+            "elapsedSinceRestartSeconds": 15,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "checkpoint-restore",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.25,
+            "plannedSpeedKph": 5,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 105,
+            "elapsedSinceRestartSeconds": 15,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 74,
+          "distanceKm": 0.18,
+          "error": "Elapsed workout time cannot move backwards. (Parameter 'elapsed')"
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 90,
+          "distanceKm": 0.17,
+          "error": "Workout distance must be finite and cannot move backwards. (Parameter 'distanceKilometers')"
+        }
+      ]
+    },
+    {
+      "id": "hr-and-open-planned-targets",
+      "notes": "Unit test 'Heart_rate_and_open_directives_expose_safe_planned_targets' (extended with an HR-zone step).",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "HR",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRate",
+              "minimumBpm": 140,
+              "maximumBpm": 150,
+              "initialKilometersPerHour": 9,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 11
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "open"
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "expandedStepCount": 3,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 9,
+            "plannedInclinePercent": 1,
+            "heartRateTarget": {
+              "minimumBpm": 140,
+              "maximumBpm": 150,
+              "zoneNumber": null
+            },
+            "remainingDurationSeconds": 180,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 60,
+          "distanceKm": 1,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": 1,
+              "atElapsedSeconds": 60,
+              "atDistanceKm": 1
+            }
+          ],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 120,
+            "elapsedSinceRestartSeconds": 60,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 120,
+          "distanceKm": 1.2,
+          "transitions": [
+            {
+              "completedStepIndex": 1,
+              "currentStepIndex": 2,
+              "atElapsedSeconds": 120,
+              "atDistanceKm": 1.2
+            }
+          ],
+          "state": {
+            "currentStepIndex": 2,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 8,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": {
+              "minimumBpm": null,
+              "maximumBpm": null,
+              "zoneNumber": 3
+            },
+            "remainingDurationSeconds": 60,
+            "elapsedSinceRestartSeconds": 120,
+            "currentCue": null,
+            "nextCue": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "distance-epsilon",
+      "notes": "Distance goals complete when covered + 1e-9 km >= goal.",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Distance epsilon",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "distance",
+              "kilometers": 0.1
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 300000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "expandedStepCount": 2,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 50,
+          "distanceKm": 0.0999999985,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.999999985,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": null,
+            "elapsedSinceRestartSeconds": 50,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 55,
+          "distanceKm": 0.0999999995,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": 1,
+              "atElapsedSeconds": 55,
+              "atDistanceKm": 0.1
+            }
+          ],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 0,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 30,
+            "elapsedSinceRestartSeconds": 55,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 90,
+          "distanceKm": 0.2,
+          "transitions": [
+            {
+              "completedStepIndex": 1,
+              "currentStepIndex": null,
+              "atElapsedSeconds": 85,
+              "atDistanceKm": 0.2
+            }
+          ],
+          "state": {
+            "currentStepIndex": 2,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 90,
+            "currentCue": null,
+            "nextCue": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ramp-interpolation",
+      "notes": "Ramps interpolate linearly on the step's progress fraction; progress is clamped to [0,1].",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Ramp",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 6000000000
+            },
+            "speed": {
+              "kind": "ramp",
+              "startKilometersPerHour": 6,
+              "endKilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "ramp",
+              "startPercent": 4,
+              "endPercent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "expandedStepCount": 1,
+      "trace": [
+        {
+          "op": "initial",
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 4,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 600,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 0,
+          "distanceKm": 0,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0,
+            "plannedSpeedKph": 6,
+            "plannedInclinePercent": 4,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 600,
+            "elapsedSinceRestartSeconds": 0,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 150,
+          "distanceKm": 0.25,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.25,
+            "plannedSpeedKph": 6.75,
+            "plannedInclinePercent": 3,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 450,
+            "elapsedSinceRestartSeconds": 150,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 300,
+          "distanceKm": 0.5,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.5,
+            "plannedSpeedKph": 7.5,
+            "plannedInclinePercent": 2,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 300,
+            "elapsedSinceRestartSeconds": 300,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 599.9,
+          "distanceKm": 1,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 0,
+            "isComplete": false,
+            "progressFraction": 0.9998333333333332,
+            "plannedSpeedKph": 8.9995,
+            "plannedInclinePercent": 0.0006666666666670373,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0.1,
+            "elapsedSinceRestartSeconds": 599.9,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 600,
+          "distanceKm": 1,
+          "transitions": [
+            {
+              "completedStepIndex": 0,
+              "currentStepIndex": null,
+              "atElapsedSeconds": 600,
+              "atDistanceKm": 1
+            }
+          ],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 600,
+            "currentCue": null,
+            "nextCue": null
+          }
+        },
+        {
+          "op": "advance",
+          "elapsedSeconds": 700,
+          "distanceKm": 1.2,
+          "transitions": [],
+          "state": {
+            "currentStepIndex": 1,
+            "isComplete": true,
+            "progressFraction": 1,
+            "plannedSpeedKph": null,
+            "plannedInclinePercent": null,
+            "heartRateTarget": null,
+            "remainingDurationSeconds": 0,
+            "elapsedSinceRestartSeconds": 700,
+            "currentCue": null,
+            "nextCue": null
+          }
+        }
+      ]
+    }
+  ]
+}

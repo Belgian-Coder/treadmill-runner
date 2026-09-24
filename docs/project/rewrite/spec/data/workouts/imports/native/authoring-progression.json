@@ -1,0 +1,29 @@
+{
+  "schema": "treadmillrunner.workout/v1",
+  "name": "Progression",
+  "description": "A safe fixture",
+  "blocks": [
+    {
+      "type": "step",
+      "name": "Warm up",
+      "durationSeconds": 300,
+      "speedStartKph": 5.0,
+      "speedEndKph": 7.0,
+      "inclineStartPercent": 1.0,
+      "cue": "Relax"
+    },
+    {
+      "type": "repeat",
+      "count": 3,
+      "blocks": [
+        {
+          "type": "step",
+          "distanceMeters": 400,
+          "heartRateZone": 3,
+          "minimumSpeedKph": 7.0,
+          "maximumSpeedKph": 10.0
+        }
+      ]
+    }
+  ]
+}

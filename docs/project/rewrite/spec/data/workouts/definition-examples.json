@@ -1,0 +1,1258 @@
+{
+  "description": "Workout definitions (schema v1 shape) with expected expansion and derived summary.",
+  "examples": [
+    {
+      "id": "easy-steady",
+      "file": "definitions/easy-steady.json",
+      "notes": "One 30 min fixed-speed step with a cue.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 1800,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 30,
+        "structureLabel": "Steady",
+        "goalLabel": "30 min",
+        "speedLabel": "9 km/h",
+        "inclineLabel": "1% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 1800
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 9
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Begin",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "mixed-intervals",
+      "file": "definitions/mixed-intervals.json",
+      "notes": "Time + distance goals, speed ramp, explicit HR, incline ramp, repeat x2, cue and notes. A distance goal makes the known duration unknown (null).",
+      "expandedStepCount": 3,
+      "knownDurationSeconds": null,
+      "summary": {
+        "description": "Mixed targets",
+        "expandedStepCount": 3,
+        "durationMinutes": null,
+        "structureLabel": "HR intervals",
+        "goalLabel": "Time + distance",
+        "speedLabel": "145–155 bpm · 8–12 km/h",
+        "inclineLabel": "1–3% incline",
+        "usesHeartRate": true
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "ramp",
+            "startKilometersPerHour": 8,
+            "endKilometersPerHour": 10
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Warm up",
+          "notes": null
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[1].blocks[0]",
+          "startSeconds": 300,
+          "goal": {
+            "kind": "distance",
+            "kilometers": 0.4
+          },
+          "speed": {
+            "kind": "heartRate",
+            "minimumBpm": 145,
+            "maximumBpm": 155,
+            "initialKilometersPerHour": 10,
+            "minimumKilometersPerHour": 8,
+            "maximumKilometersPerHour": 12
+          },
+          "incline": {
+            "kind": "ramp",
+            "startPercent": 1,
+            "endPercent": 3
+          },
+          "cue": "Work",
+          "notes": "Hold form"
+        },
+        {
+          "index": 2,
+          "sourcePath": "blocks[1].blocks[0]",
+          "startSeconds": null,
+          "goal": {
+            "kind": "distance",
+            "kilometers": 0.4
+          },
+          "speed": {
+            "kind": "heartRate",
+            "minimumBpm": 145,
+            "maximumBpm": 155,
+            "initialKilometersPerHour": 10,
+            "minimumKilometersPerHour": 8,
+            "maximumKilometersPerHour": 12
+          },
+          "incline": {
+            "kind": "ramp",
+            "startPercent": 1,
+            "endPercent": 3
+          },
+          "cue": "Work",
+          "notes": "Hold form"
+        }
+      ]
+    },
+    {
+      "id": "zone-two",
+      "file": "definitions/zone-two.json",
+      "notes": "Heart-rate zone speed directive.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 1800,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 30,
+        "structureLabel": "HR adaptive",
+        "goalLabel": "30 min",
+        "speedLabel": "Z2 · 7–11 km/h",
+        "inclineLabel": "1% incline",
+        "usesHeartRate": true
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 1800
+          },
+          "speed": {
+            "kind": "heartRateZone",
+            "zoneNumber": 2,
+            "initialKilometersPerHour": 9,
+            "minimumKilometersPerHour": 7,
+            "maximumKilometersPerHour": 11
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "incline-only-open-speed",
+      "file": "definitions/incline-only-open-speed.json",
+      "notes": "Open (manual) speed with an incline ramp.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 600,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 10,
+        "structureLabel": "Progression",
+        "goalLabel": "10 min",
+        "speedLabel": "Manual speed",
+        "inclineLabel": "0–4% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 600
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "ramp",
+            "startPercent": 0,
+            "endPercent": 4
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "manual-run-template",
+      "file": "definitions/manual-run-template.json",
+      "notes": "The ManualTemplate workout created on first use of 'Manual run'.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 14400,
+      "summary": {
+        "description": "Open-ended treadmill session controlled from the live dashboard.",
+        "expandedStepCount": 1,
+        "durationMinutes": 240,
+        "structureLabel": "Steady",
+        "goalLabel": "240 min",
+        "speedLabel": "0.8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 14400
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 0.8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": "Manual speed and incline control."
+        }
+      ]
+    },
+    {
+      "id": "nested-repeats",
+      "file": "definitions/nested-repeats.json",
+      "notes": "3 x [step, 2 x [step, step]] after a warm-up => 1 + 3*(1+2*2) = 16 expanded steps.",
+      "expandedStepCount": 16,
+      "knownDurationSeconds": 1020,
+      "summary": {
+        "description": "Nested repeats",
+        "expandedStepCount": 16,
+        "durationMinutes": 17,
+        "structureLabel": "Intervals",
+        "goalLabel": "17 min",
+        "speedLabel": "Manual + 4.5–9 km/h",
+        "inclineLabel": "0–2% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "ramp",
+            "startKilometersPerHour": 4.5,
+            "endKilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Warm up",
+          "notes": null
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[1].blocks[0]",
+          "startSeconds": 300,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 9
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast",
+          "notes": null
+        },
+        {
+          "index": 2,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 420,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 3,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 450,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 4,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 480,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 5,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 510,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 6,
+          "sourcePath": "blocks[1].blocks[0]",
+          "startSeconds": 540,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 9
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast",
+          "notes": null
+        },
+        {
+          "index": 7,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 660,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 8,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 690,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 9,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 720,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 10,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 750,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 11,
+          "sourcePath": "blocks[1].blocks[0]",
+          "startSeconds": 780,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 9
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast",
+          "notes": null
+        },
+        {
+          "index": 12,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 900,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 13,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 930,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 14,
+          "sourcePath": "blocks[1].blocks[1].blocks[0]",
+          "startSeconds": 960,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 15,
+          "sourcePath": "blocks[1].blocks[1].blocks[1]",
+          "startSeconds": 990,
+          "goal": {
+            "kind": "time",
+            "seconds": 30
+          },
+          "speed": {
+            "kind": "open"
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 2
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "distance-then-time",
+      "file": "definitions/distance-then-time.json",
+      "notes": "A distance step makes every later start offset unknown (null).",
+      "expandedStepCount": 3,
+      "knownDurationSeconds": null,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 3,
+        "durationMinutes": null,
+        "structureLabel": "Intervals",
+        "goalLabel": "Time + distance",
+        "speedLabel": "6–10 km/h",
+        "inclineLabel": "0–1% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": "Warm up",
+          "notes": null
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[1]",
+          "startSeconds": 300,
+          "goal": {
+            "kind": "distance",
+            "kilometers": 1
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 10
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Kilometre",
+          "notes": null
+        },
+        {
+          "index": 2,
+          "sourcePath": "blocks[2]",
+          "startSeconds": null,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": "Cool down",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "editor-presets",
+      "file": "definitions/editor-presets.json",
+      "notes": "The editor's four quick-add presets in order: warm-up, steady, 4 x intervals, cool-down.",
+      "expandedStepCount": 11,
+      "knownDurationSeconds": 2160,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 11,
+        "durationMinutes": 36,
+        "structureLabel": "Intervals",
+        "goalLabel": "36 min",
+        "speedLabel": "4.5–8 km/h",
+        "inclineLabel": "0.5–1% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "ramp",
+            "startKilometersPerHour": 4.5,
+            "endKilometersPerHour": 6
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Ease into your run",
+          "notes": null
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[1]",
+          "startSeconds": 300,
+          "goal": {
+            "kind": "time",
+            "seconds": 600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 7
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Settle into a steady rhythm",
+          "notes": null
+        },
+        {
+          "index": 2,
+          "sourcePath": "blocks[2].blocks[0]",
+          "startSeconds": 900,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast interval",
+          "notes": null
+        },
+        {
+          "index": 3,
+          "sourcePath": "blocks[2].blocks[1]",
+          "startSeconds": 1020,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Recovery",
+          "notes": null
+        },
+        {
+          "index": 4,
+          "sourcePath": "blocks[2].blocks[0]",
+          "startSeconds": 1140,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast interval",
+          "notes": null
+        },
+        {
+          "index": 5,
+          "sourcePath": "blocks[2].blocks[1]",
+          "startSeconds": 1260,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Recovery",
+          "notes": null
+        },
+        {
+          "index": 6,
+          "sourcePath": "blocks[2].blocks[0]",
+          "startSeconds": 1380,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast interval",
+          "notes": null
+        },
+        {
+          "index": 7,
+          "sourcePath": "blocks[2].blocks[1]",
+          "startSeconds": 1500,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Recovery",
+          "notes": null
+        },
+        {
+          "index": 8,
+          "sourcePath": "blocks[2].blocks[0]",
+          "startSeconds": 1620,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Fast interval",
+          "notes": null
+        },
+        {
+          "index": 9,
+          "sourcePath": "blocks[2].blocks[1]",
+          "startSeconds": 1740,
+          "goal": {
+            "kind": "time",
+            "seconds": 120
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Recovery",
+          "notes": null
+        },
+        {
+          "index": 10,
+          "sourcePath": "blocks[3]",
+          "startSeconds": 1860,
+          "goal": {
+            "kind": "time",
+            "seconds": 300
+          },
+          "speed": {
+            "kind": "ramp",
+            "startKilometersPerHour": 6,
+            "endKilometersPerHour": 4.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0.5
+          },
+          "cue": "Let your heart rate come down",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "twelve-hours-exact",
+      "file": "definitions/twelve-hours-exact.json",
+      "notes": "Exactly 12 h is allowed (the limit is 'more than 12 h').",
+      "expandedStepCount": 12,
+      "knownDurationSeconds": 43200,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 12,
+        "durationMinutes": 720,
+        "structureLabel": "Intervals",
+        "goalLabel": "720 min",
+        "speedLabel": "5 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 3600,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 2,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 7200,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 3,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 10800,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 4,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 14400,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 5,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 18000,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 6,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 21600,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 7,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 25200,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 8,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 28800,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 9,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 32400,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 10,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 36000,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        },
+        {
+          "index": 11,
+          "sourcePath": "blocks[0].blocks[0]",
+          "startSeconds": 39600,
+          "goal": {
+            "kind": "time",
+            "seconds": 3600
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "trimmed-strings",
+      "file": "definitions/trimmed-strings.json",
+      "notes": "Title and cue trimmed; whitespace-only description and notes become null; inner whitespace kept.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 180,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 3,
+        "structureLabel": "Steady",
+        "goalLabel": "3 min",
+        "speedLabel": "6.5 km/h",
+        "inclineLabel": "1% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 180
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 6.5
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": "Relax",
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "hr-distance",
+      "file": "definitions/hr-distance.json",
+      "notes": "Explicit HR and HR-zone directives on distance steps.",
+      "expandedStepCount": 2,
+      "knownDurationSeconds": null,
+      "summary": {
+        "description": "Aerobic",
+        "expandedStepCount": 2,
+        "durationMinutes": null,
+        "structureLabel": "HR adaptive",
+        "goalLabel": "1.5 km",
+        "speedLabel": "Z2 · 6–10 km/h",
+        "inclineLabel": "0–1% incline",
+        "usesHeartRate": true
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "distance",
+            "kilometers": 1
+          },
+          "speed": {
+            "kind": "heartRate",
+            "minimumBpm": 130,
+            "maximumBpm": 145,
+            "initialKilometersPerHour": 8,
+            "minimumKilometersPerHour": 6,
+            "maximumKilometersPerHour": 10
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 1
+          },
+          "cue": null,
+          "notes": "Stay aerobic"
+        },
+        {
+          "index": 1,
+          "sourcePath": "blocks[1]",
+          "startSeconds": null,
+          "goal": {
+            "kind": "distance",
+            "kilometers": 0.5
+          },
+          "speed": {
+            "kind": "heartRateZone",
+            "zoneNumber": 2,
+            "initialKilometersPerHour": 7,
+            "minimumKilometersPerHour": 6,
+            "maximumKilometersPerHour": 8
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "id": "negative-zero",
+      "file": "definitions/negative-zero.json",
+      "notes": "-0.0 speed/incline are stored as 0.",
+      "expandedStepCount": 1,
+      "knownDurationSeconds": 60,
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 1,
+        "structureLabel": "Steady",
+        "goalLabel": "1 min",
+        "speedLabel": "0 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      },
+      "expandedSteps": [
+        {
+          "index": 0,
+          "sourcePath": "blocks[0]",
+          "startSeconds": 0,
+          "goal": {
+            "kind": "time",
+            "seconds": 60
+          },
+          "speed": {
+            "kind": "fixed",
+            "kilometersPerHour": 0
+          },
+          "incline": {
+            "kind": "fixed",
+            "percent": 0
+          },
+          "cue": null,
+          "notes": null
+        }
+      ]
+    }
+  ]
+}

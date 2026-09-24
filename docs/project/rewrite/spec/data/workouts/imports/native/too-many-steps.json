@@ -1,0 +1,5 @@
+{"schema":"treadmillrunner.workout/v1","name":"x","blocks":[
+  {"type":"repeat","count":10000,"blocks":[
+    {"type":"repeat","count":2,"blocks":[{"type":"step","durationSeconds":1}]}
+  ]}
+]}

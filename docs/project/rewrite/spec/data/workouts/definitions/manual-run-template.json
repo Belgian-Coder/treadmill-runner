@@ -1,0 +1,1 @@
+{"schemaVersion":1,"title":"Manual run","description":"Open-ended treadmill session controlled from the live dashboard.","blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":144000000000},"speed":{"kind":"fixed","kilometersPerHour":0.8},"incline":{"kind":"fixed","percent":0},"cue":null,"notes":"Manual speed and incline control."}]}

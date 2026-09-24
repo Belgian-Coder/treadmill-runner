@@ -1,0 +1,799 @@
+{
+  "description": "Native JSON import (P1): source file -> accepted definition + warnings, or rejection message.",
+  "vectors": [
+    {
+      "id": "native-authoring-progression",
+      "sourceFile": "imports/native/authoring-progression.json",
+      "fileName": "workout.json",
+      "notes": "Unit test 'Imports_time_distance_hr_ramp_and_repeat_blocks'. cue wins over name.",
+      "expect": {
+        "ok": true,
+        "title": "Progression",
+        "expandedStepCount": 4,
+        "totalDurationSeconds": null,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Progression",
+          "description": "A safe fixture",
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 3000000000
+              },
+              "speed": {
+                "kind": "ramp",
+                "startKilometersPerHour": 5,
+                "endKilometersPerHour": 7
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 1
+              },
+              "cue": "Relax",
+              "notes": null
+            },
+            {
+              "kind": "repeat",
+              "repetitions": 3,
+              "blocks": [
+                {
+                  "kind": "step",
+                  "goal": {
+                    "kind": "distance",
+                    "kilometers": 0.4
+                  },
+                  "speed": {
+                    "kind": "heartRateZone",
+                    "zoneNumber": 3,
+                    "initialKilometersPerHour": 7,
+                    "minimumKilometersPerHour": 7,
+                    "maximumKilometersPerHour": 10
+                  },
+                  "incline": {
+                    "kind": "fixed",
+                    "percent": 0
+                  },
+                  "cue": null,
+                  "notes": null
+                }
+              ]
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-unknown-schema",
+      "sourceFile": "imports/native/unknown-schema.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: unsupported schema.",
+      "expect": {
+        "ok": false,
+        "error": "Unsupported native workout schema 'future/v2'."
+      }
+    },
+    {
+      "id": "native-malformed",
+      "sourceFile": "imports/native/malformed.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: malformed JSON.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout JSON is malformed."
+      }
+    },
+    {
+      "id": "native-too-many-steps",
+      "sourceFile": "imports/native/too-many-steps.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: 20,000 expanded steps.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout contains invalid or out-of-range values."
+      }
+    },
+    {
+      "id": "native-too-long",
+      "sourceFile": "imports/native/too-long.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: 12 h + 1 s.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout contains invalid or out-of-range values."
+      }
+    },
+    {
+      "id": "native-unknown-fields",
+      "sourceFile": "imports/native/unknown-fields.json",
+      "fileName": "workout.json",
+      "notes": "Two native.unknown-field warnings plus open-speed warning.",
+      "expect": {
+        "ok": true,
+        "title": "x",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 60,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "x",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 600000000
+              },
+              "speed": {
+                "kind": "open"
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "native.unknown-field",
+            "message": "The root field 'future' is not supported and was ignored."
+          },
+          {
+            "code": "native.unknown-field",
+            "message": "The step field 'futureStep' is not supported and was ignored."
+          },
+          {
+            "code": "native.open-speed",
+            "message": "A native workout step has no speed target and requires review before execution."
+          }
+        ]
+      }
+    },
+    {
+      "id": "native-canonical-round-trip",
+      "sourceFile": "imports/native/canonical-round-trip.json",
+      "fileName": "workout.json",
+      "notes": "Canonical JSON imports to the identical hash (unit test 'Imports_core_canonical_json_for_round_trip').",
+      "expect": {
+        "ok": true,
+        "title": "Canonical",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 120,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Canonical",
+          "description": "Round trip",
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 1200000000
+              },
+              "speed": {
+                "kind": "fixed",
+                "kilometersPerHour": 8.5
+              },
+              "incline": {
+                "kind": "ramp",
+                "startPercent": 0,
+                "endPercent": 2
+              },
+              "cue": "Build",
+              "notes": null
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-canonical-nested-unknown",
+      "sourceFile": "imports/native/canonical-nested-unknown.json",
+      "fileName": "workout.json",
+      "notes": "Warnings in order futureGoal, futureSpeed, futureIncline. 8.0 re-serializes as 8.",
+      "expect": {
+        "ok": true,
+        "title": "Future fields",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 60,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Future fields",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 600000000
+              },
+              "speed": {
+                "kind": "fixed",
+                "kilometersPerHour": 8
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 1
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "native.unknown-field",
+            "message": "The goal field 'futureGoal' is not supported and was ignored."
+          },
+          {
+            "code": "native.unknown-field",
+            "message": "The speed field 'futureSpeed' is not supported and was ignored."
+          },
+          {
+            "code": "native.unknown-field",
+            "message": "The incline field 'futureIncline' is not supported and was ignored."
+          }
+        ]
+      }
+    },
+    {
+      "id": "native-bom",
+      "sourceFile": "imports/native/bom.json",
+      "fileName": "workout.json",
+      "notes": "UTF-8 BOM is NOT skipped: rejected as malformed.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout JSON is malformed."
+      }
+    },
+    {
+      "id": "native-both-goals",
+      "sourceFile": "imports/native/both-goals.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: both durationSeconds and distanceMeters.",
+      "expect": {
+        "ok": false,
+        "error": "Each native workout step must define exactly one durationSeconds or distanceMeters value."
+      }
+    },
+    {
+      "id": "native-hr-explicit",
+      "sourceFile": "imports/native/hr-explicit.json",
+      "fileName": "workout.json",
+      "notes": "Explicit HR; initial speed defaults to minimum; incline ramp; name used as cue.",
+      "expect": {
+        "ok": true,
+        "title": "HR",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 600,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "HR",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 6000000000
+              },
+              "speed": {
+                "kind": "heartRate",
+                "minimumBpm": 130,
+                "maximumBpm": 145,
+                "initialKilometersPerHour": 6,
+                "minimumKilometersPerHour": 6,
+                "maximumKilometersPerHour": 9
+              },
+              "incline": {
+                "kind": "ramp",
+                "startPercent": 1,
+                "endPercent": 3
+              },
+              "cue": "Aerobic",
+              "notes": "Nose breathing"
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-hr-missing-max",
+      "sourceFile": "imports/native/hr-missing-max.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: explicit HR needs both bounds.",
+      "expect": {
+        "ok": false,
+        "error": "Native explicit heart-rate targets require both heartRateMinBpm and heartRateMaxBpm."
+      }
+    },
+    {
+      "id": "native-speed-end-without-start",
+      "sourceFile": "imports/native/speed-end-only.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: speed ramp without start.",
+      "expect": {
+        "ok": false,
+        "error": "Native speed ramps require speedStartKph."
+      }
+    },
+    {
+      "id": "native-nesting-8",
+      "sourceFile": "imports/native/nesting-8.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: 8 nested repeats in authoring format (limit 7).",
+      "expect": {
+        "ok": false,
+        "error": "Native workout repeat nesting exceeds eight levels."
+      }
+    },
+    {
+      "id": "native-nesting-7",
+      "sourceFile": "imports/native/nesting-7.json",
+      "fileName": "workout.json",
+      "notes": "Accepted: 7 nested repeats.",
+      "expect": {
+        "ok": true,
+        "title": "x",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 60,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "x",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "repeat",
+              "repetitions": 1,
+              "blocks": [
+                {
+                  "kind": "repeat",
+                  "repetitions": 1,
+                  "blocks": [
+                    {
+                      "kind": "repeat",
+                      "repetitions": 1,
+                      "blocks": [
+                        {
+                          "kind": "repeat",
+                          "repetitions": 1,
+                          "blocks": [
+                            {
+                              "kind": "repeat",
+                              "repetitions": 1,
+                              "blocks": [
+                                {
+                                  "kind": "repeat",
+                                  "repetitions": 1,
+                                  "blocks": [
+                                    {
+                                      "kind": "repeat",
+                                      "repetitions": 1,
+                                      "blocks": [
+                                        {
+                                          "kind": "step",
+                                          "goal": {
+                                            "kind": "time",
+                                            "durationTicks": 600000000
+                                          },
+                                          "speed": {
+                                            "kind": "open"
+                                          },
+                                          "incline": {
+                                            "kind": "fixed",
+                                            "percent": 0
+                                          },
+                                          "cue": null,
+                                          "notes": null
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "native.open-speed",
+            "message": "A native workout step has no speed target and requires review before execution."
+          }
+        ]
+      }
+    },
+    {
+      "id": "native-canonical-nesting-14",
+      "sourceFile": "imports/native/canonical-nesting-14.json",
+      "fileName": "workout.json",
+      "notes": "Accepted: 14 nested repeats (JSON depth 32).",
+      "expect": {
+        "ok": true,
+        "title": "Nest",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 1,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Nest",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "repeat",
+              "repetitions": 1,
+              "blocks": [
+                {
+                  "kind": "repeat",
+                  "repetitions": 1,
+                  "blocks": [
+                    {
+                      "kind": "repeat",
+                      "repetitions": 1,
+                      "blocks": [
+                        {
+                          "kind": "repeat",
+                          "repetitions": 1,
+                          "blocks": [
+                            {
+                              "kind": "repeat",
+                              "repetitions": 1,
+                              "blocks": [
+                                {
+                                  "kind": "repeat",
+                                  "repetitions": 1,
+                                  "blocks": [
+                                    {
+                                      "kind": "repeat",
+                                      "repetitions": 1,
+                                      "blocks": [
+                                        {
+                                          "kind": "repeat",
+                                          "repetitions": 1,
+                                          "blocks": [
+                                            {
+                                              "kind": "repeat",
+                                              "repetitions": 1,
+                                              "blocks": [
+                                                {
+                                                  "kind": "repeat",
+                                                  "repetitions": 1,
+                                                  "blocks": [
+                                                    {
+                                                      "kind": "repeat",
+                                                      "repetitions": 1,
+                                                      "blocks": [
+                                                        {
+                                                          "kind": "repeat",
+                                                          "repetitions": 1,
+                                                          "blocks": [
+                                                            {
+                                                              "kind": "repeat",
+                                                              "repetitions": 1,
+                                                              "blocks": [
+                                                                {
+                                                                  "kind": "repeat",
+                                                                  "repetitions": 1,
+                                                                  "blocks": [
+                                                                    {
+                                                                      "kind": "step",
+                                                                      "goal": {
+                                                                        "kind": "time",
+                                                                        "durationTicks": 10000000
+                                                                      },
+                                                                      "speed": {
+                                                                        "kind": "open"
+                                                                      },
+                                                                      "incline": {
+                                                                        "kind": "fixed",
+                                                                        "percent": 0
+                                                                      },
+                                                                      "cue": null,
+                                                                      "notes": null
+                                                                    }
+                                                                  ]
+                                                                }
+                                                              ]
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-canonical-nesting-15",
+      "sourceFile": "imports/native/canonical-nesting-15.json",
+      "fileName": "workout.json",
+      "notes": "Rejected as malformed: JSON depth 34 exceeds MaxDepth 32.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout JSON is malformed."
+      }
+    },
+    {
+      "id": "native-duplicate-key",
+      "sourceFile": "imports/native/duplicate-key.json",
+      "fileName": "workout.json",
+      "notes": "Duplicate keys: last value wins; no warning.",
+      "expect": {
+        "ok": true,
+        "title": "Second",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 60,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Second",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 600000000
+              },
+              "speed": {
+                "kind": "open"
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-int-as-decimal",
+      "sourceFile": "imports/native/int-as-decimal.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: schemaVersion 1.0 is not an integer.",
+      "expect": {
+        "ok": false,
+        "error": "Native workout field 'schemaVersion' must be an integer."
+      }
+    },
+    {
+      "id": "native-trailing-comma",
+      "sourceFile": "imports/native/trailing-comma.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: trailing commas not allowed.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout JSON is malformed."
+      }
+    },
+    {
+      "id": "native-comment",
+      "sourceFile": "imports/native/comment.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: comments not allowed.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout JSON is malformed."
+      }
+    },
+    {
+      "id": "native-empty-blocks",
+      "sourceFile": "imports/native/empty-blocks.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: at least one block.",
+      "expect": {
+        "ok": false,
+        "error": "The native workout contains invalid or out-of-range values."
+      }
+    },
+    {
+      "id": "native-fractional-seconds",
+      "sourceFile": "imports/native/fractional-seconds.json",
+      "fileName": "workout.json",
+      "notes": "durationSeconds -> ticks truncated (1.9e-7 s -> 1 tick); distanceMeters/1000.",
+      "expect": {
+        "ok": true,
+        "title": "Fractions",
+        "expandedStepCount": 3,
+        "totalDurationSeconds": null,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Fractions",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 1
+              },
+              "speed": {
+                "kind": "fixed",
+                "kilometersPerHour": 6
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            },
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 905000000
+              },
+              "speed": {
+                "kind": "fixed",
+                "kilometersPerHour": 6
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            },
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "distance",
+                "kilometers": 1.2345
+              },
+              "speed": {
+                "kind": "fixed",
+                "kilometersPerHour": 6
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-zone-with-explicit-hr",
+      "sourceFile": "imports/native/zone-and-explicit-hr.json",
+      "fileName": "workout.json",
+      "notes": "heartRateZone takes precedence over explicit bpm in the native authoring format (no warning).",
+      "expect": {
+        "ok": true,
+        "title": "x",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 60,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "x",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 600000000
+              },
+              "speed": {
+                "kind": "heartRateZone",
+                "zoneNumber": 2,
+                "initialKilometersPerHour": 7,
+                "minimumKilometersPerHour": 6,
+                "maximumKilometersPerHour": 8
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 0
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "id": "native-schema-not-string",
+      "sourceFile": "imports/native/schema-not-string.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: schema must be a string.",
+      "expect": {
+        "ok": false,
+        "error": "Native workout field 'schema' must be a string."
+      }
+    },
+    {
+      "id": "native-empty-file",
+      "sourceFile": "imports/native/empty.json",
+      "fileName": "workout.json",
+      "notes": "Rejected: empty file.",
+      "expect": {
+        "ok": false,
+        "error": "The workout file is empty."
+      }
+    },
+    {
+      "id": "native-open-with-incline",
+      "sourceFile": "imports/native/open-with-incline.json",
+      "fileName": "workout.json",
+      "notes": "Open speed warning; title trimmed; blank description -> null; blank cue treated as present so name is NOT used, then normalized to null.",
+      "expect": {
+        "ok": true,
+        "title": "Hill walk",
+        "expandedStepCount": 1,
+        "totalDurationSeconds": 600,
+        "definition": {
+          "schemaVersion": 1,
+          "title": "Hill walk",
+          "description": null,
+          "blocks": [
+            {
+              "kind": "step",
+              "goal": {
+                "kind": "time",
+                "durationTicks": 6000000000
+              },
+              "speed": {
+                "kind": "open"
+              },
+              "incline": {
+                "kind": "fixed",
+                "percent": 4
+              },
+              "cue": null,
+              "notes": null
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "native.open-speed",
+            "message": "A native workout step has no speed target and requires review before execution."
+          }
+        ]
+      }
+    }
+  ]
+}

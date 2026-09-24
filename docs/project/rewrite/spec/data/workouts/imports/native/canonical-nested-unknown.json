@@ -1,0 +1,7 @@
+{"schemaVersion":1,"title":"Future fields","description":null,"blocks":[
+  {"kind":"step",
+   "goal":{"kind":"time","durationTicks":600000000,"futureGoal":1},
+   "speed":{"kind":"fixed","kilometersPerHour":8.0,"futureSpeed":2},
+   "incline":{"kind":"fixed","percent":1.0,"futureIncline":3},
+   "cue":null,"notes":null}
+]}

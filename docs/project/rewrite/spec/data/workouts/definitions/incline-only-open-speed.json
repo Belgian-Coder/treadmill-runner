@@ -1,0 +1,1 @@
+{"schemaVersion":1,"title":"Incline only","description":null,"blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":6000000000},"speed":{"kind":"open"},"incline":{"kind":"ramp","startPercent":0,"endPercent":4},"cue":null,"notes":null}]}

@@ -1,0 +1,260 @@
+{
+  "description": "Derived library-card summary for a definition (see 02-workouts.md, Derived summary).",
+  "vectors": [
+    {
+      "id": "steady-one-step",
+      "description": "One fixed step",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":18000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 30,
+        "structureLabel": "Steady",
+        "goalLabel": "30 min",
+        "speedLabel": "8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "multi-stage-same-speed",
+      "description": "Two steps, same speed",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":2},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 2,
+        "durationMinutes": 20,
+        "structureLabel": "Multi-stage",
+        "goalLabel": "20 min",
+        "speedLabel": "8 km/h",
+        "inclineLabel": "0–2% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "progression-by-fixed-steps",
+      "description": "Non-decreasing fixed speeds, last > first",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":7},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 3,
+        "durationMinutes": 15,
+        "structureLabel": "Progression",
+        "goalLabel": "15 min",
+        "speedLabel": "6–7 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "intervals-by-fixed-steps",
+      "description": "Speeds go up then down",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 3,
+        "durationMinutes": 15,
+        "structureLabel": "Intervals",
+        "goalLabel": "15 min",
+        "speedLabel": "6–8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "decreasing-fixed-steps",
+      "description": "Decreasing speeds => Intervals",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":7},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 2,
+        "durationMinutes": 10,
+        "structureLabel": "Intervals",
+        "goalLabel": "10 min",
+        "speedLabel": "7–8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "ramp-only",
+      "description": "Speed ramp, no repeat => Progression",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"ramp\",\"startKilometersPerHour\":6,\"endKilometersPerHour\":9},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 10,
+        "structureLabel": "Progression",
+        "goalLabel": "10 min",
+        "speedLabel": "6–9 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "incline-ramp-only",
+      "description": "Incline ramp only also counts as ramp => Progression",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"ramp\",\"startPercent\":0,\"endPercent\":5},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 10,
+        "structureLabel": "Progression",
+        "goalLabel": "10 min",
+        "speedLabel": "6 km/h",
+        "inclineLabel": "0–5% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "repeat-no-hr",
+      "description": "Repeat => Intervals",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"repeat\",\"repetitions\":4,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":600000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":10},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":600000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 8,
+        "durationMinutes": 8,
+        "structureLabel": "Intervals",
+        "goalLabel": "8 min",
+        "speedLabel": "6–10 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "hr-no-repeat",
+      "description": "HR => HR adaptive",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":18000000000},\"speed\":{\"kind\":\"heartRateZone\",\"zoneNumber\":2,\"initialKilometersPerHour\":7,\"minimumKilometersPerHour\":6,\"maximumKilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 30,
+        "structureLabel": "HR adaptive",
+        "goalLabel": "30 min",
+        "speedLabel": "Z2 · 6–8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": true
+      }
+    },
+    {
+      "id": "hr-with-repeat",
+      "description": "HR + repeat => HR intervals",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"repeat\",\"repetitions\":3,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":1800000000},\"speed\":{\"kind\":\"heartRate\",\"minimumBpm\":140,\"maximumBpm\":160,\"initialKilometersPerHour\":9,\"minimumKilometersPerHour\":8,\"maximumKilometersPerHour\":11},\"incline\":{\"kind\":\"fixed\",\"percent\":1},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":1200000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 6,
+        "durationMinutes": 15,
+        "structureLabel": "HR intervals",
+        "goalLabel": "15 min",
+        "speedLabel": "140–160 bpm · 6–11 km/h",
+        "inclineLabel": "0–1% incline",
+        "usesHeartRate": true
+      }
+    },
+    {
+      "id": "hr-zones-range",
+      "description": "Two zones => Z2–Z4 label",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"heartRateZone\",\"zoneNumber\":2,\"initialKilometersPerHour\":7,\"minimumKilometersPerHour\":6,\"maximumKilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"heartRateZone\",\"zoneNumber\":4,\"initialKilometersPerHour\":9,\"minimumKilometersPerHour\":8,\"maximumKilometersPerHour\":10},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 2,
+        "durationMinutes": 20,
+        "structureLabel": "HR adaptive",
+        "goalLabel": "20 min",
+        "speedLabel": "Z2–Z4 · 6–10 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": true
+      }
+    },
+    {
+      "id": "open-only",
+      "description": "Open speed only => Manual speed",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"open\"},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 10,
+        "structureLabel": "Steady",
+        "goalLabel": "10 min",
+        "speedLabel": "Manual speed",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "open-plus-fixed",
+      "description": "Open + fixed => Manual + range",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"open\"},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":7},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 2,
+        "durationMinutes": 20,
+        "structureLabel": "Multi-stage",
+        "goalLabel": "20 min",
+        "speedLabel": "Manual + 7 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "open-then-faster",
+      "description": "Open step ignored in representative speeds",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"open\"},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":6000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":7},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 3,
+        "durationMinutes": 30,
+        "structureLabel": "Progression",
+        "goalLabel": "30 min",
+        "speedLabel": "Manual + 6–7 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "distance-only",
+      "description": "Distance totals with repeat multiplier",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"repeat\",\"repetitions\":4,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"distance\",\"kilometers\":0.4},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":10},\"incline\":{\"kind\":\"fixed\",\"percent\":1},\"cue\":null,\"notes\":null}]}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 4,
+        "durationMinutes": null,
+        "structureLabel": "Intervals",
+        "goalLabel": "1.6 km",
+        "speedLabel": "10 km/h",
+        "inclineLabel": "1% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "time-and-distance",
+      "description": "Time + distance",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":3000000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null},{\"kind\":\"step\",\"goal\":{\"kind\":\"distance\",\"kilometers\":1},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":8},\"incline\":{\"kind\":\"fixed\",\"percent\":0},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 2,
+        "durationMinutes": null,
+        "structureLabel": "Progression",
+        "goalLabel": "Time + distance",
+        "speedLabel": "6–8 km/h",
+        "inclineLabel": "0% incline",
+        "usesHeartRate": false
+      }
+    },
+    {
+      "id": "fractional-minutes",
+      "description": "Duration label rounding 0.## (20 s = 0.33 min)",
+      "canonicalJson": "{\"schemaVersion\":1,\"title\":\"S\",\"description\":null,\"blocks\":[{\"kind\":\"step\",\"goal\":{\"kind\":\"time\",\"durationTicks\":200000000},\"speed\":{\"kind\":\"fixed\",\"kilometersPerHour\":6.456},\"incline\":{\"kind\":\"fixed\",\"percent\":1.005},\"cue\":null,\"notes\":null}]}",
+      "summary": {
+        "description": null,
+        "expandedStepCount": 1,
+        "durationMinutes": 0.3333333333333333,
+        "structureLabel": "Steady",
+        "goalLabel": "0.33 min",
+        "speedLabel": "6.46 km/h",
+        "inclineLabel": "1.01% incline",
+        "usesHeartRate": false
+      }
+    }
+  ]
+}

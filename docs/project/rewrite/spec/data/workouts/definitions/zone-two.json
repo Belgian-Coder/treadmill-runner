@@ -1,0 +1,1 @@
+{"schemaVersion":1,"title":"Zone two","description":null,"blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":18000000000},"speed":{"kind":"heartRateZone","zoneNumber":2,"initialKilometersPerHour":9,"minimumKilometersPerHour":7,"maximumKilometersPerHour":11},"incline":{"kind":"fixed","percent":1},"cue":null,"notes":null}]}

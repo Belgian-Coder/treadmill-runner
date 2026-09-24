@@ -1,0 +1,1 @@
+{"schema":"treadmillrunner.workout/v1","name":"x","blocks":[{"type":"step","durationSeconds":60,"heartRateZone":2,"heartRateMinBpm":120,"heartRateMaxBpm":140,"speedStartKph":7,"minimumSpeedKph":6,"maximumSpeedKph":8}]}

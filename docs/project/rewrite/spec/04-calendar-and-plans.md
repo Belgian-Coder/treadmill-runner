@@ -85,7 +85,7 @@ Related specs: workout definitions, canonical JSON and hashing are in [02-workou
 - A program revision is either **personal** (`ownerProfileId` set) or **household** (`ownerProfileId` null).
   - A runner sees household programs and their own personal programs, never another runner's.
   - Starting a personal program for another runner is refused with **403**.
-- **Premade installations are always personal**: owner = the runner who installed them.
+- **Premade installations are always personal**: owner = the runner who installed them. **[E]** Household (shared) custom programs are **[O]**.
   - Their generated workouts are **plan-internal** and never appear in the workout library, the manual-workout selector, the calendar-series editor or the "reuse a recent run" list.
 - There is **at most one active run per runner**. Starting or restarting any program abandons the runner's current active run; its history stays.
 - Program runs, overrides, extra occurrences, selections, goals and recommendations are all runner-scoped.
@@ -373,11 +373,11 @@ null ints and null phase render as empty strings; UUIDs are lower-case with dash
 contentSha256 = UPPER-case hex SHA-256(UTF-8(value))
 ```
 
-This hash is upper-case, unlike the workout and template hashes, which are lower-case. The difference must be preserved for data compatibility.
+The legacy hash was upper-case hex. No compatibility is required.
 
 ---
 
-## 5. Program runs, projection and schedule adjustments
+## 5. Program runs, projection and schedule adjustments [E]
 
 ### 5.1 Run data
 
@@ -459,14 +459,16 @@ Worked example (the core test):
 
 Every action is **previewed first**. The preview is side-effect free. **Apply** recomputes the same preview inside a transaction, so the preview is only advisory.
 
-| Action | UI label | Needs target | Allowed when |
-|---|---|---|---|
-| `MoveOne` | Move only this session | yes | The item is not currently skipped. It may be completed: a completed item moves only its calendar date and keeps its linked session and progress. |
-| `MoveFollowing` | Move this and following | yes | The item is not skipped. It may be completed (a late completion). A **later completed** item blocks. |
-| `Skip` | Skip | no | The item is not completed |
-| `Restore` | Restore | no | The item is not completed and has an override |
-| `Repeat` | Repeat workout · keep dates | yes | The item **is completed** |
-| `RepeatAndShift` | Repeat workout · shift the rest | yes | The item **is completed** |
+| Action | Tier | UI label | Needs target | Allowed when |
+|---|---|---|---|---|
+| `MoveOne` | E | Move only this session | yes | The item is not currently skipped. It may be completed: a completed item moves only its calendar date and keeps its linked session and progress. |
+| `MoveFollowing` | E | Move this and following | yes | The item is not skipped. It may be completed (a late completion). A **later completed** item blocks. |
+| `Skip` | E | Skip | no | The item is not completed |
+| `Restore` | E | Restore | no | The item is not completed and has an override |
+| `Repeat` | O | Repeat workout · keep dates | yes | The item **is completed** |
+| `RepeatAndShift` | O | Repeat workout · shift the rest | yes | The item **is completed** |
+
+If Repeat is not built, extra occurrences (5.1) are not needed: `projectAll` then has no extras, and the "repeats warn instead of block" rule does not apply.
 
 The action is parsed case-insensitively from these names. Numeric strings are rejected (400 "Action must be MoveOne, MoveFollowing, Skip, Restore, Repeat, or RepeatAndShift.").
 
@@ -555,7 +557,9 @@ Stopped, interrupted and faulted attempts are **not** completions, so their item
 
 **Repeats** are calendar choices, not program positions. Running a repeat is an **unlinked** calendar session (selection source `Calendar`, no run or item). It never rewinds or double-advances the plan.
 
-### 5.5 Change training days (default days)
+### 5.5 Change training days (default days) [O]
+
+This is optional. Without it, the runner changes rhythm with *Move this and following*, or by clearing the plan and starting it again: the new run starts at item 1, so this suits only early changes. If it is built, follow this section exactly: ordering around preserved sessions is subtle.
 
 The request carries `profileId`, `weekdayMask`, `effectiveDate`, and for apply also `operationId`, `expectedRunVersion` and `expectedRevision`. **Today** is the run's local date (2). **Preview:**
 
@@ -623,7 +627,7 @@ Pinned overrides that equal the regenerated date under the new mask count as **n
 
 ---
 
-## 6. Advancement and progress
+## 6. Advancement and progress [E]
 
 ### 6.1 Linking a session to a plan item
 
@@ -655,7 +659,7 @@ Only the **contiguous prefix** counts. A completion out of order does not advanc
 ### 6.3 Advancement rules
 
 - **Only a session that ends `Completed` and is linked to the run and item advances the plan.** Manual, library and calendar sessions, and repeat occurrences, are unlinked and never advance it.
-- **Decision (Kotlin):** the linked session must also have **origin `Hardware`** (PLN-02). Simulator and SystemTest sessions never advance plans; migrated `Legacy` rows that are already Completed and linked keep counting. The legacy app also advanced on simulator sessions.
+- **Decision (Kotlin):** the linked session must also have **origin `Hardware`** (PLN-02). Simulator and SystemTest sessions never advance plans. The legacy app also advanced on simulator sessions. Plan runs are not migrated, so no legacy linkage has to be honoured.
 - **Idempotent:** a unique constraint on `(runId, itemId)` over sessions with state Completed means an item can be completed at most once per run. The next-item validation normally prevents a second attempt; the constraint is the last line of defence.
 - **Run completion:** when a linked session is finalized as Completed and the run is Active, count the distinct completed item IDs of the run. If the count equals the revision's item count, set `status = Completed`, `endedAtUtc = session end`, version +1.
   - Skipped items do not count toward this total, so a run with any skipped item stays Active even when progress `isComplete` is true. Keep this legacy behaviour.
@@ -663,7 +667,7 @@ Only the **contiguous prefix** counts. A completion out of order does not advanc
 
 ---
 
-## 7. Premade catalog and installation
+## 7. Premade catalog and installation [E]
 
 ### 7.1 Catalog
 
@@ -691,9 +695,10 @@ There are 16 templates, in this display order. All are version `1.0.0` except th
 - Every template's tag set also includes the goal slug: lower-case, spaces → `-`.
 - Descriptions are in `data/premade/catalog.json`. No description may mention rehabilitation.
 - Catalog filters: goal, experience, text search, HR requirement, duration, sessions per week.
-- `data/premade/` is the **source of truth**: all definitions, keys, phases, hashes and counts. Section 7.2–7.4 specify how the data was produced, so the Kotlin tests can regenerate it and compare.
+- `data/premade/` is the **source of truth**: all definitions, keys, phases, hashes and counts. **[E]** The app ships these JSON files as resources and loads them; it needs no generator.
+- **[O]** Sections 7.2–7.4 specify how the data was produced. Use them only to verify the data or to author a new template version.
 
-### 7.2 Generator for templates 1–11 and 13–16
+### 7.2 Generator for templates 1–11 and 13–16 [O]
 
 These are the parameterised templates. The code uses banker's rounding (`HALF_EVEN`), which matches .NET `Math.Round`, and `.` as the decimal separator.
 
@@ -742,6 +747,8 @@ Identical keys within one template share one workout. `10k-performance` has 32 p
 
 ### 7.3 The 58-week WalkingPad plan (`5k-to-10k-distance-first-58`, v2.0.0)
 
+The facts below are **[E]**: they describe the shipped data. The materialisation rules are **[O]**: they are needed only to rebuild the data from the source file.
+
 - **Source:** `data/premade/walkingpad-5k-to-10k-source.json`. It has 174 slots `W01D1…W58D3`, and each slot has a `primary` variant plus 0 or 1 alternative.
 - **Counts:**
   - 174 positions, 58 weeks, 3 per week, 260 variants;
@@ -768,7 +775,9 @@ Identical keys within one template share one workout. `10k-performance` has 32 p
   - W11D1's alternative, step 2, is `heartRateZone(2, 7.5, 4.0, 10.0)`.
 - **HR zones referenced:** 1, 2 and 3. `requiresHeartRate` is **false**, so the plan installs without zones. The HR steps need the runner's zones only when such a session is prepared (6-profiles).
 
-### 7.4 Hashes
+### 7.4 Hashes [O]
+
+These hashes are integrity checks on the shipped data. The new app need not store them on installations. It may keep `templateContentSha256` on an installation to detect a changed template, but nothing depends on it.
 
 - **Workout definition hash:** the lower-case hex SHA-256 of the canonical JSON (02-workouts). Every definition in `data/premade` carries `definitionSha256`.
 - **Template content hash** (stored on the installation):
@@ -824,7 +833,9 @@ Identical keys within one template share one workout. `10k-performance` has 32 p
 
 **Catalog list for a runner** marks `alreadyAdded` and `copyCount` using only installations whose program is not archived.
 
-**Plan-internal hiding:** a workout is plan-internal if its kind is `PlanInternal`, **or** any of its revisions is referenced by an item of a program revision with a `templateId`. The second rule covers legacy rows stored as `Structured`. Plan-internal workouts are excluded from the library, the manual selector, calendar-series editors and the recent-run reuse list. Only their owning plan exposes them, as immutable detail views.
+**Plan-internal hiding:** a workout is plan-internal if its kind is `PlanInternal`. Plan-internal workouts are excluded from the library, the manual selector, calendar-series editors and the recent-run reuse list. Only their owning plan exposes them, as immutable detail views.
+
+The legacy app also treated any workout referenced by a template program as plan-internal, to catch old rows stored as `Structured`. The new app creates no such rows, so the kind check is enough.
 
 **HR zone references:** definitions store `zoneNumber` only, never BPM. BPM bounds are resolved from the **selected runner's** zones each time a session is prepared (06-profiles). A second runner installs and schedules their own independent copy, with their own progress and calendar.
 
@@ -845,7 +856,7 @@ Identical keys within one template share one workout. `10k-performance` has 32 p
 
 ---
 
-## 8. Today recommendation
+## 8. Today recommendation [E]
 
 The core resolver, applied to today's local date:
 
@@ -866,7 +877,9 @@ The UI applies these refinements. They are mandatory:
 
 ---
 
-## 9. Goals and progression recommendations
+## 9. Goals and progression recommendations [O]
+
+Both features are optional, and neither affects plans.
 
 ### 9.1 Local goals
 
@@ -945,7 +958,16 @@ Behaviour:
 
 ## 10. Operation receipts, expected versions and idempotency
 
-### 10.1 Receipts
+### 10.0 What is essential
+
+- **[E]** Every write from a UI carries a client-generated operation ID.
+  - A write whose ID was already applied must not apply twice. It returns the stored result, or at least the current state, with success.
+  - The same ID reused for a *different* request is refused with a conflict.
+  - A small table `(operationId, operationType, requestHash, status, resultJson, createdAt)` in the same transaction as the write is enough.
+- **[E]** Optimistic `version` checks on the program run, and on calendar series if series are built.
+- **[O]** Everything else in this section: exact legacy response replay, fingerprint scopes, retention tuning. Receipts are **not** migrated from the legacy app, so no fingerprint needs to match legacy bytes.
+
+### 10.1 Receipts (legacy model) [O]
 
 Every planning write carries a client-generated **operation ID** (UUID, non-empty; an empty one → 400). The server persists one receipt per operation ID:
 
@@ -968,16 +990,13 @@ Every planning write carries a client-generated **operation ID** (UUID, non-empt
    - Two concurrent identical requests therefore both succeed with the same result. Two concurrent different requests with one ID give one success and one 409.
 3. A not-found outcome inside the store is also receipted, with 404 and `{}`.
 4. **Retention:** prune receipts older than **90 days** (configurable 7–365) every 6 hours. The replay window is therefore 90 days.
-5. Receipts are local operational data. Receipts younger than 90 days are migrated from the legacy backup.
+5. Receipts are local operational data and start empty in the new app. Planning receipts are not migrated.
 
-**Fingerprint:** the lower-hex SHA-256 of the UTF-8 JSON of the scope object, serialised as follows:
-- camelCase property names in the listed order, no whitespace;
-- UUIDs as lower-case `D` strings, dates as `yyyy-MM-dd`, nulls written as `null`;
-- lists of segments ordered by `seriesId` string.
+**Fingerprint:** any deterministic hash of the request fields listed in 10.2 (for example SHA-256 of a canonical JSON of those fields). The legacy app used SHA-256 of camelCase JSON; no compatibility is required.
 
-Byte-compatibility with legacy fingerprints matters only when a migrated receipt is replayed.
+### 10.2 Operation catalogue [O]
 
-### 10.2 Operation catalogue
+The list of write operations is useful as a checklist of what needs an operation ID. The type strings and fingerprint scopes are only a reference.
 
 | Operation | Type string | Fingerprint scope (in order) | Success |
 |---|---|---|---|
@@ -1017,7 +1036,7 @@ Goals and recommendation decisions are protected by **expected versions only**, 
 
 ## 11. Reference: legacy HTTP surface
 
-This table is for parity only. The Kotlin web interface may shape its routes differently, but it must keep the same semantics.
+This table is informational. The Kotlin app is free to design its own routes and DTOs; only the behaviour in sections 3–10 matters.
 
 | Method and path | Purpose |
 |---|---|
@@ -1049,7 +1068,11 @@ The detail view adds the items: position, week, session, phase, workout name, re
 
 ## 12. Test tables (given → expected)
 
-These tables translate the legacy unit and integration tests. Dates are 2026 unless stated. "Mask 37" means Mon+Wed+Sat. For the store and endpoint tests, "runner" is a fresh non-archived profile and "W(x)" a fresh workout revision.
+These tables translate the legacy unit and integration tests.
+- Rows for **[O]** features apply only if the feature is built. The checklist in section 13 marks each group.
+- HTTP status codes describe the legacy API. Read "400" as *validation refused*, "404" as *not found for this runner*, "409" as *stale version or reused operation ID*, and "201/200/204" as *success*.
+
+Dates are 2026 unless stated. "Mask 37" means Mon+Wed+Sat. For the store and endpoint tests, "runner" is a fresh non-archived profile and "W(x)" a fresh workout revision.
 
 ### 12.1 Weekday rotation and recurrence
 
@@ -1075,7 +1098,6 @@ These tables translate the legacy unit and integration tests. Dates are 2026 unl
 | D3 | Weekly Sunday series. Replace on Monday 03-02 (off-day) | 03-02 → no options |
 | D4 | Same, but Add on Monday 03-02 | 03-02 → exactly the added option |
 | D5 | Tuesday series from 08-01, base B. Skip 08-04; Replace(R) 08-05 (Wed, off-day); Replace(R) 08-11; Add(A, order 1) 08-18 | Selecting: Thu 08-06 B → invalid; 08-05 R → invalid; 08-04 B → invalid; 08-11 B → invalid; 08-11 R → ok; 08-18 B → ok; 08-18 A → ok and stored (the last write wins) |
-| D6 | Stored exception kind corrupted to "99" | Reading the series fails with a data error |
 
 ### 12.3 Calendar series operations
 
@@ -1186,14 +1208,14 @@ These tables translate the legacy unit and integration tests. Dates are 2026 unl
 | T11 | Same request with a new op | **200**, `alreadyAdded: true`, same program ID |
 | T12 | A's program list | Contains it: `templateId` set, owner A, itemCount 174, no `items` field. Detail: 174 items; item 1 phase "Foundation", week 1 |
 | T13 | Runner B's program list | Does not contain it |
-| T14 | Force the generated workouts' kind to `Structured`, then list library workouts | No `PlanInternal` kind, and no description starting "Premade plan workout" (template provenance hides them) |
+| T14 | List library workouts after T9 | None of the installed plan's workouts appear: no `PlanInternal` kind, and no description starting "Premade plan workout" or "WalkingPad source variant" |
 | T15 | Start A's copy as B | **403** |
 | T16 | Start as A: start 08-10, mask 37, Europe/Brussels | 200. The run has start 08-10 and mask 37. Calendar 08-10…08-16: days 08-10, 08-12, 08-15; the first option `Program` with positions 1, 2, 3 and total 174 |
 | T17 | Preview MoveFollowing item1 → 08-11 | `canApply`, **174 impacts**. Apply → version +1. Calendar 08-10…08-17: the first three days are 08-11, 08-13, 08-16 |
 | T18 | Skip item1 | Summary: `skippedItemCount` 1, next = item 2 |
-| T19 | Install again (a `freshCopy` flag in the request is ignored) | 200, same program, copyNumber 1, `alreadyAdded` |
+| T19 | Install again with a new operation ID | 200, same program, copyNumber 1, `alreadyAdded` (there is no "fresh copy" option) |
 | T20 | Append a revision to the installed program | **409** (immutable) |
-| T21 | Install `getting-started` (201), archive it (204) | Catalog `alreadyAdded` false. Install again → 201, `alreadyAdded` false, **new program ID, copyNumber 2**, stored name "Getting Started". After renaming the stored revision to "Getting Started · Copy 2", the list still shows "Getting Started" |
+| T21 | Install `getting-started` (201), archive it (204) | Catalog `alreadyAdded` false. Install again → 201, `alreadyAdded` false, **new program ID, copyNumber 2**, program name "Getting Started" |
 | T22 | HR 5K preview for a runner with Z1–Z5 | `compatible` and `heartRateZonesReady` true, template ID echoed |
 | T23 | HR 5K preview for a runner with only Z1 | Both false. The message contains "heart-rate zones" |
 | T24 | Install `getting-started`, start mask 37 from 08-10 (fixed now 2026-08-04T10:00Z). Training-days preview as another runner | **404** |
@@ -1227,38 +1249,44 @@ These tables translate the legacy unit and integration tests. Dates are 2026 unl
 
 ## 13. Test checklist for the Kotlin implementation
 
-**Calendar**
-- [ ] Weekday rotation R1–R5; recurrence validation R10; interval anchoring R9; DST stability R7–R8.
-- [ ] `resolveDay` / `resolveRange` D1–D4 (Skip, Replace-on-base-only, Add anywhere, profile filter, ordering, dedupe); a property test comparing against a brute-force evaluation.
-- [ ] Day selections D5, C3–C4; selection cleanup on move, delete and delete-group.
-- [ ] Series create, update, transfer refusal, missing references: C1–C2, C14–C16.
-- [ ] Move only / move this and later / delete one / delete group, including the split, rotation, shared group ID and continuation version: C5–C9.
-- [ ] Collision guards: C10 (another group), C11 (later shifted date), C12 (backward overlap), C13 (added-only exception), with the exact messages.
-- [ ] Merged range: the ≤ 62-day limit, the max-date read C17–C18, option ordering, and the program-option fields including `isCompleted` and repeat identity (S39–S40).
+Each item is tagged **[E]** (must pass for the first plan milestone) or **[O]** (must pass only if that optional feature is built).
 
-**Programs and runs**
-- [ ] Revision validation and limits P1–P5, 4.1 (1,000 items, 20 alternatives, alternative ≠ primary).
-- [ ] Revision content hash (upper-case) and uniqueness; custom revision append; premade immutability T20.
-- [ ] Visibility and canonical listing (S35, T12–T13, T21 display name); archive hides and allows re-install.
-- [ ] Start/restart: expected revision, expected active run, 403 for another owner, day count for templates, abandoning the previous run, pinned revisions S6–S7, S36–S38.
-- [ ] Projection P14–P16, P19; schedule validation P17–P18; run-zone "today" S1–S2.
-- [ ] Progress P6–P9; recommendation P10–P13 plus the UI refinements in section 8.
-- [ ] Advancement: only Completed + linked (+ **Hardware** origin) advances S3–S5; the next-item validation and alternatives S8; the unique completed-item constraint; run completion.
-- [ ] Schedule actions: every blocked reason and message in 5.4; S11–S21, S25–S26, S29, S31; apply recomputes the preview, 400 on blocked, 409 on stale; repeats never advance progress.
-- [ ] Change training days S22–S24, S27–S28, S30, S32–S34, T24–T28, including the revision hash, pinning, and replay/conflict.
-- [ ] Clear upcoming S9–S10: preview, apply and runner isolation.
-- [ ] All schedule writes are serialised and transactional with their receipt.
+**Premade catalog [E]**
+- [ ] [E] Load `data/premade`: 16 templates; counts, phases and sessions per T1–T2; the source hash T8; the definition facts T3–T5 as read from the loaded data.
+- [ ] [E] Preview: HR readiness T22–T23, capability normalisation (aligned down, never more aggressive, rejected targets block), the messages in 7.5.
+- [ ] [E] Install: idempotent per runner + template + version, replay, `alreadyAdded`, copy number after archive, definitions deduplicated by hash, `PlanInternal` kind and library hiding, runner scope — T9–T14, T19, T21. Installing never starts a run.
+- [ ] [E] Scheduling an installed plan and adjusting a 174-item plan T15–T18; installed plans are immutable T20.
+- [ ] [E] Provenance text available in the catalog detail (7.6); no medical claims.
+- [ ] [O] The generator (7.2) and WalkingPad materialiser (7.3) reproduce every `definitionSha256` and `contentSha256` in `data/premade` (T6–T7).
 
-**Premade**
-- [ ] Load `data/premade`; counts and hashes T1–T2, T6, T8.
-- [ ] The generator (7.2) and the WalkingPad materialiser (7.3) reproduce every definition hash T3–T5, T7.
-- [ ] Preview: HR readiness T22–T23, capability normalisation, messages.
-- [ ] Install: idempotency, replay, alreadyAdded, copy numbers after archive, dedupe by hash, `PlanInternal` kind, profile scope, legacy `Structured` hiding T9–T14, T19, T21.
-- [ ] Scheduling an installed plan and adjusting a 174-item plan T15–T18.
-- [ ] Provenance text shown in the catalog detail (7.6); no medical claims.
+**Plan runs [E]**
+- [ ] [E] Program and item validation and limits P1–P5 (1,000 items, 20 alternatives, alternative ≠ primary).
+- [ ] [E] Start: expected active run, 403 for another owner, exact weekday count for templates, abandoning the previous run, one active run per runner S36–S38; restart pins the latest revision S6–S7.
+- [ ] [E] Projection P14–P16, P19; schedule validation P17–P18; run-zone "today" S1–S2.
+- [ ] [E] Progress P6–P9; recommendation P10–P13 plus the UI rules in section 8.
+- [ ] [E] Advancement: only Completed + linked + **Hardware** origin advances S3–S5; next-item validation and alternatives S8; an item completes at most once per run; run completion.
+- [ ] [E] Move only / Move this and following / Skip / Restore: every blocked reason in 5.4, and S11–S15, S19–S21, S25–S26, S31. Apply recomputes the preview, refuses when blocked, and refuses a stale version.
+- [ ] [E] Merged calendar for plan occurrences: `isCompleted`, `originalDate`, positions, the ≤ 62-day limit, the max-date read C17–C18, S40.
+- [ ] [E] Clear upcoming S9–S10: preview, apply and runner isolation.
+- [ ] [E] Schedule writes are serialised and atomic with their operation record.
+- [ ] [O] Repeat · keep dates / shift the rest S16–S18, S39; repeats warn instead of blocking; a repeat never advances progress.
+- [ ] [O] Change training days S22–S24, S27–S28, S30, S32–S34, T24–T28, including the preview revision, pinning, replay and conflict.
+- [ ] [O] Custom programs: create and replay S35–S36, revisions and pinning S6, household visibility S35, canonical listing (4.2).
 
-**Goals, advice, receipts**
-- [ ] Goal upsert, uniqueness, versioning, rolling-window progress G9–G11.
-- [ ] Trends G8; adviser table G1–G7 (plus the Stopped → Interrupted decision).
-- [ ] Recommendation persistence: one per runner + session, pending refresh, the decision receipt G12, never mutating plans.
-- [ ] Receipts: replay, conflict, the concurrency race, 404 receipting, 90-day pruning G13–G16; the fingerprint scopes in 10.2.
+**Calendar series [O]**
+- [ ] [O] Weekday rotation R1–R5; recurrence validation R10; interval anchoring R9; DST stability R7–R8.
+- [ ] [O] `resolveDay` / `resolveRange` D1–D4 (Skip, Replace-on-base-only, Add anywhere, runner filter, ordering, dedupe), plus a property test against a brute-force evaluation.
+- [ ] [O] Day selections D5, C3–C4, and selection cleanup on move, delete and delete-group.
+- [ ] [O] Series create, update, transfer refusal, missing references: C1–C2, C14–C16.
+- [ ] [O] Delete one / delete group C8–C9; move only C5, C10.
+- [ ] [O] Move this and later with split, rotation, shared group and continuation version C6–C7; collision guards C11–C13 with their messages.
+- [ ] [O] Series occurrences block plan moves and training-day changes S29–S30.
+
+**Operations and versions**
+- [ ] [E] A repeated operation ID does not apply twice; a reused ID with a different request is refused; stale versions are refused (G13, G15–G16 in spirit; S13, S34).
+- [ ] [O] Full receipt replay of the stored response, 90-day pruning G14, fingerprint scopes per 10.2.
+
+**Goals and advice [O]**
+- [ ] [O] Goal upsert, uniqueness, versioning, rolling-window progress G9–G11.
+- [ ] [O] Trends G8; adviser table G1–G7 (with the Stopped → Interrupted decision).
+- [ ] [O] Recommendation persistence: one per runner + session, pending refresh, the decision rule G12, never mutating plans.

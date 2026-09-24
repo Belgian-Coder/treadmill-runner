@@ -1,0 +1,1 @@
+{"schema":"treadmillrunner.workout/v1","name":"  Hill walk ","description":"  ","blocks":[{"type":"step","durationSeconds":600,"inclineStartPercent":4,"name":" Climb ","cue":"  "}]}

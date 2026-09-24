@@ -1,0 +1,1213 @@
+{
+  "description": "Capability preflight: requested targets vs verified treadmill ranges and the profile maximum speed.",
+  "vectors": [
+    {
+      "id": "align-down",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.56
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1.06
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 7.56,
+          "normalized": 7.5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 1.06,
+          "normalized": 1,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        }
+      ]
+    },
+    {
+      "id": "reject-outliers-no-clamp",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "ramp",
+              "startKilometersPerHour": 7,
+              "endKilometersPerHour": 13
+            },
+            "incline": {
+              "kind": "ramp",
+              "startPercent": 1,
+              "endPercent": 13
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": false,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "ramp",
+              "startKilometersPerHour": 7,
+              "endKilometersPerHour": 13
+            },
+            "incline": {
+              "kind": "ramp",
+              "startPercent": 1,
+              "endPercent": 13
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed.start",
+          "kind": "Speed",
+          "requested": 7,
+          "normalized": 7,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        },
+        {
+          "path": "blocks[0].speed.end",
+          "kind": "Speed",
+          "requested": 13,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target is outside the verified 0.8–12 range."
+        },
+        {
+          "path": "blocks[0].incline.start",
+          "kind": "Incline",
+          "requested": 1,
+          "normalized": 1,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        },
+        {
+          "path": "blocks[0].incline.end",
+          "kind": "Incline",
+          "requested": 13,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target is outside the verified 0–12 range."
+        }
+      ]
+    },
+    {
+      "id": "nested-hr-bounds",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 10,
+      "input": {
+        "schemaVersion": 1,
+        "title": "HR",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "repeat",
+            "repetitions": 2,
+            "blocks": [
+              {
+                "kind": "step",
+                "goal": {
+                  "kind": "time",
+                  "durationTicks": 3000000000
+                },
+                "speed": {
+                  "kind": "heartRate",
+                  "minimumBpm": 120,
+                  "maximumBpm": 140,
+                  "initialKilometersPerHour": 6.06,
+                  "minimumKilometersPerHour": 5.06,
+                  "maximumKilometersPerHour": 8.06
+                },
+                "incline": {
+                  "kind": "fixed",
+                  "percent": 0
+                },
+                "cue": null,
+                "notes": null
+              }
+            ]
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "HR",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "repeat",
+            "repetitions": 2,
+            "blocks": [
+              {
+                "kind": "step",
+                "goal": {
+                  "kind": "time",
+                  "durationTicks": 3000000000
+                },
+                "speed": {
+                  "kind": "heartRate",
+                  "minimumBpm": 120,
+                  "maximumBpm": 140,
+                  "initialKilometersPerHour": 6,
+                  "minimumKilometersPerHour": 5,
+                  "maximumKilometersPerHour": 8
+                },
+                "incline": {
+                  "kind": "fixed",
+                  "percent": 0
+                },
+                "cue": null,
+                "notes": null
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].blocks[0].speed.minimum",
+          "kind": "Speed",
+          "requested": 5.06,
+          "normalized": 5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].blocks[0].speed.maximum",
+          "kind": "Speed",
+          "requested": 8.06,
+          "normalized": 8,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].blocks[0].speed.initial",
+          "kind": "Speed",
+          "requested": 6.06,
+          "normalized": 6,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "hr-zone",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 10,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 6.06,
+              "minimumKilometersPerHour": 5.06,
+              "maximumKilometersPerHour": 8.06
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 6,
+              "minimumKilometersPerHour": 5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed.minimum",
+          "kind": "Speed",
+          "requested": 5.06,
+          "normalized": 5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].speed.maximum",
+          "kind": "Speed",
+          "requested": 8.06,
+          "normalized": 8,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].speed.initial",
+          "kind": "Speed",
+          "requested": 6.06,
+          "normalized": 6,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "profile-max-no-hardware",
+      "speedRange": null,
+      "inclineRange": null,
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 12.1
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": false,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 12.1
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 12.1,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target exceeds the profile maximum of 12 km/h."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "No verified hardware range is active."
+        }
+      ]
+    },
+    {
+      "id": "profile-below-treadmill-min",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 0.5,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "open"
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": false,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "open"
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "profile.maximumSpeed",
+          "kind": "Speed",
+          "requested": 0.5,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Profile maximum is below the treadmill minimum of 0.8 km/h."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "no-ranges-no-profile",
+      "speedRange": null,
+      "inclineRange": null,
+      "profileMaximumSpeedKph": null,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 25
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": -3
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 25
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": -3
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 25,
+          "normalized": 25,
+          "disposition": "Accepted",
+          "reason": "No verified hardware range is active."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": -3,
+          "normalized": -3,
+          "disposition": "Accepted",
+          "reason": "No verified hardware range is active."
+        }
+      ]
+    },
+    {
+      "id": "exact-increment-accepted",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 7.5,
+          "normalized": 7.5,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 1,
+          "normalized": 1,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "tolerance-accepts-1e-7-over",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 12.0000001
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 12.0000001
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 12
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 12
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 12.0000001,
+          "normalized": 12,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 12.0000001,
+          "normalized": 12,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "below-min-rejected",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 0.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": -0.5
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": false,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 0.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": -0.5
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 0.5,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target is outside the verified 0.8–12 range."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": -0.5,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target is outside the verified 0–12 range."
+        }
+      ]
+    },
+    {
+      "id": "open-speed-no-target",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": null,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "open"
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.25
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "open"
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.2
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0.25,
+          "normalized": 0.2,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        }
+      ]
+    },
+    {
+      "id": "hr-bounds-collapse-to-one-value",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 12,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRate",
+              "minimumBpm": 120,
+              "maximumBpm": 140,
+              "initialKilometersPerHour": 5.05,
+              "minimumKilometersPerHour": 5.05,
+              "maximumKilometersPerHour": 5.09
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "heartRate",
+              "minimumBpm": 120,
+              "maximumBpm": 140,
+              "initialKilometersPerHour": 5,
+              "minimumKilometersPerHour": 5,
+              "maximumKilometersPerHour": 5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed.minimum",
+          "kind": "Speed",
+          "requested": 5.05,
+          "normalized": 5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].speed.maximum",
+          "kind": "Speed",
+          "requested": 5.09,
+          "normalized": 5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].speed.initial",
+          "kind": "Speed",
+          "requested": 5.05,
+          "normalized": 5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.1 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "odd-increment-0.5",
+      "speedRange": {
+        "minimum": 1.0,
+        "maximum": 16,
+        "increment": 0.5
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": null,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": true,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 7.9,
+          "normalized": 7.5,
+          "disposition": "Normalized",
+          "reason": "Aligned down to the verified 0.5 increment without increasing intensity."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    },
+    {
+      "id": "profile-max-caps-hardware-max",
+      "speedRange": {
+        "minimum": 0.8,
+        "maximum": 20,
+        "increment": 0.1
+      },
+      "inclineRange": {
+        "minimum": 0,
+        "maximum": 12,
+        "increment": 0.1
+      },
+      "profileMaximumSpeedKph": 14.95,
+      "input": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 15
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "isValid": false,
+      "normalizedDefinition": {
+        "schemaVersion": 1,
+        "title": "Capability test",
+        "description": null,
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 15
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0
+            },
+            "cue": null,
+            "notes": null
+          }
+        ]
+      },
+      "targets": [
+        {
+          "path": "blocks[0].speed",
+          "kind": "Speed",
+          "requested": 15,
+          "normalized": null,
+          "disposition": "Rejected",
+          "reason": "Target is outside the verified 0.8–14.95 range."
+        },
+        {
+          "path": "blocks[0].incline",
+          "kind": "Incline",
+          "requested": 0,
+          "normalized": 0,
+          "disposition": "Accepted",
+          "reason": "Target is within the verified range and increment."
+        }
+      ]
+    }
+  ]
+}

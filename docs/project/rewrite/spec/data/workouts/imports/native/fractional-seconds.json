@@ -1,0 +1,1 @@
+{"schema":"treadmillrunner.workout/v1","name":"Fractions","blocks":[{"type":"step","durationSeconds":0.00000019,"speedStartKph":6},{"type":"step","durationSeconds":90.5,"speedStartKph":6},{"type":"step","distanceMeters":1234.5,"speedStartKph":6}]}

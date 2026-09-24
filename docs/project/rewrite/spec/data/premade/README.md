@@ -1,6 +1,6 @@
 # Premade plan catalog data
 
-This folder holds the complete premade training-plan catalog as data: all 16 templates, every session, every alternative and every workout definition. The Kotlin app ships these files as resources, or tests its own generator against them byte for byte. The rules for installing and running the plans are in [04-calendar-and-plans.md](../../04-calendar-and-plans.md), section 7.
+This folder holds the complete premade training-plan catalog as data: all 16 templates, every session, every alternative and every workout definition. It is content the Kotlin app **ships with**: load the template files as resources, and do not rebuild them at runtime. The hashes are integrity checks for the shipped data; installed plans need no ID or hash compatibility with the legacy app. Rebuilding the data from `walkingpad-5k-to-10k-source.json` and the generator rules is optional and serves only to verify it or author a new template version. The rules for installing and running the plans are in [04-calendar-and-plans.md](../../04-calendar-and-plans.md), section 7.
 
 The files were produced by running the current app's catalog code and serialising what it builds. Nothing was edited by hand.
 

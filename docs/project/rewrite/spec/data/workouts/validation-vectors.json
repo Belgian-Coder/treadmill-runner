@@ -1,0 +1,201 @@
+{
+  "description": "Domain validation of the workout model. valid=false means the definition/value must be rejected.",
+  "vectors": [
+    {
+      "id": "nesting-31-repeats",
+      "given": "31 repeats nested inside each other (count 1 each) around one 1 s step",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": 1
+    },
+    {
+      "id": "nesting-32-repeats",
+      "given": "32 repeats nested inside each other around one 1 s step",
+      "valid": false,
+      "error": "Workout nesting cannot exceed 32 levels. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "over-12h",
+      "given": "one time step of 12 h + 1 s",
+      "valid": false,
+      "error": "Known workout duration cannot exceed 12 hours. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "over-12h-by-1-tick",
+      "given": "one time step of 12 h + 1 tick (100 ns)",
+      "valid": false,
+      "error": "Known workout duration cannot exceed 12 hours. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "12h-time-plus-distance",
+      "given": "a 12 h time step followed by a 1 km distance step (known time part = 12 h)",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": 2
+    },
+    {
+      "id": "10000-steps",
+      "given": "repeat x10000 of one 0.1 km step",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": 10000
+    },
+    {
+      "id": "10001-steps",
+      "given": "repeat x10001 of one 0.1 km step",
+      "valid": false,
+      "error": "A workout can expand to at most 10000 steps. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "repeat-int-max",
+      "given": "repeat x2147483647 of one 1 min step (must not overflow)",
+      "valid": false,
+      "error": "A workout can expand to at most 10000 steps. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "nan-speed",
+      "given": "FixedSpeed(NaN)",
+      "valid": false,
+      "error": "Value must be finite. (Parameter 'kilometersPerHour')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "infinite-speed",
+      "given": "FixedSpeed(+Infinity)",
+      "valid": false,
+      "error": "Value must be finite. (Parameter 'kilometersPerHour')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "negative-speed",
+      "given": "FixedSpeed(-0.1)",
+      "valid": false,
+      "error": "Value cannot be negative. (Parameter 'kilometersPerHour')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "negative-incline-ok",
+      "given": "FixedIncline(-3)",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": null
+    },
+    {
+      "id": "zero-duration",
+      "given": "TimeGoal(0)",
+      "valid": false,
+      "error": "Duration must be positive. (Parameter 'duration')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "zero-distance",
+      "given": "DistanceGoal(0 km)",
+      "valid": false,
+      "error": "Value must be greater than zero. (Parameter 'kilometers')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "zone-0",
+      "given": "HeartRateZoneSpeed(zone 0, 9, 7, 11)",
+      "valid": false,
+      "error": "Zone number must be between 1 and 10. (Parameter 'zoneNumber')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "zone-11",
+      "given": "HeartRateZoneSpeed(zone 11, 9, 7, 11)",
+      "valid": false,
+      "error": "Zone number must be between 1 and 10. (Parameter 'zoneNumber')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-min-0",
+      "given": "HeartRateSpeed(0-150 bpm, 9, 7, 11)",
+      "valid": false,
+      "error": "Heart-rate bounds must be ordered and between 1 and 250 bpm. (Parameter 'minimumBpm')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-max-251",
+      "given": "HeartRateSpeed(100-251 bpm, 9, 7, 11)",
+      "valid": false,
+      "error": "Heart-rate bounds must be ordered and between 1 and 250 bpm. (Parameter 'minimumBpm')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-min-gt-max",
+      "given": "HeartRateSpeed(160-150 bpm, 9, 7, 11)",
+      "valid": false,
+      "error": "Heart-rate bounds must be ordered and between 1 and 250 bpm. (Parameter 'minimumBpm')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-min-eq-max",
+      "given": "HeartRateSpeed(150-150 bpm, 9, 7, 11)",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-initial-below-min",
+      "given": "HeartRateSpeed(120-150 bpm, initial 6, min 7, max 11)",
+      "valid": false,
+      "error": "Initial HR speed must be inside the ordered minimum and maximum speeds.",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-speed-min-gt-max",
+      "given": "HeartRateSpeed(120-150 bpm, initial 9, min 12, max 11)",
+      "valid": false,
+      "error": "Initial HR speed must be inside the ordered minimum and maximum speeds.",
+      "expandedStepCount": null
+    },
+    {
+      "id": "hr-all-zero-speeds",
+      "given": "HeartRateZoneSpeed(zone 3, 0, 0, 0)",
+      "valid": true,
+      "error": null,
+      "expandedStepCount": null
+    },
+    {
+      "id": "repeat-0",
+      "given": "Repeat x0",
+      "valid": false,
+      "error": "Repeat count must be positive. (Parameter 'repetitions')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "repeat-empty",
+      "given": "Repeat x1 with no children",
+      "valid": false,
+      "error": "A repeat must contain at least one block. (Parameter 'blocks')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "schema-2",
+      "given": "schemaVersion 2",
+      "valid": false,
+      "error": "Only workout schema version 1 is supported. (Parameter 'schemaVersion')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "blank-title",
+      "given": "title \"  \"",
+      "valid": false,
+      "error": "The value cannot be an empty string or composed entirely of whitespace. (Parameter 'title')",
+      "expandedStepCount": null
+    },
+    {
+      "id": "no-blocks",
+      "given": "no blocks",
+      "valid": false,
+      "error": "A workout must contain at least one block. (Parameter 'blocks')",
+      "expandedStepCount": null
+    }
+  ]
+}

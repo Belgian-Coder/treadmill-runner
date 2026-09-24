@@ -1,0 +1,1 @@
+{"schema":"treadmillrunner.workout/v1","name":"x","blocks":[{"type":"step","durationSeconds":60,"distanceMeters":100,"speedStartKph":6}]}
