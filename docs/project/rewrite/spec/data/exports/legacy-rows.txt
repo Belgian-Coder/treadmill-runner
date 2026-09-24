@@ -71,7 +71,7 @@ PRAGMA encoding = UTF-8
 
 ### HeartRateDeviceAssignments (rows: 1)
 -- row 0
-  Id [TEXT] = 1BCB5811-83D7-440D-9971-FDFCD213FD9F
+  Id [TEXT] = 8C3EB374-4336-4AA5-874A-4F796CB9B124
   UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
   DeviceEnrollmentId [TEXT] = 3C4D5E6F-7081-4923-8B4C-5D6E7F809102
   Priority [INTEGER] = 0
@@ -83,33 +83,33 @@ PRAGMA encoding = UTF-8
 
 ### HeartRateZones (rows: 5)
 -- row 0
-  Id [TEXT] = 3B0760B7-3E87-4CF3-A08B-09961C7FA5FD
-  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
-  Number [INTEGER] = 5
-  Name [TEXT] = Maximum
-  MinimumBpm [INTEGER] = 171
-  MaximumBpm [INTEGER] = 190
--- row 1
-  Id [TEXT] = A419964E-9BC6-49D5-9D4F-FE20B6A40A0F
-  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
-  Number [INTEGER] = 1
-  Name [TEXT] = Warm up
-  MinimumBpm [INTEGER] = 95
-  MaximumBpm [INTEGER] = 113
--- row 2
-  Id [TEXT] = B25929E0-5766-4BE8-88F2-725C360A7B4E
+  Id [TEXT] = 197B54EF-9BF6-4E0C-B241-78F9A50326D3
   UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
   Number [INTEGER] = 2
   Name [TEXT] = Easy
   MinimumBpm [INTEGER] = 114
   MaximumBpm [INTEGER] = 132
--- row 3
-  Id [TEXT] = C7893420-AC1D-49B7-AED0-BBB666166CA3
+-- row 1
+  Id [TEXT] = 37704759-0DDD-4C33-968D-5211095D3428
   UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
-  Number [INTEGER] = 3
-  Name [TEXT] = Aerobic
-  MinimumBpm [INTEGER] = 133
-  MaximumBpm [INTEGER] = 151
+  Number [INTEGER] = 4
+  Name [TEXT] = Threshold
+  MinimumBpm [INTEGER] = 152
+  MaximumBpm [INTEGER] = 170
+-- row 2
+  Id [TEXT] = 65CE23CF-B5D3-456D-8027-D49B50806270
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 1
+  Name [TEXT] = Warm up
+  MinimumBpm [INTEGER] = 95
+  MaximumBpm [INTEGER] = 113
+-- row 3
+  Id [TEXT] = 7BECDCD3-E16F-4311-887D-7828B7FAA0B9
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 5
+  Name [TEXT] = Maximum
+  MinimumBpm [INTEGER] = 171
+  MaximumBpm [INTEGER] = 190
 
 ### ImportAudits (rows: 0)
 
@@ -117,7 +117,7 @@ PRAGMA encoding = UTF-8
 
 ### LocalGoals (rows: 1)
 -- row 0
-  Id [TEXT] = 3612E647-3F81-450A-8F2D-F1D9CC43EA3E
+  Id [TEXT] = 876C30B3-7E4A-4DE6-A576-534D2821FCB9
   UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
   Kind [TEXT] = Distance
   Period [TEXT] = Weekly
@@ -129,7 +129,7 @@ PRAGMA encoding = UTF-8
 
 ### OperationReceipts (rows: 5)
 -- row 0
-  Id [TEXT] = B9489A95-71FD-446A-AF0D-3DAA7B8EE4EA
+  Id [TEXT] = 13567705-EFCF-4813-88C3-8CEDC769AF77
   ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000001
   OperationType [TEXT] = profile.create
   RequestFingerprint [TEXT] = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -137,15 +137,15 @@ PRAGMA encoding = UTF-8
   OutcomeJson [TEXT] = {}
   CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 -- row 1
-  Id [TEXT] = F8E9B98D-921A-4B17-8CE2-6423738EE231
+  Id [TEXT] = 11412D7E-A49B-416F-B88D-F5925E397F1F
   ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000002
   OperationType [TEXT] = workout.create
   RequestFingerprint [TEXT] = cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   StatusCode [INTEGER] = 200
-  OutcomeJson [TEXT] = {"Id":"a6c2433d-4452-4f06-b1b7-84e3bae1cab4","WorkoutId":"1a2b3c4d-5e6f-4a0b-8c1d-2e3f4a5b6c7d","RevisionNumber":1,"DefinitionJson":"{\u0022schemaVersion\u0022:1,\u0022title\u0022:\u0022Spec fixture intervals\u0022,\u0022description\u0022:\u0022Golden fixture for the rewrite spec pack.\u0022,\u0022blocks\u0022:[{\u0022kind\u0022:\u0022step\u0022,\u0022goal\u0022:{\u0022kind\u0022:\u0022time\u0022,…
+  OutcomeJson [TEXT] = {"Id":"6d71930d-d3dd-4db9-b68c-b474dcb2e6e1","WorkoutId":"1a2b3c4d-5e6f-4a0b-8c1d-2e3f4a5b6c7d","RevisionNumber":1,"DefinitionJson":"{\u0022schemaVersion\u0022:1,\u0022title\u0022:\u0022Spec fixture intervals\u0022,\u0022description\u0022:\u0022Golden fixture for the rewrite spec pack.\u0022,\u0022blocks\u0022:[{\u0022kind\u0022:\u0022step\u0022,\u0022goal\u0022:{\u0022kind\u0022:\u0022time\u0022,…
   CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 -- row 2
-  Id [TEXT] = 8F34F83A-EF3C-4928-9116-80C418C22510
+  Id [TEXT] = EA81C0DF-3ABB-490D-8BA2-FF742A749B52
   ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000003
   OperationType [TEXT] = device.enroll
   RequestFingerprint [TEXT] = dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
@@ -153,7 +153,7 @@ PRAGMA encoding = UTF-8
   OutcomeJson [TEXT] = {}
   CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 -- row 3
-  Id [TEXT] = B412EBB6-3F81-479A-925D-7B2C2EC5671E
+  Id [TEXT] = 15B21407-21A6-4E8A-A475-14D940D27718
   ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000004
   OperationType [TEXT] = device.enroll
   RequestFingerprint [TEXT] = eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
@@ -161,9 +161,64 @@ PRAGMA encoding = UTF-8
   OutcomeJson [TEXT] = {}
   CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 
-### PolarH10RecordingSamples (rows: 0)
+### PolarH10RecordingSamples (rows: 22)
+-- row 0
+  PolarH10RecordingId [TEXT] = 6F708192-A3B4-4C56-9E7F-809102132435
+  Sequence [INTEGER] = 0
+  CapturedAtUtc [TEXT] = 2026-09-01 06:29:58+00:00
+  BeatsPerMinute [INTEGER] = 106
+  RrIntervalMilliseconds [NULL] = NULL
+-- row 1
+  PolarH10RecordingId [TEXT] = 6F708192-A3B4-4C56-9E7F-809102132435
+  Sequence [INTEGER] = 1
+  CapturedAtUtc [TEXT] = 2026-09-01 06:29:59+00:00
+  BeatsPerMinute [INTEGER] = 108
+  RrIntervalMilliseconds [NULL] = NULL
+-- row 2
+  PolarH10RecordingId [TEXT] = 6F708192-A3B4-4C56-9E7F-809102132435
+  Sequence [INTEGER] = 2
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:00+00:00
+  BeatsPerMinute [INTEGER] = 110
+  RrIntervalMilliseconds [NULL] = NULL
+-- row 3
+  PolarH10RecordingId [TEXT] = 6F708192-A3B4-4C56-9E7F-809102132435
+  Sequence [INTEGER] = 3
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:01+00:00
+  BeatsPerMinute [INTEGER] = 112
+  RrIntervalMilliseconds [NULL] = NULL
 
-### PolarH10Recordings (rows: 0)
+### PolarH10Recordings (rows: 1)
+-- row 0
+  Id [TEXT] = 6F708192-A3B4-4C56-9E7F-809102132435
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  DeviceEnrollmentId [TEXT] = 3C4D5E6F-7081-4923-8B4C-5D6E7F809102
+  ExerciseId [TEXT] = tr-4d5e6f7081924a349c5d6e7f80910213
+  Status [TEXT] = Completed
+  Origin [TEXT] = Automatic
+  SampleType [TEXT] = HeartRate
+  SampleIntervalSeconds [INTEGER] = 1
+  StartRequestedAtUtc [TEXT] = 2026-09-01 06:29:51+00:00
+  StartConfirmedAtUtc [TEXT] = 2026-09-01 06:29:53+00:00
+  StopRequestedAtUtc [TEXT] = 2026-09-01 06:30:19+00:00
+  StopConfirmedAtUtc [TEXT] = 2026-09-01 06:30:20+00:00
+  ExternalRecordingId [TEXT] = tr-4d5e6f7081924a349c5d6e7f80910213
+  RemotePath [TEXT] = /tr-4d5e6f7081924a349c5d6e7f80910213/SAMPLES.BPB
+  Payload [BLOB] = <23 bytes>
+  PayloadSha256 [TEXT] = 8de4347cf646641e636fefa673d4d27f71f3fcf3c3d85d3aa460a996b670b321
+  PayloadBytes [INTEGER] = 23
+  QueuedAtUtc [TEXT] = 2026-09-01 06:29:51+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:33:18+00:00
+  StartedAtUtc [TEXT] = 2026-09-01 06:29:58+00:00
+  EndedAtUtc [TEXT] = 2026-09-01 06:30:19+00:00
+  LeaseExpiresAtUtc [NULL] = NULL
+  AttemptCount [INTEGER] = 0
+  LastError [NULL] = NULL
+  MergeCount [INTEGER] = 0
+  RemovalCount [INTEGER] = 1
+  Version [INTEGER] = 7
+  AvailableAtUtc [TEXT] = 2026-09-01 06:29:51+00:00
+  OperationFingerprint [NULL] = NULL
 
 ### PremadePlanInstallations (rows: 0)
 
@@ -171,7 +226,7 @@ PRAGMA encoding = UTF-8
 
 ### RunnerExperiencePreferences (rows: 1)
 -- row 0
-  Id [TEXT] = 93C2782A-F46A-49FA-8888-795CC1E0B1C8
+  Id [TEXT] = 907A6C8D-33C3-494F-A8B8-9B9B53BB2A19
   UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
   DisplayStyle [TEXT] = LargeText
   PrimaryMetricsJson [TEXT] = [0,2,4]
@@ -184,33 +239,33 @@ PRAGMA encoding = UTF-8
   Version [INTEGER] = 1
   UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 
-### SessionEvents (rows: 9)
+### SessionEvents (rows: 13)
 -- row 0
-  Id [TEXT] = B3FE15D8-0711-4D86-A42A-3271C5BFCB85
+  Id [TEXT] = 8AF6018F-CB0F-40F0-9866-4AB5D926A261
   WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   OccurredAtUtc [TEXT] = 2026-09-01 06:30:00+00:00
   Kind [TEXT] = session-warning
   DetailsJson [TEXT] = {"code":"physical-movement-detected","message":"Physical movement detected","eventType":"session-warning","occurredAt":"2026-09-01T06:30:00+00:00"}
 -- row 1
-  Id [TEXT] = 30A83836-5685-430D-A874-DC1D6D18AAA4
+  Id [TEXT] = D37AF6BB-A7EF-45AA-86D7-9EE00178C3B6
   WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   OccurredAtUtc [TEXT] = 2026-09-01 06:30:05+00:00
   Kind [TEXT] = workout-step-transition
   DetailsJson [TEXT] = {"completedStepIndex":0,"currentStepIndex":1,"cue":"Fast","eventType":"workout-step-transition","occurredAt":"2026-09-01T06:30:05+00:00"}
 -- row 2
-  Id [TEXT] = 34102411-EBAA-4866-9A98-7E49FD6676DE
+  Id [TEXT] = 0F84F297-85CB-481C-B619-246960CDEB9F
   WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   OccurredAtUtc [TEXT] = 2026-09-01 06:30:07+00:00
   Kind [TEXT] = manual-speed-override
   DetailsJson [TEXT] = {"expectedSpeedKph":8,"observedSpeedKph":8.5,"eventType":"manual-speed-override","occurredAt":"2026-09-01T06:30:07+00:00"}
 -- row 3
-  Id [TEXT] = 13F9AD25-8313-40B4-8EB7-17BFC475B08E
+  Id [TEXT] = 9C7BFD3E-E1B7-4924-A6CF-15F0114CACEC
   WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   OccurredAtUtc [TEXT] = 2026-09-01 06:30:08.1999999+00:00
   Kind [TEXT] = device-disconnected
   DetailsJson [TEXT] = {"deviceRole":1,"reason":"Heart-rate telemetry became stale.","eventType":"device-disconnected","occurredAt":"2026-09-01T06:30:08.1999999+00:00"}
 
-### SessionSamples (rows: 15)
+### SessionSamples (rows: 19)
 -- row 0
   WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   Sequence [INTEGER] = 0
@@ -280,8 +335,8 @@ PRAGMA encoding = UTF-8
 
 ### TreadmillMaintenanceEvents (rows: 1)
 -- row 0
-  Id [TEXT] = 2742799F-91DC-40F8-9EB7-2C05DD3EB48D
-  TreadmillMaintenancePolicyId [TEXT] = C1ECFDEF-B3D0-4CDD-A5F9-B5B8D68F9ED6
+  Id [TEXT] = B7A12F98-CEA3-47AA-8194-187B9EBBAA13
+  TreadmillMaintenancePolicyId [TEXT] = A1178C27-90A8-41EA-87A4-CA9FBB42D918
   OperationId [TEXT] = 00000000-0000-4000-8000-000000000005
   PerformedAtUtc [TEXT] = 2026-08-15 09:00:00+00:00
   AppDistanceBaselineKilometers [REAL] = 0.02675
@@ -290,7 +345,7 @@ PRAGMA encoding = UTF-8
 
 ### TreadmillMaintenancePolicies (rows: 1)
 -- row 0
-  Id [TEXT] = C1ECFDEF-B3D0-4CDD-A5F9-B5B8D68F9ED6
+  Id [TEXT] = A1178C27-90A8-41EA-87A4-CA9FBB42D918
   DeviceEnrollmentId [TEXT] = 2B3C4D5E-6F70-4812-9A3B-4C5D6E7F8091
   IntervalMonths [INTEGER] = 3
   DistanceIntervalKilometers [REAL] = 241
@@ -333,14 +388,14 @@ PRAGMA encoding = UTF-8
 
 ### WorkoutRevisions (rows: 1)
 -- row 0
-  Id [TEXT] = A6C2433D-4452-4F06-B1B7-84E3BAE1CAB4
+  Id [TEXT] = 6D71930D-D3DD-4DB9-B68C-B474DCB2E6E1
   WorkoutId [TEXT] = 1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D
   RevisionNumber [INTEGER] = 1
   DefinitionJson [TEXT] = {"schemaVersion":1,"title":"Spec fixture intervals","description":"Golden fixture for the rewrite spec pack.","blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":50000000},"speed":{"kind":"fixed","kilometersPerHour":5},"incline":{"kind":"fixed","percent":1},"cue":"Warm up","notes":null},{"kind":"repeat","repetitions":2,"blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":30000…
   ContentSha256 [TEXT] = 753dccb73e45b7930c8798f2c47ee00837936d17debda8d3657baadad1f80a6d
   CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
 
-### WorkoutSessions (rows: 1)
+### WorkoutSessions (rows: 2)
 -- row 0
   Id [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
   ArmedAtUtc [TEXT] = 2026-09-01 06:29:50+00:00
@@ -365,10 +420,40 @@ PRAGMA encoding = UTF-8
   UserProfileName [TEXT] = Marc
   WorkoutProgramItemId [NULL] = NULL
   WorkoutProgramRunId [NULL] = NULL
-  WorkoutRevisionId [TEXT] = A6C2433D-4452-4F06-B1B7-84E3BAE1CAB4
+  WorkoutRevisionId [TEXT] = 6D71930D-D3DD-4DB9-B68C-B474DCB2E6E1
   WorkoutTitle [TEXT] = Spec fixture intervals
   RecoveryCheckpointJson [TEXT] = {"sessionId":"4d5e6f70-8192-4a34-9c5d-6e7f80910213","savedAtUtc":"2026-09-01T06:30:18+00:00","state":2,"sessionVersion":17,"startedAtUtc":"2026-09-01T06:30:00+00:00","progression":{"currentStepIndex":1,"lastElapsed":"00:00:14","lastDistanceKilometers":0.02675,"stepStartedAtElapsed":"00:00:05","stepStartedAtDistanceKilometers":0.007583333,"progressStartedAtElapsed":"00:00:00"},"distanceKilometers":…
   RecoveryCheckpointUpdatedAtUtc [TEXT] = 2026-09-01 06:30:18+00:00
+  ActiveSessionKey [NULL] = NULL
+  RecordPolarH10Memory [INTEGER] = 0
+-- row 1
+  Id [TEXT] = 5A6B7C8D-9E0F-4A1B-8C2D-3E4F5A6B7C8D
+  ArmedAtUtc [TEXT] = 2026-09-02 18:00:00+00:00
+  AverageHeartRateBpm [REAL] = 102
+  AverageInclinePercent [REAL] = 0
+  AverageSpeedKph [REAL] = 3.9999995999999998
+  ControllerConfigurationJson [TEXT] = {}
+  DebriefNote [NULL] = NULL
+  DebriefUpdatedAtUtc [NULL] = NULL
+  DistanceKilometers [REAL] = 0.003333333
+  DurationSeconds [REAL] = 3
+  EndedAtUtc [TEXT] = 2026-09-02 18:00:34+00:00
+  EstimatedCalories [REAL] = 0.15
+  MaximumHeartRateBpm [INTEGER] = 103
+  MetricAlgorithmVersion [TEXT] = estimated-calories/v1
+  PerceivedExertion [NULL] = NULL
+  SelectionSource [TEXT] = Manual
+  SessionOrigin [TEXT] = Simulator
+  StartedAtUtc [TEXT] = 2026-09-02 18:00:04+00:00
+  State [TEXT] = Interrupted
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  UserProfileName [TEXT] = Marc
+  WorkoutProgramItemId [NULL] = NULL
+  WorkoutProgramRunId [NULL] = NULL
+  WorkoutRevisionId [TEXT] = 6D71930D-D3DD-4DB9-B68C-B474DCB2E6E1
+  WorkoutTitle [TEXT] = Spec fixture intervals
+  RecoveryCheckpointJson [NULL] = NULL
+  RecoveryCheckpointUpdatedAtUtc [NULL] = NULL
   ActiveSessionKey [NULL] = NULL
   RecordPolarH10Memory [INTEGER] = 0
 

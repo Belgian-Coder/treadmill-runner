@@ -67,7 +67,7 @@ zones(185): 1 93-110; 2 111-129; 3 130-147; 4 148-166; 5 167-185
 zones(200): 1 100-119; 2 120-139; 3 140-159; 4 160-179; 5 180-200
 {
   "policy": {
-    "id": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+    "id": "a1178c27-90a8-41ea-87a4-ca9fbb42d918",
     "deviceEnrollmentId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
     "deviceDisplayName": "OMEGA Z",
     "intervalMonths": 3,
@@ -82,8 +82,8 @@ zones(200): 1 100-119; 2 120-139; 3 140-159; 4 160-179; 5 180-200
   "nextDueDistanceKilometers": 241.02675,
   "remainingKilometers": 241,
   "lastEvent": {
-    "id": "2742799f-91dc-40f8-9eb7-2c05dd3eb48d",
-    "policyId": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+    "id": "b7a12f98-cea3-47aa-8194-187b9ebbaa13",
+    "policyId": "a1178c27-90a8-41ea-87a4-ca9fbb42d918",
     "operationId": "00000000-0000-4000-8000-000000000005",
     "performedAtUtc": "2026-08-15T09:00:00+00:00",
     "appDistanceBaselineKilometers": 0.02675,
@@ -92,8 +92,8 @@ zones(200): 1 100-119; 2 120-139; 3 140-159; 4 160-179; 5 180-200
   },
   "events": [
     {
-      "id": "2742799f-91dc-40f8-9eb7-2c05dd3eb48d",
-      "policyId": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+      "id": "b7a12f98-cea3-47aa-8194-187b9ebbaa13",
+      "policyId": "a1178c27-90a8-41ea-87a4-ca9fbb42d918",
       "operationId": "00000000-0000-4000-8000-000000000005",
       "performedAtUtc": "2026-08-15T09:00:00+00:00",
       "appDistanceBaselineKilometers": 0.02675,

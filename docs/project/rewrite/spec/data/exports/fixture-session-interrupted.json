@@ -1,0 +1,125 @@
+{
+  "schema": "treadmillrunner.session/v1",
+  "unitSystem": "Metric",
+  "exportedAtUtc": "2026-09-24T17:10:24.0703736+00:00",
+  "session": {
+    "sessionId": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+    "userProfileId": "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+    "userProfileName": "Marc",
+    "workoutRevisionId": "6d71930d-d3dd-4db9-b68c-b474dcb2e6e1",
+    "workoutTitle": "Spec fixture intervals",
+    "armedAt": "2026-09-02T18:00:00+00:00",
+    "selection": {
+      "source": 1,
+      "programRunId": null,
+      "programItemId": null,
+      "recordPolarH10Memory": false,
+      "replaceExistingPolarH10Recording": false,
+      "replacePolarH10ExerciseId": null
+    },
+    "origin": 2,
+    "controllerConfiguration": {},
+    "metricAlgorithmVersion": "estimated-calories/v1",
+    "state": 6,
+    "startedAt": "2026-09-02T18:00:04+00:00",
+    "endedAt": "2026-09-02T18:00:34+00:00",
+    "durationSeconds": 3,
+    "distanceKilometers": 0.003333333,
+    "estimatedKilocalories": 0.15,
+    "averageHeartRateBpm": 102,
+    "maximumHeartRateBpm": 103,
+    "averageSpeedKph": 3.9999995999999998,
+    "averageInclinePercent": 0,
+    "debrief": null
+  },
+  "samples": [
+    {
+      "sequence": 0,
+      "capturedAt": "2026-09-02T18:00:04+00:00",
+      "elapsedSeconds": 0,
+      "plannedSpeedKph": null,
+      "requestedSpeedKph": 3.2,
+      "measuredSpeedKph": 3.2,
+      "plannedInclinePercent": null,
+      "requestedInclinePercent": 0,
+      "measuredInclinePercent": 0,
+      "heartRateBpm": 100,
+      "distanceKilometers": 0,
+      "estimatedKilocalories": 0,
+      "telemetryAgeMilliseconds": 250,
+      "metricAlgorithmVersion": "estimated-calories/v1"
+    },
+    {
+      "sequence": 1,
+      "capturedAt": "2026-09-02T18:00:05+00:00",
+      "elapsedSeconds": 1,
+      "plannedSpeedKph": null,
+      "requestedSpeedKph": 4,
+      "measuredSpeedKph": 4,
+      "plannedInclinePercent": null,
+      "requestedInclinePercent": 0,
+      "measuredInclinePercent": 0,
+      "heartRateBpm": 101,
+      "distanceKilometers": 0.001111111,
+      "estimatedKilocalories": 0.05,
+      "telemetryAgeMilliseconds": 250,
+      "metricAlgorithmVersion": "estimated-calories/v1"
+    },
+    {
+      "sequence": 2,
+      "capturedAt": "2026-09-02T18:00:06+00:00",
+      "elapsedSeconds": 2,
+      "plannedSpeedKph": null,
+      "requestedSpeedKph": 4,
+      "measuredSpeedKph": 4,
+      "plannedInclinePercent": null,
+      "requestedInclinePercent": 0,
+      "measuredInclinePercent": 0,
+      "heartRateBpm": null,
+      "distanceKilometers": 0.002222222,
+      "estimatedKilocalories": 0.1,
+      "telemetryAgeMilliseconds": 250,
+      "metricAlgorithmVersion": "estimated-calories/v1"
+    },
+    {
+      "sequence": 3,
+      "capturedAt": "2026-09-02T18:00:07+00:00",
+      "elapsedSeconds": 3,
+      "plannedSpeedKph": null,
+      "requestedSpeedKph": 4,
+      "measuredSpeedKph": 4,
+      "plannedInclinePercent": null,
+      "requestedInclinePercent": 0,
+      "measuredInclinePercent": 0,
+      "heartRateBpm": 103,
+      "distanceKilometers": 0.003333333,
+      "estimatedKilocalories": 0.15,
+      "telemetryAgeMilliseconds": 250,
+      "metricAlgorithmVersion": "estimated-calories/v1"
+    }
+  ],
+  "events": [
+    {
+      "eventType": "session-warning",
+      "occurredAt": "2026-09-02T18:00:04+00:00",
+      "code": "physical-movement-detected",
+      "message": "Physical movement detected"
+    },
+    {
+      "eventType": "session-paused",
+      "occurredAt": "2026-09-02T18:00:07.5+00:00",
+      "reason": 2
+    },
+    {
+      "eventType": "workout-progress-reset",
+      "occurredAt": "2026-09-02T18:00:09+00:00",
+      "previousStepIndex": 0,
+      "previousWorkoutElapsedSeconds": 3
+    },
+    {
+      "eventType": "session-interrupted",
+      "occurredAt": "2026-09-02T18:00:34+00:00",
+      "reason": "Simulator reset."
+    }
+  ]
+}

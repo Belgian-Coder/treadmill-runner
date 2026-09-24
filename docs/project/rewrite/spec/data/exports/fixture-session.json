@@ -1,12 +1,12 @@
 {
   "schema": "treadmillrunner.session/v1",
   "unitSystem": "Metric",
-  "exportedAtUtc": "2026-09-24T17:03:27.3340977+00:00",
+  "exportedAtUtc": "2026-09-24T17:10:24.1162687+00:00",
   "session": {
     "sessionId": "4d5e6f70-8192-4a34-9c5d-6e7f80910213",
     "userProfileId": "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
     "userProfileName": "Marc",
-    "workoutRevisionId": "a6c2433d-4452-4f06-b1b7-84e3bae1cab4",
+    "workoutRevisionId": "6d71930d-d3dd-4db9-b68c-b474dcb2e6e1",
     "workoutTitle": "Spec fixture intervals",
     "armedAt": "2026-09-01T06:29:50+00:00",
     "selection": {

@@ -1,0 +1,5 @@
+captured_at_utc,elapsed_seconds,planned_speed_kph,requested_speed_kph,measured_speed_kph,planned_incline_percent,requested_incline_percent,measured_incline_percent,heart_rate_bpm,distance_km,estimated_kcal,telemetry_age_ms
+2026-09-02T18:00:04.0000000+00:00,0,,3.2,3.2,,0,0,100,0,0,250
+2026-09-02T18:00:05.0000000+00:00,1,,4,4,,0,0,101,0.001111111,0.05,250
+2026-09-02T18:00:06.0000000+00:00,2,,4,4,,0,0,,0.002222222,0.1,250
+2026-09-02T18:00:07.0000000+00:00,3,,4,4,,0,0,103,0.003333333,0.15,250

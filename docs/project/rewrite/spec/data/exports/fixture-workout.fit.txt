@@ -1,6 +1,6 @@
 bytes=863 isFit=True
 integrity=True
-[0] FileId (#0) | Type=5 | Manufacturer=255 | Product=1 | SerialNumber=2797749053 | TimeCreated=1157176800 | ProductName=TreadmillRunner
+[0] FileId (#0) | Type=5 | Manufacturer=255 | Product=1 | SerialNumber=1836159757 | TimeCreated=1157176800 | ProductName=TreadmillRunner
 [1] Workout (#26) | Sport=1 | NumValidSteps=6 | WktName=Spec fixture intervals
 [2] WorkoutStep (#27) | WktStepName=Warm up | DurationType=0 | DurationValue=5000 | TargetType=0 | CustomTargetValueLow=1389 | CustomTargetValueHigh=1389 | Notes=Treadmill incline 1%. | MessageIndex=0
 [3] WorkoutStep (#27) | WktStepName=Fast | DurationType=0 | DurationValue=3000 | TargetType=0 | CustomTargetValueLow=2222 | CustomTargetValueHigh=2222 | Notes=Stay tall Treadmill incline 2%. | MessageIndex=1
