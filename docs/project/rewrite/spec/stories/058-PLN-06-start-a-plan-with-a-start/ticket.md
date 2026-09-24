@@ -18,7 +18,7 @@ Start a plan with a start date and weekdays; clear upcoming items.
   - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: the ported `TrainingDaySelectionResolver` projection.
+- [ ] AC1 *[auto]*: the plan projection of `docs/spec/04-calendar-and-plans.md` §5.3 (tests P14–P19) and clear upcoming (S9–S10).
 
 ## Mockups
 n/a

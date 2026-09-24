@@ -84,7 +84,7 @@ One folder per user story, numbered in build order. Each starts with `ticket.md`
 | [078](078-REC-06-delete-with-preview/ticket.md) | REC-06 | P1 | 2. Depth | Delete with preview. |
 | [079](079-REC-08-goals-and-progression-recommendations/ticket.md) | REC-08 | P1 | 2. Depth | Goals and progression recommendations. |
 | [080](080-WKT-02-editor-web-each-save-creates-a/ticket.md) | WKT-02 | P1 | 2. Depth | Editor (web); each save creates a revision. |
-| [081](081-WKT-03-optional-workout-imports-native-json-first/ticket.md) | WKT-03 | P2 | 2. Depth | Optional workout imports (native JSON first; QDomyos XML, FIT workout and v4 bun |
+| [081](081-WKT-03-import-workouts-in-the-old-native/ticket.md) | WKT-03 | P1 | 2. Depth | Import workouts in the old native JSON (P1), and optionally QDomyos XML, FIT wor |
 | [082](082-PLN-03-move-skip-restore-repeat-and-change/ticket.md) | PLN-03 | P1 | 2. Depth | Move, skip, restore, repeat and change days, each with a preview. |
 | [083](083-PLN-04-calendar-series-alternatives-and-exceptions-with/ticket.md) | PLN-04 | P1 | 2. Depth | Calendar series, alternatives and exceptions with the four scopes. |
 | [084](084-PLN-07-alternatives-per-plan-item/ticket.md) | PLN-07 | P1 | 2. Depth | Alternatives per plan item. |
@@ -102,4 +102,4 @@ One folder per user story, numbered in build order. Each starts with `ticket.md`
 | [096](096-GAR-03-watch-status-via-the-connect-iq/ticket.md) | GAR-03 | P2 | 3. Reach | Watch status via the Connect IQ Mobile SDK (needs the watch paired to the treadm |
 | [097](097-GAR-04-connect-iq-store-gar-05-p2/ticket.md) | GAR-04 | P2 | 3. Reach | Connect IQ store. **GAR-05 (P2)** — Official Training API. |
 | [098](098-H10-07-fallback-pftp-codec-behind-polarport/ticket.md) | H10-07 | P2 | 3. Reach | Fallback PFTP codec behind `PolarPort`. |
-| [099](099-OPS-05-kiosk-mode-via-device-owner-lock/ticket.md) | OPS-05 | P2 | 3. Reach | Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow,  |
+| [099](099-OPS-05-optional-kiosk-like-mode-with-android/ticket.md) | OPS-05 | P2 | 3. Reach | Optional kiosk-like mode with Android app pinning (screen pinning). **No Device  |

@@ -179,7 +179,7 @@ When the live session snapshot changes (previous → incoming), play one cue for
 - Gain envelope: from 0.0001, exponential ramp to `0.2 × volume%/100` over 15 ms, then exponential ramp to 0.0001 by 180 ms; stop at 200 ms.
 - A volume of 0 is silent.
 
-**[rewrite]:** the phone plays cues through the media stream (the same tone). The start cue is played on the phone even when Start comes from the web ([00](00-plan.md) §5.4). Cues never gate safety actions.
+**[rewrite]:** the phone plays cues through the media stream (the same tone). Start only ever comes from the phone's Run console or the treadmill console ([00](00-plan.md) §5.4); the web never starts the belt. Cues never gate safety actions.
 
 ---
 
@@ -365,7 +365,7 @@ Evaluated every engine tick for hardware runs ([05](05-sessions-and-recording.md
 | `SuspendedManualOverride` | **no** (system) | Entered by a manual speed change. No decisions |
 | `SuspendedSafety` | **no** (system) | Entered by stale HR or treadmill data, a telemetry gap, a source change, pause/stop, a rejected or unknown automated command, or restart recovery. No decisions |
 
-**Selecting a mode** (lease + version + operation ID):
+**Selecting a mode** (on the phone's Run console, with version + operation ID; [current]: also the controller lease):
 - The two suspended modes are rejected ("Suspended modes are system states, not selectable modes.").
 - A non-HR workout accepts only `Disabled`.
 - On hardware, `DecreaseOnly` and `Full` require `canSetSpeedRemotely` ("Remote speed control is not hardware verified.").
@@ -463,7 +463,7 @@ Each tick, for a Running session whose current step has an HR speed directive ([
 - If HR is needed and (the HR is null, the age is null, or the age is > 5 s): suspend with `SuspendedSafety` and skip.
 - **The target band:**
   - `heartRate` directive: `[minimumBpm, maximumBpm]` from the step.
-  - `heartRateZone` directive: **[current]** not resolved to bpm, so the controller always returns "Fresh heart-rate and treadmill telemetry plus a safe command context are required." and zone steps run at their initial speed with no automation. **[rewrite, recommended]** Resolve the zone number against the session's zone snapshot: `[zone.minimumBpm, zone.maximumBpm]`. If the zone is missing, stay passive and show "Zone {n} is not defined for this runner."
+  - `heartRateZone` directive: **[current]** not resolved to bpm, so the controller always returns "Fresh heart-rate and treadmill telemetry plus a safe command context are required." and zone steps run at their initial speed with no automation. **[rewrite, recommended]** Resolve the zone number against the session's zone snapshot: `[zone.minimumBpm, zone.maximumBpm]`. If the zone is missing, stay passive and show "Zone {n} is not defined for this runner." This is an open owner question ([00](00-plan.md) §16).
 - **The speed band:**
   - `min = max(step.minimumKph, range.minimum)`;
   - `max = min(step.maximumKph, profile.maxSpeed (20 if null), range.maximum)`;
@@ -498,16 +498,16 @@ Each tick, for a Running session whose current step has an HR speed directive ([
 | PF-5 | Metrics [Speed, Speed] | rejected ("two or three distinct") |
 | PF-6 | HighContrast [HeartRate, ElapsedTime, Speed], 65 | accepted |
 
-### 8.3 Source selection (freshness 5 s; every source Ready, Valid, 132 bpm, observed now, unless stated)
+### 8.3 Source selection (freshness 5 s; every source Ready, Valid, 132 bpm, observed now, unless stated; runners A and B are two profiles)
 | # | Sources | Assignments (profile, priority, preferred, autoConnect) | Profile | Selected |
 |---|---|---|---|---|
-| HS-1 | Polar H10 (Polar), fēnix 8 (Garmin watch) | Marc→Polar (1, preferred), Marc→fēnix (0) | Marc | **Polar** (preferred beats priority) |
-| HS-2 | Polar (age 5.1 s), fēnix | Marc→Polar (0, preferred), Marc→fēnix (1) | Marc | **fēnix** (fallback) |
-| HS-3 | vívoactive (Garmin) | Wife→vívoactive (0, preferred) | Marc | **none** (never another runner's sensor) |
-| HS-4 | Polar | none | Marc | **Polar** (unassigned shared sensor) |
-| HS-5 | Polar (age exactly 5.0 s) | Marc→Polar (0, preferred) and, separately, autoConnect=false | Marc | **Polar** in both cases (the boundary is fresh; Polar is always eligible) |
-| HS-6 | Polar with quality ContactLost / Invalid / Unavailable | Marc→Polar | Marc | none |
-| HS-7 | Polar with 29 / 251 bpm | Marc→Polar | Marc | none |
+| HS-1 | Polar H10 (Polar), fēnix 8 (Garmin watch) | A→Polar (1, preferred), A→fēnix (0) | A | **Polar** (preferred beats priority) |
+| HS-2 | Polar (age 5.1 s), fēnix | A→Polar (0, preferred), A→fēnix (1) | A | **fēnix** (fallback) |
+| HS-3 | vívoactive (Garmin) | B→vívoactive (0, preferred) | A | **none** (never another runner's sensor) |
+| HS-4 | Polar | none | A | **Polar** (unassigned shared sensor) |
+| HS-5 | Polar (age exactly 5.0 s) | A→Polar (0, preferred) and, separately, autoConnect=false | A | **Polar** in both cases (the boundary is fresh; Polar is always eligible) |
+| HS-6 | Polar with quality ContactLost / Invalid / Unavailable | A→Polar | A | none |
+| HS-7 | Polar with 29 / 251 bpm | A→Polar | A | none |
 | HS-8 | Polar (Polar family), Garmin watch (131 bpm) | P→Polar (20, not preferred, autoConnect false), P→Garmin (0, preferred, autoConnect true) | P | **Garmin** (an explicit preference outranks the family) |
 
 ### 8.4 HR speed controller (target 130–150 bpm, speed band 0.8–10, increment 0.1, ages 0, safetyReady, default settings 0.2/30/0.5/15)

@@ -6,16 +6,17 @@ phase: 3. Reach
 tags: []
 ---
 
-# OPS-05 — Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow, Garmin Con
+# OPS-05 — Optional kiosk-like mode with Android app pinning (screen pinning), without Device Owner
 
 ## Goal
-Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow, Garmin Connect Mobile; exit PIN). Optional; needs a phone without accounts during provisioning.
+Optional kiosk-like mode with Android app pinning (screen pinning). **No Device Owner** (plan §16, decision 9). Because the screen lock is None/Swipe (plan 2.1), unpinning needs no PIN; pinning only prevents accidental navigation away from the app.
 
 ## Context
 - Epic: OPS — Operations
 - Priority note: P2
 - Spec:
   - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#16-decisions`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

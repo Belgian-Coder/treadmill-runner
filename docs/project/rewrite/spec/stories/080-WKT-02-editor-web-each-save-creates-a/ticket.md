@@ -19,7 +19,7 @@ Editor (web); each save creates a revision.
   - `docs/spec/03-import-export-formats.md`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: a revision hash is stable (sorted-key JSON, SHA-256); an unchanged save doesn't create a revision.
+- [ ] AC1 *[auto]*: a revision hash is stable (canonical JSON per `docs/spec/02-workouts.md` §3.2, SHA-256); an unchanged save doesn't create a revision.
 - [ ] AC2 *[auto]*: limits enforced (10,000 steps, depth 32, 12 h).
 
 ## Mockups

@@ -19,7 +19,7 @@ Export FIT, TCX, CSV or JSON (share on the phone, download on the web).
   - `docs/spec/07-exports-and-backup.md`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: decoded-record equality with the C# golden files; the FIT SDK validator passes.
+- [ ] AC1 *[auto]*: decoded-record equality with the golden files in `docs/spec/data/exports/`; the FIT SDK validator passes.
 - [ ] AC2 *[hw]*: a Garmin Connect import once per release.
 
 ## Mockups

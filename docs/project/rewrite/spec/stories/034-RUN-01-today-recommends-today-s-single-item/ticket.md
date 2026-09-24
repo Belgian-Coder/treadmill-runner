@@ -26,7 +26,7 @@ Today recommends: today's single item, then today's alternatives (explicit choic
 ## Mockups
 ```
 ┌──────────────────────────────┐
-│ Marc ▾            ● Omega ● H10│
+│ Runner ▾          ● Omega ● H10│
 │ TODAY                        │
 │ ┌──────────────────────────┐ │
 │ │ Week 12 · Tempo 30 min   │ │

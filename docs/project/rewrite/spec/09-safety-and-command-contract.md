@@ -36,8 +36,8 @@ test tables are in §11. The final checklist is §12.
    handler, automation or recovery path writes directly.
 8. **Never clamp an implausible device observation into a usable value.** Treat it as a
    protocol/device fault (§8).
-9. Treadmill command endpoints are never reachable from outside the home LAN. Web control is off by
-   default (§6.2).
+9. **Only the phone's native Run console (and the commissioning screen) creates treadmill intents.**
+   The web interface has no treadmill command endpoint at all, not even Stop (§6.2).
 
 ## 2. Vocabulary
 
@@ -45,7 +45,7 @@ test tables are in §11. The final checklist is §12.
 |---|---|
 | Command kind | `Start` (FTMS `07`, also used for Resume), `SetSpeed` (`02`), `SetIncline` (`03`), `Stop` (`08 01`). `Pause` exists in the contract for completeness, but its raw FTMS form `08 02` is **never enabled**. The app's Pause action is a `Stop` (§6.4). |
 | Disposition | `Confirmed`, `Rejected`, `Unknown` |
-| Origin | `Manual` (a UI action under the controller lease), `PlannedTransition`, `HeartRateAutomation`, `WorkoutCompletion` (these three are app-owned automation under the session's automation authority), `Commissioning` |
+| Origin | `Manual` (a press on the phone's native Run console), `PlannedTransition`, `HeartRateAutomation`, `WorkoutCompletion` (these three are app-owned automation under the session's automation authority), `Commissioning` |
 | Session state | `Idle`, `ArmedWaitingForPhysicalStart`, `Running`, `PausedWaitingForPhysicalResume`, `Completed`, `Stopped`, `Interrupted`, `Faulted`. **[NEW]** UI-only, non-persisted sub-states: `Starting`, `Pausing`, `Resuming`, `Finishing` (a command is in flight). |
 | Session origin | `Hardware`, `Simulator`, `SystemTest`, `Legacy` |
 | Connection generation | a positive integer that changes on every BLE (re)connection attempt (08 §9) |
@@ -74,7 +74,7 @@ runner) and executed by the writer.
 | `issuedAt`, `expiresAt` | lifetime `expiresAt − issuedAt` must be **> 0 and ≤ 5 s** (validation bound). The engine always creates **4 s** intents. |
 | `expectedSessionVersion` | integer ≥ 0. It must equal the live session version at execution. |
 | `expectedSessionState` | the session state at creation. It must equal the live state at execution. |
-| `leaseId`, `holderId` | UUID (not empty) and text (1–128 characters after trimming). This is the controller lease (Manual) or the automation authority (automation origins). |
+| `authorityId`, `holderId` | UUID (not empty) and text (1–128 characters after trimming). For Manual origin this is the Run console's per-session authority, created at Arm (there is no controller lease, §6.8); for automation origins it is the session's automation authority. [LEGACY: `leaseId`, the controller lease.] |
 | `connectionGeneration` | integer > 0. It must equal the treadmill's current generation. |
 | `requestedValue` | `Start`, `SetSpeed`, `SetIncline`: **required**, finite and ≥ 0 (Start carries the expected minimum start speed). `Stop`, `Pause`: **must be absent**. |
 | `origin` | see §2. The default is `Manual`. |
@@ -90,7 +90,7 @@ is created.
 
 | Kind | Required |
 |---|---|
-| any | No software update is being activated. For Manual origin: a current controller lease whose id and holder match (**[NEW]** exception: Stop, §6.2). For automation origins: the session's automation authority id and holder match. The expected session version equals the current version. |
+| any | No software update is being activated. For Manual origin: the action comes from the phone's native Run console and carries the session's console authority (**[NEW]** no controller lease, §6.2). For automation origins: the session's automation authority id and holder match. The expected session version equals the current version. |
 | `Start` | `canStart` is verified and the minimum start speed is known. State is `ArmedWaitingForPhysicalStart` or `PausedWaitingForPhysicalResume`. `requestedValue` := the verified minimum (0.8 km/h). |
 | `SetSpeed` | `canSetSpeed` is verified and the speed range is known. State is `Running` **and** measured speed > 0.05 km/h. The value is finite. The value is clamped to `[range.min, min(profileMaxSpeed, range.max)]`. |
 | `SetIncline` | `canSetIncline` is verified and the incline range is known. State is `Running`. The value is finite and clamped to `[range.min, range.max]`. |
@@ -132,7 +132,7 @@ telemetry link.
 | # | Step | Failure → disposition, reason |
 |---|---|---|
 | 1 | `now > expiresAt` | Rejected: "The command intent expired before execution." |
-| 2 | Context validator: session id, version and state match; lease or automation authority is current | Rejected: "The session state, version, or control lease changed." |
+| 2 | Context validator: session id, version and state match; the console or automation authority is current | Rejected: "The session state, version, or command authority changed." |
 | 3 | Load the treadmill enrollment | Rejected: "No treadmill is enrolled." |
 | 4 | Mode is FTMS | Rejected: "FTMS control is not explicitly selected…" |
 | 5 | Evidence is `HardwareVerified` and model/firmware are non-blank. Commissioning mode instead requires evidence ≥ `PassivelyObserved`, protocol `horizon-omega-z`, model/firmware equal to the approval (case-insensitive), and an observer of 1–100 characters. | Rejected: "…blocked until the exact treadmill model and firmware are hardware verified" / "…do not match this commissioning approval." |
@@ -216,7 +216,7 @@ the user or plan requested.
 | Confirmed Stop (not completion) | §6.4 |
 | Confirmed Stop, WorkoutCompletion, measured ≤ 0.05 | finalize as `Completed` (§6.7) |
 
-Re-enabling HR automation (an explicit user action with lease and version) clears
+Re-enabling HR automation (an explicit action on the phone's Run console, with a version match) clears
 `commandsSuspended` and the rejected/unknown warnings. It does **not** erase `lastCommandResult`.
 Planned-controls resume is still blocked while the last result is Unknown (§7.3).
 
@@ -262,20 +262,22 @@ Unknown. Caller cancellation after a success response also yields **Unknown** (t
 - Armed → Running records `startedAt` and a "Physical movement detected" event. Paused → Running
   records a Resumed event.
 
-### 6.2 Who may command **[NEW]**
+### 6.2 Who may command **[NEW owner decision]**
 
-- Exactly one UI holds the controller lease (§6.8). By default this is the phone's Run console; a
-  web client may take it. Other UIs observe. Losing the lease never stops or pauses the session.
-- **Remote (web) motion control is off by default.** When the owner enables it, a web client must
-  hold the lease and be paired with the Operator role.
-- **Start/Resume from the web** needs a separate "Allow start from web" toggle (default off), plus
-  the lease and the Operator role. The phone plays the start cue.
-- **Stop from any paired Operator is always allowed, with or without the lease.** It is still an
-  intent, still serialized and still confirmed. [LEGACY: Stop required the lease.]
-- Every motion intent carries the session version. A stale press (SSE lag) or simultaneous
-  phone + web presses are rejected. Only the first press that matches the current version is
-  accepted.
-- **Input lockout, 800 ms**, enforced **in the engine per session across all UIs**: after Start,
+- Only two places control the belt:
+  1. the **phone app's native Run console** (Manual intents; the commissioning screen uses origin
+     `Commissioning`), and
+  2. the **treadmill console** itself, which the app observes and follows (§6.3, §6.5).
+- **The web interface never sends treadmill commands, not even Stop.** It has a read-only live view
+  with no control buttons and shows "Control the treadmill on the phone or the console". No web
+  route can create an intent (architecture test). The safety key and physical Stop stay
+  authoritative for anyone at the treadmill.
+- There is therefore **no controller lease** between UIs (§6.8). [LEGACY: a 15 s controller lease,
+  remote web control for a paired Operator role, an "Allow start from web" toggle, and Stop from any
+  paired Operator without the lease. None of these are ported.]
+- Every motion intent carries the session version. A stale press (for example a double tap across a
+  state change) is rejected. Only the first press that matches the current version is accepted.
+- **Input lockout, 800 ms**, enforced **in the engine per session** (not per screen): after Start,
   Resume, Pause or a stepper action is accepted, further Start/Resume/Pause/stepper actions within
   800 ms are rejected. **STOP and the Stop-sheet actions are never locked out.**
 
@@ -347,8 +349,8 @@ Unknown. Caller cancellation after a success response also yields **Unknown** (t
   starts motion**. Step-1 targets are reconciled only after an explicit Start and fresh motion.
   This is the only way progress is lost.
 - **Discard** requires confirmation and first persists any pending H10 cleanup job.
-- All of these are idempotent by operation id and need the lease and version match. Stop alone has
-  the Operator exception (§6.2).
+- All of these are idempotent by operation id, come only from the phone's Run console, and need a
+  version match (§6.2).
 
 ### 6.7 Natural completion
 
@@ -374,22 +376,18 @@ else                                          -> AwaitPhysicalStop
   finalizes as `Completed`. A completion Stop that did not reach stopped telemetry suspends
   automation with the physical-Stop warning.
 
-### 6.8 Controller lease
+### 6.8 No controller lease **[NEW owner decision]**
 
-- Time to live **15 s**. The client heartbeats every **5 s**. Expiry is measured on the
-  **monotonic clock** from the last renewal. Wall-clock jumps do not affect it.
-- `tryAcquire(holder)`: if there is no live lease, create one (new id; acquiredAt = now;
-  expiresAt = now + 15 s). If the same holder asks, **renew the existing lease** (same id, same
-  acquiredAt, new expiresAt). A different holder while the lease is live gets **null** (no
-  pre-emption).
-- `heartbeat(id, holder)`: renews only if both match a live lease. An expired lease cannot be
-  resurrected: it returns null, and the client must acquire again.
-- `release(id, holder)`: only if both match. `revokeCurrent()`: system use (for example while an
-  update activates).
-- A blank holder is a client error (HTTP 400, "A control lease holder is required.").
-- The lease gates **manual** actions only. App-owned automation uses the session's automation
-  authority. Losing the lease never stops the session. Reloading with the same holder id
-  idempotently reacquires.
+- The previous implementation had a controller lease (15 s time to live, 5 s heartbeat, monotonic
+  expiry, no pre-emption) so that exactly one of several UIs (phone or web) held manual control.
+  **It is not ported**: the phone's native Run console is the only UI that commands the belt (§6.2).
+- What remains:
+  - **Manual intents** carry the Run console's per-session authority, created at Arm and discarded
+    when the session is terminal, plus the session version (§3).
+  - **App-owned automation** (planned transitions, HR automation, completion Stop) uses the
+    session's automation authority, exactly as before.
+- Legacy `control-lease` session events and the `ControlLeaseEventKind` enum are **read-only
+  import vocabulary** (05 §6, 07 §2.6). The new app never writes them.
 
 ## 7. Recovery and reconciliation
 
@@ -441,7 +439,7 @@ Outcome effects:
 
 ### 7.3 Resume planned controls (explicit user action)
 
-This requires the lease, a matching version, a matching current generation, state Running, a
+This requires a tap on the phone's Run console, a matching version, a matching current generation, state Running, a
 moving belt, telemetry age ≤ 5 s, and a **last result that is not Unknown** ("An unknown treadmill
 command outcome must be resolved physically before controls can resume."). Effects: un-suspend;
 phase Recovered; restart flags cleared; HR mode = desired; version bump. **No planned command is
@@ -572,13 +570,13 @@ diagnostics list), `omega-status-decoder.json` and `crc-ccitt.json`.
 | I2 | SetIncline, value 2.5 | created; value preserved |
 | I3 | Stop with value 1.0 | invalid argument |
 | I4 | Pause with value 1.0 | invalid argument |
-| I5 | Start, lifetime 3 s, lease L, generation 42, value 0.8 | every field preserved |
+| I5 | Start, lifetime 3 s, authority A, generation 42, value 0.8 | every field preserved |
 | I6 | lifetime 0 s | out of range |
 | I7 | lifetime 5.001 s | out of range |
 | I8 | Start with NaN | out of range |
 | I9 | Stop with value 0 | invalid argument (Stop accepts no value at all) |
 | I10 | result Unknown, measured 0, generation 9 | preserved as given |
-| I11 | empty operation/session/lease id; generation ≤ 0; version < 0; blank holder or holder > 128 characters | invalid |
+| I11 | empty operation/session/authority id; generation ≤ 0; version < 0; blank holder or holder > 128 characters | invalid |
 | I12 | result with completedAt < issuedAt, a negative value, or a blank reason | invalid |
 
 ### 11.6 Command writer (coordinator)
@@ -664,18 +662,16 @@ increments 0.1/0.5; last Confirmed.
 | R15 **[NEW]** | scenario: restart, no movement for 30 s | Interrupted |
 | R16 **[NEW]** | scenario: Resume planned controls with last Unknown | refused |
 
-### 11.9 Controller lease
+### 11.9 Command authority (no lease) **[NEW]**
 
 | # | Given | Expected |
 |---|---|---|
-| L1 | A acquires; B acquires | A gets a lease; B gets null; valid for A; invalid for (A's id, B) |
-| L2 | A acquires; +10 s; A acquires again | same id and same acquiredAt; expiresAt = now + 15 s; valid |
-| L3 | acquire; +15 s | invalid; B can acquire |
-| L4 | acquire; +10 s; heartbeat; +14 s | valid; the renewed expiresAt = now + 1 s |
-| L5 | acquire; +16 s; heartbeat | null |
-| L6 | acquire; the wall clock jumps +1 day (monotonic unchanged) | still valid |
-| L7 | acquire / heartbeat with a blank holder | client error "control lease holder" |
-| L8 **[NEW]** | lease expires during a running session | the session continues; automation continues; manual actions are refused |
+| L1 | architecture test over the module graph | the web module has no dependency on the command API; no web route creates an intent |
+| L2 | route inventory of the web server | no route accepts Start, Stop, Pause, SetSpeed, SetIncline, Resume planned controls or an HR-mode change |
+| L3 | Run console press with a stale session version (a double tap across a state change) | refused at admission; no intent |
+| L4 | Run console STOP pressed inside the 800 ms lockout after Start | accepted (STOP is never locked out) |
+| L5 | automation intent carrying an automation authority from an earlier session | refused at admission; no intent |
+| L6 | a legacy `control-lease` event in an imported run | preserved as-is; the new app never emits one |
 
 ### 11.10 Session state machine and completion
 
@@ -759,8 +755,8 @@ Session and safety:
 - [ ] Normalization table (§4.3); never more aggressive; the profile max speed is honoured.
 - [ ] Rate limiting: 1 in flight + 1 pending per axis; a long-press ends at the last displayed
       value; Stop pre-empts pending targets.
-- [ ] 800 ms engine lockout across phone + web; STOP is never locked out; stale-version presses
-      are rejected.
+- [ ] 800 ms engine lockout per session; STOP is never locked out; stale-version presses are
+      rejected.
 - [ ] Start: one `07`; Running only after 3 samples > 0.3; console start while Armed; a Start
       press while a Start is in flight sends nothing.
 - [ ] Pause = Stop: `Pausing` → Paused only after stopped telemetry; an Unknown pause shows
@@ -772,8 +768,8 @@ Session and safety:
       `stop-unconfirmed-by-telemetry`, no command).
 - [ ] Reset progress never starts motion. Discard persists the H10 cleanup first.
 - [ ] Completion: at most one Stop; Completed only after stopped telemetry; W1–W6.
-- [ ] Lease: L1–L8; Stop allowed for any paired Operator without the lease **[NEW]**; web motion
-      off by default; web Start needs its own toggle.
+- [ ] Command authority L1–L6: only the phone's Run console (and commissioning) creates intents;
+      the web has no command path at all, not even Stop **[NEW]**; there is no controller lease.
 
 Telemetry and connection:
 

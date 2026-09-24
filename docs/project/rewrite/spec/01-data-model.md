@@ -27,7 +27,7 @@ Golden data in `data/exports/`:
 
 | File | What it is |
 |---|---|
-| `legacy-backup-fixture.trb` | A real backup produced by the current app. It contains:<br>• two runs: a completed hardware run with 15 samples, 9 events, a debrief and a linked H10 recording with 22 samples; and an interrupted simulator run with 4 samples and 4 events;<br>• the profile, devices, workout and so on that those runs reference. |
+| `legacy-backup-fixture.trb` | A real backup produced by the current app from synthetic data (afterwards the profile name was anonymised to `Runner` with a plain SQL update; `legacy-rows.txt` matches). It contains:<br>• two runs: a completed hardware run with 15 samples, 9 events, a debrief and a linked H10 recording with 22 samples; and an interrupted simulator run with 4 samples and 4 events;<br>• the profile, devices, workout and so on that those runs reference. |
 | `legacy-schema.sql` | The complete DDL of that file (42 tables, 88 indexes, every CHECK). Only the run tables matter for extraction. |
 | `legacy-rows.txt` | Every table of the fixture, with the SQLite storage class of each value. It shows the exact text formats of GUIDs, timestamps, booleans and JSON. |
 | `fixture-session.json`, `fixture-session-interrupted.json` | The same two runs as session JSON exports ([07](07-exports-and-backup.md)). |

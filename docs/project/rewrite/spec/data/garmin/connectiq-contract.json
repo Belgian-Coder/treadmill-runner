@@ -25,11 +25,11 @@
     "pollEvery": "on view show, then every 30 s while the view is visible; never more than one request in flight"
   },
   "statusResponses": [
-    {"case": "valid token, this profile owns the active non-terminal session", "status": 200, "body": {"runnerName": "Marc", "sessionTitle": "Easy 30", "state": "Running", "sessionId": "11111111-2222-3333-4444-555555555555"}},
-    {"case": "valid token, no active session for this profile, or the active session is Completed/Stopped/Interrupted/Faulted", "status": 200, "body": {"runnerName": "Marc", "sessionTitle": "Manual treadmill", "state": "Ready", "sessionId": null}},
+    {"case": "valid token, this profile owns the active non-terminal session", "status": 200, "body": {"runnerName": "Runner", "sessionTitle": "Easy 30", "state": "Running", "sessionId": "11111111-2222-3333-4444-555555555555"}},
+    {"case": "valid token, no active session for this profile, or the active session is Completed/Stopped/Interrupted/Faulted", "status": 200, "body": {"runnerName": "Runner", "sessionTitle": "Manual treadmill", "state": "Ready", "sessionId": null}},
     {"case": "missing header, not 'Bearer ', token length outside 20..128, unknown or revoked hash", "status": 401, "body": null}
   ],
-  "statusSideEffects": "A successful lookup updates the binding's LastSeenAtUtc. It never acquires a treadmill lease and exposes no command.",
+  "statusSideEffects": "A successful lookup updates the binding's LastSeenAtUtc. It exposes no treadmill command.",
   "watchHandling": [
     {"code": 200, "dictionary": true, "result": "runnerName property overwritten with runnerName; sessionTitle shown; footer = state string (or 'Connected' if missing)"},
     {"code": 0, "result": "footer 'Phone offline'"},

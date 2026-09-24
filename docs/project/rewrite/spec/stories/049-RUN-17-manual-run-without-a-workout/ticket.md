@@ -21,7 +21,7 @@ Manual run without a workout.
   - `docs/spec/00-plan.md#96-run-screen-phone-native-reference-411--914-dp-portrait`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: 5-minute window with 1 minute lead.
+- [ ] AC1 *[auto]*: the first manual run creates exactly one `ManualTemplate` workout (240 min, fixed 0.8 km/h, incline 0) and later manual runs reuse it; it never appears in the library (`docs/spec/02-workouts.md` §8.6).
 
 ## Mockups
 n/a

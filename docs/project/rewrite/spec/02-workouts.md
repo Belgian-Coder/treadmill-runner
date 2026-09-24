@@ -208,8 +208,8 @@ The current app serialises every definition to a **canonical compact JSON string
   - integers are written without `.0`, so `9.0` becomes `9`;
   - scientific notation is used below 1E-04 and from 1E+17 upward, in the form `1E-05` and `1E+17`.
 - Strings use .NET's default JSON escaping:
-  - every non-ASCII character is written as `\uXXXX` (uppercase hex), for example `é` as `é` and emoji as surrogate pairs;
-  - these characters are also escaped: `"` as `"`, `&`, `'`, `+`, `<`, `>`, `` ` `` and DEL;
+  - every non-ASCII character is written as `\uXXXX` (uppercase hex), for example `é` as `\u00E9` and emoji as surrogate pairs;
+  - these characters are also escaped: `"` as `\u0022`, `&`, `'`, `+`, `<`, `>`, `` ` `` and DEL;
   - common control characters use their short forms (`\n`, `\t` and so on);
   - `/` is not escaped.
 

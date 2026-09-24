@@ -79,7 +79,7 @@ A named device that is not an Omega (for example "Future Treadmill" advertising 
 never grants a capability. The exact model and firmware always come from the DIS reads after
 connecting.
 
-The raw advertised name is stored apart from the operator-facing display label. A generated label
+The raw advertised name is stored apart from the user-facing display label. A generated label
 such as "Unnamed Bluetooth device" must never become identity evidence.
 
 The golden cases are in `data/ftms/omega-z-advertisement-matcher.json`.
@@ -483,7 +483,7 @@ Upstream is GPL-3.0. Only protocol facts are recorded here. No upstream code may
 |---|---|
 | `id` | UUID, not empty |
 | `role` | `Treadmill` |
-| `deviceAddress` | the BLE address (legacy "device id"). Bounded text, at most 256 characters. Stored locally. **Redacted in shared diagnostics** (last 4 characters only, for example `…2117`). |
+| `deviceAddress` | the BLE address (legacy "device id"). Bounded text, at most 256 characters. Stored locally. **Redacted in shared diagnostics** (last 4 characters only, for example `…EEFF`). |
 | `protocolId` | `horizon-omega-z` (at most 100 characters) |
 | `identityFingerprint` | 64 lowercase hex characters (SHA-256) |
 | `displayName` | at most 100 characters, user editable without touching identity |
@@ -679,7 +679,7 @@ closed. Command-state release (on terminal session, Disconnect or Forget) clears
 ## 10. Hardware evidence summary
 
 All of this was observed on the owner's unit with Windows as the host. Device identity in shared
-evidence is redacted to the address suffix `…2117`.
+evidence is redacted to the last four characters of the address.
 
 ### 10.1 Stage 1: passive scan and GATT enumeration (2026-08-03, 22:39–22:41 Europe/Brussels)
 
@@ -1032,7 +1032,7 @@ advancement and Garmin upload. It is never available while a real treadmill is e
 2. Whether `2AD9` offers indicate or only notify on Android's enumeration.
 3. Re-verify every command on the Android host stack (DEV-08). Windows evidence does not transfer.
 4. Behaviour after a treadmill power cycle while a session is running, and after a safety-key pull,
-   with remote control enabled.
+   with app control enabled (after DEV-08).
 5. Speeds above 1.5 km/h and inclines above 1.0 % have never been physically exercised. The ranges
    are bounds, not verified behaviour. Rate-limit increases (09).
 6. Whether `2ADA` carries useful safety-key or control-lost signals.

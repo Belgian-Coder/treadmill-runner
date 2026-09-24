@@ -20,7 +20,7 @@ As the owner, I import my old runs (session JSON exports or the `.trb` backup's 
   - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: the golden session exports in `data/exports/` import without loss (samples, events, debrief, IDs); re-exporting gives an equivalent document per [07](07-exports-and-backup.md).
+- [ ] AC1 *[auto]*: the golden session exports in `docs/spec/data/exports/` import without loss (samples, events, debrief, IDs); re-exporting gives an equivalent document per `docs/spec/07-exports-and-backup.md`.
 - [ ] AC2 *[hw]*: the owner's real history imports with matching session count and totals.
 
 ## Mockups

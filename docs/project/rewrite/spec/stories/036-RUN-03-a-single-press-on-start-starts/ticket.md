@@ -22,7 +22,7 @@ A single press on Start starts the belt.
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: one `07`; Running after 3 samples > 0.3 km/h; SetSpeed to plan.
-- [ ] AC2 *[auto]*: a second press within 800 ms, a press while a Start intent is in flight, or simultaneous presses from the phone and the web (stale state version) send at most one `07`.
+- [ ] AC2 *[auto]*: a second press within 800 ms, a press while a Start intent is in flight, or a stale press after a state change (stale state version) send at most one `07`; the web has no Start at all.
 - [ ] AC3 *[auto]*: a console start while Armed reaches Running without commands.
 
 ## Mockups

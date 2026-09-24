@@ -18,7 +18,7 @@ The Kotlin Garmin client **in the phone app** uploads or matches completed Hardw
   - `docs/spec/11-garmin.md`
 
 ## Acceptance criteria
-- [ ] AC1 *[auto]*: ported matcher and worker tests, plus the contract examples in `spec/data/garmin/`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
+- [ ] AC1 *[auto]*: ported matcher and worker tests, plus the contract examples in `docs/spec/data/garmin/`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
 - [ ] AC2 *[auto]*: tokens encrypted with a Keystore key.
 
 ## Mockups

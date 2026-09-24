@@ -43,7 +43,7 @@ Cross-references: the FIT export itself (records, laps, calories, elevation, zon
 
 | Path | Purpose | Support level | Default |
 |---|---|---|---|
-| **Connect IQ companion** (watch app) | The runner records a native Garmin treadmill activity on the watch. Optionally the watch shows the TreadmillRunner runner and session. | Public Connect IQ APIs | Standalone recording works once installed; pairing is optional |
+| **Connect IQ companion** (watch app) | The runner records a native Garmin treadmill activity on the watch. Showing the TreadmillRunner runner and session on the watch is a later option (§18.3). | Public Connect IQ APIs | **Standalone only in v1** (§18.3) |
 | **Completed-activity upload** (unofficial) | After a run, find the matching watch activity, or upload the app's FIT when no watch recorded the run. | **Unsupported private Garmin consumer interface.** Garmin may change or block it at any time. | Disabled per profile. Duplicate handling defaults to `PreferWatch` |
 | **Official Training API** | Publish workouts, plans and calendar items to Garmin | Supported Garmin Connect Developer Program | **Parked** (needs program approval) |
 
@@ -109,6 +109,8 @@ With no match, both modes upload the app's own FIT. With more than one plausible
 Credential-bearing and account-mutating web requests are accepted over **HTTPS from any peer**, or over **plain HTTP only from loopback, private or link-local peers** (IPv4 10/8, 172.16/12, 192.168/16, 169.254/16, 127/8; IPv6 ::1, fc00::/7, fe80::/10; IPv4-mapped addresses are unwrapped). Other peers get **HTTP 426**. This applies to connect, MFA, test activity, historical recovery and latest-two repair. Vectors: `transport-policy-vectors.json`.
 
 Watch-token creation is stricter: HTTPS, or loopback only.
+
+**[rewrite]** The phone serves **plain HTTP only** (no HTTPS, no certificates; 00-plan §7.2), and its binding filter already rejects anything but loopback, the current Wi-Fi network or an allow-listed VPN. The effective rule is therefore "loopback, private or link-local peers only", and every credential-bearing or account-mutating action also needs the **admin session** (00-plan §7.2). Watch tokens are not created in v1, because the watch companion is standalone-only (§18.3).
 
 All account changes (connect, MFA, settings, disconnect, test activity, recovery, repair) require an **idle runner**: no session in `ArmedWaitingForPhysicalStart`, `Running` or `PausedWaitingForPhysicalResume`. Otherwise the answer is 409.
 
@@ -392,7 +394,7 @@ Each worker pass first queues new jobs. A session is queued when **all** of thes
 - the session origin is `Hardware` or `Legacy`. **Simulator and SystemTest sessions are never auto-queued.** The current code excludes only SystemTest; the new app must also exclude Simulator, as 00-plan requires;
 - `startedAt` and `endedAt` are set, `endedAt >= uploadFromUtc`, and the state is `Completed` or `Stopped`;
 - no job exists for the session yet;
-- **no H10 recording for the session is unsettled.** Settled means `Merged`, `RemovalPending`, `Completed`, `Skipped` or `NotStarted`. So the Garmin export waits until the recording is merged, confirmed never started, or explicitly skipped (see [10-polar-h10.md](10-polar-h10.md)).
+- **no H10 recording for the session is unsettled.** Settled means `Merged`, `RemovalPending`, `Completed`, `Skipped` or `NotStarted`. So the Garmin export waits until the recording is merged, confirmed never started, or explicitly skipped (see [10-polar-h10.md](10-polar-h10.md)). `Retained` is **not** settled in the current app; whether the rewrite treats it as settled is an open owner question (00-plan §16, [10](10-polar-h10.md) §10.2).
 
 At most **100** sessions are queued per pass, ordered by `endedAt`. A new job is created with:
 
@@ -439,7 +441,7 @@ Migrated jobs keep their stored key.
   - In a **read-only phase** (`WatchSearch`, `VerifyResync`, `ResolveReplacement`, `EnsureReplacement`, `DeleteReplacementDuplicates`, `ResolveOriginal`, `ResolveRestoredOriginal`, `ResolveLocalSource`, `ResolveRestoredLocal`, `DeleteGeneratedCopies`) the job goes back to `Pending` with `attemptCount - 1` (floor 0), `availableAt = now`, and error and lease cleared.
   - In any **other phase** (a mutation may have started) the job becomes **`Unknown`**: "The service restarted or timed out after a Garmin mutation may have begun; the outcome is unknown and will not be retried automatically."
 - **Every state write from the worker is conditioned on the lease it holds** (`status == InFlight AND leaseExpiresAt == <the value it leased>`). A stale worker whose lease was taken over cannot write. See the "stale lease" scenarios in `upload-worker-scenarios.json`.
-- On Android the loop runs inside the app's foreground/keeper process. It must survive process death: all state is in the DB, and an expired lease is handled as above. Network loss shows up as a timeout or transport error and is classified normally.
+- On Android the loop runs inside the app process (kept alive by its foreground services). It must survive process death: all state is in the DB, and an expired lease is handled as above. Network loss shows up as a timeout or transport error and is classified normally.
 
 ### 7.5 The at-most-once mutation boundary
 
@@ -870,7 +872,7 @@ app/                  worker (coroutine loop, 1-min tick + wake), Room DAO with 
 
 - Every result carries the **current token JSON**, and the caller persists it in the same DB transaction as the job update.
 - A Kotlin **per-call timeout** (default 45 s, 10..90) and **cancellation after the mutation boundary** are classified exactly like the adapter's timeout and ambiguous paths (§7.5).
-- The worker runs only while the app process is alive. That is fine because the keeper keeps it resident, and the DB state makes restarts safe.
+- The worker runs only while the app process is alive. That is fine because the app's foreground services keep it resident, and the DB state makes restarts safe.
 
 ---
 
@@ -943,9 +945,9 @@ The paths are kept so the UI logic ports directly. `{p}` = profile ID, `{j}` = j
 | POST | `…/profiles/{p}/jobs/{j}/reprocess-merge` | `{operationId}` | |
 | POST | `…/profiles/{p}/sessions/{s}/reconcile-latest-two` | `{operationId, confirmation:"RECONCILE LATEST TWO"}` | synchronous |
 | GET/POST | `…/profiles/{p}/sessions/{s}/historical-recovery` | `{operationId, action, confirmation}` | §11 |
-| GET/POST | `/api/integrations/garmin/watch/profiles/{p}` | `{deviceLabel}` | watch binding |
-| POST | `/api/integrations/garmin/watch/profiles/{p}/revoke` | `{expectedVersion}` | |
-| GET | `/api/watch/status` | Bearer token | §18 |
+| GET/POST | `/api/integrations/garmin/watch/profiles/{p}` | `{deviceLabel}` | watch binding (not in v1, §18.3) |
+| POST | `/api/integrations/garmin/watch/profiles/{p}/revoke` | `{expectedVersion}` | not in v1 (§18.3) |
+| GET | `/api/watch/status` | Bearer token | §18; not in v1 (§18.3) |
 
 ---
 
@@ -984,7 +986,7 @@ The synthetic session stays in History (excluded from totals) so the exact FIT s
 - Opening, pairing or reconnecting **never** starts a recording. The app has **no treadmill command** of any kind.
 - The saved activity reaches Garmin Connect through the watch's normal sync. That is the preferred route when a watch is worn, and it pairs with `PreferWatch` upload (the app then records `FoundInGarmin`).
 
-### 18.2 Pairing token scheme and status contract
+### 18.2 Pairing token scheme and status contract (reference; not built in v1, §18.3)
 
 - There is one binding per profile: `{id, userProfileId, deviceLabel (1..100), tokenSha256 (unique), createdAtUtc, lastSeenAtUtc, version}`.
 - Creating a binding makes a token from **32 random bytes, base64url without padding** (43 characters). It is shown **once** ("Copy this token now. TreadmillRunner stores only its SHA-256 hash and cannot show it again."). Only `sha256_hex(token)` is stored. Creating again replaces the binding.
@@ -996,22 +998,22 @@ The synthetic session stays in History (excluded from totals) so the exact FIT s
   - a token outside 20..128 characters;
   - an unknown or revoked hash.
 
-  A valid token gets 200 `{runnerName, sessionTitle, state, sessionId}`. The session fields are filled only when the bound profile owns the current session and it is not Completed, Stopped, Interrupted or Faulted; otherwise the answer is `{…, "Manual treadmill", "Ready", null}`. A successful lookup updates `lastSeenAtUtc`. It never takes a treadmill lease.
+  A valid token gets 200 `{runnerName, sessionTitle, state, sessionId}`. The session fields are filled only when the bound profile owns the current session and it is not Completed, Stopped, Interrupted or Faulted; otherwise the answer is `{…, "Manual treadmill", "Ready", null}`. A successful lookup updates `lastSeenAtUtc`. It exposes no treadmill command.
 - The watch then overwrites its `runnerName` setting, shows the session title, and sets the footer to `state`. HTTP code 0 shows "Phone offline"; anything else shows "Gateway unavailable".
 
 The full contract and unit-test vectors are in `connectiq-contract.json`.
 
 ### 18.3 Moving to the phone app
 
-Connect IQ `makeWebRequest` requires **HTTPS with a certificate the phone's Garmin Connect Mobile trusts**. The phone app's web server uses a **local CA** (00-plan), which Garmin Connect Mobile will not trust by default. So:
+Connect IQ `makeWebRequest` requires **HTTPS with a certificate the phone's Garmin Connect Mobile trusts**. The phone app serves **plain HTTP only** on the home network (no HTTPS and no certificates; 00-plan §7.2), so the watch cannot reach it. So:
 
-- **v1:** the companion runs **Standalone** (recording only), which is fully functional. Paired status against the phone's embedded server is best-effort. It works only if a publicly trusted certificate for a LAN host name is installed (for example DNS-01 ACME). The endpoint contract above stays unchanged so existing watch builds keep working.
+- **v1:** the companion runs **Standalone** (recording only), which is fully functional. Paired mode (§18.2) is **not built in v1**: no watch tokens and no `/api/watch/status` endpoint. The contract in §18.2 is kept as the reference for a later phase, so a future paired build can reuse it unchanged.
 - **Future (GAR-03, P2): the Connect IQ Mobile SDK for Android.** The TreadmillRunner app talks to the watch app directly over Garmin Connect Mobile's Bluetooth channel: `ConnectIQ` instance, `IQDevice`/`IQApp`, `sendMessage` and `registerForAppEvents`. There is then no HTTPS and no token. It needs:
   - the watch paired with **the treadmill phone's** Garmin Connect Mobile. Connect IQ messaging goes through the phone the watch is paired with, which is usually the runner's own phone. That is the main practical constraint;
   - a watch-app build that uses `Communications.registerForPhoneAppMessages` / `transmit` instead of polling;
   - a message schema mirroring the status body `{runnerName, sessionTitle, state, sessionId}`. It stays read-only, with no command messages.
 - **IQ Store publishing (GAR-04):** it needs a Garmin developer account and the same RSA-4096 developer key for every update, plus interactive testing on every declared device (text not clipped, one Select = one recording, Back protection, save exactly once, Running/Treadmill in Garmin Connect, standalone and revoked-token behaviour). Increment the app version on every submission and keep the application ID. A store binary cannot be rolled back by the app's own update mechanism.
-- **Privacy disclosure** (store listing): the watch app needs no account and receives no Garmin password. Pairing sends only a bearer token to the household endpoint over HTTPS. It collects no advertising IDs and contacts no TreadmillRunner cloud. Revocation removes server-side access.
+- **Privacy disclosure** (store listing): the watch app needs no account and receives no Garmin password. If paired mode is ever built, pairing sends only a bearer token to the household endpoint over HTTPS. It collects no advertising IDs and contacts no TreadmillRunner cloud. Revocation removes server-side access.
 
 ---
 
@@ -1174,12 +1176,12 @@ The Kotlin implementation must pass all of these. *[auto]* means an automated te
 
 **Connect IQ**
 
-- [ ] *[auto]* Pairing token: 43-character base64url, only the SHA-256 stored, shown once, replace and revoke with version, created only over HTTPS or loopback.
-- [ ] *[auto]* Status endpoint: 401 cases, the Ready fallback for terminal or foreign sessions, `lastSeenAtUtc` updated, no treadmill lease.
+- [ ] *[auto]* (Only if paired mode is ever built; not in v1, §18.3.) Pairing token: 43-character base64url, only the SHA-256 stored, shown once, replace and revoke with version, created only over HTTPS or loopback.
+- [ ] *[auto]* (Only if paired mode is ever built; not in v1, §18.3.) Status endpoint: 401 cases, the Ready fallback for terminal or foreign sessions, `lastSeenAtUtc` updated, no treadmill command.
 - [ ] *[auto]* Watch unit tests (Run No Evil): settings validation, elapsed formatting, metric formatting.
-- [ ] *[hw]* On each declared device: Select starts exactly one recording, Back does not discard, Select stops and saves once, save-failure retry, Running/Treadmill in Garmin Connect, Standalone when unpaired, revoked token becomes unavailable on the next refresh, no treadmill control.
+- [ ] *[hw]* On each declared device: Select starts exactly one recording, Back does not discard, Select stops and saves once, save-failure retry, Running/Treadmill in Garmin Connect, Standalone (the only v1 mode; the revoked-token check applies only if paired mode is ever built), no treadmill control.
 
 **Fallback and flags**
 
 - [ ] *[auto]* Feature flag off: jobs become Failed/provider-unavailable (retryable), connect answers 503, FIT share and download still work.
-- [ ] *[auto]* Transport policy vectors (HTTP allowed only from loopback, private or link-local peers; HTTPS from any peer).
+- [ ] *[auto]* Transport policy vectors (HTTP allowed only from loopback, private or link-local peers; HTTPS from any peer, which the phone does not serve in v1), plus the admin session for credential actions (§2.5).

@@ -11,7 +11,7 @@
     { "name": "unique-family-and-kind-for-custom-name", "enrollment": { "address": "102030405060", "displayName": "Basement heart-rate strap", "kind": "ChestStrap", "family": "Polar" },
       "advertisements": [ { "address": "AABBCCDDEEFF", "name": "Polar H10 12345678", "services": ["hrs"] } ],
       "allowName": true, "allowFamily": true, "expected": { "address": "AABBCCDDEEFF", "match": "UniqueFamilyAndKind" } },
-    { "name": "generic-stored-metadata-reclassified-from-name", "enrollment": { "address": "102030405060", "displayName": "Marc Polar H10", "kind": "Sensor", "family": "Other" },
+    { "name": "generic-stored-metadata-reclassified-from-name", "enrollment": { "address": "102030405060", "displayName": "Runner Polar H10", "kind": "Sensor", "family": "Other" },
       "advertisements": [ { "address": "AABBCCDDEEFF", "name": "Polar H10", "services": ["hrs"] } ],
       "allowName": true, "allowFamily": true, "expected": { "address": "AABBCCDDEEFF", "match": "UniqueFamilyAndKind" },
       "note": "Stored Sensor/Other is generic, so effective kind/family are re-derived from the display name (ChestStrap/Polar)." },

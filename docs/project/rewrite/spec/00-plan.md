@@ -47,7 +47,7 @@ This plan is the contract for the rewrite. Section 12 defines the AI harness and
 - v1 was a first draft.
 - v2 incorporated an independent Opus review: safety, protocol, sync, rollout, UX and validation findings.
 - v3 removes the NAS services and makes the phone self-contained, all in Kotlin, with a built-in web UI, file-based backups, remote updates and remote debugging from day one.
-- v4 (this version) applies the owner's decisions:
+- v4 applies the owner's decisions:
   - Pause stops the belt but keeps workout progress.
   - Start and Resume are a single press.
   - No GitHub Actions: builds and releases are made locally and uploaded.
@@ -64,13 +64,13 @@ This plan is the contract for the rewrite. Section 12 defines the AI harness and
   - The 2026 Garmin login change.
   - A local test rig. (v6 replaced the Linux emulator box with the phone itself.)
   - Android developer verification.
-- v6 (this version) applies the owner's decisions:
+- v6 applies the owner's decisions:
   - **Only the phone app or the treadmill console control the belt**; the web interface never controls the treadmill.
   - **No fixed Bluetooth threshold**: continuity is measured and made as good as possible.
   - **One app only**: no separate Keeper; the app updates itself and has a built-in safe mode.
   - **No certificates and no per-device setup**: the web interface is plain HTTP on the home network, protected by one admin passphrase set on the phone.
   - **No emulator**: device tests run on the treadmill phone itself, in a separate test app variant.
-- v7 (this version) applies the owner's decisions:
+- v7 applies the owner's decisions:
   - **Both remote-debugging paths are set up in the first phase** for easy autonomous checks: the in-app screen, logs and state, plus wireless ADB with scrcpy.
   - **No backwards compatibility except the run data structure.**
   - **Private use: keep everything as simple as possible.**
@@ -102,7 +102,7 @@ This plan is the contract for the rewrite. Section 12 defines the AI harness and
 | Garmin activity upload (currently Python `garminconnect` 0.3.8) | Re-implemented in Kotlin on the phone in an isolated, feature-flagged module (GAR-01), with FIT share as the fallback |
 | Importers (native JSON, QDomyos XML, FIT Workout, v4 bundle) | Ported; preview, then re-parse the original bytes on confirm |
 | Controller lease for multiple UIs | **Not needed**: only the phone's Run console controls the belt (5.4) |
-| Operator access (passphrase, short-lived tokens) | Becomes one admin passphrase for admin actions in the web interface (7.2) |
+| Web access control (passphrase, short-lived tokens, role pairing) | Becomes one admin passphrase for admin actions in the web interface (7.2); no roles, no pairing |
 | Update discipline (signed manifests, idle-only activation, rejected versions) | Ported into the app's built-in updater (section 8) |
 | Test suites (Protocols, Core, key Integration scenarios) | Become golden vectors and scenario tests |
 | Connect IQ watch app | Kept as a standalone recorder; phone-linked status is optional (GAR-03) |
@@ -172,7 +172,7 @@ This plan is the contract for the rewrite. Section 12 defines the AI harness and
 | Concurrency | kotlinx.coroutines, `StateFlow`/`SharedFlow` | Structured cancellation of device work |
 | DI | Koin | Simple, no annotation processing |
 | Local DB | **Room** (SQLite, WAL) | Migration tooling, schema export, tests |
-| Serialization | kotlinx.serialization (sorted keys for workout revision hashing) | Simple; no compatibility with the old app's hashes needed. |
+| Serialization | kotlinx.serialization (a fixed canonical form for workout revision hashing: schema v1 property order, explicit nulls, [02](02-workouts.md) §3.2) | Simple; no compatibility with the old app's hashes needed. |
 | BLE (treadmill, generic HR) | Behind our own `BleCentral` port. Candidates are the **Nordic Android BLE library** and **Kable**, chosen in Phase 0 on measured reconnect behaviour and GATT 133 handling | Both are Kotlin; the port keeps the choice reversible |
 | BLE (Polar H10) | **Polar BLE SDK**: pin the current 8.x; 6.12 is only the firmware-4.1.10 floor. Behind a `PolarPort` | Official HR/RR, firmware 4.x security, recording |
 | FIT | Garmin FIT Java SDK | Official encoder/decoder |
@@ -303,7 +303,7 @@ These rules are ported from the current code and evidence. Each has at least one
 
 ### 5.1 Verified device profile and commissioning
 - The current accepted profile is **`OMEGA Z` / BLE firmware `V10.23.17` / FTMS mode, on the Windows stack**.
-  - Speed and incline were physically exercised only at 1.0–1.5 km/h and 0.5–1.0%.
+  - Speed and incline were physically exercised only at 0.8–1.5 km/h and 0.5–1.0%.
   - The 0.8–20 km/h and 0–12% ranges (0.1 steps) are reported limits used as bounds.
 - **Capabilities are per model/firmware *and host stack*.** The Android app starts with every control disabled (read-only).
 - Control is enabled only after an **Android commissioning run on this phone** (DEV-08). Each stage needs owner approval and sanitized evidence (hardware progression rules in [09](09-safety-and-command-contract.md)):
@@ -464,7 +464,7 @@ Each has one clear action.
   - Discard persists a cleanup job first.
   - Garmin export waits until the recording is merged, confirmed never started, or explicitly skipped.
   - The strap must be worn during the download (45 s rule). 90 s per-packet timeout.
-- **Live HR during recording:** the SDK multiplexes one connection. This is proven on hardware (H10-04, HW-11); if it fails, the old live-connection lease is ported.
+- **Live HR during recording:** the SDK multiplexes one connection. This is proven on hardware (H10-04, HW-11); if it fails, the H10 live-connection lease of the current app is ported ([10](10-polar-h10.md) §7.4). This is unrelated to treadmill control.
 - **Fallback:** `protocol-pftp` behind `PolarPort` (H10-07).
 
 ### 6.3 Other HR sensors
@@ -478,9 +478,9 @@ Standard HRS `180D/2A37`. Battery is best-effort. No bonding.
   - **Never auto-retry a login.** Logins are rate-limited to avoid account lockout, and "Needs login" is a persistent state.
 - **Activity upload (GAR-01)** is a Kotlin re-implementation of what the Python `garminconnect` adapter does today, in the isolated `garmin-client` module:
   - Login: email, password and MFA, entered once in the web UI. Only the session tokens are kept, encrypted with an Android Keystore key.
-  - Match: search for the watch activity, the enable watermark, the 5-minute wait, and the match rules (±10 min start, similar duration and distance, corroborating HR).
+  - Match: search for the watch activity, the enable watermark, the 5-minute wait, and the match rules: activity type treadmill running, start within ±600 s, duration within max(180 s, 15 %); distance is evidence only and **heart rate is not used**; more than one plausible match → ReviewRequired ([11](11-garmin.md) §8.2).
   - Behaviour: `PreferWatch` (default) or `MergeAndReplace`.
-  - Job states: Pending, Confirmed, FoundInGarmin, ReviewRequired, Failed, Unknown. **No automatic retry of Unknown or ReviewRequired.**
+  - Job states: Pending, InFlight, Confirmed, FoundInGarmin, ReviewRequired, Failed, Unknown, Dismissed. **No automatic retry of Unknown or ReviewRequired.**
   - Unofficial and fragile: behind a feature flag that can be turned off remotely. The current Python contract tests become the Kotlin client's contract tests.
 - **FIT share (always available, the documented fallback):** share the FIT via the Android share sheet, or download it from the web UI and import it manually at connect.garmin.com.
 - **Connect IQ watch app:** standalone recorder. Phone-linked status via the Connect IQ Mobile SDK is optional (GAR-03), because it needs the watch paired to the treadmill phone.
@@ -852,7 +852,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 | S27 | Updates | Web | Channel, available and installed versions, push upload, install when idle, history, rejected versions |
 | S28 | Diagnostics | Web | 8.6 |
 | S29 | Web access | Native + web | Address and QR, on/off, admin passphrase (set or reset on the phone) |
-| S30 | Settings | Web | Theme, sounds, haptics, feature flags (Admin), kiosk |
+| S30 | Settings | Web | Theme, sounds, haptics, feature flags (Admin), app pinning (OPS-05) |
 | — | System states | Both | Bluetooth off, permission revoked, too hot, battery low, storage low |
 
 ---
@@ -880,12 +880,12 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 | Level | What | Tooling | Runs (local) |
 |---|---|---|---|
-| **Unit** | Codecs (golden vectors from `spec/data/`), domain rules (ported Core suites), revision hashing, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
+| **Unit** | Codecs (golden vectors from `docs/spec/data/`), domain rules (ported Core suites), revision hashing, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
 | **Property** | Command coordinator: random interleavings never produce a retry after Unknown, two writes in flight, a replayed Start, or a command after a generation change. Workout expansion limits, calendar projection | Kotest property | ciFast |
 | **Scenario** | Full runs with virtual time and fake links: drops, reconcile, restart, console start, read-only, HR automation, 4 h simulation (14,400 samples) | Scenario DSL | ciFast |
 | **Integration (JVM/Robolectric)** | Room DAOs and forward migrations, backup/restore round-trip, RunService with fake BLE, WebService routes | Robolectric, Room testing | ciFast |
 | **Integration (web API)** | Every route: home vs admin access, admin session, the no-command architecture rule, CSRF, htmx fragments, SSE streams, upload limits, backup download/restore, update upload verification | Ktor `testApplication` | ciFast |
-| **E2E, native** | Compose UI flows on the phone in Simulator mode (`.e2e` variant): setup, arm, run, stop sheet, debrief; plus ATF checks | Instrumented tests on the phone (USB or wireless ADB) (ne, portrait and landscape), Roborazzi | ciNightly (phone) |
+| **E2E, native** | Compose UI flows on the phone in Simulator mode (`.e2e` variant): setup, arm, run, stop sheet, debrief; plus ATF checks | Instrumented tests on the phone (USB or wireless ADB), portrait and landscape; Roborazzi | ciNightly (phone) |
 | **E2E, web** | Browser flows against the `.e2e` app on the phone (or the JVM web module with fakes in `ciFast`): open without setup, plan a workout, live view during a simulated run, restore preview, update upload | **Playwright for Java**, driven from Kotlin tests; screenshots and axe | ciNightly (phone) |
 | **E2E, update** | Install build N, push N+1, self-install when idle, health check; a deliberately crashing build enters safe mode and is rejected; feature-flag kill switch | Phone (`.e2e` variant) | ciNightly, before each release |
 | **Performance** | Cold start TTFD < 2 s (median of 10, moto g15); Run p95 frame < 16 ms; web first paint < 1 s; 3-year history fixture | Macrobenchmark, JankStats, Playwright timings | Beta gate |
@@ -1192,7 +1192,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
   - AC1 *[auto]*: targets are normalized, never more aggressive; Arm is disabled without fresh telemetry.
 - **RUN-03 (P0, controls after DEV-08)** — A single press on Start starts the belt.
   - AC1 *[auto]*: one `07`; Running after 3 samples > 0.3 km/h; SetSpeed to plan.
-  - AC2 *[auto]*: a second press within 800 ms, a press while a Start intent is in flight, or simultaneous presses from the phone and the web (stale state version) send at most one `07`.
+  - AC2 *[auto]*: a second press within 800 ms, a press while a Start intent is in flight, or a stale press after a state change (stale state version) send at most one `07`; the web has no Start at all.
   - AC3 *[auto]*: a console start while Armed reaches Running without commands.
 - **RUN-04 (P0, after DEV-08)** — Stepper rows with requested and measured values and outcome states.
   - AC1 *[auto]*: Unknown suspends automation, with no retry.
@@ -1233,7 +1233,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **RUN-16 (P0)** — Read-only run: the console controls the belt; the app records and guides.
   - AC1 *[auto]*: zero control-point writes.
 - **RUN-17 (P0)** — Manual run without a workout.
-  - AC1 *[auto]*: 5-minute window with 1 minute lead.
+  - AC1 *[auto]*: the first manual run creates exactly one `ManualTemplate` workout (240 min, fixed 0.8 km/h, incline 0) and later manual runs reuse it; it never appears in the library ([02](02-workouts.md) §8.6).
 
 ### Epic REC — Recording, history, analytics
 - **REC-01 (P0)** — 1 Hz recording that survives app death.
@@ -1247,7 +1247,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **REC-06 (P1)** — Delete with preview.
   - AC1 *[auto]*: refused while a Garmin job is pending, in flight or unknown; plan recompute.
 - **REC-07 (P0)** — Export FIT, TCX, CSV or JSON (share on the phone, download on the web).
-  - AC1 *[auto]*: decoded-record equality with the C# golden files; the FIT SDK validator passes.
+  - AC1 *[auto]*: decoded-record equality with the golden files in `data/exports/`; the FIT SDK validator passes.
   - AC2 *[hw]*: a Garmin Connect import once per release.
 - **REC-08 (P1)** — Goals and progression recommendations.
 - **REC-09 (P0)** — A Tests view for Simulator and SystemTest sessions.
@@ -1256,7 +1256,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 ### Epic WKT — Workouts
 - **WKT-01 (P0)** — Library cards; plan-internal hidden.
 - **WKT-02 (P1)** — Editor (web); each save creates a revision.
-  - AC1 *[auto]*: a revision hash is stable (sorted-key JSON, SHA-256); an unchanged save doesn't create a revision.
+  - AC1 *[auto]*: a revision hash is stable (canonical JSON per [02](02-workouts.md) §3.2, SHA-256); an unchanged save doesn't create a revision.
   - AC2 *[auto]*: limits enforced (10,000 steps, depth 32, 12 h).
 - **WKT-03 (P1)** — Import workouts in the old native JSON (P1), and optionally QDomyos XML, FIT workout and v4 bundles (P2). Each is **converted on import** into the primary format (native JSON schema v1), with explicit loss warnings, and never guesses ([03 §6](03-import-export-formats.md)).
   - AC1 *[auto]*: the native round trip is lossless; each lossy conversion emits its documented warning (for example `fit.incline-not-supported`).
@@ -1268,7 +1268,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **PLN-02 (P0)** — Only a Completed linked Hardware session advances the plan.
   - AC1 *[auto]*: unique completed-item constraint.
 - **PLN-06 (P0)** — Start a plan with a start date and weekdays; clear upcoming items.
-  - AC1 *[auto]*: the ported `TrainingDaySelectionResolver` projection.
+  - AC1 *[auto]*: the plan projection of [04](04-calendar-and-plans.md) §5.3 (tests P14–P19) and clear upcoming (S9–S10).
 - **PLN-03 (P1)** — Move, skip, restore, repeat and change days, each with a preview.
   - AC1 *[auto]*: occupied dates block moves; repeat collision warnings; atomic apply.
 - **PLN-04 (P1)** — Calendar series, alternatives and exceptions with the four scopes.
@@ -1313,7 +1313,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **GAR-00 (P1, spike)** — As a developer, I prove Garmin login, MFA, token refresh and one upload from the phone (Ktor on OkHttp), porting a pinned `garminconnect` version.
   - AC1 *[hw]*: works against a test account; a failed login is never retried automatically.
 - **GAR-01 (P1)** — The Kotlin Garmin client **in the phone app** uploads or matches completed Hardware sessions from the phone (feature-flagged).
-  - AC1 *[auto]*: ported matcher and worker tests, plus the contract examples in `spec/data/garmin/`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
+  - AC1 *[auto]*: ported matcher and worker tests, plus the contract examples in `docs/spec/data/garmin/`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
   - AC2 *[auto]*: tokens encrypted with a Keystore key.
 - **GAR-02 (P1)** — Garmin status in plain words; the review queue ("Keep one" / "Restore two").
 - **GAR-03 (P2)** — Watch status via the Connect IQ Mobile SDK (needs the watch paired to the treadmill phone).
@@ -1327,7 +1327,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ### Epic OPS — Operations
 - **OPS-04 (P1)** — Storage management: journal and backup retention, a free-space warning, and the "Storage low" state.
-- **OPS-05 (P2)** — Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow, Garmin Connect Mobile; exit PIN). Optional; needs a phone without accounts during provisioning.
+- **OPS-05 (P2)** — Optional kiosk-like mode with Android app pinning (screen pinning). **No Device Owner** (decision 9). Because the screen lock is None/Swipe (2.1), unpinning needs no PIN; pinning only prevents accidental navigation away from the app.
 
 ---
 
@@ -1379,31 +1379,39 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 ## 16. Decisions
 
 **Decided by the owner (v4):**
-1. **Pause** temporarily stops the belt (verified Stop) and **keeps progress**; Resume continues the workout. This supersedes the Windows app's older "Pause never substitutes Stop" note; recorded in FND-01.
-2. **Start and Resume** are a **single press**, protected by an 800 ms lockout and fixed button positions.
+1. **Pause** temporarily stops the belt with a verified FTMS **Stop `08 01`** and **keeps workout progress**. **Resume** is a single press that sends a fresh Start, then re-applies the effective target. A console stop while Running becomes Paused (progress kept); a console start while Paused becomes Running. This supersedes the Windows app's older "Pause never substitutes Stop" note; recorded in FND-01.
+2. **Start and Resume** are a **single press** (no hold), protected by an **800 ms engine-level lockout** (per session, not per screen), the session state version and fixed button positions. **STOP and the Stop-sheet actions are never locked out.**
 3. **No GitHub Actions.** Builds, tests, signing and releases run locally; releases are uploaded to GitHub Releases and/or pushed to the phone.
 4. **FIT and Garmin run on the phone** (GAR-06, GAR-01).
 5. **No sync.** Backups go to microSD/USB and to the NAS over SMB.
 6. **Wireless debugging** plus the in-app screen view are set up from the start (DLV-07, DLV-09, DLV-11), next to self-updating (DLV-02..05).
 
 **Decided by the owner (v6):**
-7. **Treadmill control only on the phone app or the treadmill console.** The web interface is read-only for the treadmill.
+7. **Treadmill control only on the phone app's native Run console or the treadmill console.** The web interface never sends treadmill commands, **not even Stop**; it has a read-only live view. There is **no controller lease** between UIs; every intent still carries the session state version against stale or double presses.
 8. **No fixed Bluetooth threshold:** continuity is measured, drops are investigated, and it is made as good as possible (HCM).
 9. **One app only:** self-update plus built-in safe mode. There is no Keeper app and no Device Owner mode.
-10. **No certificates and no per-device setup:** plain HTTP on the home network, with one admin passphrase set on the phone.
+10. **No certificates and no per-device setup:** plain HTTP on the home network (no local CA, no pairing), with one admin passphrase set on the phone for admin actions.
+11. **No emulator:** device tests run on the treadmill phone itself, in a separate `.e2e` app variant.
 
 **Decided by the owner (v7):**
-11. **Both remote-debugging paths from the start**, with `phoneCheck` for autonomous checks.
-12. **Backwards compatibility only for the run data structure.**
-13. **Private use: keep it as simple as possible.**
+12. **Both remote-debugging paths from the start**, with `phoneCheck` for autonomous checks.
+13. **Backwards compatibility only for the run data structure** ([07](07-exports-and-backup.md) is the contract).
+14. **Private use: keep it as simple as possible.**
 
 **Decided (v8):**
-14. **Primary workout format: native workout JSON (schema v1).** FIT workout can't hold speed *and* incline per step, has no ramps and no treadmill speed bounds for HR steps. QDomyos XML lacks incline ramps and notes. The v4 bundle is a plan package made of QDomyos steps. All of them are **imported and converted** into native JSON; FIT (for Garmin) and QDomyos XML are optional exports. Details and loss tables: [03 §6](03-import-export-formats.md).
-15. **AI harness first** (Epic HAR): deterministic Gradle tasks with JSON results, project context and navigation files, model routing (Opus 5.5 plans, GPT 6 Sol reviews, GPT 6 Luna executes packets), and a folder per story with `ticket.md`, `plan.md`, `execution-log.md` and `validation/` screenshots from the phone.
+15. **Simulator and SystemTest sessions are excluded** from totals, progression, maintenance, plan advancement and Garmin (5.6).
+16. **Primary workout format: native workout JSON (schema v1).** FIT workout can't hold speed *and* incline per step, has no ramps and no treadmill speed bounds for HR steps. QDomyos XML lacks incline ramps and notes. The v4 bundle is a plan package made of QDomyos steps. All of them are **imported and converted** into native JSON; FIT (for Garmin) and QDomyos XML are optional exports. Details and loss tables: [03 §6](03-import-export-formats.md).
+17. **AI harness first** (Epic HAR): deterministic Gradle tasks with JSON results, project context and navigation files, model routing (Opus 5.5 plans, GPT 6 Sol reviews, GPT 6 Luna executes packets), and a folder per story with `ticket.md`, `plan.md`, `execution-log.md` and `validation/` screenshots from the phone.
 
-**Still open:**
-- The exact OpenAI API model IDs for GPT 6 Sol and GPT 6 Luna, and confirmation that Luna is the cheaper executor tier (12.3).
- none blocking. Future options: kiosk mode (OPS-05); a publicly trusted certificate if a domain is ever used.
+**Still open** (none blocks Phase 0a; each is decided before its story is implemented):
+- The exact OpenAI API model IDs for GPT 6 Sol and GPT 6 Luna, and confirmation that Luna is the cheaper executor tier (12.3). Blocks HAR-03.
+- **HR-zone steps under automation** ([06](06-profiles-and-heart-rate.md) §7.3): the current app never resolves a zone step to bpm, so zone steps run at their initial speed without automation. Recommended: resolve the zone against the run's zone snapshot, and stay passive when the zone is missing. Blocks RUN-10 for zone steps.
+- **H10 payload hash with the Polar SDK** ([10](10-polar-h10.md) §13): `fetchExercise` returns decoded samples, not the raw file. Either fetch with the fallback codec (a true raw SHA-256) or hash a labelled canonical re-encoding of the SDK samples. Decide in Phase 0; blocks H10-03.
+- **H10 `Retained` status and the Garmin gate** ([10](10-polar-h10.md) §10.2, [11](11-garmin.md) §7.2): the current app treats an unmatched, Retained automatic recording as unsettled, so Garmin waits until the user skips it. Recommended: treat Retained as settled. Blocks GAR-01.
+- **FIT workout import strings** ([03](03-import-export-formats.md) §4.1): the spec strips trailing NULs and treats NUL-only strings as null instead of reproducing the current app's NUL-cue defect; confirm, and confirm the added `fit.incline-not-supported` warning. Blocks WKT-03 (FIT part).
+- **STOP and the session-version check** ([09](09-safety-and-command-contract.md) §3.1): every intent, STOP included, must carry the current session version, so a STOP pressed while a state change bumps the version is refused and must be pressed again. Recommended: accept STOP with any version of the same session (it is never locked out and never coalesced). Blocks RUN-05.
+- Hardware facts that only Android commissioning can settle ([08](08-ftms-and-treadmill.md) §15): the Omega Z `2ACD` flags word and cadence, indicate versus notify on `2AD9`, power-cycle and safety-key behaviour. Resolved in DEV-08.
+- Future options, not planned: kiosk-like app pinning (OPS-05); a publicly trusted certificate if a domain name is ever used (7.2), which would also allow a paired Connect IQ companion ([11](11-garmin.md) §18.3).
 
 ## 17. References
 - **Specification pack (this folder):**

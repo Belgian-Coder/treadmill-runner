@@ -169,7 +169,7 @@ The **effective** kind and family are used for matching:
 - If the stored value is the generic one (`Sensor` or `Other`), re-derive it from the display name.
 - Otherwise use the stored value.
 
-A product-specific rename (for example "Marc Polar H10") therefore promotes generic metadata.
+A product-specific rename (for example "Runner Polar H10") therefore promotes generic metadata.
 
 ### 4.2 Which enrollment is "the H10"
 
@@ -743,13 +743,13 @@ All statuses exist in the API. `AwaitingDevice`, `Downloading` and `Merging` are
 | **RemovalPending** | Remote removal outstanding (retryable) | **yes** |
 | **Completed** | Merged and remote removed | **yes** |
 | Retained | Local verified copy kept (Manual, or unmatched Automatic); remote removed | no ⚠ |
-| **Skipped** | Operator skipped recovery | **yes** |
+| **Skipped** | The user skipped recovery | **yes** |
 | **NotStarted** | Proven never started, cancelled or disabled | **yes** |
 | DiscardCleanupPending | Session discarded; remove remote, then delete the row | no (the session is gone) |
 | ReviewRequired | Needs a human: ambiguity, a different active recording, exhausted attempts, or an automatic start that was not confirmed | no |
 | Retryable | Transient failure; backoff | no |
 
-⚠ In the current code, an **unmatched** Automatic recording ends as Retained, which keeps blocking Garmin for that session until the operator skips it. The rewrite should decide explicitly. The recommendation is to treat Retained as terminal for the gate, because the History merge was deliberately not possible. Record the decision in 11-garmin.
+⚠ In the current code, an **unmatched** Automatic recording ends as Retained, which keeps blocking Garmin for that session until the user skips it. The rewrite should decide explicitly. The recommendation is to treat Retained as terminal for the gate, because the History merge was deliberately not possible. This is an open owner question (00-plan §16); until it is decided, [11](11-garmin.md) §7.2 keeps the current rule (Retained is not settled).
 
 Store transitions:
 
@@ -765,7 +765,7 @@ Store transitions:
 | **MarkRemoteRemoved[IfVersion]** | Retained when `origin ≠ Automatic` or lastError is non-empty; else **Completed** with lastError cleared. removalCount+1; lease null; version+1. |
 | **MarkOutcome[IfVersion](outcome, error)** | Set the status and lastError (≤ 1000); lease null; version+1. Retryable sets `availableAt = now + min(60, max(2, attemptCount × 5))` s. Skipped resets attempts to 0. |
 | **Retry (API)** | Refused (409) when Completed, Skipped or NotStarted. Merged or RemovalPending → RemovalPending. Automatic without a session → DiscardCleanupPending. Automatic with a hash → Downloaded. Else → Retryable. Attempts 0; lease null; available now; lastError null; version+1. |
-| **Skip (API)** | Refused (409) when Merged, RemovalPending or Completed ("already completed; remote cleanup continues"). Else Skipped with "H10 recovery was explicitly skipped by the operator; any remote recording was retained." Wake the Garmin worker. |
+| **Skip (API)** | Refused (409) when Merged, RemovalPending or Completed ("already completed; remote cleanup continues"). Else Skipped with "H10 recovery was explicitly skipped by the user; any remote recording was retained." Wake the Garmin worker. |
 | **CompleteDiscardCleanup** | Only from DiscardCleanupPending; deletes the row and its samples |
 | **Retention sweep** | At most hourly: delete Retained rows with removalCount > 0 and `updatedAt < now − 14 d` |
 
@@ -875,8 +875,8 @@ stateDiagram-v2
   Recording --> DiscardCleanupPending: discard
   StopPending --> DiscardCleanupPending: discard
   DiscardCleanupPending --> [*]: remote removed, row deleted
-  StopPending --> Skipped: operator skip
-  ReviewRequired --> Skipped: operator skip
+  StopPending --> Skipped: user skip
+  ReviewRequired --> Skipped: user skip
 ```
 
 ---
@@ -1205,7 +1205,7 @@ The simulator's error codes are **simulator-local** (1 invalid request, 2 unsupp
 - [ ] A queued caller behind a faulted exchange fails without writing.
 - [ ] SDK adapter: error names map to codes (106, 103, 202…); 303 maps to a transport fault; our budget wraps the SDK's 90 s wait.
 - [ ] SDK adapter: `requestRecordingStatus` with `""` maps to a null id; list entries are validated as exact paths.
-- [ ] The hash policy chosen in section 13 is implemented and labelled.
+- [ ] The hash policy chosen in section 13 (open until Phase 0; 00-plan §16) is implemented and labelled.
 
 **Locator and enrollment**
 - [ ] All `locator-scenarios.json` scenarios, including split advertisements and fail-closed ambiguity.
@@ -1229,7 +1229,7 @@ The simulator's error codes are **simulator-local** (1 invalid request, 2 unsupp
 - [ ] Kotlin port of the simulator passes section 15.9, and the production fallback client completes the full lifecycle against it.
 
 **Hardware (owner-supervised; see the main plan)**
-- [ ] HW-02 H10 continuity (HCT).
+- [ ] HW-02 H10 continuity (HCM: measured, no fixed threshold; see the main plan §11.3).
 - [ ] HW-03 recording and merge: fetched, hashed, only null samples filled, remote removed.
 - [ ] HW-11 live HR has no gap over 5 s during prepare and fetch. If it fails, port the lease (section 7.4).
 - [ ] DEV-05 multi-connection off: the H10 stops advertising while connected.

@@ -24,7 +24,7 @@ A **session** (a run) is one execution of one immutable workout revision by one 
 - Rules marked **[current]** describe what the Windows app does today. They are the reference behaviour.
 - Rules marked **[rewrite]** are owner decisions from the plan ([00](00-plan.md) §4.3, §5.5–5.7) that intentionally change the current behaviour.
 - Where the two differ, implement **[rewrite]**. Keep the **[current]** rule for anything the plan doesn't override.
-- The safety and command contract (FTMS confirmation, intents, lease, lockout) is in [09](09-safety-and-command-contract.md). The HR source and HR automation are in [06](06-profiles-and-heart-rate.md). Entity fields are in [01](01-data-model.md) §4.1–4.4.
+- The safety and command contract (FTMS confirmation, intents, who may command, lockout) is in [09](09-safety-and-command-contract.md). **[rewrite]** Lifecycle actions come only from the phone's native Run console; the web interface never sends session or treadmill commands, and there is no controller lease. The HR source and HR automation are in [06](06-profiles-and-heart-rate.md). Entity fields are in [01](01-data-model.md) §4.1–4.4.
 
 ---
 
@@ -114,7 +114,7 @@ Algorithm identifiers:
 ```mermaid
 stateDiagram-v2
   [*] --> Idle
-  Idle --> Armed: arm (preflight ready, lease)
+  Idle --> Armed: arm (preflight ready)
   Armed --> Running: 3 samples > 0.3 km/h
   Running --> Paused: pause confirmed / Stop confirmed / [rewrite] console stop
   Armed --> Paused: Stop confirmed
@@ -136,14 +136,14 @@ stateDiagram-v2
 
 All client actions need:
 - a non-empty `operationId`: repeating a processed operation ID returns the current snapshot without re-applying;
-- the current **controller lease** (holder ID and lease ID; [09](09-safety-and-command-contract.md));
+- **[current]** the current controller lease (holder ID and lease ID). **[rewrite]** There is no lease: the action must come from the phone's native Run console, which carries the session's console authority ([09](09-safety-and-command-contract.md) §6.2, §6.8);
 - `expectedSessionVersion`, unless noted otherwise.
 
-Engine-owned automatic commands use a per-session **automation authority** instead of the lease:
+Engine-owned automatic commands use a per-session **automation authority**:
 - the authority ID is a random UUID per active run;
 - the holder is `gateway-session:{sessionId:N}`.
 
-So automation keeps working when the browser lease expires.
+[current] This kept automation working when a browser's controller lease expired.
 
 ### 4.1 Preflight
 Preflight is computed for (profile, workout revision). It returns check items with status `Ready`, `NotRequired`, `Waiting` or `Blocked`. **Arm is allowed only when every check is `Ready` or `NotRequired`.**
@@ -159,7 +159,7 @@ Preflight is computed for (profile, workout revision). It returns check items wi
 
 ### 4.2 Arm
 Guards, all rejected with a conflict:
-- The lease is current, both at the start and again at commit.
+- **[current]** The lease is current, both at the start and again at commit. **[rewrite]** The request comes from the phone's native UI; the web can choose a workout but never arms.
 - Startup recovery is finished.
 - No reset persistence is pending.
 - No restore reconciliation is pending.
@@ -220,7 +220,7 @@ For the active, non-frozen session:
    - Each step completion appends `workout-step-transition {completedStepIndex, currentStepIndex|null, cue}`.
    - When the step index changes, manual speed and incline overrides are cleared.
 5. **Completion** (§4.7), or **sample capture** (§5) when not complete.
-6. **Device release**: when the state is terminal, the belt is not moving and the speed is ≤ 0.05 (and no reset persistence is pending), release the run's device connections once. After release, the terminal snapshot is **frozen**: telemetry no longer changes it; only lease and connection metadata refresh.
+6. **Device release**: when the state is terminal, the belt is not moving and the speed is ≤ 0.05 (and no reset persistence is pending), release the run's device connections once. After release, the terminal snapshot is **frozen**: telemetry no longer changes it; only connection metadata refreshes ([current]: also lease metadata).
 7. **Publish** the live snapshot.
 8. **Build and run at most one automated command** (planned transition, HR automation, or completion Stop; §4.8 and [06](06-profiles-and-heart-rate.md) §7).
 
@@ -352,7 +352,7 @@ If persistence exceeds the 5 s client wait, the API reports "still finishing". A
 Reset is used by the simulator, by restore and by maintenance:
 1. A non-terminal session is interrupted with reason `Simulator reset.` (or the caller's reason).
 2. The unfinished-session sweep also runs.
-3. The controller lease is revoked.
+3. [current] The controller lease is revoked. (The rewrite has no lease.)
 4. If an earlier terminal persistence failed, reset re-runs it as an interruption: "Terminal persistence failed; reset recovered the session as interrupted."
 
 ---
@@ -465,7 +465,7 @@ Every event has `eventType` (the kind) and `occurredAt` (a UTC instant).
 | `device-disconnected` | `deviceRole` (0 Treadmill, 1 HeartRate), `reason` (string or null) | The start of a treadmill telemetry gap (reason: the device fault, "Treadmill telemetry became stale.", or "The treadmill connection generation changed.") | the reason |
 | `device-reconnected` | `deviceRole` | Treadmill reconnect reconciliation (§8.2) | – |
 | `session-warning` | `code`, `message` | `physical-movement-detected` ("Physical movement detected") at start; `heart-rate-source-changed` ("Heart-rate source changed to {name or 'no fresh sensor'}.") when the HR source generation changes with automation needed; **[rewrite]** `stop-unconfirmed-by-telemetry` | the message |
-| `control-lease` | `kind` (0 Acquired … 4 Reclaimed), `leaseId`, `holderId` | Defined; **not emitted** by the current app | – |
+| `control-lease` | `kind` (0 Acquired … 4 Reclaimed), `leaseId`, `holderId` | Defined; **not emitted** by the current app. **[rewrite]** Never emitted (there is no lease); kept only so imported runs round-trip | – |
 | `session-completed` | – | Completed | – |
 | `session-stopped` | – | End and save | – |
 | `session-interrupted` | `reason` | Every interruption path (the reasons are listed in §8) | the reason |
@@ -762,7 +762,7 @@ The engine accepts no arm or reset until startup recovery is complete.
   - Running, moving, fresh (≤ 5 s);
   - no Unknown last command;
   - the client's `connectionGeneration` equals the current one;
-  - lease and version.
+  - a tap on the phone's Run console and a version match.
 
   Effect:
   - un-suspend; state `Recovered`;
@@ -807,7 +807,7 @@ Golden (from the legacy tests):
 |---|---|---|---|---|---|---|---|---|
 | `Hardware` | A real treadmill | yes | yes | yes | **yes** | yes | eligible | **yes** |
 | `Simulator` | Development simulator | yes | **[current] yes**; **[rewrite] no** | no | no | [current] yes; **[rewrite] no** | **[rewrite] no** | no |
-| `SystemTest` | Garmin upload verification | **hidden** (unless `includeTests`) | no | no | no | no | only its own test flow | no |
+| `SystemTest` | Garmin upload verification | **hidden** (unless `includeTests`) | no | no | no | no | never auto-queued; only its own explicit test upload ([11](11-garmin.md) §17) | no |
 | `Legacy` | Rows older than the origin column | yes | yes | yes (as Imported) | no | yes | no | no |
 
 **[rewrite]** (plan §5.6): Simulator and SystemTest sessions are excluded from totals, progression, maintenance, plan advancement and Garmin. Imported runs (`imported=true`) are excluded from Garmin upload.
