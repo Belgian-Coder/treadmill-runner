@@ -1,6 +1,6 @@
 # TreadmillRunner-Android: specification pack
 
-This folder is the complete, self-contained input for building **TreadmillRunner-Android** from scratch in a new repository. Copy the whole folder, including `data/`, into that repository, for example as `docs/spec/`.
+This folder is the complete, self-contained input for building **TreadmillRunner-Android** from scratch in a new repository. Copy the whole folder, including `data/`, into that repository as `docs/spec/`. Then move `stories/` to the repository root and `harness/` to `harness/templates/`, as plan section 12.1 describes.
 
 It describes everything the current Windows/.NET TreadmillRunner does:
 - rules, data structures and algorithms;
@@ -23,6 +23,8 @@ Together these let the Kotlin app re-implement the behaviour and stay data-compa
 | [10-polar-h10.md](10-polar-h10.md) | HRS parsing, PFTP protocol, recording lifecycle and merge, firmware 4.x, SDK mapping |
 | [11-garmin.md](11-garmin.md) | Activity upload and matching, FIT merge, job states, Connect IQ companion |
 | `data/` | Golden vectors and datasets: FTMS, Polar, workouts, premade plans, exports, Garmin |
+| [harness/](harness/) | Templates for `ticket.md`, `plan.md`, packets, `execution-log.md` and `validation.md` (plan section 12) |
+| [stories/](stories/) | One folder per user story, numbered in build order, each with a filled `ticket.md` |
 
 **Conventions:**
 - Units are metric.

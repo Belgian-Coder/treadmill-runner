@@ -174,26 +174,28 @@ The legacy app wrote enums as **ordinals inside JSON** (exports, event details, 
 - At most one `Completed` session per (`programRunId`, `programItemId`).
 - Index the history list on (`userProfileId`, `endedAt` DESC), filtered to terminal, started and ended runs.
 
-**`controllerConfiguration` snapshot.** New runs write this exact shape (camelCase, enum names):
+**`controllerConfiguration` snapshot.** New runs write **exactly the legacy v1 shape**: PascalCase keys, and `Evidence` values as ordinals. The session JSON export embeds this object unchanged, so old and new exports have an identical structure ([07](07-exports-and-backup.md) §2). The shape (from the fixture):
 ```json
-{"mode":"hardware:ftms:Ftms",          // "simulator" | "hardware:{protocolId}:{telemetryMode}" | "GarminUploadTest"
- "heartRateController":"shadow",       // "shadow" if the workout has an HR target, else "disabled"
- "profile":{"weightKilograms":72.5,"maximumHeartRateBpm":190,"maximumSpeedKph":12,
-   "heartRateZones":[{"number":1,"name":"Warm up","minimumBpm":95,"maximumBpm":113}],
-   "heartRateController":{"increaseStepKph":0.2,"increaseCooldownSeconds":30,"decreaseStepKph":0.5,"decreaseCooldownSeconds":15}},
- "heartRateSourceLabel":"Polar H10 ABCD1234","heartRateSourceKind":"ChestStrap","heartRateSourceFamily":"Polar",
- "treadmill":{"identityLabel":"OMEGA Z","protocolId":"ftms","telemetryMode":"Ftms","modelNumber":"OMEGA Z",
-   "firmwareRevision":"V10.23.17","evidence":"HardwareVerified",
-   "capabilities":{"canSetSpeedRemotely":true,"canSetInclineRemotely":true,"canPauseRemotely":false,"canStopRemotely":true,
-     "canStartRemotely":true,"reportsSpeedTargetSupport":true,"reportsInclineTargetSupport":true,"reportsStandardStartResume":true,
-     "speedRange":{"minimum":0.8,"maximum":20,"increment":0.1,"evidence":"ProtocolReported"},
-     "inclineRange":{"minimum":0,"maximum":12,"increment":0.5,"evidence":"ProtocolReported"}},
-   "connectionGeneration":3,"enrollmentId":"2b3c4d5e-…","identityFingerprint":"7777…(64 hex)"}}
+{"Mode":"hardware:ftms:Ftms",            // "simulator" | "hardware:{protocolId}:{telemetryMode}" | "GarminUploadTest"
+ "HeartRateController":"shadow",         // "shadow" if the workout has an HR target, else "disabled"
+ "Profile":{"WeightKilograms":72.5,"MaximumHeartRateBpm":190,"MaximumSpeedKph":12,
+   "HeartRateZones":[{"Number":1,"Name":"Warm up","MinimumBpm":95,"MaximumBpm":113}],
+   "HeartRateController":{"IncreaseStepKph":0.2,"IncreaseCooldownSeconds":30,"DecreaseStepKph":0.5,"DecreaseCooldownSeconds":15}},
+ "HeartRateSourceLabel":"Polar H10 ABCD1234","HeartRateSourceKind":"ChestStrap","HeartRateSourceFamily":"Polar",
+ "Treadmill":{"IdentityLabel":"OMEGA Z","ProtocolId":"ftms","TelemetryMode":"Ftms","ModelNumber":"OMEGA Z",
+   "FirmwareRevision":"V10.23.17","Evidence":3,
+   "Capabilities":{"CanSetSpeedRemotely":true,"CanSetInclineRemotely":true,"CanPauseRemotely":false,"CanStopRemotely":true,
+     "CanStartRemotely":true,"ReportsSpeedTargetSupport":true,"ReportsInclineTargetSupport":true,"ReportsStandardStartResume":true,
+     "SpeedRange":{"Minimum":0.8,"Maximum":20,"Increment":0.1,"Evidence":1},
+     "InclineRange":{"Minimum":0,"Maximum":12,"Increment":0.5,"Evidence":1}},
+   "ConnectionGeneration":3,"EnrollmentId":"2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091","IdentityFingerprint":"7777…(64 hex)"}}
 ```
-- The **legacy snapshot uses PascalCase keys and ordinal enums** (`"Mode"`, `"Profile"`, `"Evidence":3`). Old runs may also be `{}` or lack fields. Readers match keys **case-insensitively** and accept ordinals.
-- `profile.weightKilograms` is the weight used for all calorie calculations of the run.
-- `profile.heartRateZones` is the zone set used for the run's analytics and exports. **The current profile is never used for an old run.**
-- `treadmill` is null for simulator runs.
+- Nullable members are written as `null`: `MaximumHeartRateBpm`, `MaximumSpeedKph`, `HeartRateController`, the `HeartRateSource*` fields, `Treadmill`, `ModelNumber`, `FirmwareRevision`, `SpeedRange`, `InclineRange`, `EnrollmentId` and `IdentityFingerprint`.
+- `Evidence` ordinals: 0 Unknown, 1 ProtocolReported, 2 PassivelyObserved, 3 HardwareVerified.
+- Old runs may be `{}` or lack fields. Readers match keys **case-insensitively** and accept ordinals or names.
+- `Profile.WeightKilograms` is the weight used for all calorie calculations of the run.
+- `Profile.HeartRateZones` is the zone set used for the run's analytics and exports. **The current profile is never used for an old run.**
+- `Treadmill` is null for simulator runs.
 
 ### 4.2 SessionSample — 1 Hz telemetry (immutable)
 | Field | Type | Null | Rules / units |

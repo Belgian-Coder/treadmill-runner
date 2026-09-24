@@ -1,7 +1,7 @@
 ---
 title: TreadmillRunner rewrite plan — self-contained Kotlin phone app
 type: plan
-status: draft-v7
+status: draft-v8
 owner: project
 audience: agent-and-developer
 updated: 2026-09-24
@@ -41,7 +41,7 @@ TreadmillRunner is rebuilt as **one self-contained Kotlin app on a phone mounted
 - **Private use, single household:** choose the simplest design that is safe and reliable. Don't add enterprise-style features (multi-tenant access, audit trails, complex roles, sync).
 - **Backwards compatibility only for runs:** the run (session) data structure stays compatible, so old runs can be imported and runs can be exported and re-imported in the same format ([07](07-exports-and-backup.md)). Everything else (workouts, plans, calendar, profiles, settings, internal database schema) may be redesigned freely and is recreated, not migrated.
 
-This plan is the contract for the rewrite. Section 12 turns it into user stories with testable acceptance criteria; section 13 orders them into phases.
+This plan is the contract for the rewrite. Section 12 defines the AI harness and story workflow, section 13 turns the plan into user stories with testable acceptance criteria (one folder each in `stories/`), and section 14 orders them into phases.
 
 **Revision history:**
 - v1 was a first draft.
@@ -74,6 +74,10 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
   - **Both remote-debugging paths are set up in the first phase** for easy autonomous checks: the in-app screen, logs and state, plus wireless ADB with scrcpy.
   - **No backwards compatibility except the run data structure.**
   - **Private use: keep everything as simple as possible.**
+- v8 (this version) adds:
+  - an **AI harness** as the very first stories: deterministic scripts, project context and navigation files, and model routing for Anthropic and OpenAI;
+  - a **per-story folder workflow**: `ticket.md`, a generated `plan.md` with bounded packets, `execution-log.md`, and `validation/` screenshots at the phone's resolution;
+  - the **primary workout format decision**: see [03](03-import-export-formats.md), where old formats are converted on import.
 
 ---
 
@@ -947,9 +951,153 @@ runScenario {
 
 ---
 
-## 12. User stories
+## 12. AI harness and story workflow
+
+The new repository is built mostly by AI agents. A strong model plans and reviews; cheaper models implement small bounded packets. The harness makes that repeatable and checkable. It is set up **before any feature work** (Epic HAR, Phase 0b). Templates are in [`harness/`](harness/); one folder per story is in [`stories/`](stories/).
+
+### 12.1 Repository layout for AI work
+```
+AGENTS.md                  Canonical instructions for every agent (short: read order, rules, commands)
+CLAUDE.md                  One line: "Read AGENTS.md" (plus Claude-specific notes if ever needed)
+ai/
+  project-context.md       What the app is, the non-negotiable rules (safety 09, runs-only compatibility, simplicity), glossary, phone facts
+  navigation/
+    modules.md             Generated: every Gradle module, its purpose, its public API, and its tests
+    specs.md               Generated: spec section index (00–11), with anchors
+    stories.md             Generated: story index with status (from each story's execution-log)
+  routing.yaml             Model routing per role (12.3)
+  prompts/                 Role prompts: planner.md, packet-executor.md, reviewer.md, ux-reviewer.md
+docs/spec/                 This specification pack (copied verbatim)
+stories/<NNN>-<ID>-<slug>/ One folder per user story (12.4)
+harness/templates/         ticket.md, plan.md, execution-log.md, packet.md, validation.md
+```
+- **Navigation files are generated deterministically** by `./gradlew aiContext` from `settings.gradle.kts`, the module `README.md` files, the spec headings and the story folders.
+- `./gradlew check` fails if the generated files are stale, so an agent can always trust them.
+
+### 12.2 Deterministic scripts: one entry point per action
+Every action an agent or human needs is a Gradle task with fixed inputs. Each prints a one-line human summary and writes a machine-readable **`build/ai/<task>.json`** result (status, counts, failures with file:line, artifacts). Agents read the JSON instead of scraping logs.
+
+| Task | Purpose |
+|---|---|
+| `./gradlew ciFast` | Lint and format check, unit, property, scenario, Robolectric, Ktor and Roborazzi tests (Windows dev VM; pre-push hook) |
+| `./gradlew ciNightly` | ciFast, plus on-phone E2E (`.e2e` variant), update and safe-mode E2E, NAS backup test, benchmarks |
+| `./gradlew assembleRelease` / `release -Pchannel=…` | Build, sign locally, upload (8.1) |
+| `./gradlew deployToPhone -Phost=…` | Push the build to the phone, then run `phoneCheck --after-deploy` |
+| `./gradlew phoneCheck` | Autonomous health report with screenshots (8.6) |
+| `./gradlew captureScreens -Pstory=<ID>` | Drive the `.e2e` app on the phone through the story's screen scenarios (portrait and landscape) and save into the story's `validation/` folder (12.5) |
+| `./gradlew webScreens -Pstory=<ID>` | Playwright screenshots of the story's web pages at phone and desktop sizes into `validation/web/` |
+| `./gradlew logs -Pfollow` | Stream the app's structured logs (web API; logcat when ADB is up) |
+| `./gradlew debugState` | Dump the state inspectors (8.6) as JSON |
+| `./gradlew newStory -Pid=<ID>` | Scaffold a story folder from the templates |
+| `./gradlew storyCheck -Pstory=<ID>` | Verify the story folder is complete for its current stage (12.4) |
+| `./gradlew aiContext` | Regenerate the navigation files |
+
+Rules:
+- There are no ad-hoc shell scripts in docs.
+- If an agent needs a new repeatable action, the task is added first, then used.
+- All tasks are safe to run repeatedly.
+
+### 12.3 Model routing (Anthropic and OpenAI)
+`ai/routing.yaml` maps **roles** to models, so either provider can be used and models can change without touching prompts:
+
+```yaml
+providers:
+  anthropic: { models: { opus: claude-opus-5-5, sonnet: claude-sonnet-5, haiku: claude-haiku-4-5-20251001 } }
+  openai:    { models: { sol: gpt-6-sol, luna: gpt-6-luna } }      # confirm exact API model IDs
+roles:
+  planner:          { primary: anthropic.opus, alternate: openai.sol,  effort: high }   # ticket → plan.md, packets, diagrams
+  reviewer:         { primary: openai.sol,     alternate: anthropic.opus, effort: high } # independent review of plan and diff
+  ux-reviewer:      { primary: anthropic.opus, alternate: openai.sol }                   # screenshots vs ticket, design guide 9
+  packet-executor:  { primary: openai.luna,    alternate: anthropic.sonnet }             # bounded packets only
+  mechanical:       { primary: anthropic.haiku, alternate: openai.luna }                 # renames, formatting, doc sync
+rules:
+  - planner and reviewer must be different providers for safety-critical stories (tagged `safety`)
+  - packet-executor never edits files outside its packet's allow-list
+  - escalate to planner when a packet's checks fail twice or an open question appears
+```
+
+- **Tuned for Opus 5.5, GPT 6 Sol and GPT 6 Luna:**
+  - Opus 5.5 plans and does the UX review.
+  - GPT 6 Sol reviews independently, a cross-provider check that proved useful in this project's earlier review rounds.
+  - GPT 6 Luna executes packets.
+  - **Assumption to confirm:** GPT 6 Luna is the cheaper, smaller tier, and the exact API model IDs are known.
+- **Prompts** in `ai/prompts/` are short role cards. Each points to `AGENTS.md`, the project context and the relevant story files. They are not long instructions.
+
+### 12.4 Story folder workflow
+Every story lives in `stories/<NNN>-<ID>-<slug>/`. `NNN` is the build order, so a directory listing is the roadmap.
+
+| File | Written by | Content |
+|---|---|---|
+| `ticket.md` | Owner/planner (seeded from this plan) | Goal, context links into the spec, acceptance criteria, mockups (ASCII or image), out of scope, test notes |
+| `plan.md` | Planner model, reviewed | See below |
+| `execution-log.md` | Executors and planner, **updated continuously** | Checklist of every packet and step, with status and evidence; **Deviations** (what changed versus the plan, and why); **Issues found** (flagged with severity); **Future improvements** |
+| `validation/` | `captureScreens`, `webScreens`, test tasks, UX reviewer | Screenshots, test result JSON, `validation.md` (12.5) |
+| `packets/P<n>.md` | Planner | One file per bounded packet (optional; can live inside plan.md) |
+
+**`plan.md` contents:**
+1. **Current state:** what already exists in the code for this story (checked by reading the repo, not assumed), with module and file references.
+2. **Approach:** the chosen design in a few paragraphs.
+3. **Diagrams (Mermaid):**
+   - the change in progress: a flow or sequence of the new behaviour, and a component view with changed parts highlighted;
+   - **database changes:** an `erDiagram` of added or changed entities, plus the Room migration notes.
+4. **Bounded packets:** see the packet format below.
+5. **Decisions log:** every decision, whether from an owner answer or from model reasoning, as `D<n> | decision | source (owner answer / model reasoning) | rationale | date`.
+6. **Open questions:** questions the developer or owner must answer **before implementation**. Each is marked blocking or non-blocking. `storyCheck` refuses the "implementing" stage while blocking questions are open.
+
+**Packet format**, designed for smaller, cheaper models:
+- ID and goal (one sentence);
+- inputs: the exact files to read;
+- **allow-list of files to create or edit**;
+- step list;
+- expected tests to add;
+- **done-check commands** (Gradle tasks and their JSON);
+- size budget (for example, ≤ 300 changed lines);
+- model tier;
+- dependencies on other packets.
+
+A packet must be completable without reading the whole repo or the whole spec.
+
+**Stages** (the header of `execution-log.md`): `ticket → planned → reviewed → implementing → validating → done`.
+
+`storyCheck` verifies the files each stage needs:
+- `plan.md` with no blocking open questions before implementing;
+- every packet checked off, with evidence, before validating;
+- `validation/` complete before done.
+
+### 12.5 Validation folder and visual review
+- **Real device only:**
+  - Screenshots are captured **on the moto g15 Power itself** (1080 × 2400 px, about 392 ppi physical; the logical density is read from `adb shell wm density` or the app's own `DisplayMetrics`).
+  - Both **portrait and landscape** are captured, using the `.e2e` variant in Simulator mode with a deterministic scenario per screen state.
+- **Naming:** `validation/<screen>-<state>-portrait.png` and `…-landscape.png`. The scenario list comes from the ticket's acceptance criteria (for example `run-running-portrait.png`, `run-link-lost-landscape.png`).
+- **Web:** `validation/web/<page>-<width>.png` at 412 px (phone), 768 px and 1280 px.
+- **`validation/validation.md`:**
+  - the device facts used (model, resolution, density, font scale, theme);
+  - test task results (from `build/ai/*.json`);
+  - an acceptance-criteria checklist with evidence links;
+  - the **UX review**: the ux-reviewer model compares the screenshots against the ticket, the mockups and the design guide (section 9 and its checklist 9.10) and lists issues.
+- Roborazzi baselines on the dev VM stay the fast regression gate. The on-phone screenshots are the review evidence for AI and humans.
+
+## 13. User stories
 
 Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated test, *[hw]* means a hardware runbook. Priority: **P0** for MVP, P1 next, P2 later.
+
+### Epic HAR — AI harness and project setup (first)
+- **HAR-01 (P0)** — As the owner, the new repository has `AGENTS.md`, `CLAUDE.md`, `ai/project-context.md` and the spec pack in `docs/spec/`, so any agent starts with the same context.
+  - AC1: an agent given only `AGENTS.md` can find the project context, the spec index and the story index in ≤ 3 reads.
+  - AC2: the project context states the non-negotiable rules (safety contract, phone-only control, runs-only compatibility, simplicity).
+- **HAR-02 (P0)** — As an agent, every build, test, debug, deploy and validation action is a deterministic Gradle task that writes `build/ai/<task>.json` (12.2).
+  - AC1 *[auto]*: each task in 12.2 exists, is repeatable, and writes a JSON result with status and failures as file:line.
+  - AC2 *[auto]*: a deliberately failing test appears in `ciFast.json` with its file and line.
+- **HAR-03 (P0)** — As the owner, `ai/routing.yaml` routes roles to Anthropic and OpenAI models (Opus 5.5, GPT 6 Sol, GPT 6 Luna, with cheaper alternates), with role prompts in `ai/prompts/`.
+  - AC1: the routing validates against a small schema (`./gradlew aiContext` checks it); planner and reviewer differ in provider for `safety` stories.
+- **HAR-04 (P0)** — As an agent, navigation files (`ai/navigation/modules.md`, `specs.md`, `stories.md`) are generated by `./gradlew aiContext`, and `check` fails when they are stale.
+  - AC1 *[auto]*: adding a module or story without regenerating fails `check`.
+- **HAR-05 (P0)** — As the owner, each story has a folder created by `./gradlew newStory` from the templates, and `./gradlew storyCheck` enforces the stages (12.4).
+  - AC1 *[auto]*: storyCheck refuses "implementing" with blocking open questions; refuses "done" without validation evidence.
+- **HAR-06 (P0)** — As a planner, I produce `plan.md` with current-state analysis, Mermaid change and database diagrams, bounded packets, a decisions log and open questions. As an executor, I work one packet at a time and keep `execution-log.md` current.
+  - AC1: a pilot story (FND-01) goes through all stages with a planner, a cheaper executor and a cross-provider reviewer, and its folder passes `storyCheck`.
+- **HAR-07 (P0)** — As a reviewer, `captureScreens` and `webScreens` put portrait and landscape phone screenshots (and web screenshots) into the story's `validation/` folder, and the UX review is recorded in `validation.md`.
+  - AC1 *[hw]*: for a pilot UI story, screenshots at the phone's native resolution and density exist for both orientations; the UX review lists issues against section 9.
 
 ### Epic FND — Project foundation (first)
 - **FND-01 (P0)** — As a developer, the Gradle project has the modules of 4.1, convention plugins, a version catalog, detekt, ktlint and Lint.
@@ -1110,7 +1258,8 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **WKT-02 (P1)** — Editor (web); each save creates a revision.
   - AC1 *[auto]*: a revision hash is stable (sorted-key JSON, SHA-256); an unchanged save doesn't create a revision.
   - AC2 *[auto]*: limits enforced (10,000 steps, depth 32, 12 h).
-- **WKT-03 (P2)** — Optional workout imports (native JSON first; QDomyos XML, FIT workout and v4 bundle only if wanted), with preview.
+- **WKT-03 (P1)** — Import workouts in the old native JSON (P1), and optionally QDomyos XML, FIT workout and v4 bundles (P2). Each is **converted on import** into the primary format (native JSON schema v1), with explicit loss warnings, and never guesses ([03 §6](03-import-export-formats.md)).
+  - AC1 *[auto]*: the native round trip is lossless; each lossy conversion emits its documented warning (for example `fit.incline-not-supported`).
 - **WKT-04 (P2)** — FIT workout export.
 
 ### Epic PLN — Plans and calendar
@@ -1182,12 +1331,12 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ---
 
-## 13. Phases
+## 14. Phases
 
 | Phase | Stories | Exit criteria |
 |---|---|---|
 | **0a. Hardware go/no-go (week 1, throwaway code)** | HW-00 spike | H10 continuity clearly better than the Windows baseline on the moto g15; unloaded Start/Stop Confirmed; the BLE library chosen. **Decides the phone before the heavy foundation work** |
-| **0b. Foundation and delivery** | FND-01..06, DLV-01..11, WEB-01..02, BAK-01 | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs, a crash report and the app screen in Diagnostics; see the full screen via scrcpy; `phoneCheck` produces a clean report; a crash-loop build enters safe mode and is recovered remotely (HW-08); a backup lands on microSD |
+| **0b. Harness, foundation and delivery** | **HAR-01..07**, FND-01..06, DLV-01..11, WEB-01..02, BAK-01 | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs, a crash report and the app screen in Diagnostics; see the full screen via scrcpy; `phoneCheck` produces a clean report; a crash-loop build enters safe mode and is recovered remotely (HW-08); a backup lands on microSD |
 | **1. Run MVP (offline)** | DEV-01..04, DEV-07, **DEV-08**, RUN-01..11, RUN-13..14, RUN-16..17, REC-01..03, REC-07, REC-09, WKT-01, PLN-01..02, PLN-06, H10-01, BAK-02..06, GAR-06, WEB-03, WEB-05..06, PRF-01..02 | HW-01, HW-02, HW-04, HW-05, HW-06, HW-09, HW-13, HW-14, HW-15 pass. Daily use replaces the Windows app (Garmin through FIT download or share until GAR-01) |
 | **2. Depth** | GAR-00, GAR-01..02, RUN-12, RUN-15, REC-04..06, REC-08, WKT-02..03, PLN-03..04, PLN-07, H10-02..06, DEV-05..06, PRF-03, OPS-04 | HW-03, HW-11, HW-12 pass; Garmin upload runs from the phone |
 | **3. Reach** | WKT-04, PLN-05, GAR-03..05, H10-07, OPS-05 | Per story |
@@ -1198,7 +1347,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - Its run exports and backup are the source for importing old runs (BAK-05).
 - It is retired after Phase 1 exits.
 
-## 14. Risks and mitigations
+## 15. Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
@@ -1227,7 +1376,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ---
 
-## 15. Decisions
+## 16. Decisions
 
 **Decided by the owner (v4):**
 1. **Pause** temporarily stops the belt (verified Stop) and **keeps progress**; Resume continues the workout. This supersedes the Windows app's older "Pause never substitutes Stop" note; recorded in FND-01.
@@ -1248,9 +1397,15 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 12. **Backwards compatibility only for the run data structure.**
 13. **Private use: keep it as simple as possible.**
 
-**Still open:** none blocking. Future options: kiosk mode (OPS-05); a publicly trusted certificate if a domain is ever used.
+**Decided (v8):**
+14. **Primary workout format: native workout JSON (schema v1).** FIT workout can't hold speed *and* incline per step, has no ramps and no treadmill speed bounds for HR steps. QDomyos XML lacks incline ramps and notes. The v4 bundle is a plan package made of QDomyos steps. All of them are **imported and converted** into native JSON; FIT (for Garmin) and QDomyos XML are optional exports. Details and loss tables: [03 §6](03-import-export-formats.md).
+15. **AI harness first** (Epic HAR): deterministic Gradle tasks with JSON results, project context and navigation files, model routing (Opus 5.5 plans, GPT 6 Sol reviews, GPT 6 Luna executes packets), and a folder per story with `ticket.md`, `plan.md`, `execution-log.md` and `validation/` screenshots from the phone.
 
-## 16. References
+**Still open:**
+- The exact OpenAI API model IDs for GPT 6 Sol and GPT 6 Luna, and confirmation that Luna is the cheaper executor tier (12.3).
+ none blocking. Future options: kiosk mode (OPS-05); a publicly trusted certificate if a domain is ever used.
+
+## 17. References
 - **Specification pack (this folder):**
   - [01 Data model (and extracting runs from the old backup)](01-data-model.md)
   - [02 Workouts](02-workouts.md)

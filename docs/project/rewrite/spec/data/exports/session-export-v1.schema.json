@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://treadmillrunner.local/schemas/session-export-v1.schema.json",
+  "title": "TreadmillRunner session export, schema treadmillrunner.session/v1",
+  "description": "Full-resolution export of one run. This is the run compatibility contract between the legacy .NET app and the Kotlin app. Enum fields are integers (ordinals) as written by v1; readers must also accept the enum names.",
+  "type": "object",
+  "required": ["schema", "unitSystem", "exportedAtUtc", "session", "samples", "events"],
+  "properties": {
+    "schema": { "const": "treadmillrunner.session/v1" },
+    "unitSystem": { "const": "Metric" },
+    "exportedAtUtc": { "$ref": "#/$defs/instant" },
+    "session": { "$ref": "#/$defs/session" },
+    "samples": { "type": "array", "items": { "$ref": "#/$defs/sample" } },
+    "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "instant": {
+      "description": "ISO-8601 with offset; v1 always writes +00:00, 0-7 fractional digits, trailing zeros trimmed (e.g. 2026-09-01T06:30:08.1999999+00:00).",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "nonNegative": { "type": "number", "minimum": 0 },
+    "enumSessionState": {
+      "description": "0 Idle, 1 ArmedWaitingForPhysicalStart, 2 Running, 3 PausedWaitingForPhysicalResume, 4 Completed, 5 Stopped, 6 Interrupted, 7 Faulted",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 7 },
+        { "enum": ["Idle", "ArmedWaitingForPhysicalStart", "Running", "PausedWaitingForPhysicalResume", "Completed", "Stopped", "Interrupted", "Faulted"] }
+      ]
+    },
+    "enumOrigin": {
+      "description": "0 Legacy, 1 Hardware, 2 Simulator, 3 SystemTest",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 3 },
+        { "enum": ["Legacy", "Hardware", "Simulator", "SystemTest"] }
+      ]
+    },
+    "enumSelectionSource": {
+      "description": "0 Legacy, 1 Manual, 2 Library, 3 Calendar, 4 Program",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 4 },
+        { "enum": ["Legacy", "Manual", "Library", "Calendar", "Program"] }
+      ]
+    },
+    "enumPauseReason": {
+      "description": "0 WebControl, 1 PhysicalConsole, 2 TreadmillStopped",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 2 },
+        { "enum": ["WebControl", "PhysicalConsole", "TreadmillStopped"] }
+      ]
+    },
+    "enumDeviceRole": {
+      "description": "0 Treadmill, 1 HeartRate",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 1 },
+        { "enum": ["Treadmill", "HeartRate"] }
+      ]
+    },
+    "enumLeaseKind": {
+      "description": "0 Acquired, 1 Renewed, 2 Released, 3 Expired, 4 Reclaimed",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 4 },
+        { "enum": ["Acquired", "Renewed", "Released", "Expired", "Reclaimed"] }
+      ]
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "sessionId", "userProfileId", "userProfileName", "workoutRevisionId", "workoutTitle", "armedAt",
+        "selection", "origin", "controllerConfiguration", "metricAlgorithmVersion", "state",
+        "startedAt", "endedAt", "durationSeconds", "distanceKilometers", "estimatedKilocalories",
+        "averageHeartRateBpm", "maximumHeartRateBpm", "averageSpeedKph", "averageInclinePercent", "debrief"
+      ],
+      "properties": {
+        "sessionId": { "$ref": "#/$defs/uuid" },
+        "userProfileId": { "$ref": "#/$defs/uuid" },
+        "userProfileName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "workoutRevisionId": { "$ref": "#/$defs/uuid" },
+        "workoutTitle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "armedAt": { "$ref": "#/$defs/instant" },
+        "selection": {
+          "type": "object",
+          "required": ["source", "programRunId", "programItemId", "recordPolarH10Memory", "replaceExistingPolarH10Recording", "replacePolarH10ExerciseId"],
+          "properties": {
+            "source": { "$ref": "#/$defs/enumSelectionSource" },
+            "programRunId": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+            "programItemId": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+            "recordPolarH10Memory": { "type": "boolean" },
+            "replaceExistingPolarH10Recording": { "type": "boolean", "description": "Arm-time request flag; always false for stored sessions." },
+            "replacePolarH10ExerciseId": { "type": ["string", "null"], "description": "Arm-time request value; always null for stored sessions." }
+          }
+        },
+        "origin": { "$ref": "#/$defs/enumOrigin" },
+        "controllerConfiguration": {
+          "description": "The arm-time snapshot, embedded as JSON. v1 legacy writer: PascalCase keys (Mode, HeartRateController, Profile{WeightKilograms, MaximumHeartRateBpm, MaximumSpeedKph, HeartRateZones[{Number, Name, MinimumBpm, MaximumBpm}], HeartRateController{IncreaseStepKph, IncreaseCooldownSeconds, DecreaseStepKph, DecreaseCooldownSeconds}}, HeartRateSourceLabel, HeartRateSourceKind, HeartRateSourceFamily, Treadmill{...}). May be {} for old runs, or a JSON string if the stored text was not valid JSON. Readers match keys case-insensitively.",
+          "type": ["object", "string"]
+        },
+        "metricAlgorithmVersion": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "state": { "$ref": "#/$defs/enumSessionState" },
+        "startedAt": { "oneOf": [{ "$ref": "#/$defs/instant" }, { "type": "null" }] },
+        "endedAt": { "oneOf": [{ "$ref": "#/$defs/instant" }, { "type": "null" }] },
+        "durationSeconds": { "$ref": "#/$defs/nonNegative" },
+        "distanceKilometers": { "$ref": "#/$defs/nonNegative" },
+        "estimatedKilocalories": { "$ref": "#/$defs/nonNegative" },
+        "averageHeartRateBpm": { "type": ["number", "null"], "minimum": 0 },
+        "maximumHeartRateBpm": { "type": ["integer", "null"], "minimum": 1, "maximum": 250 },
+        "averageSpeedKph": { "$ref": "#/$defs/nonNegative" },
+        "averageInclinePercent": { "type": "number" },
+        "debrief": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["sessionId", "perceivedExertion", "note", "updatedAt"],
+              "properties": {
+                "sessionId": { "$ref": "#/$defs/uuid" },
+                "perceivedExertion": { "type": ["integer", "null"], "minimum": 1, "maximum": 10 },
+                "note": { "type": ["string", "null"], "maxLength": 1000 },
+                "updatedAt": { "$ref": "#/$defs/instant" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "required": [
+        "sequence", "capturedAt", "elapsedSeconds", "plannedSpeedKph", "requestedSpeedKph", "measuredSpeedKph",
+        "plannedInclinePercent", "requestedInclinePercent", "measuredInclinePercent", "heartRateBpm",
+        "distanceKilometers", "estimatedKilocalories", "telemetryAgeMilliseconds", "metricAlgorithmVersion"
+      ],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "capturedAt": { "$ref": "#/$defs/instant" },
+        "elapsedSeconds": { "$ref": "#/$defs/nonNegative" },
+        "plannedSpeedKph": { "type": ["number", "null"], "minimum": 0 },
+        "requestedSpeedKph": { "$ref": "#/$defs/nonNegative" },
+        "measuredSpeedKph": { "$ref": "#/$defs/nonNegative" },
+        "plannedInclinePercent": { "type": ["number", "null"] },
+        "requestedInclinePercent": { "type": "number" },
+        "measuredInclinePercent": { "type": "number" },
+        "heartRateBpm": { "type": ["integer", "null"], "minimum": 1, "maximum": 250 },
+        "distanceKilometers": { "$ref": "#/$defs/nonNegative" },
+        "estimatedKilocalories": { "$ref": "#/$defs/nonNegative" },
+        "telemetryAgeMilliseconds": { "$ref": "#/$defs/nonNegative" },
+        "metricAlgorithmVersion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "eventBase": {
+      "type": "object",
+      "required": ["eventType", "occurredAt"],
+      "properties": {
+        "eventType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "occurredAt": { "$ref": "#/$defs/instant" }
+      }
+    },
+    "event": {
+      "allOf": [{ "$ref": "#/$defs/eventBase" }],
+      "oneOf": [
+        {
+          "properties": {
+            "eventType": { "const": "manual-speed-override" },
+            "expectedSpeedKph": { "$ref": "#/$defs/nonNegative" },
+            "observedSpeedKph": { "$ref": "#/$defs/nonNegative" }
+          },
+          "required": ["expectedSpeedKph", "observedSpeedKph"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "manual-incline-override" },
+            "previousInclinePercent": { "type": "number" },
+            "requestedInclinePercent": { "type": "number" }
+          },
+          "required": ["previousInclinePercent", "requestedInclinePercent"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workout-step-transition" },
+            "completedStepIndex": { "type": "integer", "minimum": 0 },
+            "currentStepIndex": { "type": ["integer", "null"], "minimum": 0 },
+            "cue": { "type": ["string", "null"] }
+          },
+          "required": ["completedStepIndex", "currentStepIndex", "cue"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workout-progress-reset" },
+            "previousStepIndex": { "type": "integer", "minimum": 0 },
+            "previousWorkoutElapsedSeconds": { "$ref": "#/$defs/nonNegative" }
+          },
+          "required": ["previousStepIndex", "previousWorkoutElapsedSeconds"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "session-paused" },
+            "reason": { "$ref": "#/$defs/enumPauseReason" }
+          },
+          "required": ["reason"]
+        },
+        { "properties": { "eventType": { "const": "session-resumed" } } },
+        {
+          "properties": {
+            "eventType": { "const": "device-disconnected" },
+            "deviceRole": { "$ref": "#/$defs/enumDeviceRole" },
+            "reason": { "type": ["string", "null"] }
+          },
+          "required": ["deviceRole", "reason"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "device-reconnected" },
+            "deviceRole": { "$ref": "#/$defs/enumDeviceRole" }
+          },
+          "required": ["deviceRole"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "session-warning" },
+            "code": { "type": "string" },
+            "message": { "type": "string" }
+          },
+          "required": ["code", "message"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "control-lease" },
+            "kind": { "$ref": "#/$defs/enumLeaseKind" },
+            "leaseId": { "$ref": "#/$defs/uuid" },
+            "holderId": { "type": "string" }
+          },
+          "required": ["kind", "leaseId", "holderId"]
+        },
+        { "properties": { "eventType": { "const": "session-completed" } } },
+        { "properties": { "eventType": { "const": "session-stopped" } } },
+        {
+          "properties": {
+            "eventType": { "const": "session-interrupted" },
+            "reason": { "type": ["string", "null"] }
+          },
+          "required": ["reason"]
+        },
+        {
+          "properties": {
+            "eventType": { "const": "session-faulted" },
+            "code": { "type": "string" },
+            "message": { "type": "string" }
+          },
+          "required": ["code", "message"]
+        }
+      ]
+    }
+  }
+}
