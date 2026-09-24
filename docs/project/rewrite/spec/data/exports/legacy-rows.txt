@@ -1,0 +1,397 @@
+PRAGMA user_version = 0
+PRAGMA journal_mode = wal
+PRAGMA page_size = 4096
+PRAGMA encoding = UTF-8
+
+### BackupVerifications (rows: 0)
+
+### BleReliabilityIncidents (rows: 0)
+
+### CalendarExceptionOptions (rows: 0)
+
+### CalendarExceptions (rows: 0)
+
+### CalendarSeries (rows: 0)
+
+### CalendarSeriesOptions (rows: 0)
+
+### DeviceEnrollments (rows: 2)
+-- row 0
+  Id [TEXT] = 2B3C4D5E-6F70-4812-9A3B-4C5D6E7F8091
+  Role [TEXT] = Treadmill
+  DeviceId [TEXT] = BluetoothLE#BluetoothLEaa:bb:cc:dd:ee:ff-11:22:33:44:55:66
+  ProtocolId [TEXT] = ftms
+  IdentityFingerprint [TEXT] = 7777777777777777777777777777777777777777777777777777777777777777
+  DisplayName [TEXT] = OMEGA Z
+  ModelNumber [TEXT] = OMEGA Z
+  FirmwareRevision [TEXT] = V10.23.17
+  TelemetryMode [TEXT] = Ftms
+  CapabilitiesJson [TEXT] = {"canSetSpeedRemotely":true,"canSetInclineRemotely":true,"canPauseRemotely":false,"canStopRemotely":true,"canStartRemotely":true,"reportsSpeedTargetSupport":true,"reportsInclineTargetSupport":true,"reportsStandardStartResume":true,"speedRange":{"minimum":0.8,"maximum":20,"increment":0.1,"evidence":1},"inclineRange":{"minimum":0,"maximum":12,"increment":0.5,"evidence":1}}
+  Evidence [TEXT] = HardwareVerified
+  LastVerifiedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  Version [INTEGER] = 1
+  IsArchived [INTEGER] = 0
+  ArchivedAtUtc [NULL] = NULL
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  HeartRateDeviceFamily [NULL] = NULL
+  HeartRateDeviceKind [NULL] = NULL
+-- row 1
+  Id [TEXT] = 3C4D5E6F-7081-4923-8B4C-5D6E7F809102
+  Role [TEXT] = HeartRate
+  DeviceId [TEXT] = BluetoothLE#BluetoothLEaa:bb:cc:dd:ee:ff-a0:9e:1a:00:00:01
+  ProtocolId [TEXT] = bluetooth-heart-rate
+  IdentityFingerprint [TEXT] = 8888888888888888888888888888888888888888888888888888888888888888
+  DisplayName [TEXT] = Polar H10 ABCD1234
+  ModelNumber [NULL] = NULL
+  FirmwareRevision [TEXT] = 4.2.0
+  TelemetryMode [NULL] = NULL
+  CapabilitiesJson [NULL] = NULL
+  Evidence [TEXT] = Unknown
+  LastVerifiedAtUtc [NULL] = NULL
+  Version [INTEGER] = 1
+  IsArchived [INTEGER] = 0
+  ArchivedAtUtc [NULL] = NULL
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  HeartRateDeviceFamily [TEXT] = Polar
+  HeartRateDeviceKind [TEXT] = ChestStrap
+
+### GarminAccountLinks (rows: 0)
+
+### GarminActivityUploadAccounts (rows: 0)
+
+### GarminActivityUploadJobs (rows: 0)
+
+### GarminOAuthStates (rows: 0)
+
+### GarminSyncItems (rows: 0)
+
+### GarminWatchBindings (rows: 0)
+
+### HeartRateDeviceAssignments (rows: 1)
+-- row 0
+  Id [TEXT] = 1BCB5811-83D7-440D-9971-FDFCD213FD9F
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  DeviceEnrollmentId [TEXT] = 3C4D5E6F-7081-4923-8B4C-5D6E7F809102
+  Priority [INTEGER] = 0
+  AutoConnect [INTEGER] = 1
+  IsPreferred [INTEGER] = 1
+  Version [INTEGER] = 1
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+
+### HeartRateZones (rows: 5)
+-- row 0
+  Id [TEXT] = 3B0760B7-3E87-4CF3-A08B-09961C7FA5FD
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 5
+  Name [TEXT] = Maximum
+  MinimumBpm [INTEGER] = 171
+  MaximumBpm [INTEGER] = 190
+-- row 1
+  Id [TEXT] = A419964E-9BC6-49D5-9D4F-FE20B6A40A0F
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 1
+  Name [TEXT] = Warm up
+  MinimumBpm [INTEGER] = 95
+  MaximumBpm [INTEGER] = 113
+-- row 2
+  Id [TEXT] = B25929E0-5766-4BE8-88F2-725C360A7B4E
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 2
+  Name [TEXT] = Easy
+  MinimumBpm [INTEGER] = 114
+  MaximumBpm [INTEGER] = 132
+-- row 3
+  Id [TEXT] = C7893420-AC1D-49B7-AED0-BBB666166CA3
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Number [INTEGER] = 3
+  Name [TEXT] = Aerobic
+  MinimumBpm [INTEGER] = 133
+  MaximumBpm [INTEGER] = 151
+
+### ImportAudits (rows: 0)
+
+### LocalBackupPolicies (rows: 0)
+
+### LocalGoals (rows: 1)
+-- row 0
+  Id [TEXT] = 3612E647-3F81-450A-8F2D-F1D9CC43EA3E
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  Kind [TEXT] = Distance
+  Period [TEXT] = Weekly
+  TargetValue [REAL] = 15
+  Enabled [INTEGER] = 1
+  Version [INTEGER] = 1
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+
+### OperationReceipts (rows: 5)
+-- row 0
+  Id [TEXT] = B9489A95-71FD-446A-AF0D-3DAA7B8EE4EA
+  ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000001
+  OperationType [TEXT] = profile.create
+  RequestFingerprint [TEXT] = bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  StatusCode [INTEGER] = 200
+  OutcomeJson [TEXT] = {}
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+-- row 1
+  Id [TEXT] = F8E9B98D-921A-4B17-8CE2-6423738EE231
+  ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000002
+  OperationType [TEXT] = workout.create
+  RequestFingerprint [TEXT] = cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  StatusCode [INTEGER] = 200
+  OutcomeJson [TEXT] = {"Id":"a6c2433d-4452-4f06-b1b7-84e3bae1cab4","WorkoutId":"1a2b3c4d-5e6f-4a0b-8c1d-2e3f4a5b6c7d","RevisionNumber":1,"DefinitionJson":"{\u0022schemaVersion\u0022:1,\u0022title\u0022:\u0022Spec fixture intervals\u0022,\u0022description\u0022:\u0022Golden fixture for the rewrite spec pack.\u0022,\u0022blocks\u0022:[{\u0022kind\u0022:\u0022step\u0022,\u0022goal\u0022:{\u0022kind\u0022:\u0022time\u0022,…
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+-- row 2
+  Id [TEXT] = 8F34F83A-EF3C-4928-9116-80C418C22510
+  ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000003
+  OperationType [TEXT] = device.enroll
+  RequestFingerprint [TEXT] = dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  StatusCode [INTEGER] = 200
+  OutcomeJson [TEXT] = {}
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+-- row 3
+  Id [TEXT] = B412EBB6-3F81-479A-925D-7B2C2EC5671E
+  ClientOperationId [TEXT] = 00000000-0000-4000-8000-000000000004
+  OperationType [TEXT] = device.enroll
+  RequestFingerprint [TEXT] = eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  StatusCode [INTEGER] = 200
+  OutcomeJson [TEXT] = {}
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+
+### PolarH10RecordingSamples (rows: 0)
+
+### PolarH10Recordings (rows: 0)
+
+### PremadePlanInstallations (rows: 0)
+
+### ProgressionRecommendations (rows: 0)
+
+### RunnerExperiencePreferences (rows: 1)
+-- row 0
+  Id [TEXT] = 93C2782A-F46A-49FA-8888-795CC1E0B1C8
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  DisplayStyle [TEXT] = LargeText
+  PrimaryMetricsJson [TEXT] = [0,2,4]
+  CueStepChanges [INTEGER] = 1
+  CueHeartRateDeparture [INTEGER] = 1
+  CueHalfway [INTEGER] = 0
+  CueConnectionProblems [INTEGER] = 1
+  CueCompletion [INTEGER] = 1
+  CueVolumePercent [INTEGER] = 75
+  Version [INTEGER] = 1
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+
+### SessionEvents (rows: 9)
+-- row 0
+  Id [TEXT] = B3FE15D8-0711-4D86-A42A-3271C5BFCB85
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  OccurredAtUtc [TEXT] = 2026-09-01 06:30:00+00:00
+  Kind [TEXT] = session-warning
+  DetailsJson [TEXT] = {"code":"physical-movement-detected","message":"Physical movement detected","eventType":"session-warning","occurredAt":"2026-09-01T06:30:00+00:00"}
+-- row 1
+  Id [TEXT] = 30A83836-5685-430D-A874-DC1D6D18AAA4
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  OccurredAtUtc [TEXT] = 2026-09-01 06:30:05+00:00
+  Kind [TEXT] = workout-step-transition
+  DetailsJson [TEXT] = {"completedStepIndex":0,"currentStepIndex":1,"cue":"Fast","eventType":"workout-step-transition","occurredAt":"2026-09-01T06:30:05+00:00"}
+-- row 2
+  Id [TEXT] = 34102411-EBAA-4866-9A98-7E49FD6676DE
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  OccurredAtUtc [TEXT] = 2026-09-01 06:30:07+00:00
+  Kind [TEXT] = manual-speed-override
+  DetailsJson [TEXT] = {"expectedSpeedKph":8,"observedSpeedKph":8.5,"eventType":"manual-speed-override","occurredAt":"2026-09-01T06:30:07+00:00"}
+-- row 3
+  Id [TEXT] = 13F9AD25-8313-40B4-8EB7-17BFC475B08E
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  OccurredAtUtc [TEXT] = 2026-09-01 06:30:08.1999999+00:00
+  Kind [TEXT] = device-disconnected
+  DetailsJson [TEXT] = {"deviceRole":1,"reason":"Heart-rate telemetry became stale.","eventType":"device-disconnected","occurredAt":"2026-09-01T06:30:08.1999999+00:00"}
+
+### SessionSamples (rows: 15)
+-- row 0
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  Sequence [INTEGER] = 0
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:00+00:00
+  ElapsedMilliseconds [REAL] = 0
+  PlannedSpeedKph [REAL] = 5
+  RequestedSpeedKph [REAL] = 5
+  MeasuredSpeedKph [REAL] = 5
+  PlannedInclinePercent [REAL] = 1
+  RequestedInclinePercent [REAL] = 1
+  MeasuredInclinePercent [REAL] = 1
+  HeartRateBpm [INTEGER] = 110
+  DistanceKilometers [REAL] = 0
+  EstimatedCalories [REAL] = 0
+  TelemetryAgeMilliseconds [REAL] = 180
+  MetricAlgorithmVersion [TEXT] = estimated-calories/acsm-speed-grade-v2
+-- row 1
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  Sequence [INTEGER] = 1
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:01+00:00
+  ElapsedMilliseconds [REAL] = 1000
+  PlannedSpeedKph [REAL] = 5
+  RequestedSpeedKph [REAL] = 5
+  MeasuredSpeedKph [REAL] = 5
+  PlannedInclinePercent [REAL] = 1
+  RequestedInclinePercent [REAL] = 1
+  MeasuredInclinePercent [REAL] = 1
+  HeartRateBpm [INTEGER] = 112
+  DistanceKilometers [REAL] = 0.001388889
+  EstimatedCalories [REAL] = 0.080556
+  TelemetryAgeMilliseconds [REAL] = 190
+  MetricAlgorithmVersion [TEXT] = estimated-calories/acsm-speed-grade-v2
+-- row 2
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  Sequence [INTEGER] = 2
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:02+00:00
+  ElapsedMilliseconds [REAL] = 2000
+  PlannedSpeedKph [REAL] = 5
+  RequestedSpeedKph [REAL] = 5
+  MeasuredSpeedKph [REAL] = 5.1
+  PlannedInclinePercent [REAL] = 1
+  RequestedInclinePercent [REAL] = 1
+  MeasuredInclinePercent [REAL] = 1
+  HeartRateBpm [INTEGER] = 114
+  DistanceKilometers [REAL] = 0.002805556
+  EstimatedCalories [REAL] = 0.162299
+  TelemetryAgeMilliseconds [REAL] = 200
+  MetricAlgorithmVersion [TEXT] = estimated-calories/acsm-speed-grade-v2
+-- row 3
+  WorkoutSessionId [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  Sequence [INTEGER] = 3
+  CapturedAtUtc [TEXT] = 2026-09-01 06:30:03+00:00
+  ElapsedMilliseconds [REAL] = 3000
+  PlannedSpeedKph [REAL] = 5
+  RequestedSpeedKph [REAL] = 5
+  MeasuredSpeedKph [REAL] = 5
+  PlannedInclinePercent [REAL] = 1
+  RequestedInclinePercent [REAL] = 1
+  MeasuredInclinePercent [REAL] = 1
+  HeartRateBpm [INTEGER] = 116
+  DistanceKilometers [REAL] = 0.004194444
+  EstimatedCalories [REAL] = 0.242855
+  TelemetryAgeMilliseconds [REAL] = 180
+  MetricAlgorithmVersion [TEXT] = estimated-calories/acsm-speed-grade-v2
+
+### TrainingDaySelections (rows: 0)
+
+### TreadmillMaintenanceEvents (rows: 1)
+-- row 0
+  Id [TEXT] = 2742799F-91DC-40F8-9EB7-2C05DD3EB48D
+  TreadmillMaintenancePolicyId [TEXT] = C1ECFDEF-B3D0-4CDD-A5F9-B5B8D68F9ED6
+  OperationId [TEXT] = 00000000-0000-4000-8000-000000000005
+  PerformedAtUtc [TEXT] = 2026-08-15 09:00:00+00:00
+  AppDistanceBaselineKilometers [REAL] = 0.02675
+  Note [TEXT] = Belt lubricated
+  CreatedAtUtc [TEXT] = 2026-09-01 06:35:18+00:00
+
+### TreadmillMaintenancePolicies (rows: 1)
+-- row 0
+  Id [TEXT] = C1ECFDEF-B3D0-4CDD-A5F9-B5B8D68F9ED6
+  DeviceEnrollmentId [TEXT] = 2B3C4D5E-6F70-4812-9A3B-4C5D6E7F8091
+  IntervalMonths [INTEGER] = 3
+  DistanceIntervalKilometers [REAL] = 241
+  Version [INTEGER] = 2
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:35:18+00:00
+
+### UserProfiles (rows: 1)
+-- row 0
+  Id [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  ArchivedAtUtc [NULL] = NULL
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  DisplayName [TEXT] = Marc
+  HeartRateDecreaseCooldownSeconds [INTEGER] = 15
+  HeartRateDecreaseStepKph [REAL] = 0.5
+  HeartRateIncreaseCooldownSeconds [INTEGER] = 30
+  HeartRateIncreaseStepKph [REAL] = 0.2
+  IsArchived [INTEGER] = 0
+  MaximumHeartRateBpm [INTEGER] = 190
+  MaximumSpeedKph [REAL] = 12
+  NormalizedDisplayName [TEXT] = MARC
+  UnitSystem [TEXT] = Metric
+  UpdatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  Version [INTEGER] = 1
+  WeightKilograms [REAL] = 72.5
+
+### WorkoutProgramExtraOccurrences (rows: 0)
+
+### WorkoutProgramItemAlternatives (rows: 0)
+
+### WorkoutProgramItems (rows: 0)
+
+### WorkoutProgramRevisions (rows: 0)
+
+### WorkoutProgramRuns (rows: 0)
+
+### WorkoutProgramScheduleOverrides (rows: 0)
+
+### WorkoutPrograms (rows: 0)
+
+### WorkoutRevisions (rows: 1)
+-- row 0
+  Id [TEXT] = A6C2433D-4452-4F06-B1B7-84E3BAE1CAB4
+  WorkoutId [TEXT] = 1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D
+  RevisionNumber [INTEGER] = 1
+  DefinitionJson [TEXT] = {"schemaVersion":1,"title":"Spec fixture intervals","description":"Golden fixture for the rewrite spec pack.","blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":50000000},"speed":{"kind":"fixed","kilometersPerHour":5},"incline":{"kind":"fixed","percent":1},"cue":"Warm up","notes":null},{"kind":"repeat","repetitions":2,"blocks":[{"kind":"step","goal":{"kind":"time","durationTicks":30000…
+  ContentSha256 [TEXT] = 753dccb73e45b7930c8798f2c47ee00837936d17debda8d3657baadad1f80a6d
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+
+### WorkoutSessions (rows: 1)
+-- row 0
+  Id [TEXT] = 4D5E6F70-8192-4A34-9C5D-6E7F80910213
+  ArmedAtUtc [TEXT] = 2026-09-01 06:29:50+00:00
+  AverageHeartRateBpm [REAL] = 132.6153846153846
+  AverageInclinePercent [REAL] = 1.6071428571428572
+  AverageSpeedKph [REAL] = 6.878571428571429
+  ControllerConfigurationJson [TEXT] = {"Mode":"hardware:ftms:Ftms","HeartRateController":"shadow","Profile":{"WeightKilograms":72.5,"MaximumHeartRateBpm":190,"MaximumSpeedKph":12,"HeartRateZones":[{"Number":1,"Name":"Warm up","MinimumBpm":95,"MaximumBpm":113},{"Number":2,"Name":"Easy","MinimumBpm":114,"MaximumBpm":132},{"Number":3,"Name":"Aerobic","MinimumBpm":133,"MaximumBpm":151},{"Number":4,"Name":"Threshold","MinimumBpm":152,"Maxi…
+  DebriefNote [TEXT] = Felt controlled; legs fresh.
+  DebriefUpdatedAtUtc [TEXT] = 2026-09-01 06:32:18+00:00
+  DistanceKilometers [REAL] = 0.02675
+  DurationSeconds [REAL] = 14
+  EndedAtUtc [TEXT] = 2026-09-01 06:30:18+00:00
+  EstimatedCalories [REAL] = 2.052846
+  MaximumHeartRateBpm [INTEGER] = 156
+  MetricAlgorithmVersion [TEXT] = estimated-calories/acsm-speed-grade-v2
+  PerceivedExertion [INTEGER] = 6
+  SelectionSource [TEXT] = Library
+  SessionOrigin [TEXT] = Hardware
+  StartedAtUtc [TEXT] = 2026-09-01 06:30:00+00:00
+  State [TEXT] = Completed
+  UserProfileId [TEXT] = 0F1E2D3C-4B5A-4968-8776-A5B4C3D2E1F0
+  UserProfileName [TEXT] = Marc
+  WorkoutProgramItemId [NULL] = NULL
+  WorkoutProgramRunId [NULL] = NULL
+  WorkoutRevisionId [TEXT] = A6C2433D-4452-4F06-B1B7-84E3BAE1CAB4
+  WorkoutTitle [TEXT] = Spec fixture intervals
+  RecoveryCheckpointJson [TEXT] = {"sessionId":"4d5e6f70-8192-4a34-9c5d-6e7f80910213","savedAtUtc":"2026-09-01T06:30:18+00:00","state":2,"sessionVersion":17,"startedAtUtc":"2026-09-01T06:30:00+00:00","progression":{"currentStepIndex":1,"lastElapsed":"00:00:14","lastDistanceKilometers":0.02675,"stepStartedAtElapsed":"00:00:05","stepStartedAtDistanceKilometers":0.007583333,"progressStartedAtElapsed":"00:00:00"},"distanceKilometers":…
+  RecoveryCheckpointUpdatedAtUtc [TEXT] = 2026-09-01 06:30:18+00:00
+  ActiveSessionKey [NULL] = NULL
+  RecordPolarH10Memory [INTEGER] = 0
+
+### Workouts (rows: 1)
+-- row 0
+  Id [TEXT] = 1A2B3C4D-5E6F-4A0B-8C1D-2E3F4A5B6C7D
+  CreatedAtUtc [TEXT] = 2026-09-01 06:00:00+00:00
+  IsArchived [INTEGER] = 0
+  Kind [TEXT] = Structured
+  Name [TEXT] = Spec fixture intervals
+
+### __EFMigrationsHistory (rows: 24)
+-- row 0
+  MigrationId [TEXT] = 20260801234729_InitialPersistence
+  ProductVersion [TEXT] = 10.0.10
+-- row 1
+  MigrationId [TEXT] = 20260802155415_AddSessionHistory
+  ProductVersion [TEXT] = 10.0.10
+-- row 2
+  MigrationId [TEXT] = 20260803183715_AddDeviceEnrollments
+  ProductVersion [TEXT] = 10.0.10
+-- row 3
+  MigrationId [TEXT] = 20260803224123_AddHeartRateControllerSettings
+  ProductVersion [TEXT] = 10.0.10
+
+### __EFMigrationsLock (rows: 0)

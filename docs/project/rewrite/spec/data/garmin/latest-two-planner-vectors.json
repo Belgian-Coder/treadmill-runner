@@ -1,0 +1,85 @@
+{
+  "description": "Latest-two reconciliation planner (manual, user-confirmed repair for the most recent session only, MergeAndReplace accounts). All candidates below are treadmill_running with no heart rate. Local reference: start 2026-08-26T18:13:10Z, duration 1712 s, distance 2.67 km.",
+  "rules": {
+    "tryFindCanonicalOnly": "exactly one candidate AND it isCanonicalLocalCopy(local) => that candidate",
+    "tryCreate": [
+      "exactly 2 candidates with distinct remoteIds, else error 'Exactly two distinct Garmin treadmill activities must exist in the local session window.'",
+      "exactly one of them isCanonicalLocalCopy, else error 'The complete locally uploaded Garmin activity could not be identified uniquely.'",
+      "partial = the other one; startDelay = partial.start - local.start (s); missingDuration = local.duration - partial.duration (s); distanceDelta = partial.distance - local.distance (km)",
+      "late partial iff type treadmill_running AND 45 < startDelay <= 600 AND 45 < missingDuration <= 600 AND |missingDuration - startDelay| <= 120 AND |distanceDelta| <= 0.75, else error 'The second Garmin activity is not a bounded late-start partial copy of the local run.'",
+      "plan = keep canonical, delete partial; evidence 'Keep complete activity <keep>; remove late partial activity <delete> (start +<startDelay F0>s, duration -<missingDuration F0>s, distance delta <signed F2>km).'"
+    ],
+    "execution": "Before deleting, the partial's original FIT is downloaded and must match the retained original backup of this job (SHA-256 or strict semantic equality). Then delete; record RemoteId = MatchedRemoteId = keep. Idle runner, confirmation text 'RECONCILE LATEST TWO', operationId required."
+  },
+  "vectors": [
+    {
+      "name": "finds the single canonical activity after an uncertain delete response",
+      "call": "tryFindCanonicalOnly",
+      "candidates": [{"remoteId": "complete", "startedAtUtc": "2026-08-26T18:13:12Z", "durationSeconds": 1710, "distanceKilometers": 2.67}],
+      "expected": {"accepted": true, "canonical": "complete"},
+      "source": "planner test"
+    },
+    {
+      "name": "keeps the complete local upload and selects only the late partial watch activity",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "partial", "startedAtUtc": "2026-08-26T18:15:25Z", "durationSeconds": 1577, "distanceKilometers": 3.04},
+        {"remoteId": "complete", "startedAtUtc": "2026-08-26T18:13:12Z", "durationSeconds": 1710, "distanceKilometers": 2.67}
+      ],
+      "expected": {"accepted": true, "keep": "complete", "delete": "partial", "evidence": "Keep complete activity complete; remove late partial activity partial (start +135s, duration -135s, distance delta +0.37km)."},
+      "source": "planner test"
+    },
+    {
+      "name": "rejects any window containing more than the exact two authorized activities",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "complete", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67},
+        {"remoteId": "partial", "startedAtUtc": "2026-08-26T18:15:10Z", "durationSeconds": 1592, "distanceKilometers": 2.48},
+        {"remoteId": "older", "startedAtUtc": "2026-08-26T18:11:10Z", "durationSeconds": 1700, "distanceKilometers": 2.60}
+      ],
+      "expected": {"accepted": false, "errorContains": "Exactly two"},
+      "source": "planner test"
+    },
+    {
+      "name": "rejects deletion when the second activity is not a late partial copy",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "complete", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67},
+        {"remoteId": "unrelated", "startedAtUtc": "2026-08-26T18:15:10Z", "durationSeconds": 900, "distanceKilometers": 1.1}
+      ],
+      "expected": {"accepted": false, "errorContains": "not a bounded late-start partial"},
+      "source": "planner test"
+    },
+    {
+      "name": "rejects two canonical copies",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "a", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67},
+        {"remoteId": "b", "startedAtUtc": "2026-08-26T18:13:20Z", "durationSeconds": 1705, "distanceKilometers": 2.66}
+      ],
+      "expected": {"accepted": false, "errorContains": "could not be identified uniquely"},
+      "source": "derived"
+    },
+    {
+      "name": "rejects duplicate remote IDs",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "same", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67},
+        {"remoteId": "same", "startedAtUtc": "2026-08-26T18:15:25Z", "durationSeconds": 1577, "distanceKilometers": 3.04}
+      ],
+      "expected": {"accepted": false, "errorContains": "Exactly two"},
+      "source": "derived"
+    },
+    {
+      "name": "rejects when start delay and missing duration disagree by more than 120 s",
+      "call": "tryCreate",
+      "candidates": [
+        {"remoteId": "complete", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67},
+        {"remoteId": "partial", "startedAtUtc": "2026-08-26T18:14:10Z", "durationSeconds": 1452, "distanceKilometers": 2.5}
+      ],
+      "expected": {"accepted": false, "errorContains": "not a bounded late-start partial"},
+      "notes": "startDelay 60, missingDuration 260, difference 200",
+      "source": "derived"
+    }
+  ]
+}

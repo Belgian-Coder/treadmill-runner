@@ -1,0 +1,31 @@
+{
+  "description": "Strict FIT activity equivalence used to prove that a Garmin activity is (or is not) one of the retained FIT files before any deletion. matches(expected, candidate) = SHA-256 equal OR areEquivalent(expected, candidate). Never throws; any decode problem is 'not equivalent'.",
+  "canonicalization": [
+    "Input must be 1..16 MiB, a FIT file with a valid header and CRC, decode completely, and contain at least one message.",
+    "Exactly one FileId message and its type must be Activity (4).",
+    "Drop messages: device_info (23), developer_data_id (207), field_description (206). Developer fields are never compared.",
+    "Require at least one record (20), one session (18) and one activity (34) among the remaining messages.",
+    "For every remaining message in file order: emit message number, then its standard fields ordered by field number, each as (field number, value count, each raw decoded value with its runtime type).",
+    "Ignored fields: record field 8 (compressed_speed_distance); every FileId field except field 0 (type).",
+    "Header protocol version, header size, local message numbers, definition layout and CRC bytes are not compared."
+  ],
+  "vectors": [
+    {"name": "metadata and header rewrites are equivalent", "given": "same activity re-encoded with protocol 1.0, FileId manufacturer development/product 99/serial 987654/name 'other-device', DeviceInfo changed, developer data removed", "expected": true},
+    {"name": "record heart-rate change", "given": "one record HR 150 -> 151", "expected": false},
+    {"name": "record speed change", "given": "speed 2.5 -> 2.51 m/s", "expected": false},
+    {"name": "record distance change", "given": "distance -> 125.5 m", "expected": false},
+    {"name": "session summary change", "given": "session total_distance -> 125.5 m", "expected": false},
+    {"name": "timing change", "given": "end one second later", "expected": false},
+    {"name": "missing records", "given": "no record messages", "expected": false},
+    {"name": "missing session", "given": "no session message", "expected": false},
+    {"name": "missing activity", "given": "no activity message", "expected": false},
+    {"name": "array value count is semantic", "given": "time_in_hr_zone with 2 values vs 1 value", "expected": false},
+    {"name": "compressed_speed_distance ignored", "given": "record field 8 differs only", "expected": true},
+    {"name": "wrong file type", "given": "FileId type workout", "expected": false},
+    {"name": "bad CRC", "given": "last CRC byte flipped", "expected": false},
+    {"name": "empty input", "given": "0 bytes", "expected": false},
+    {"name": "non-FIT bytes", "given": "[1, 2, 3, 4]", "expected": false},
+    {"name": "oversized", "given": "16 MiB + 1 byte", "expected": false},
+    {"name": "null expected", "given": "null vs valid", "expected": false}
+  ]
+}

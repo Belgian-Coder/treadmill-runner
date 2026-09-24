@@ -1,0 +1,79 @@
+{
+  "description": "Watch-activity search contract (read-only). Translated from the adapter contract tests. 'pages' is what get_activities(start, limit) returns for each call in order; 'details' is what the per-activity chart parser returns. Page size is always 20; at most 10 pages.",
+  "algorithm": [
+    "localStart = parse(startedAtUtc) as UTC; missing/unparseable => failed/provider (ValueError path).",
+    "for page in 0..9: activities = listActivities(start = page*20, limit = 20).",
+    "  if activities is not a JSON array => emit failed/response (malformed) WITH the (possibly refreshed) tokenStore; stop.",
+    "  if activities is empty => window complete; stop.",
+    "  for each activity object: started = parse(startTimeGMT) as UTC (a naive value is UTC; accept 'T' or ' ' separator).",
+    "    skip if activityId missing, started missing, or |started - localStart| > 600 s.",
+    "    skip unless lower(activityType.typeKey) == 'treadmill_running'.",
+    "    fetch chart details (maxChartSize=1000, maxPolylineSize=0); on any error use no samples (summary HR may still exist).",
+    "    stride = max(1, ceil(n/200)); keep every stride-th parsed sample whose elapsed (sumElapsedDuration, else sumDuration) is numeric and bpm (directHeartRate, else heartRate) is numeric and 0 < bpm <= 255; bpm rounded to integer.",
+    "    candidate = {remoteId: str(activityId), activityType: 'treadmill_running', startedAtUtc: ISO-8601 UTC, durationSeconds: duration or 0, distanceKilometers: (distance or 0)/1000, averageHeartRate: averageHR if finite and 0<x<=255 else null (keep decimals), maximumHeartRate: maxHR rounded to integer if finite and 0<x<=255 else null, heartRateSamples}.",
+    "    if 6 candidates collected => stop collecting (6th is the overflow marker).",
+    "  if 6 candidates or this page had fewer than 20 items => window complete; stop.",
+    "  if the page's oldest parsed start < localStart - 600 s => window complete; stop (pages are newest-first).",
+    "if the loop ran out of pages without completing => emit failed/search-window-truncated WITH tokenStore.",
+    "emit confirmed {tokenStore, candidates}.",
+    "Host-side bounds (fail closed as an ambiguous read => retryable read failure): more than 5 candidates, any candidate with more than 200 HR samples, tokenStore longer than 32 768 characters, response line longer than 65 536 characters."
+  ],
+  "vectors": [
+    {
+      "name": "returns bounded treadmill summary and heart-rate curve",
+      "given": {
+        "startedAtUtc": "2026-08-05T08:00:00Z",
+        "pages": [[{"activityId": 123, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130.25, "maxHR": 155.0}]],
+        "details": "20 samples: sumElapsedDuration = s, directHeartRate = 120 + s for s in 0..19"
+      },
+      "expected": {
+        "state": "confirmed",
+        "candidates": [{"remoteId": "123", "activityType": "treadmill_running", "startedAtUtc": "2026-08-05T08:00:20+00:00", "durationSeconds": 1200.0, "distanceKilometers": 2.5, "averageHeartRate": 130.25, "maximumHeartRate": 155, "heartRateSampleCount": 20, "firstSample": {"elapsedSeconds": 0.0, "bpm": 120}, "lastSample": {"elapsedSeconds": 19.0, "bpm": 139}}],
+        "listCalls": [[0, 20]]
+      }
+    },
+    {
+      "name": "pages until the local date window",
+      "given": {
+        "startedAtUtc": "2026-08-05T08:00:00Z",
+        "pages": [
+          "20 cycling activities, ids 0..19, startTimeGMT 2026-08-05T08:MM:00 with MM = id (all inside +-10 min for ids 0..10)",
+          [{"activityId": 999, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05T08:00:20", "duration": 1200, "distance": 2500, "averageHR": 130, "maxHR": 155}]
+        ],
+        "details": "empty"
+      },
+      "expected": {"state": "confirmed", "firstCandidateRemoteId": "999", "listCalls": [[0, 20], [20, 20]]}
+    },
+    {
+      "name": "returns one overflow candidate for fail-closed detection",
+      "given": {
+        "startedAtUtc": "2026-08-05T08:00:00Z",
+        "pages": ["7 treadmill_running activities ids 1..7, all startTimeGMT 2026-08-05T08:00:20, duration 1200, distance 2500"],
+        "details": "empty"
+      },
+      "expected": {"state": "confirmed", "candidateCount": 6, "hostOutcome": "host rejects >5 candidates as an ambiguous read; no upload, no delete"}
+    },
+    {
+      "name": "fails closed for a malformed activity page",
+      "given": {"startedAtUtc": "2026-08-05T08:00:00Z", "pages": [{"activities": []}]},
+      "expected": {"state": "failed", "kind": "response", "candidatesPresent": false, "messageContains": "no upload or deletion"}
+    },
+    {
+      "name": "fails closed when the bounded page window is exhausted",
+      "given": {"startedAtUtc": "2026-08-05T08:00:00Z", "pages": "every call returns 20 cycling activities starting 2026-08-05T08:00:20"},
+      "expected": {"state": "failed", "kind": "search-window-truncated", "listCalls": [[0, 20], [20, 20], [40, 20], [60, 20], [80, 20], [100, 20], [120, 20], [140, 20], [160, 20], [180, 20]]}
+    },
+    {
+      "name": "start exactly 600 s after local start is kept; 601 s is skipped",
+      "given": {"startedAtUtc": "2026-08-05T08:00:00Z", "pages": [[{"activityId": 1, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05 08:10:00", "duration": 60, "distance": 100}, {"activityId": 2, "activityType": {"typeKey": "treadmill_running"}, "startTimeGMT": "2026-08-05 08:10:01", "duration": 60, "distance": 100}]]},
+      "expected": {"state": "confirmed", "candidateRemoteIds": ["1"]},
+      "source": "derived from the algorithm (space-separated startTimeGMT is Garmin's usual wire form)"
+    },
+    {
+      "name": "summary heart rate outside (0, 255] becomes null",
+      "given": {"startedAtUtc": "2026-08-05T08:00:00Z", "pages": [[{"activityId": 5, "activityType": {"typeKey": "TREADMILL_RUNNING"}, "startTimeGMT": "2026-08-05T08:00:00", "duration": 60, "distance": 100, "averageHR": 0, "maxHR": 300}]]},
+      "expected": {"state": "confirmed", "candidates": [{"remoteId": "5", "averageHeartRate": null, "maximumHeartRate": null}]},
+      "source": "derived from the algorithm (type key compared case-insensitively)"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "description": "Bluetooth Heart Rate Measurement (0x2A37) parse vectors and the project's validity classification. Hex is space-separated. Flags: bit0 HR is uint16 LE (else uint8); bit1 contact detected; bit2 contact supported; bit3 energy expended uint16 LE present; bit4 RR present (uint16 LE, 1/1024 s units, until end). Contact: bit2=0 -> NotSupported; bit2=1,bit1=1 -> Detected; bit2=1,bit1=0 -> NotDetected. Quality: NotDetected -> ContactLost; else 30<=bpm<=250 -> Valid; else Invalid. Only Valid values are published (others stored as null).",
+  "vectors": [
+    { "name": "uint8-72", "hex": "00 48", "expected": { "bpm": 72, "contact": "NotSupported", "energyKj": null, "rr1024": [], "rrSeconds": [], "quality": "Valid" }, "source": "parser test" },
+    { "name": "uint16-contact-energy-rr", "hex": "1F 2C 01 34 12 00 04 00 02", "expected": { "bpm": 300, "contact": "Detected", "energyKj": 4660, "rr1024": [1024, 512], "rrSeconds": [1.0, 0.5], "quality": "Invalid" }, "source": "parser test (quality derived: 300 > 250)" },
+    { "name": "uint16-72", "hex": "01 48 00", "expected": { "bpm": 72, "contact": "NotSupported", "energyKj": null, "rr1024": [], "quality": "Valid" } },
+    { "name": "contact-detected", "hex": "06 48", "expected": { "bpm": 72, "contact": "Detected", "quality": "Valid" } },
+    { "name": "contact-not-detected", "hex": "04 48", "expected": { "bpm": 72, "contact": "NotDetected", "quality": "ContactLost" } },
+    { "name": "detected-bit-without-supported-bit", "hex": "02 48", "expected": { "bpm": 72, "contact": "NotSupported", "quality": "Valid" } },
+    { "name": "contact-detected-one-rr", "hex": "16 48 00 04", "expected": { "bpm": 72, "contact": "Detected", "rr1024": [1024], "rrSeconds": [1.0], "rrMsRounded": [1000], "quality": "Valid" } },
+    { "name": "rr-1000ms-approx", "hex": "16 3C 00 04 F0 03", "expected": { "bpm": 60, "contact": "Detected", "rr1024": [1024, 1008], "rrSeconds": [1.0, 0.984375], "quality": "Valid" } },
+    { "name": "simulator-180", "hex": "00 B4", "expected": { "bpm": 180, "contact": "NotSupported", "quality": "Valid" }, "source": "simulator test" },
+    { "name": "boundary-29", "hex": "00 1D", "expected": { "bpm": 29, "quality": "Invalid" }, "source": "selector test (29 not selectable)" },
+    { "name": "boundary-30", "hex": "00 1E", "expected": { "bpm": 30, "quality": "Valid" } },
+    { "name": "boundary-250", "hex": "00 FA", "expected": { "bpm": 250, "quality": "Valid" } },
+    { "name": "boundary-251", "hex": "01 FB 00", "expected": { "bpm": 251, "quality": "Invalid" }, "source": "selector test (251 not selectable)" },
+    { "name": "zero-bpm-with-contact", "hex": "06 00", "expected": { "bpm": 0, "contact": "Detected", "quality": "Invalid" } },
+    { "name": "zero-bpm-no-contact", "hex": "04 00", "expected": { "bpm": 0, "contact": "NotDetected", "quality": "ContactLost" }, "note": "ContactLost wins over range check" }
+  ],
+  "errors": [
+    { "name": "empty", "hex": "", "expected": "FormatError: no flags byte" },
+    { "name": "uint16-truncated", "hex": "01 48", "expected": "FormatError: truncated", "source": "parser test" },
+    { "name": "energy-truncated", "hex": "08 48 01", "expected": "FormatError: truncated", "source": "parser test" },
+    { "name": "rr-odd-length", "hex": "10 48 01", "expected": "FormatError: truncated RR", "source": "parser test" },
+    { "name": "rr-flag-without-rr-bytes", "hex": "10 48", "expected": "FormatError: truncated RR" },
+    { "name": "undeclared-trailing-bytes", "hex": "00 48 00", "expected": "FormatError: bytes not declared by flags" }
+  ],
+  "battery": {
+    "description": "Battery Level 0x2A19 in Battery Service 0x180F: exactly one byte 0..100. Anything else is ignored (no update).",
+    "vectors": [
+      { "hex": "64", "expected": 100 },
+      { "hex": "00", "expected": 0 },
+      { "hex": "32", "expected": 50 },
+      { "hex": "65", "expected": "ignored (>100)" },
+      { "hex": "", "expected": "ignored (empty)" },
+      { "hex": "32 00", "expected": "ignored (length != 1)" }
+    ]
+  },
+  "freshness": {
+    "description": "A source is selectable only when state=Ready, quality=Valid, 30<=bpm<=250, and 0 <= (now - observedAt) <= 5 s (inclusive).",
+    "vectors": [
+      { "ageSeconds": 0, "selectable": true },
+      { "ageSeconds": 5, "selectable": true, "source": "selector test: five-second boundary is fresh" },
+      { "ageSeconds": 5.001, "selectable": false },
+      { "ageSeconds": -0.001, "selectable": false, "note": "future timestamp" }
+    ]
+  }
+}

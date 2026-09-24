@@ -1,0 +1,146 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "ftms-treadmill-data",
+  "characteristic": "0x2ACD Treadmill Data (service 0x1826), notify",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Expected objects list ONLY fields that are present; every absent key means 'field not present in this notification' (null), never zero.",
+    "Parser rules: flags uint16 LE; any reserved flag bit 13-15 set -> reject; every flag-indicated field must fit; after the last field the offset must equal the payload length exactly (no trailing bytes) -> otherwise reject.",
+    "Pace fields are carried as the raw uint16 (legacy app labels them seconds per 500 m). See 08 \u00a74.3 note on the SIG definition; no Omega Z capture has shown these flags."
+  ],
+  "parse": [
+    {
+      "source": "legacy-test",
+      "name": "instantaneous_speed_and_signed_inclination",
+      "hex": "08003903F1FF1700",
+      "expected": {
+        "flags": 8,
+        "instantaneousSpeedKph": 8.25,
+        "inclinationPercent": -1.5,
+        "rampAngleDegrees": 2.3
+      }
+    },
+    {
+      "source": "legacy-test",
+      "name": "skips_optional_fields_before_inclination",
+      "hex": "0E002003100334120019000000",
+      "expected": {
+        "flags": 14,
+        "instantaneousSpeedKph": 8.0,
+        "averageSpeedKph": 7.84,
+        "totalDistanceMeters": 4660,
+        "inclinationPercent": 2.5,
+        "rampAngleDegrees": 0.0
+      },
+      "note": "legacy test asserts only speed 8.0 and inclination 2.5; the other values are what the same algorithm yields"
+    },
+    {
+      "source": "legacy-test",
+      "name": "more_data_record_carries_inclination_without_speed",
+      "hex": "09000F000000",
+      "expected": {
+        "flags": 9,
+        "inclinationPercent": 1.5,
+        "rampAngleDegrees": 0.0
+      }
+    },
+    {
+      "source": "legacy-test",
+      "name": "all_standard_read_only_fields",
+      "hex": "FE1F100E200E3412000A00140064003200780090002C0158020A90322C013C00F4012C01",
+      "expected": {
+        "flags": 8190,
+        "instantaneousSpeedKph": 36.0,
+        "averageSpeedKph": 36.16,
+        "totalDistanceMeters": 4660,
+        "inclinationPercent": 1.0,
+        "rampAngleDegrees": 2.0,
+        "positiveElevationGainMeters": 10.0,
+        "negativeElevationGainMeters": 5.0,
+        "instantaneousPaceRaw": 120,
+        "averagePaceRaw": 144,
+        "totalEnergyKcal": 300,
+        "energyPerHourKcal": 600,
+        "energyPerMinuteKcal": 10,
+        "heartRateBpm": 144,
+        "metabolicEquivalent": 5.0,
+        "elapsedTimeSeconds": 300,
+        "remainingTimeSeconds": 60,
+        "forceNewtons": 500,
+        "powerWatts": 300
+      }
+    },
+    {
+      "source": "synthetic",
+      "name": "stopped_speed_and_incline_like_omega_stage2",
+      "hex": "0800000000000000",
+      "expected": {
+        "flags": 8,
+        "instantaneousSpeedKph": 0.0,
+        "inclinationPercent": 0.0,
+        "rampAngleDegrees": 0.0
+      },
+      "note": "Shape assumed; Stage 2 recorded only the decoded values 0.0 km/h and 0.0 %, not raw bytes or flags."
+    },
+    {
+      "source": "synthetic",
+      "name": "speed_only_zero",
+      "hex": "00000000",
+      "expected": {
+        "flags": 0,
+        "instantaneousSpeedKph": 0.0
+      }
+    },
+    {
+      "source": "synthetic",
+      "name": "more_data_with_no_fields_parses_but_carries_nothing",
+      "hex": "0100",
+      "expected": {
+        "flags": 1
+      },
+      "note": "Parser succeeds with every field null; telemetry ingestion must IGNORE such a notification (it refreshes no timestamp)."
+    },
+    {
+      "source": "synthetic",
+      "name": "speed_and_total_distance_uint24",
+      "hex": "04001E00E80300",
+      "expected": {
+        "flags": 4,
+        "instantaneousSpeedKph": 0.3,
+        "totalDistanceMeters": 1000
+      }
+    }
+  ],
+  "rejects": [
+    {
+      "source": "legacy-test",
+      "hex": "080039",
+      "reason": "truncated instantaneous speed / inclination"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "00200000",
+      "reason": "reserved flag bit 13 set"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "0000390300",
+      "reason": "one trailing byte after the last field"
+    },
+    {
+      "source": "synthetic",
+      "hex": "",
+      "reason": "shorter than the 2-byte flags field"
+    },
+    {
+      "source": "synthetic",
+      "hex": "08",
+      "reason": "shorter than the 2-byte flags field"
+    },
+    {
+      "source": "synthetic",
+      "hex": "080000000000",
+      "reason": "inclination present but ramp angle truncated"
+    }
+  ]
+}

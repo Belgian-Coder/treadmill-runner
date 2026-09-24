@@ -1,0 +1,276 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "ftms-control-point",
+  "characteristic": "0x2AD9 Fitness Machine Control Point (service 0x1826)",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Speed parameter: uint16 little-endian, 0.01 km/h, value = roundHalfAwayFromZero(kph*100). Valid input: finite, 0 <= kph <= 655.35.",
+    "Inclination parameter: sint16 little-endian, 0.1 %, value = roundHalfAwayFromZero(percent*10). Valid input: finite, -3276.8 <= percent <= 3276.7.",
+    "Response indication/notification: exactly 3 bytes 80 <requestOpcode> <resultCode>. requestOpcode must be one of 00,02,03,07,08 (the opcodes this app knows); resultCode must be 01..05. Anything else is unparseable (treated as an invalid response)."
+  ],
+  "encode": [
+    {
+      "source": "legacy-test",
+      "operation": "RequestControl",
+      "expectedHex": "00"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "StartOrResume",
+      "expectedHex": "07"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Stop",
+      "expectedHex": "0801"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Pause",
+      "expectedHex": "0802",
+      "note": "Encoded for completeness only. The raw FTMS Pause is NEVER sent by the app (Pause = Stop 0801)."
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetSpeed",
+      "inputKph": 1.0,
+      "expectedHex": "026400"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetInclination",
+      "inputPercent": 2.5,
+      "expectedHex": "031900"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetSpeed",
+      "inputKph": 0.8,
+      "expectedHex": "025000"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetSpeed",
+      "inputKph": 1.2,
+      "expectedHex": "027800"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetSpeed",
+      "inputKph": 1.5,
+      "expectedHex": "029600"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetSpeed",
+      "inputKph": 20.0,
+      "expectedHex": "02D007"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetSpeed",
+      "inputKph": 0.0,
+      "expectedHex": "020000"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": 0.0,
+      "expectedHex": "030000"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": 0.1,
+      "expectedHex": "030100"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": 0.5,
+      "expectedHex": "030500"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": 1.0,
+      "expectedHex": "030A00"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": 12.0,
+      "expectedHex": "037800"
+    },
+    {
+      "source": "derived",
+      "operation": "SetTargetInclination",
+      "inputPercent": -1.5,
+      "expectedHex": "03F1FF"
+    }
+  ],
+  "encodeRejects": [
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetSpeed",
+      "input": "NaN"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetSpeed",
+      "input": "+Infinity"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetSpeed",
+      "input": -0.1
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetSpeed",
+      "input": 655.36
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetInclination",
+      "input": "NaN"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetInclination",
+      "input": "+Infinity"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetInclination",
+      "input": -3276.9
+    },
+    {
+      "source": "legacy-test",
+      "operation": "SetTargetInclination",
+      "input": 3276.8
+    }
+  ],
+  "parseResponse": [
+    {
+      "source": "legacy-test",
+      "hex": "800001",
+      "expected": {
+        "requestOpcode": "RequestControl",
+        "resultCode": "Success",
+        "isSuccess": true
+      }
+    },
+    {
+      "source": "legacy-test",
+      "hex": "800705",
+      "expected": {
+        "requestOpcode": "StartOrResume",
+        "resultCode": "ControlNotPermitted",
+        "isSuccess": false
+      }
+    },
+    {
+      "source": "legacy-test",
+      "hex": "800804",
+      "expected": {
+        "requestOpcode": "StopOrPause",
+        "resultCode": "OperationFailed",
+        "isSuccess": false
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "800201",
+      "expected": {
+        "requestOpcode": "SetTargetSpeed",
+        "resultCode": "Success",
+        "isSuccess": true
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "800303",
+      "expected": {
+        "requestOpcode": "SetTargetInclination",
+        "resultCode": "InvalidParameter",
+        "isSuccess": false
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "800702",
+      "expected": {
+        "requestOpcode": "StartOrResume",
+        "resultCode": "OpCodeNotSupported",
+        "isSuccess": false
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "800801",
+      "expected": {
+        "requestOpcode": "StopOrPause",
+        "resultCode": "Success",
+        "isSuccess": true
+      }
+    }
+  ],
+  "parseResponseRejects": [
+    {
+      "source": "legacy-test",
+      "hex": "",
+      "reason": "empty"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "8000",
+      "reason": "too short"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "810001",
+      "reason": "first byte is not 0x80"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "800000",
+      "reason": "result code 0x00 undefined"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "800006",
+      "reason": "result code 0x06 undefined"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "80000100",
+      "reason": "too long (must be exactly 3 bytes)"
+    },
+    {
+      "source": "derived",
+      "hex": "808001",
+      "reason": "request opcode 0x80 is the response opcode itself"
+    },
+    {
+      "source": "derived",
+      "hex": "800101",
+      "reason": "request opcode 0x01 (Reset) is not an opcode this app uses"
+    }
+  ],
+  "resultCodes": {
+    "01": "Success",
+    "02": "OpCodeNotSupported",
+    "03": "InvalidParameter",
+    "04": "OperationFailed",
+    "05": "ControlNotPermitted"
+  },
+  "opcodes": {
+    "00": "RequestControl",
+    "02": "SetTargetSpeed",
+    "03": "SetTargetInclination",
+    "07": "StartOrResume",
+    "08": "StopOrPause",
+    "80": "ResponseCode"
+  }
+}

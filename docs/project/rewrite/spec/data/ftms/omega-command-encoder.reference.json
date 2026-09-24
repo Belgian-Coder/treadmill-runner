@@ -1,0 +1,63 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "omega-command-encoder",
+  "status": "REFERENCE-ONLY-NOT-PORTED",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "The Android app MUST NOT write to 0xFFF3 or any vendor characteristic. These vectors document the legacy encoder so its CRC placement is understood; they are never used to build a command path.",
+    "Frame: 55 AA 00 00 03 <cmd> <lenLo> <lenHi> <crcLo> <crcHi> <payload> 0D 0A, CRC-CCITT(0xFFFF) over the payload only.",
+    "Speed cmd 05 payload = uint16 LE round(kph*10), then 01. Incline cmd 06 payload = round(percent*10) (one byte), then 00. No Start/Resume encoder exists (deliberately)."
+  ],
+  "encode": [
+    {
+      "source": "legacy-test",
+      "operation": "Speed",
+      "inputKph": 10.0,
+      "expectedHex": "55AA000003050300169B6400010D0A"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Incline",
+      "inputPercent": 5.0,
+      "expectedHex": "55AA000003060200F87E32000D0A"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Pause",
+      "expectedHex": "55AA00000303000000000D0A"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Stop",
+      "expectedHex": "55AA00000214000000000D0A"
+    },
+    {
+      "source": "evidence-reference",
+      "operation": "ParagonInitStep1",
+      "expectedHex": "55AA00000220000000000D0A",
+      "note": "from upstream research notes; never sent by this project"
+    }
+  ],
+  "encodeRejects": [
+    {
+      "source": "legacy-test",
+      "operation": "Speed",
+      "input": "NaN"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Speed",
+      "input": "+Infinity"
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Speed",
+      "input": -0.1
+    },
+    {
+      "source": "legacy-test",
+      "operation": "Speed",
+      "input": 6553.6
+    }
+  ]
+}

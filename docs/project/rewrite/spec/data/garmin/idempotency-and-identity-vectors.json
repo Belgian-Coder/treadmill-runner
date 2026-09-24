@@ -1,0 +1,29 @@
+{
+  "description": "Deterministic identifiers used by the Garmin upload feature. GUIDs are rendered lower-case, hyphenated (36 characters). Hashes are lower-case hex SHA-256 over the UTF-8 bytes of the key material.",
+  "idempotencyKey": {
+    "normal": "sha256(\"garmin-fit-v1|\" + profileId + \"|\" + sessionId)",
+    "syntheticTest": "sha256(\"garmin-fit-test-v1|\" + profileId + \"|\" + sessionId)",
+    "notes": "Unique per job, and jobs are also unique per session. The key is local only: Garmin's import endpoint has no idempotency header, so duplicate protection comes from the job state machine, not from Garmin. Migrated jobs keep their stored key verbatim.",
+    "vectors": [
+      {"material": "garmin-fit-v1|aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee|11111111-2222-3333-4444-555555555555", "sha256": "27814cf7bac480c03e2adb7e01feb62cb5fdf0894d5aeb359691ace08f8da64a"},
+      {"material": "garmin-fit-test-v1|aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee|11111111-2222-3333-4444-555555555555", "sha256": "9785e90d43f18e0031e97cb0097da5bc4fdd3f04e2fc11aa29953c9d93703b2f"},
+      {"material": "garmin-fit-v1|00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000002", "sha256": "23f3123542e68a6026f0096b59426c821479f1eb3070a0d9a56d752cbb107f95"},
+      {"material": "garmin-fit-test-v1|00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000002", "sha256": "aa373dbd434b4fdc13c28567482afca31ae9510eeb0982f85beb3083458bf7ff"}
+    ]
+  },
+  "fitSerialNumbers": {
+    "sessionSerial": "uint32 parsed from the first 8 hex digits of the session UUID (this equals the .NET little-endian read of Guid.ToByteArray()[0..3]).",
+    "appOnlyFileIdSerial": "sessionSerial",
+    "mergedFileIdSerial": "watchFileIdSerial XOR sessionSerial XOR 0x4D455247 ('MERG'); if the result equals watchFileIdSerial, XOR it with 1. A missing watch serial counts as 0.",
+    "vectors": [
+      {"sessionId": "11111111-2222-3333-4444-555555555555", "sessionSerial": 286331153},
+      {"sessionId": "11111111-2222-3333-4444-555555555555", "watchSerial": 123456, "mergedSerial": 1549115670, "mergedSerialHex": "0x5c55a116"}
+    ]
+  },
+  "watchPairingToken": {
+    "token": "base64url (no padding) of 32 random bytes => 43 characters",
+    "stored": "lower-case hex SHA-256 of the UTF-8 token string (64 characters), unique across bindings",
+    "statusEndpointAccepts": "Authorization: Bearer <token>, token length 20..128 after trimming"
+  },
+  "requestFingerprint": "User-initiated Garmin operations (test activity, acknowledge found, confirm absent, reprocess merge, historical recovery) carry a client-generated operationId. The server stores a receipt keyed by operationId with a 64-hex fingerprint of the request scope (profileId, jobId or sessionId, action). Same operationId + same fingerprint => replay the stored outcome; same operationId + different fingerprint => 409 'That operation ID was already used for a different request.'"
+}

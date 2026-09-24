@@ -1,0 +1,900 @@
+{
+  "schema": "treadmillrunner.premade-template/1",
+  "id": "10k-maintenance",
+  "version": "1.0.0",
+  "name": "10K Maintenance",
+  "description": "A repeatable four-week plan for maintaining a 10K routine.",
+  "goal": "10K",
+  "experience": "Intermediate",
+  "weeks": 4,
+  "sessionsPerWeek": 3,
+  "repeatable": true,
+  "requiresHeartRate": false,
+  "tags": [
+    "10k",
+    "maintenance"
+  ],
+  "sessionCount": 12,
+  "variantCount": 12,
+  "uniqueDefinitionCount": 12,
+  "heartRateZoneReferences": [],
+  "maximumDurationMinutes": 55,
+  "maximumSpeedKph": 9,
+  "maximumInclinePercent": 1,
+  "sourceContentSha256": null,
+  "contentSha256": "e3db824e7552014a0f9a423fb567eb7b71e948ce7ab8591918d19b011cebd409",
+  "phases": [
+    {
+      "name": "Maintenance cycle",
+      "firstWeek": 1,
+      "lastWeek": 4,
+      "sessionCount": 12
+    }
+  ],
+  "sessions": [
+    {
+      "position": 1,
+      "weekNumber": 1,
+      "sessionNumber": 1,
+      "phase": "Maintenance cycle",
+      "workoutKey": "easy-28-7.0-1.0-fixed",
+      "workoutName": "Easy 28 min",
+      "durationMinutes": 28,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "d51a1012df55f16130dbfb83d3cbd59f19c3730c2d05fa5d321cd64b1bf1bb9e",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 28 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 2,
+      "weekNumber": 1,
+      "sessionNumber": 2,
+      "phase": "Maintenance cycle",
+      "workoutKey": "quality-32-9.0-1.0-fixed",
+      "workoutName": "Quality 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "63a980e10329739d7a610a7be9e6d5837e22dc57ad68b7dd77abee1a4476a72d",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 32 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 3,
+      "weekNumber": 1,
+      "sessionNumber": 3,
+      "phase": "Maintenance cycle",
+      "workoutKey": "long-32-7.5-1.0-fixed",
+      "workoutName": "Long 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "80469a3e2a4b144bc9bce2849496dc72942b73c9845d338e6c864e6159fdca0b",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 32 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 4,
+      "weekNumber": 2,
+      "sessionNumber": 1,
+      "phase": "Maintenance cycle",
+      "workoutKey": "easy-36-7.5-1.0-fixed",
+      "workoutName": "Easy 36 min",
+      "durationMinutes": 36,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "a2e928c3d3a19b7871d516e28151c0230f87379aec8a68faaadb9b79a387fb72",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 36 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 5,
+      "weekNumber": 2,
+      "sessionNumber": 2,
+      "phase": "Maintenance cycle",
+      "workoutKey": "quality-40-9.0-1.0-fixed",
+      "workoutName": "Quality 40 min",
+      "durationMinutes": 40,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "8b496aba4ec7a6c323c436892eccf40697ba3cb1c09c9d5fafffa3efbf367926",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 40 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 6,
+      "weekNumber": 2,
+      "sessionNumber": 3,
+      "phase": "Maintenance cycle",
+      "workoutKey": "long-40-8.0-1.0-fixed",
+      "workoutName": "Long 40 min",
+      "durationMinutes": 40,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "5ecc2697579f7b2c36935d9c149eb99628604b6dc6e98f11d9886b0e950215ed",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 40 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 7,
+      "weekNumber": 3,
+      "sessionNumber": 1,
+      "phase": "Maintenance cycle",
+      "workoutKey": "easy-43-8.5-1.0-fixed",
+      "workoutName": "Easy 43 min",
+      "durationMinutes": 43,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "cb4f6391c01c444f4b5836e8e09f36fd1319e6e7c4e870da8d2f81e3a8ab15b9",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 43 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 8,
+      "weekNumber": 3,
+      "sessionNumber": 2,
+      "phase": "Maintenance cycle",
+      "workoutKey": "quality-47-9.0-1.0-fixed",
+      "workoutName": "Quality 47 min",
+      "durationMinutes": 47,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "cead5b2e409e1384cc398a73ea308614e997cbd2aed36900310562fa7527ce36",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 47 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 9,
+      "weekNumber": 3,
+      "sessionNumber": 3,
+      "phase": "Maintenance cycle",
+      "workoutKey": "long-47-8.5-1.0-fixed",
+      "workoutName": "Long 47 min",
+      "durationMinutes": 47,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "b4174678807510b9917f75ae1b7fdd6ef21abaf9b77b05beea6a473a5a63c101",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 47 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 10,
+      "weekNumber": 4,
+      "sessionNumber": 1,
+      "phase": "Maintenance cycle",
+      "workoutKey": "easy-51-9.0-1.0-fixed",
+      "workoutName": "Easy 51 min",
+      "durationMinutes": 51,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "90544ad82f552f6b293448c6eae326ef275ab10bb4d3b1b48600aa88ae379bd6",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 51 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 22200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 11,
+      "weekNumber": 4,
+      "sessionNumber": 2,
+      "phase": "Maintenance cycle",
+      "workoutKey": "quality-55-9.0-1.0-fixed",
+      "workoutName": "Quality 55 min",
+      "durationMinutes": 55,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "f578a6b18d04fa8a648a76606bf6aa342fa6822850c51f90bfea2ae1520ce82c",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 55 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 24600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 12,
+      "weekNumber": 4,
+      "sessionNumber": 3,
+      "phase": "Maintenance cycle",
+      "workoutKey": "long-55-9.0-1.0-fixed",
+      "workoutName": "Long 55 min",
+      "durationMinutes": 55,
+      "targetSpeedKph": 9,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "048d5bc74e3cd712ccedb37eb557ef3975a9bf9ad779cd5de499c0c74afebb08",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 55 min",
+        "description": "Premade plan workout · Maintenance cycle",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 24600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 9
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    }
+  ]
+}

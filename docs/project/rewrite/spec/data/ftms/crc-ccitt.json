@@ -1,0 +1,37 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "crc-ccitt",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no final XOR, MSB-first.",
+    "Omega frames carry the CRC least-significant byte first."
+  ],
+  "vectors": [
+    {
+      "source": "legacy-test",
+      "asciiInput": "123456789",
+      "hex": "313233343536373839",
+      "expected": "29B1"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "640001",
+      "expected": "9B16"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "3200",
+      "expected": "7EF8"
+    },
+    {
+      "source": "derived",
+      "hex": "",
+      "expected": "FFFF"
+    },
+    {
+      "source": "derived",
+      "hex": "00",
+      "expected": "E1F0"
+    }
+  ]
+}

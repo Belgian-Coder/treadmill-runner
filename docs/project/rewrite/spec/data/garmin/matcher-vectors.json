@@ -1,0 +1,149 @@
+{
+  "description": "Watch-activity matcher vectors. 'local' is the match reference built from the completed session (start = session start UTC, durationSeconds = timer duration excluding pauses, distanceKilometers = session distance). Candidates come from the search contract. Heart rate is carried in both but is NOT used by the current matcher (see 11-garmin.md section 6.2).",
+  "rules": {
+    "isPlausibleShape": [
+      "lower(candidate.activityType) == 'treadmill_running'",
+      "|candidate.start - local.start| <= 600 s (inclusive)",
+      "|candidate.duration - local.duration| <= max(180 s, 0.15 * local.duration) (inclusive)",
+      "distance is evidence only and never vetoes"
+    ],
+    "match": [
+      "plausible = candidates filtered by isPlausibleShape",
+      "0 => None, evidence 'No Garmin treadmill activity has a close start, duration, and distance.'",
+      ">1 => Multiple, candidate null, evidence '<n> Garmin treadmill activities are plausible; normal upload remains enabled.' (the worker turns this into ReviewRequired)",
+      "1 => Single with evidence 'One watch activity matched by treadmill shape: start <|dStart| F0>s, duration <|dDuration| F0>s, distance <|dDistance| F2>km; local Polar heart rate remains authoritative'"
+    ],
+    "isCanonicalLocalCopy": [
+      "lower(activityType) == 'treadmill_running'",
+      "|dStart| <= 45 s, |dDuration| <= 45 s, |dDistance| <= 0.08 km (all inclusive)"
+    ]
+  },
+  "matchVectors": [
+    {
+      "name": "selects one treadmill activity with close shape",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10, "averageHeartRate": 136, "maximumHeartRate": 161},
+      "candidates": [{"remoteId": "24064793770", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:45:15Z", "durationSeconds": 2091, "distanceKilometers": 3.10, "averageHeartRate": 136, "maximumHeartRate": 161}],
+      "expected": {"disposition": "Single", "remoteId": "24064793770", "evidence": "One watch activity matched by treadmill shape: start 120s, duration 81s, distance 0.00km; local Polar heart rate remains authoritative"},
+      "source": "matcher test"
+    },
+    {
+      "name": "more than one plausible activity is left for manual review",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10},
+      "candidates": [
+        {"remoteId": "one", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:44:15Z", "durationSeconds": 2050, "distanceKilometers": 3.08},
+        {"remoteId": "two", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:46:15Z", "durationSeconds": 2100, "distanceKilometers": 3.12}
+      ],
+      "expected": {"disposition": "Multiple", "remoteId": null, "evidence": "2 Garmin treadmill activities are plausible; normal upload remains enabled."},
+      "source": "matcher test"
+    },
+    {
+      "name": "rejects a candidate outside the ten-minute start window",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10},
+      "candidates": [{"remoteId": "late", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:54:15Z", "durationSeconds": 2091, "distanceKilometers": 3.10}],
+      "expected": {"disposition": "None", "remoteId": null},
+      "source": "matcher test"
+    },
+    {
+      "name": "unique treadmill shape matches without local heart rate",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10, "averageHeartRate": null, "maximumHeartRate": null, "heartRateSamples": []},
+      "candidates": [{"remoteId": "review", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:45:15Z", "durationSeconds": 2091, "distanceKilometers": 3.10, "averageHeartRate": 136, "maximumHeartRate": 161}],
+      "expected": {"disposition": "Single", "remoteId": "review", "evidenceContains": "treadmill shape"},
+      "source": "matcher test"
+    },
+    {
+      "name": "unique treadmill shape matches without watch heart rate",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10, "averageHeartRate": 136, "maximumHeartRate": 161},
+      "candidates": [{"remoteId": "watch-no-hr", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10, "averageHeartRate": null, "maximumHeartRate": null, "heartRateSamples": []}],
+      "expected": {"disposition": "Single", "remoteId": "watch-no-hr", "evidence": "One watch activity matched by treadmill shape: start 0s, duration 0s, distance 0.00km; local Polar heart rate remains authoritative"},
+      "source": "matcher test"
+    },
+    {
+      "name": "unique treadmill shape matches despite large watch heart-rate deviation",
+      "local": {"startedAtUtc": "2026-08-21T18:43:15Z", "durationSeconds": 2010, "distanceKilometers": 3.10, "averageHeartRate": 136, "maximumHeartRate": 161},
+      "candidates": [{"remoteId": "watch-different-hr", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:46:15Z", "durationSeconds": 1830, "distanceKilometers": 3.08, "averageHeartRate": 95, "maximumHeartRate": 110}],
+      "expected": {"disposition": "Single", "remoteId": "watch-different-hr", "evidence": "One watch activity matched by treadmill shape: start 180s, duration 180s, distance 0.02km; local Polar heart rate remains authoritative"},
+      "notes": "duration delta 180 s; the limit here is max(180, 0.15 * 2010) = 301.5 s",
+      "source": "matcher test"
+    },
+    {
+      "name": "late watch start matches even when indoor watch distance deviates",
+      "local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.6706, "averageHeartRate": 124, "maximumHeartRate": 153},
+      "candidates": [{"remoteId": "24127800106", "activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:15:34Z", "durationSeconds": 1576.743, "distanceKilometers": 3.03929, "averageHeartRate": 126, "maximumHeartRate": 153}],
+      "expected": {"disposition": "Single", "remoteId": "24127800106", "evidence": "One watch activity matched by treadmill shape: start 144s, duration 135s, distance 0.37km; local Polar heart rate remains authoritative"},
+      "source": "matcher test"
+    },
+    {
+      "name": "boundary: start exactly 600 s is plausible",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [{"remoteId": "b1", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:10:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0}],
+      "expected": {"disposition": "Single", "remoteId": "b1"},
+      "source": "derived boundary"
+    },
+    {
+      "name": "boundary: start 601 s is not plausible",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [{"remoteId": "b2", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:10:01Z", "durationSeconds": 1800, "distanceKilometers": 3.0}],
+      "expected": {"disposition": "None"},
+      "source": "derived boundary"
+    },
+    {
+      "name": "boundary: short run uses the 180 s floor (inclusive)",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 600, "distanceKilometers": 1.0},
+      "candidates": [{"remoteId": "b3", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 780, "distanceKilometers": 1.0}],
+      "expected": {"disposition": "Single", "remoteId": "b3"},
+      "source": "derived boundary"
+    },
+    {
+      "name": "boundary: short run 181 s longer is not plausible",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 600, "distanceKilometers": 1.0},
+      "candidates": [{"remoteId": "b4", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 781, "distanceKilometers": 1.0}],
+      "expected": {"disposition": "None"},
+      "source": "derived boundary"
+    },
+    {
+      "name": "boundary: long run uses 15 percent (inclusive)",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 4000, "distanceKilometers": 10.0},
+      "candidates": [{"remoteId": "b5", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 3400, "distanceKilometers": 10.0}],
+      "expected": {"disposition": "Single", "remoteId": "b5"},
+      "source": "derived boundary (limit 600 s)"
+    },
+    {
+      "name": "distance never vetoes",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [{"remoteId": "b6", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 9.0}],
+      "expected": {"disposition": "Single", "remoteId": "b6", "evidence": "One watch activity matched by treadmill shape: start 0s, duration 0s, distance 6.00km; local Polar heart rate remains authoritative"},
+      "source": "derived"
+    },
+    {
+      "name": "non-treadmill type is ignored",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [{"remoteId": "b7", "activityType": "running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0}],
+      "expected": {"disposition": "None"},
+      "source": "derived"
+    },
+    {
+      "name": "type comparison is case-insensitive",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [{"remoteId": "b8", "activityType": "Treadmill_Running", "startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0}],
+      "expected": {"disposition": "Single", "remoteId": "b8"},
+      "source": "derived"
+    },
+    {
+      "name": "one plausible plus one implausible is Single",
+      "local": {"startedAtUtc": "2026-08-21T18:00:00Z", "durationSeconds": 1800, "distanceKilometers": 3.0},
+      "candidates": [
+        {"remoteId": "near", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:01:00Z", "durationSeconds": 1750, "distanceKilometers": 3.0},
+        {"remoteId": "short", "activityType": "treadmill_running", "startedAtUtc": "2026-08-21T18:05:00Z", "durationSeconds": 600, "distanceKilometers": 1.0}
+      ],
+      "expected": {"disposition": "Single", "remoteId": "near"},
+      "source": "derived"
+    }
+  ],
+  "canonicalLocalCopyVectors": [
+    {"local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "candidate": {"activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:13:12Z", "durationSeconds": 1710, "distanceKilometers": 2.67}, "expected": true, "source": "planner test"},
+    {"local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "candidate": {"activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:13:55Z", "durationSeconds": 1757, "distanceKilometers": 2.74}, "expected": true, "source": "derived boundary (start and duration exactly 45 s, inclusive; distance 0.07 km. Do not build float vectors at exactly 0.08 km: 2.75 - 2.67 evaluates to 0.08000000000000007 in IEEE doubles)"},
+    {"local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "candidate": {"activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:13:56Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "expected": false, "source": "derived boundary"},
+    {"local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "candidate": {"activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:15:25Z", "durationSeconds": 1577, "distanceKilometers": 3.04}, "expected": false, "source": "planner test (late partial)"},
+    {"local": {"startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.67}, "candidate": {"activityType": "treadmill_running", "startedAtUtc": "2026-08-26T18:13:10Z", "durationSeconds": 1712, "distanceKilometers": 2.76}, "expected": false, "source": "derived (distance 0.09 km)"}
+  ]
+}

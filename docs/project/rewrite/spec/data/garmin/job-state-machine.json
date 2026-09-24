@@ -1,0 +1,86 @@
+{
+  "description": "Garmin activity upload job: statuses, operation phases, lease classes, timers and transitions. Status and phase strings are persisted verbatim and must round-trip through backup/migration.",
+  "statuses": {
+    "Pending": "Waiting for AvailableAtUtc; leasable when AttemptCount < 3, account enabled + Connected, and no unsettled H10 recording for the session.",
+    "InFlight": "Leased by one worker until LeaseExpiresAtUtc (lease = 2 minutes).",
+    "Confirmed": "Terminal success. Phase 'Upload' for a plain upload or a completed merge; 'UndoComplete' after Undo merge.",
+    "FoundInGarmin": "Terminal. PreferWatch strong match (FailureKind 'watch-match', AcknowledgedAtUtc set), or user acknowledgment of an Unknown job.",
+    "ReviewRequired": "Terminal until the user acts. Phase 'Review', FailureKind 'review-required'. Never retried automatically or by the normal retry action.",
+    "Failed": "Known failure. CanRetry only for FailureKind provider | provider-unavailable | duplicate, or merge-source while phase WatchSearch and no remote IDs. Authentication failures need reconnect and are dismiss-only.",
+    "Unknown": "A mutation may have reached Garmin. Never retried automatically or by the normal retry action.",
+    "Dismissed": "Terminal, user-dismissed (from Failed, Unknown or ReviewRequired)."
+  },
+  "phases": {
+    "readOnly": ["WatchSearch", "VerifyResync", "ResolveReplacement", "EnsureReplacement", "DeleteReplacementDuplicates", "ResolveOriginal", "ResolveRestoredOriginal", "ResolveLocalSource", "ResolveRestoredLocal", "DeleteGeneratedCopies"],
+    "mutation": ["Upload", "ReplacementUpload", "RestoreOriginal", "RestoreLocal", "DeleteReplacementDuplicate", "DeleteGeneratedCopy", "DeleteOriginal", "DeleteResyncedOriginal"],
+    "terminalMarkers": ["Review", "UndoComplete"],
+    "notes": "A read-only phase may still end in a mutation, but only after persisting a switch to the matching mutation phase under the current lease (compare-and-set on LeaseExpiresAtUtc). DeleteOriginal is entered as a pending phase, so an expired DeleteOriginal lease becomes Unknown even if the delete was never sent (conservative)."
+  },
+  "leaseExpiry": {
+    "readOnlyPhase": "Status Pending, AttemptCount = max(0, AttemptCount - 1), AvailableAtUtc = now, LastError cleared, lease cleared.",
+    "mutationPhase": "Status Unknown, LastError 'The service restarted or timed out after a Garmin mutation may have begun; the outcome is unknown and will not be retried automatically.'",
+    "exception": "An Unknown job in phase ReplacementUpload with MatchedRemoteId set, no RemoteId/ReplacementRemoteId, on an enabled Connected MergeAndReplace account, whose retained original+merged backup pair exists for that same original ID, is automatically moved to Pending/ResolveReplacement (read-only resolution, never a second upload). Scanned at the start of every worker pass, at most 25 jobs."
+  },
+  "timers": {
+    "workerPass": "every 1 minute, or immediately on a wake signal",
+    "lease": "2 minutes",
+    "initialDelay": "AvailableAtUtc = session EndedAt + 5 minutes (normal); now (synthetic test)",
+    "readFailureRetry": "+2 minutes; +15 minutes when kind = rate-limit",
+    "mutationKnownFailureRetry": "+2^(AttemptCount-1) minutes (1, 2, 4); +15 minutes for rate-limit",
+    "attemptsCap": "AttemptCount < 3 to lease; a non-auth failure at AttemptCount >= 3 becomes Failed instead of Pending",
+    "resolutionChecks": "ResolveReplacement / ResolveRestoredOriginal / ResolveRestoredLocal after an upload without ID: first check at +2 minutes, then +5, then +10; after the third unsuccessful check => Unknown",
+    "cleanupContinuation": "+2 seconds between single deletions",
+    "verifyResyncAfterDuplicateCleanup": "+2 minutes when the original was already gone; immediately after DeleteOriginal"
+  },
+  "transitions": [
+    {"from": "(none)", "event": "reconciler finds eligible session", "to": "Pending/WatchSearch", "sets": "AvailableAt = EndedAt + 5 min, AttemptCount 0, IdempotencyKey"},
+    {"from": "(none)", "event": "synthetic test activity", "to": "Pending/Upload", "sets": "AvailableAt = now"},
+    {"from": "Pending", "event": "lease", "to": "InFlight", "sets": "AttemptCount + 1, LeaseExpiresAt = now + 2 min (atomic compare-and-set on Status + AttemptCount)"},
+    {"from": "InFlight/WatchSearch", "event": "search ok, no plausible candidate", "to": "InFlight/Upload -> Confirmed | Failed | Unknown | Pending(retry)"},
+    {"from": "InFlight/WatchSearch", "event": "search ok, >1 plausible", "to": "ReviewRequired/Review"},
+    {"from": "InFlight/WatchSearch", "event": "search ok, 1 plausible, PreferWatch", "to": "FoundInGarmin", "sets": "RemoteId = MatchedRemoteId = candidate, FailureKind watch-match, AcknowledgedAt = now, token refreshed"},
+    {"from": "InFlight/WatchSearch", "event": "search ok, 1 plausible, MergeAndReplace", "to": "download original, back up original + local + merged FIT, then InFlight/ReplacementUpload"},
+    {"from": "InFlight/WatchSearch", "event": "merge validation fails before any mutation", "to": "Failed", "sets": "FailureKind merge-source, CanRetry"},
+    {"from": "InFlight/WatchSearch", "event": "search/download failed (known)", "to": "Pending (+2 or +15 min) | Failed(authentication) | Failed(provider-unavailable)"},
+    {"from": "InFlight/ReplacementUpload", "event": "confirmed with distinct ID", "to": "Pending/DeleteOriginal", "sets": "ReplacementRemoteId, AttemptCount 0"},
+    {"from": "InFlight/ReplacementUpload", "event": "confirmed with the original's ID", "to": "Pending/ResolveReplacement (+2 min)"},
+    {"from": "InFlight/ReplacementUpload", "event": "confirmed without ID, or unknown, or timeout/ambiguous", "to": "Pending/ResolveReplacement (+2 min)"},
+    {"from": "InFlight/ReplacementUpload", "event": "known failure", "to": "Failed (duplicate/rejected) | Pending(retry) | Failed(authentication)"},
+    {"from": "InFlight/ResolveReplacement", "event": "retained merged copy proven among canonical candidates", "to": "Pending/DeleteReplacementDuplicates", "sets": "ReplacementRemoteId"},
+    {"from": "InFlight/ResolveReplacement", "event": "a canonical candidate lacks FIT proof, or a semantic match spans several retained categories", "to": "ReviewRequired/Review"},
+    {"from": "InFlight/ResolveReplacement", "event": "nothing found yet (not EnsureReplacement)", "to": "Pending (+5/+10 min) or Unknown after 3 checks"},
+    {"from": "InFlight/EnsureReplacement", "event": "nothing found", "to": "InFlight/ReplacementUpload: upload the retained merged FIT once"},
+    {"from": "InFlight/DeleteReplacementDuplicates", "event": "each extra canonical copy proven generated", "to": "InFlight/DeleteReplacementDuplicate -> delete -> Pending/DeleteReplacementDuplicates (+2 s)"},
+    {"from": "InFlight/DeleteReplacementDuplicates", "event": "no more duplicates", "to": "Pending/DeleteOriginal (original still listed) | Pending/VerifyResync (+2 min)"},
+    {"from": "InFlight/DeleteOriginal", "event": "replacement and original both FIT-verified, delete confirmed", "to": "Pending/VerifyResync (now)", "sets": "RemoteId = ReplacementRemoteId"},
+    {"from": "InFlight/VerifyResync", "event": "replacement verified; any watch-recreated original proven by FIT is deleted (phase DeleteResyncedOriginal)", "to": "Confirmed/Upload", "sets": "RemoteId = ReplacementRemoteId"},
+    {"from": "Confirmed | Unknown | Failed | ReviewRequired | FoundInGarmin", "event": "user: Merge into one", "to": "Pending/ResolveReplacement | Pending/EnsureReplacement"},
+    {"from": "Confirmed | Unknown | Failed | ReviewRequired | FoundInGarmin", "event": "user: Undo merge", "to": "Pending/ResolveOriginal | ResolveRestoredOriginal | ResolveLocalSource | ResolveRestoredLocal | DeleteGeneratedCopies"},
+    {"from": "InFlight/ResolveOriginal", "event": "retained original found", "to": "Pending/ResolveLocalSource", "sets": "MatchedRemoteId = found original"},
+    {"from": "InFlight/ResolveOriginal", "event": "not found", "to": "InFlight/RestoreOriginal: upload retained original FIT once"},
+    {"from": "InFlight/ResolveLocalSource", "event": "retained plain local found", "to": "Pending/DeleteGeneratedCopies", "sets": "RemoteId = local copy"},
+    {"from": "InFlight/ResolveLocalSource", "event": "not found", "to": "InFlight/RestoreLocal: upload retained local FIT once"},
+    {"from": "InFlight/DeleteGeneratedCopies", "event": "each FIT-proven merged/duplicate copy", "to": "InFlight/DeleteGeneratedCopy -> delete -> Pending/DeleteGeneratedCopies (+2 s)"},
+    {"from": "InFlight/DeleteGeneratedCopies", "event": "both kept sources freshly verified, nothing else to delete", "to": "Confirmed/UndoComplete"},
+    {"from": "Failed (retryable)", "event": "user: Retry known failure", "to": "Pending (phase mapped, see 11-garmin.md 7.6)", "sets": "AttemptCount 0, AvailableAt now"},
+    {"from": "Unknown (phase Upload, no remote IDs)", "event": "user: Not found - retry (confirmation 'NOT FOUND')", "to": "Pending/WatchSearch (MergeAndReplace) | Pending/Upload (PreferWatch)"},
+    {"from": "Unknown", "event": "user: Found in Garmin", "to": "FoundInGarmin", "sets": "AcknowledgedAt, RemoteId unchanged (may stay null)"},
+    {"from": "Failed | Unknown | ReviewRequired", "event": "user: Dismiss", "to": "Dismissed"},
+    {"from": "Confirmed (phase WatchSearch, no IDs; legacy)", "event": "user: Re-run merge check (MergeAndReplace only)", "to": "Pending/WatchSearch"}
+  ],
+  "retryPhaseMapping": {
+    "ReplacementUpload": {"duplicate": "ResolveReplacement", "other": "EnsureReplacement"},
+    "RestoreOriginal": {"duplicate": "ResolveRestoredOriginal", "other": "ResolveOriginal"},
+    "RestoreLocal": {"duplicate": "ResolveRestoredLocal", "other": "ResolveLocalSource"},
+    "DeleteReplacementDuplicate": "DeleteReplacementDuplicates",
+    "DeleteGeneratedCopy": "DeleteGeneratedCopies",
+    "DeleteResyncedOriginal": "VerifyResync",
+    "otherwise": "unchanged",
+    "override": "If the account is enabled, Connected, MergeAndReplace, and the job has no MatchedRemoteId and no ReplacementRemoteId => WatchSearch. A ProviderUnavailable account returns to Connected."
+  },
+  "accountStates": {
+    "Connected": "normal",
+    "NeedsAuthentication": "set by any authentication failure; jobs stop leasing until reconnect",
+    "ProviderUnavailable": "set when the Garmin client is unavailable (feature flag off / module broken); a retry resets it to Connected"
+  }
+}

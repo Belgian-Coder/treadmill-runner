@@ -1,0 +1,1349 @@
+{
+  "schema": "treadmillrunner.premade-template/1",
+  "id": "general-treadmill-fitness",
+  "version": "1.0.0",
+  "name": "General Treadmill Fitness",
+  "description": "Six weeks mixing easy endurance, steady work, and incline variety.",
+  "goal": "General fitness",
+  "experience": "All levels",
+  "weeks": 6,
+  "sessionsPerWeek": 3,
+  "repeatable": false,
+  "requiresHeartRate": false,
+  "tags": [
+    "general-fitness"
+  ],
+  "sessionCount": 18,
+  "variantCount": 18,
+  "uniqueDefinitionCount": 18,
+  "heartRateZoneReferences": [],
+  "maximumDurationMinutes": 35,
+  "maximumSpeedKph": 8,
+  "maximumInclinePercent": 2,
+  "sourceContentSha256": null,
+  "contentSha256": "70e2138320957e3b56f62b11d339abfc8d5132968c45c42eddbd95419fc90ad5",
+  "phases": [
+    {
+      "name": "Foundation",
+      "firstWeek": 1,
+      "lastWeek": 1,
+      "sessionCount": 3
+    },
+    {
+      "name": "Build",
+      "firstWeek": 2,
+      "lastWeek": 4,
+      "sessionCount": 9
+    },
+    {
+      "name": "Peak",
+      "firstWeek": 5,
+      "lastWeek": 5,
+      "sessionCount": 3
+    },
+    {
+      "name": "Consolidate",
+      "firstWeek": 6,
+      "lastWeek": 6,
+      "sessionCount": 3
+    }
+  ],
+  "sessions": [
+    {
+      "position": 1,
+      "weekNumber": 1,
+      "sessionNumber": 1,
+      "phase": "Foundation",
+      "workoutKey": "easy-16-6.0-1.0-fixed",
+      "workoutName": "Easy 16 min",
+      "durationMinutes": 16,
+      "targetSpeedKph": 6,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "18b19344b007abc843e678b5b3f6342a917336f6f9d27b42145d9bff7d9c085f",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 16 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 2,
+      "weekNumber": 1,
+      "sessionNumber": 2,
+      "phase": "Foundation",
+      "workoutKey": "quality-20-8.0-2.0-fixed",
+      "workoutName": "Quality 20 min",
+      "durationMinutes": 20,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "c60eb49b40e57f0cf7256e0ea0d78aeedac549493c34f7279e20afd926b01fc9",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 20 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 7200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 3,
+      "weekNumber": 1,
+      "sessionNumber": 3,
+      "phase": "Foundation",
+      "workoutKey": "long-20-7.0-1.0-fixed",
+      "workoutName": "Long 20 min",
+      "durationMinutes": 20,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "bc792875d78bb0068a94d82af9c323ae4855ea677e7e5feae4e45d6db02c03e0",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 20 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 7200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 4,
+      "weekNumber": 2,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-19-6.5-1.0-fixed",
+      "workoutName": "Easy 19 min",
+      "durationMinutes": 19,
+      "targetSpeedKph": 6.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "d53a4c78c38d9d7e93963a6362d897657a5c4732cd469e5c010a3cb80a53b873",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 19 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 6600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 6.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 5,
+      "weekNumber": 2,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-23-8.0-2.0-fixed",
+      "workoutName": "Quality 23 min",
+      "durationMinutes": 23,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "ea880328004cbdc19999d3f86111a849eb141b19964910b4f31afdd10faeed2a",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 23 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 9000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 6,
+      "weekNumber": 2,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-23-7.0-1.0-fixed",
+      "workoutName": "Long 23 min",
+      "durationMinutes": 23,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "c4884d291e575bbf4e077f1896606a1a86d4b87d86a028cb1db165bb33c9461d",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 23 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 9000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 7,
+      "weekNumber": 3,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-22-7.0-1.0-fixed",
+      "workoutName": "Easy 22 min",
+      "durationMinutes": 22,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "43ac24c9a3588e23ed7e9c058aab2c9b8cd1f4dc434cefbec1c502f13b6136b1",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 22 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 8400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 8,
+      "weekNumber": 3,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-26-8.0-2.0-fixed",
+      "workoutName": "Quality 26 min",
+      "durationMinutes": 26,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "03e06153e18c0fb6e7def752855d9791813040afbdef40ec786b1ae4be566f19",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 26 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 10800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 9,
+      "weekNumber": 3,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-26-7.5-1.0-fixed",
+      "workoutName": "Long 26 min",
+      "durationMinutes": 26,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "aa5461f14675d810e58b53d6ad218044cd387b1cd41b0d7b0998815991eb9943",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 26 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 10800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 10,
+      "weekNumber": 4,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-25-7.5-1.0-fixed",
+      "workoutName": "Easy 25 min",
+      "durationMinutes": 25,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "ca909eff19f7a0e73023f63e78657bea02e60d4c39ac51e036c6cf2d7c1add9a",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 25 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 10200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 11,
+      "weekNumber": 4,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-29-8.0-2.0-fixed",
+      "workoutName": "Quality 29 min",
+      "durationMinutes": 29,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "fa0f7c2f8cccb312ba9b6fff2da8cf451e180982217faad44421f2e1aed9c8b8",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 29 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 12,
+      "weekNumber": 4,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-29-7.5-1.0-fixed",
+      "workoutName": "Long 29 min",
+      "durationMinutes": 29,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "acf06963365264df3015a057d395fe1872f5608d187ea731d2ba94f1db51fe57",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 29 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 13,
+      "weekNumber": 5,
+      "sessionNumber": 1,
+      "phase": "Peak",
+      "workoutKey": "easy-28-7.5-1.0-fixed",
+      "workoutName": "Easy 28 min",
+      "durationMinutes": 28,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "f090c0a37fc477e3af6192cfd49080e26aef3c17cf458f7e81e8c0255e50b7dd",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 28 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 14,
+      "weekNumber": 5,
+      "sessionNumber": 2,
+      "phase": "Peak",
+      "workoutKey": "quality-32-8.0-2.0-fixed",
+      "workoutName": "Quality 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "4457666512d7bc18d4f652ff35cbc354dfa0c1d08f8a1b3c47617eb6cd84bf04",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 32 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 15,
+      "weekNumber": 5,
+      "sessionNumber": 3,
+      "phase": "Peak",
+      "workoutKey": "long-32-8.0-1.0-fixed",
+      "workoutName": "Long 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "772bbed9176a0259efac02a061c0bbd8e58d77d419b9a093c38ea33ab8b0d20c",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 32 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 16,
+      "weekNumber": 6,
+      "sessionNumber": 1,
+      "phase": "Consolidate",
+      "workoutKey": "easy-31-8.0-1.0-fixed",
+      "workoutName": "Easy 31 min",
+      "durationMinutes": 31,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "a743c2c8c9b97134fbdf21c02fa50181f961e7410115b619dba34cc6c6161d97",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy 31 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 17,
+      "weekNumber": 6,
+      "sessionNumber": 2,
+      "phase": "Consolidate",
+      "workoutKey": "quality-35-8.0-2.0-fixed",
+      "workoutName": "Quality 35 min",
+      "durationMinutes": 35,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 2,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "e163135d22ba1aaf911f7edaef4397ba698dca0c4f595961d3777b87439f3ca7",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality 35 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 2
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 18,
+      "weekNumber": 6,
+      "sessionNumber": 3,
+      "phase": "Consolidate",
+      "workoutKey": "long-35-8.0-1.0-fixed",
+      "workoutName": "Long 35 min",
+      "durationMinutes": 35,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": null,
+      "definitionSha256": "8f2484c87985e59764bf318bc2d6ebdf049ee1608ad7411a3d684691e32d2add",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long 35 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Steady effort",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "battery-level",
+  "characteristic": "0x2A19 Battery Level (service 0x180F)",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Exactly 1 byte, 0..100 percent; anything else rejected."
+  ],
+  "parse": [
+    {
+      "source": "legacy-test",
+      "hex": "00",
+      "expected": 0
+    },
+    {
+      "source": "legacy-test",
+      "hex": "01",
+      "expected": 1
+    },
+    {
+      "source": "legacy-test",
+      "hex": "63",
+      "expected": 99
+    },
+    {
+      "source": "legacy-test",
+      "hex": "64",
+      "expected": 100
+    }
+  ],
+  "rejects": [
+    {
+      "source": "legacy-test",
+      "hex": "",
+      "reason": "empty"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "3233",
+      "reason": "two bytes"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "65",
+      "reason": "101"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "FF",
+      "reason": "255"
+    }
+  ]
+}

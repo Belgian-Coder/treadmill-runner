@@ -1,0 +1,10 @@
+bytes=863 isFit=True
+integrity=True
+[0] FileId (#0) | Type=5 | Manufacturer=255 | Product=1 | SerialNumber=2797749053 | TimeCreated=1157176800 | ProductName=TreadmillRunner
+[1] Workout (#26) | Sport=1 | NumValidSteps=6 | WktName=Spec fixture intervals
+[2] WorkoutStep (#27) | WktStepName=Warm up | DurationType=0 | DurationValue=5000 | TargetType=0 | CustomTargetValueLow=1389 | CustomTargetValueHigh=1389 | Notes=Treadmill incline 1%. | MessageIndex=0
+[3] WorkoutStep (#27) | WktStepName=Fast | DurationType=0 | DurationValue=3000 | TargetType=0 | CustomTargetValueLow=2222 | CustomTargetValueHigh=2222 | Notes=Stay tall Treadmill incline 2%. | MessageIndex=1
+[4] WorkoutStep (#27) | WktStepName=Ease | DurationType=0 | DurationValue=2000 | TargetType=0 | CustomTargetValueLow=1667 | CustomTargetValueHigh=2222 | Notes=Speed ramp 8-6 km/h; FIT stores the endpoints as a target range. Treadmill incline ramp 2-0%. | MessageIndex=2
+[5] WorkoutStep (#27) | WktStepName=Repeat 2 times | DurationType=6 | DurationValue=1 | TargetType=2 | TargetValue=2 | MessageIndex=3
+[6] WorkoutStep (#27) | WktStepName=Zone 3 | DurationType=1 | DurationValue=20000 | TargetType=1 | TargetValue=3 | Notes=Treadmill speed safety bounds remain in the immutable TreadmillRunner revision and are not a standard FIT workout target. Treadmill incline 0.5%. | MessageIndex=4
+[7] WorkoutStep (#27) | WktStepName=HR hold | DurationType=0 | DurationValue=60000 | TargetType=1 | CustomTargetValueLow=230 | CustomTargetValueHigh=250 | Notes=Treadmill speed safety bounds remain in the immutable TreadmillRunner revision and are not a standard FIT workout target. Treadmill incline 0%. | MessageIndex=5

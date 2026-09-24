@@ -1,0 +1,49 @@
+{
+  "description": "Language-neutral vectors for the two pure functions of the current adapter: interpretImportResult(result) and classifyError(error, uploadStarted). The Kotlin client must reproduce these dispositions exactly (state, kind, message). Messages are fixed, safe strings: provider text, tokens and URLs never leak into them.",
+  "interpretImportResult": {
+    "rules": [
+      "If result is not a JSON object => unknown/response 'Garmin returned an unrecognized import response.'",
+      "detail = result.detailedImportResult if it is an object, else result itself.",
+      "If detail.failures is a non-empty array: lower-case its compact JSON; contains 'duplicate' or 'already exists' => failed/duplicate, else failed/rejected.",
+      "If detail.successes is not a non-empty array whose first element is an object: if lower(trim(detail.status)) in {uploaded, success, succeeded, completed} => confirmed (no remoteId), else unknown/response 'Garmin did not provide explicit import confirmation.'",
+      "remoteId = successes[0].activityId, else successes[0].internalId. Missing or blank => unknown/response 'Garmin confirmed an import item without an activity identifier.' Otherwise confirmed with remoteId as a string."
+    ],
+    "vectors": [
+      {"given": {"detailedImportResult": {"successes": [{"activityId": 12345}], "failures": []}}, "expected": {"state": "confirmed", "remoteId": "12345"}, "source": "contract test"},
+      {"given": {"detailedImportResult": {"successes": [{"internalId": 987654321}], "failures": []}}, "expected": {"state": "confirmed", "remoteId": "987654321"}, "source": "derived from rules"},
+      {"given": {"detailedImportResult": {"successes": [], "failures": [{"messages": ["invalid FIT"]}]}}, "expected": {"state": "failed", "kind": "rejected", "message": "Garmin rejected the imported activity."}, "source": "contract test"},
+      {"given": {"detailedImportResult": {"successes": [], "failures": [{"messages": [{"content": "Duplicate Activity."}]}]}}, "expected": {"state": "failed", "kind": "duplicate", "message": "Garmin reports that this activity already exists."}, "source": "derived from rules"},
+      {"given": {"status": "uploaded"}, "expected": {"state": "confirmed"}, "source": "contract test"},
+      {"given": {"status": "uploaded", "fileName": "abc-local.fit"}, "expected": {"state": "confirmed"}, "source": "shape returned by garminconnect 0.3.8 import_activity after every 2xx response"},
+      {"given": {"status": " Completed "}, "expected": {"state": "confirmed"}, "source": "derived from rules"},
+      {"given": {}, "expected": {"state": "unknown", "kind": "response", "message": "Garmin did not provide explicit import confirmation."}, "source": "contract test"},
+      {"given": null, "expected": {"state": "unknown", "kind": "response", "message": "Garmin returned an unrecognized import response."}, "source": "contract test"},
+      {"given": {"detailedImportResult": {"successes": [{}]}}, "expected": {"state": "unknown", "kind": "response", "message": "Garmin confirmed an import item without an activity identifier."}, "source": "contract test"},
+      {"given": {"detailedImportResult": {"successes": [{"activityId": "  "}]}}, "expected": {"state": "unknown", "kind": "response", "message": "Garmin confirmed an import item without an activity identifier."}, "source": "derived from rules"}
+    ]
+  },
+  "classifyError": {
+    "rules": [
+      "Evaluated in this order on (exception type name, exception message):",
+      "1. dependency missing (Python ModuleNotFoundError; Kotlin: client module unavailable / feature flag off) => failed/provider-unavailable 'The unsupported Garmin adapter dependency is not installed.'",
+      "2. type name contains 'Authentication' or 'MFA', or message contains '401' or '403' => failed/authentication 'Garmin authentication was rejected or expired.'",
+      "3. type name contains 'TooManyRequests' or message contains '429' => failed/rate-limit 'Garmin rate-limited the request.'",
+      "4. message contains '409' or lower(message) contains 'duplicate' => failed/duplicate 'Garmin reports that this activity already exists.'",
+      "5. uploadStarted => unknown/transport 'The Garmin response was interrupted after upload began.'",
+      "6. otherwise => failed/provider 'The unsupported Garmin provider rejected the operation.'",
+      "uploadStarted is true only inside the upload (import) and delete calls, after the call was issued. Login, search and download errors always use uploadStarted=false."
+    ],
+    "vectors": [
+      {"given": {"type": "RuntimeError", "message": "API Error 409 - duplicate", "uploadStarted": true}, "expected": {"state": "failed", "kind": "duplicate", "message": "Garmin reports that this activity already exists."}, "assert": "message must not contain 'API Error'", "source": "contract test"},
+      {"given": {"type": "RuntimeError", "message": "socket failed token=secret", "uploadStarted": true}, "expected": {"state": "unknown", "kind": "transport", "message": "The Garmin response was interrupted after upload began."}, "assert": "message must not contain 'secret'", "source": "contract test"},
+      {"given": {"type": "ModuleNotFoundError", "message": "No module named garminconnect", "uploadStarted": false}, "expected": {"state": "failed", "kind": "provider-unavailable"}, "source": "contract test"},
+      {"given": {"type": "ModuleNotFoundError", "message": "No module named curl_cffi", "uploadStarted": false}, "expected": {"state": "failed", "kind": "provider-unavailable"}, "source": "contract test"},
+      {"given": {"type": "GarminConnectAuthenticationError", "message": "MFA verification failed", "uploadStarted": false}, "expected": {"state": "failed", "kind": "authentication", "message": "Garmin authentication was rejected or expired."}, "source": "derived from rules"},
+      {"given": {"type": "GarminConnectConnectionError", "message": "API Error 403 - Forbidden", "uploadStarted": true}, "expected": {"state": "failed", "kind": "authentication"}, "source": "derived from rules (auth check precedes uploadStarted)"},
+      {"given": {"type": "GarminConnectTooManyRequestsError", "message": "Rate limit exceeded", "uploadStarted": false}, "expected": {"state": "failed", "kind": "rate-limit", "message": "Garmin rate-limited the request."}, "source": "derived from rules"},
+      {"given": {"type": "GarminConnectConnectionError", "message": "Import error: API Error 409 - Activity already exists (duplicate): x.fit", "uploadStarted": true}, "expected": {"state": "failed", "kind": "duplicate"}, "source": "derived from garminconnect 0.3.8 import_activity 409 path"},
+      {"given": {"type": "ValueError", "message": "A readable FIT activity file is required.", "uploadStarted": false}, "expected": {"state": "failed", "kind": "provider", "message": "The unsupported Garmin provider rejected the operation."}, "source": "derived from rules"},
+      {"given": {"type": "TimeoutError", "message": "read timed out", "uploadStarted": false}, "expected": {"state": "failed", "kind": "provider"}, "source": "derived from rules"}
+    ]
+  }
+}

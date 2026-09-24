@@ -1,0 +1,52 @@
+{
+  "description": "Connect IQ companion watch app contract: settings, pairing token, and the read-only status endpoint. Today the watch polls a household HTTPS gateway; in the phone app the same endpoint is served by the embedded web server (see 11-garmin.md section 11 for the HTTPS caveat and the Connect IQ Mobile SDK alternative).",
+  "app": {
+    "type": "watch-app",
+    "applicationId": "4F3634D9B7CA4B1A84BDF84EC89B72A1",
+    "name": "TreadmillRunner",
+    "storeName": "TreadmillRunner Companion",
+    "minApiLevel": "3.2.0",
+    "permissions": ["Fit", "Communications", "Sensor"],
+    "products": ["fenix843mm", "fenix847mm", "fenix8solar47mm", "fenix8solar51mm", "vivoactive5", "vivoactive6"],
+    "sdkValidated": "Connect IQ SDK 9.2.0, warning-free builds for all six products",
+    "activity": {"name": "TreadmillRunner", "sport": "SPORT_RUNNING", "subSport": "SUB_SPORT_TREADMILL", "sensorsEnabledBeforeStart": ["SENSOR_HEARTRATE", "SENSOR_ONBOARD_HEARTRATE"]}
+  },
+  "settings": [
+    {"property": "runnerName", "type": "string", "default": "Runner", "ui": "alphaNumeric, required, max 32", "title": "Runner name", "prompt": "The profile shown before recording"},
+    {"property": "gatewayUrl", "type": "string", "default": "", "ui": "url, optional", "title": "Gateway HTTPS URL", "prompt": "Optional HTTPS address from TreadmillRunner watch setup"},
+    {"property": "watchToken", "type": "string", "default": "", "ui": "password, optional, max 128", "title": "Watch pairing token", "prompt": "Token shown once by TreadmillRunner"}
+  ],
+  "pairedModeCondition": "gatewayUrl is a string starting with 'https://' AND watchToken is a string of length >= 20; otherwise the footer shows 'Standalone' and no request is made",
+  "statusRequest": {
+    "method": "GET",
+    "url": "<gatewayUrl>/api/watch/status",
+    "headers": {"Authorization": "Bearer <watchToken>"},
+    "responseType": "JSON",
+    "pollEvery": "on view show, then every 30 s while the view is visible; never more than one request in flight"
+  },
+  "statusResponses": [
+    {"case": "valid token, this profile owns the active non-terminal session", "status": 200, "body": {"runnerName": "Marc", "sessionTitle": "Easy 30", "state": "Running", "sessionId": "11111111-2222-3333-4444-555555555555"}},
+    {"case": "valid token, no active session for this profile, or the active session is Completed/Stopped/Interrupted/Faulted", "status": 200, "body": {"runnerName": "Marc", "sessionTitle": "Manual treadmill", "state": "Ready", "sessionId": null}},
+    {"case": "missing header, not 'Bearer ', token length outside 20..128, unknown or revoked hash", "status": 401, "body": null}
+  ],
+  "statusSideEffects": "A successful lookup updates the binding's LastSeenAtUtc. It never acquires a treadmill lease and exposes no command.",
+  "watchHandling": [
+    {"code": 200, "dictionary": true, "result": "runnerName property overwritten with runnerName; sessionTitle shown; footer = state string (or 'Connected' if missing)"},
+    {"code": 0, "result": "footer 'Phone offline'"},
+    {"code": "any other", "result": "footer 'Gateway unavailable'"}
+  ],
+  "pairing": {
+    "create": "POST /api/integrations/garmin/watch/profiles/{profileId} {deviceLabel (1..100)} over HTTPS or loopback only, idle runner only => {binding, token, message: 'Copy this token now. TreadmillRunner stores only its SHA-256 hash and cannot show it again.'}",
+    "replace": "Creating again replaces the profile's single binding (new hash, LastSeen cleared, Version+1)",
+    "get": "GET /api/integrations/garmin/watch/profiles/{profileId} => binding {id, userProfileId, runnerName, deviceLabel, createdAtUtc, lastSeenAtUtc, version} or 204",
+    "revoke": "POST /api/integrations/garmin/watch/profiles/{profileId}/revoke {expectedVersion} idle only => 204 | 404 | 409 on version mismatch"
+  },
+  "unitTests": [
+    {"name": "accepts complete HTTPS gateway settings", "given": ["https://treadmill.example.test", "12345678901234567890"], "expected": true},
+    {"name": "rejects HTTP", "given": ["http://treadmill.example.test", "12345678901234567890"], "expected": false},
+    {"name": "rejects a short token", "given": ["https://treadmill.example.test", "too-short"], "expected": false},
+    {"name": "rejects missing values", "given": [null, null], "expected": false},
+    {"name": "formats elapsed time", "given": [0, 65, 3661], "expected": ["00:00", "01:05", "61:01"]},
+    {"name": "formats metrics without inventing values", "given": {"hr": [null, 142], "distanceMeters": 3210.0, "speedMps": 3.0, "kcal": 286}, "expected": {"hr": ["--", "142 bpm"], "distance": "3.21 km", "speed": "10.8 km/h", "kcal": "286 kcal"}}
+  ]
+}

@@ -1,0 +1,138 @@
+# Fixture session derived metrics (computed by the current app)
+stored.State=Completed Duration=14 Distance=0.02675 EstimatedKcal=2.052846 AvgHR=132.6153846153846 MaxHR=156 AvgSpeed=6.878571428571429 AvgIncline=1.6071428571428572
+{
+  "averageHeartRateBpm": 132.6153846153846,
+  "minimumHeartRateBpm": 110,
+  "maximumHeartRateBpm": 156,
+  "movingTime": "00:00:14",
+  "maximumSpeedKph": 8.5,
+  "averageInclinePercent": 1.6071428571428572,
+  "averagePositiveInclinePercent": 1.8482835594456286,
+  "averageNegativeInclinePercent": null,
+  "minimumInclinePercent": 0,
+  "maximumInclinePercent": 3,
+  "averagePositiveVerticalSpeedMetersPerSecond": 0.035652715466510526,
+  "averageNegativeVerticalSpeedMetersPerSecond": null,
+  "maximumPositiveVerticalSpeedMetersPerSecond": 0.0666367102243315,
+  "maximumNegativeVerticalSpeedMetersPerSecond": null,
+  "totalAscentMeters": 0.4634853010646368,
+  "totalDescentMeters": 0,
+  "netElevationMeters": 0.4634853010646368,
+  "estimatedKilocalories": 2.052845555555556
+}
+elevation points: 0:0, 1:0.013888, 2:0.028054, 3:0.041942, 4:0.055831, 5:0.085827, 6:0.130263, 7:0.177476, 8:0.224688, 9:0.244132, 10:0.244132, 11:0.310768, 12:0.377405, 13:0.444042, 14:0.463485
+{
+  "sessionId": "4d5e6f70-8192-4a34-9c5d-6e7f80910213",
+  "heartRateZones": [
+    {
+      "zoneNumber": 1,
+      "name": "Warm up",
+      "duration": "00:00:01"
+    },
+    {
+      "zoneNumber": 2,
+      "name": "Easy",
+      "duration": "00:00:05"
+    },
+    {
+      "zoneNumber": 3,
+      "name": "Aerobic",
+      "duration": "00:00:05"
+    },
+    {
+      "zoneNumber": 4,
+      "name": "Threshold",
+      "duration": "00:00:02"
+    },
+    {
+      "zoneNumber": 5,
+      "name": "Maximum",
+      "duration": "00:00:00"
+    }
+  ],
+  "adherencePercentage": 60,
+  "adherenceAlgorithmVersion": "adherence/v1",
+  "eventCounts": {
+    "manualSpeedOverrides": 1,
+    "manualInclineOverrides": 1,
+    "pauses": 1,
+    "disconnects": 1,
+    "warnings": 1
+  }
+}
+cumulative kcal: 0, 0.080556, 0.162299, 0.242855, 0.32341, 0.474259, 0.671016, 0.878748, 1.086481, 1.222872, 1.304434, 1.508441, 1.712448, 1.916455, 2.052846
+zones: 1 Warm up 95-113; 2 Easy 114-132; 3 Aerobic 133-151; 4 Threshold 152-170; 5 Maximum 171-190
+zones(150): 1 75-89; 2 90-104; 3 105-119; 4 120-134; 5 135-150
+zones(185): 1 93-110; 2 111-129; 3 130-147; 4 148-166; 5 167-185
+zones(200): 1 100-119; 2 120-139; 3 140-159; 4 160-179; 5 180-200
+{
+  "policy": {
+    "id": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+    "deviceEnrollmentId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+    "deviceDisplayName": "OMEGA Z",
+    "intervalMonths": 3,
+    "distanceIntervalKilometers": 241,
+    "version": 2,
+    "updatedAtUtc": "2026-09-01T06:35:18+00:00"
+  },
+  "state": 1,
+  "isDue": false,
+  "appTrackedHardwareDistanceKilometers": 0.02675,
+  "nextDueAtUtc": "2026-11-15T09:00:00+00:00",
+  "nextDueDistanceKilometers": 241.02675,
+  "remainingKilometers": 241,
+  "lastEvent": {
+    "id": "2742799f-91dc-40f8-9eb7-2c05dd3eb48d",
+    "policyId": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+    "operationId": "00000000-0000-4000-8000-000000000005",
+    "performedAtUtc": "2026-08-15T09:00:00+00:00",
+    "appDistanceBaselineKilometers": 0.02675,
+    "note": "Belt lubricated",
+    "createdAtUtc": "2026-09-01T06:35:18+00:00"
+  },
+  "events": [
+    {
+      "id": "2742799f-91dc-40f8-9eb7-2c05dd3eb48d",
+      "policyId": "c1ecfdef-b3d0-4cdd-a5f9-b5b8d68f9ed6",
+      "operationId": "00000000-0000-4000-8000-000000000005",
+      "performedAtUtc": "2026-08-15T09:00:00+00:00",
+      "appDistanceBaselineKilometers": 0.02675,
+      "note": "Belt lubricated",
+      "createdAtUtc": "2026-09-01T06:35:18+00:00"
+    }
+  ],
+  "usageNotice": "Only hardware sessions recorded by TreadmillRunner count toward this distance. Console-only use is not visible to the app."
+}
+display n=241: first10=0,1,2,3,4,5,6,7,8,9 last5=235,236,237,238,240 distinct=240
+display n=300: first10=0,1,2,3,5,6,7,8,10,11 last5=293,295,296,297,299 distinct=240
+display n=12788: first10=0,53,107,160,214,267,321,374,428,481 last5=12572,12626,12679,12733,12787 distinct=240
+## event DetailsJson
+manual-speed-override	{"expectedSpeedKph":8,"observedSpeedKph":8.5,"eventType":"manual-speed-override","occurredAt":"2026-09-01T06:30:05+00:00"}
+manual-incline-override	{"previousInclinePercent":2,"requestedInclinePercent":3,"eventType":"manual-incline-override","occurredAt":"2026-09-01T06:30:05+00:00"}
+workout-step-transition	{"completedStepIndex":0,"currentStepIndex":1,"cue":"Fast","eventType":"workout-step-transition","occurredAt":"2026-09-01T06:30:05+00:00"}
+workout-step-transition	{"completedStepIndex":4,"currentStepIndex":null,"cue":null,"eventType":"workout-step-transition","occurredAt":"2026-09-01T06:30:05+00:00"}
+workout-progress-reset	{"previousStepIndex":2,"previousWorkoutElapsed":"00:01:35.5000000","eventType":"workout-progress-reset","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-paused	{"reason":0,"eventType":"session-paused","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-paused	{"reason":1,"eventType":"session-paused","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-paused	{"reason":2,"eventType":"session-paused","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-resumed	{"eventType":"session-resumed","occurredAt":"2026-09-01T06:30:05+00:00"}
+device-disconnected	{"deviceRole":0,"reason":"Treadmill telemetry became stale.","eventType":"device-disconnected","occurredAt":"2026-09-01T06:30:05+00:00"}
+device-reconnected	{"deviceRole":0,"eventType":"device-reconnected","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-warning	{"code":"heart-rate-source-changed","message":"Heart-rate source changed to Polar H10.","eventType":"session-warning","occurredAt":"2026-09-01T06:30:05+00:00"}
+control-lease	{"kind":0,"leaseId":"5e6f7081-92a3-4b45-8d6e-7f8091021324","holderId":"phone","eventType":"control-lease","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-completed	{"eventType":"session-completed","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-stopped	{"eventType":"session-stopped","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-interrupted	{"reason":"Gateway restarted without a complete recovery checkpoint.","eventType":"session-interrupted","occurredAt":"2026-09-01T06:30:05+00:00"}
+session-faulted	{"code":"simulator-fault","message":"Simulator faulted.","eventType":"session-faulted","occurredAt":"2026-09-01T06:30:05+00:00"}
+## preferences default json: [0,2,3]
+## calories tests
+w=70 v=6 g=0 min=60 kcal=283.5
+w=70 v=6 g=10 min=60 kcal=661.5
+w=70 v=8 g=0 min=60 kcal=633.5
+w=70 v=7 g=0 min=60 kcal=441
+w=70 v=7 g=5 min=60 kcal=606.375
+w=80 v=10 g=1 min=30 kcal=460
+w=70 v=3 g=-10 min=60 kcal=73.5
+w=70 v=0.3 g=0 min=60 kcal=0
+w=70 v=0.31 g=0 min=60 kcal=84.35
+w=72.5 v=5 g=1 min=0.0167 kcal=0.080556

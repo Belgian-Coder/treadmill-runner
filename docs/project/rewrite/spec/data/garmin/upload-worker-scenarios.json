@@ -1,0 +1,107 @@
+{
+  "description": "Given/expected scenarios translated from the upload worker and job store tests. Common setup unless stated: now = 2026-08-05T08:00:00Z; one profile; account connected at now-2h with automatic upload enabled (watermark now-2h); one completed Hardware session started at now-1h, 60 s long, 0.1 km, one sample with HR 130 (max 140). A fake Garmin client records calls as 'search', 'download', 'upload', 'delete'. Worker steps are driven by: lease next job at a given time, process it.",
+  "workerOutcomeMapping": [
+    {"clientUploadResult": "confirmed, remoteId 12345, refreshed token", "expected": {"jobStatus": "Confirmed", "confirmedCount": 1, "canRetry": false, "accountState": "Connected", "tokenReplaced": true}},
+    {"clientUploadResult": "failed/duplicate", "expected": {"jobStatus": "Failed", "failureKind": "duplicate", "canRetry": true, "accountState": "Connected"}},
+    {"clientUploadResult": "ambiguous (no/invalid response line, process crashed after send)", "expected": {"jobStatus": "Unknown", "canRetry": false, "accountState": "Connected"}},
+    {"clientUploadResult": "timeout (45 s default, clamp 10..90 s)", "expected": {"jobStatus": "Unknown", "canRetry": false, "accountState": "Connected"}},
+    {"clientUploadResult": "client unavailable (feature flag off / runtime missing)", "expected": {"jobStatus": "Failed", "failureKind": "provider-unavailable", "canRetry": true, "accountState": "ProviderUnavailable"}},
+    {"invariantsForAll": ["the uploaded file was a readable FIT (> 16 bytes)", "no job is leasable one hour later (no automatic retry of any of these outcomes)"]}
+  ],
+  "scenarios": [
+    {
+      "name": "PreferWatch strong match records FoundInGarmin and uploads nothing",
+      "given": {"handling": "PreferWatch", "searchReturns": [{"remoteId": "watch-123", "start": "+15 s", "durationSeconds": 60, "distanceKilometers": 0.1}]},
+      "expected": {"status": "FoundInGarmin", "matchedRemoteId": "watch-123", "remoteId": "watch-123", "failureKind": "watch-match", "calls": ["search"]}
+    },
+    {
+      "name": "PreferWatch strong match without local heart rate still matches by shape",
+      "given": {"handling": "PreferWatch", "sessionHasHeartRate": false, "searchReturns": [{"remoteId": "watch-123", "start": "+15 s", "durationSeconds": 60, "distanceKilometers": 0.1}]},
+      "expected": {"status": "FoundInGarmin", "phase": "WatchSearch", "matchedRemoteId": "watch-123", "failureKind": "watch-match", "evidenceDoesNotContain": "heart-rate", "calls": ["search"], "uploaded": false, "leasableOneHourLater": false}
+    },
+    {
+      "name": "MergeAndReplace with a distinct replacement ID runs the full merge",
+      "given": {"handling": "MergeAndReplace", "uploadReturns": "confirmed remoteId replacement-456", "afterDeleteSearchReturns": "replacement-456 plus a watch-recreated copy 'watch-resynced' whose FIT equals the backed-up original"},
+      "steps": [
+        {"lease": "now", "phase": "WatchSearch", "calls": ["search", "download", "upload"]},
+        {"lease": "now+1s", "phase": "DeleteOriginal", "calls": ["download (replacement)", "download (original)", "delete watch-123"]},
+        {"lease": "now+1s", "phase": "VerifyResync", "calls": ["search", "download (replacement)", "download (watch-resynced)", "delete watch-resynced"]}
+      ],
+      "expected": {"status": "Confirmed", "phase": "Upload", "remoteId": "replacement-456", "matchedRemoteId": "watch-123", "retainedBackupFiles": 3, "calls": ["search", "download", "upload", "download", "download", "delete", "search", "download", "download", "delete"], "leasableNextDay": false}
+    },
+    {
+      "name": "MergeAndReplace upload accepted without an ID goes to read-only resolution",
+      "given": {"handling": "MergeAndReplace", "uploadReturns": "confirmed without remoteId"},
+      "expected": {"status": "Pending", "phase": "ResolveReplacement", "matchedRemoteId": "watch-123", "calls": ["search", "download", "upload"]}
+    },
+    {
+      "name": "No-ID replacement never uploads again; exhausted checks become Unknown; Merge into one resumes read-only",
+      "given": {"handling": "MergeAndReplace", "uploadReturns": "confirmed without remoteId", "replacementNeverVisible": true},
+      "steps": [
+        {"lease": "now", "result": "Pending/ResolveReplacement"},
+        {"lease": "now+20m, +21m, +22m", "phase": "ResolveReplacement", "result": "after the third check: Unknown/ResolveReplacement, MatchedRemoteId watch-123, ReplacementRemoteId null"},
+        {"action": "Merge into one (user)", "result": "Pending/ResolveReplacement, AttemptCount 0"},
+        {"lease": "now+30m", "result": "still read-only"}
+      ],
+      "expected": {"totalUploads": 1}
+    },
+    {
+      "name": "Replacement resolution keeps one corrected copy, then deletes the duplicate and the original",
+      "given": {"handling": "MergeAndReplace", "garminAfterUpload": "two identical merged copies appear: corrected-1 and corrected-2; upload returned no ID"},
+      "expected": {"status": "Confirmed", "matchedRemoteId": "watch-original", "replacementRemoteId": "corrected-1", "remoteId": "corrected-1", "deletedInOrder": ["corrected-2", "watch-original"], "remainingInGarmin": ["corrected-1"], "uploads": 1}
+    },
+    {
+      "name": "Replacement resolution accepts a metadata-rewritten FIT and deletes the semantic duplicate",
+      "given": {"handling": "MergeAndReplace", "corrected-2": "same activity content, extra DeviceInfo spliced in (FileId/DeviceInfo differ, records identical)"},
+      "expected": {"status": "Confirmed", "replacementRemoteId": "corrected-1", "deletedInOrder": ["corrected-2", "watch-original"], "remainingInGarmin": ["corrected-1"], "evidenceContains": "FIT content"}
+    },
+    {
+      "name": "Replacement resolution rejects a core mutation without deleting anything",
+      "given": {"handling": "MergeAndReplace", "corrected-2": "record content changed"},
+      "expected": {"status": "ReviewRequired", "phase": "Review", "evidenceContains": "strict FIT content", "deleted": []}
+    },
+    {
+      "name": "Multiple plausible watch activities require review without uploading a third copy",
+      "given": {"handling": "MergeAndReplace", "searchReturns": [{"remoteId": "watch-123", "start": "+15 s"}, {"remoteId": "watch-456", "start": "+20 s"}]},
+      "expected": {"status": "ReviewRequired", "phase": "Review", "evidenceContains": "2 Garmin treadmill activities are plausible", "calls": ["search"], "uploaded": false, "leasableOneHourLater": false}
+    },
+    {
+      "name": "Undo merge restores exactly one watch original and one plain local source, and Merge into one can follow",
+      "given": {"handling": "MergeAndReplace", "variants": ["local restore returns an ID", "local restore returns no ID"], "precondition": "merge completed: Confirmed, RemoteId corrected-1 (corrected-2 and watch-original already deleted)"},
+      "steps": [
+        {"action": "Undo merge", "result": "Pending/ResolveOriginal"},
+        {"run": "worker until idle (leases every 30 min)", "result": "Confirmed/UndoComplete, RemoteId local-1, MatchedRemoteId restored-original, ReplacementRemoteId null"},
+        {"check": "deleted so far", "value": ["corrected-2", "watch-original", "corrected-1"]},
+        {"check": "remaining in Garmin", "value": ["local-1", "restored-original"]},
+        {"check": "uploads so far", "value": 3},
+        {"action": "Merge into one", "result": "Pending/EnsureReplacement, MatchedRemoteId restored-original"},
+        {"run": "worker until idle", "result": "Confirmed, RemoteId = ReplacementRemoteId = corrected-3, MatchedRemoteId restored-original"},
+        {"check": "deleted in total", "value": ["corrected-2", "watch-original", "corrected-1", "local-1", "restored-original"]},
+        {"check": "remaining in Garmin", "value": ["corrected-3"]},
+        {"check": "uploads in total", "value": 4}
+      ]
+    }
+  ],
+  "storeScenarios": [
+    {"name": "completed session is queued once; an Unknown outcome is never retried", "steps": ["reconcile twice => one job", "lease => AttemptCount 1", "mark mutation phase Upload", "at now+3m (lease expired) nothing leasable; job is Unknown", "at now+1h nothing leasable", "Retry known failure => refused", "status Unknown count 1", "Dismiss => allowed; Unknown count 0"]},
+    {"name": "enable watermark skips old history; atomic lease has one winner", "steps": ["connect+enable at now: session ended before now => 0 jobs", "disconnect, reconnect at now+1m => still 0 jobs", "session moved to start now+1m, end now+2m => reconcile at now+3m queues it", "two workers lease concurrently at now+8m => exactly one gets it"]},
+    {"name": "stale read lease cannot cross the mutation boundary", "steps": ["worker A leases at now (expires now+2m)", "at now+3m worker B leases the same job (A's read lease expired => Pending again)", "A tries to mark ReplacementUpload with its old lease => rejected", "B marks ReplacementUpload => persisted with B's evidence"]},
+    {"name": "stale replacement resolution cannot overwrite a newer phase", "steps": ["A leases at now; B leases at now+3m and marks ReplacementUpload (watch-current)", "A tries to mark replacement resolved with its old lease => rejected", "job stays InFlight/ReplacementUpload, MatchedRemoteId watch-current, ReplacementRemoteId null"]},
+    {"name": "accounts and watch bindings are isolated per profile", "steps": ["Marc connected (disabled), Partner not connected", "watch bindings per profile resolved by token hash", "enabling Marc with MergeAndReplace does not touch Partner"]},
+    {"name": "disconnect is rejected while a job is in flight", "steps": ["lease a job", "disconnect => error containing 'cannot be cancelled'; account kept", "mark Unknown", "disconnect with current version => account and its jobs deleted"]},
+    {"name": "Unknown can be acknowledged as found", "steps": ["mark Unknown", "acknowledge found => FoundInGarmin, AcknowledgedAt set, RemoteId null, CanRetry false", "not leasable; Retry refused"]},
+    {"name": "Unknown plain upload verified absent can be requeued idempotently", "steps": ["MergeAndReplace; lease; mark Upload; mark Unknown", "confirm absent (operation X) at now+6m => Pending/WatchSearch, AttemptCount 0, leasable", "same operation X again => replay error (no second requeue)"]},
+    {"name": "Unknown replacement upload cannot be retried as verified absent", "steps": ["mark ReplacementUpload then uncertain => Unknown/ReplacementUpload with MatchedRemoteId", "confirm absent => rejected", "job unchanged; not leasable"]},
+    {"name": "expired replacement-upload lease resumes read-only", "steps": ["mark ReplacementUpload (watch-original)", "at now+3m the lease expired => Unknown/ReplacementUpload", "listed as incomplete replacement", "resume => Pending/ResolveReplacement with MatchedRemoteId watch-original"]},
+    {"name": "verified resync completes terminally", "steps": ["ReplacementUpload -> replacement uploaded (replacement-1) => Pending/DeleteOriginal", "lease => DeleteOriginal; original deleted => Pending/VerifyResync", "lease => VerifyResync; complete => Confirmed/Upload, RemoteId replacement-1, AttemptCount 0, CanRetry false, RetryAt null, never leasable again"]},
+    {"name": "duplicate can be retried from watch search", "steps": ["MergeAndReplace; mark Upload; mark rejected duplicate => CanRetry", "retry => leased at now+1m in phase WatchSearch with AttemptCount 1"]},
+    {"name": "failed watch-FIT merge can be retried before any remote mutation", "steps": ["lease in WatchSearch; mark rejected merge-source => CanRetry, MatchedRemoteId null", "retry => leased in WatchSearch"]},
+    {"name": "historical recovery preserves durable identities", "steps": ["job Unknown/DeleteOriginal with Matched watch-original, Replacement merged-1: Merge into one => ResolveReplacement keeping both IDs", "job Confirmed/UndoComplete with Matched restored-watch, RemoteId local-1: Undo merge => keeps restored-watch and local-1 (DeleteGeneratedCopies)"]},
+    {"name": "legacy Confirmed job can be requeued only for MergeAndReplace", "steps": ["Confirmed, phase WatchSearch, no IDs, account MergeAndReplace => Re-run merge check => Pending/WatchSearch", "same with PreferWatch => rejected"]}
+  ],
+  "connectionScenarios": [
+    {"name": "MFA is profile-bound and tokens are protected at rest", "steps": ["begin connect for Marc => MfaRequired + challengeId", "complete that challenge as Partner => not found; Marc still not connected", "begin again for Marc (enabled, MergeAndReplace), complete with code => Connected, enabled, MergeAndReplace", "stored token blob does not contain the plaintext token; decrypting yields it", "the password was only handed to the login process"]},
+    {"name": "pending MFA is replaced per profile and globally bounded", "steps": ["begin for profile P twice => the first pending login is disposed", "3 more profiles begin => 4 pending", "a 5th profile => error containing 'too many'"]},
+    {"name": "MFA challenge expires after 5 minutes", "source": "derived from the login service (no dedicated test)", "steps": ["begin => MfaRequired", "complete after 5 min => 'The Garmin verification request expired; start again.'"]}
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "omega-z-advertisement-matcher",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Match if advertised local name starts with 'JFTMOmega Z' (case-insensitive), OR the name is absent/blank AND the advertised service list contains BOTH 0x1816 and 0x1826.",
+    "A match only makes the device an enrollment candidate for protocol 'horizon-omega-z'. It never enables any control."
+  ],
+  "cases": [
+    {
+      "source": "legacy-test",
+      "name": "JFTMOmega Z",
+      "serviceUuids": [],
+      "expectedMatch": true
+    },
+    {
+      "source": "legacy-test",
+      "name": "jftmomega z",
+      "serviceUuids": [],
+      "expectedMatch": true
+    },
+    {
+      "source": "legacy-test",
+      "name": "JFTMOmega Z 1234",
+      "serviceUuids": [],
+      "expectedMatch": true
+    },
+    {
+      "source": "legacy-test",
+      "name": null,
+      "serviceUuids": [
+        "00001816-0000-1000-8000-00805f9b34fb",
+        "00001826-0000-1000-8000-00805f9b34fb"
+      ],
+      "expectedMatch": true
+    },
+    {
+      "source": "legacy-test",
+      "name": "Future Treadmill",
+      "serviceUuids": [
+        "00001816-0000-1000-8000-00805f9b34fb",
+        "00001826-0000-1000-8000-00805f9b34fb"
+      ],
+      "expectedMatch": false
+    },
+    {
+      "source": "legacy-test",
+      "name": null,
+      "serviceUuids": [
+        "00001826-0000-1000-8000-00805f9b34fb"
+      ],
+      "expectedMatch": false
+    },
+    {
+      "source": "legacy-test",
+      "name": null,
+      "serviceUuids": [
+        "00001816-0000-1000-8000-00805f9b34fb"
+      ],
+      "expectedMatch": false
+    },
+    {
+      "source": "legacy-test",
+      "name": "Future Domyos",
+      "serviceUuids": [],
+      "expectedMatch": false
+    },
+    {
+      "source": "derived",
+      "name": "   ",
+      "serviceUuids": [
+        "00001816-0000-1000-8000-00805f9b34fb",
+        "00001826-0000-1000-8000-00805f9b34fb"
+      ],
+      "expectedMatch": true,
+      "note": "whitespace-only name counts as absent"
+    }
+  ]
+}

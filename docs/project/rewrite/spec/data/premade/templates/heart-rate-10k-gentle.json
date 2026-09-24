@@ -1,0 +1,3208 @@
+{
+  "schema": "treadmillrunner.premade-template/1",
+  "id": "heart-rate-10k-gentle",
+  "version": "1.0.0",
+  "name": "Heart-rate 10K Gentle",
+  "description": "Zone-guided aerobic development with bounded speed fallback.",
+  "goal": "10K",
+  "experience": "Intermediate",
+  "weeks": 14,
+  "sessionsPerWeek": 3,
+  "repeatable": false,
+  "requiresHeartRate": true,
+  "tags": [
+    "10k",
+    "gentle",
+    "heart-rate"
+  ],
+  "sessionCount": 42,
+  "variantCount": 42,
+  "uniqueDefinitionCount": 42,
+  "heartRateZoneReferences": [
+    2,
+    3
+  ],
+  "maximumDurationMinutes": 55,
+  "maximumSpeedKph": 8.5,
+  "maximumInclinePercent": 1,
+  "sourceContentSha256": null,
+  "contentSha256": "9e9cb9252e587bc1d0ac8c73e134a05b17bdb6c95247ac2e888fc535be28a961",
+  "phases": [
+    {
+      "name": "Foundation",
+      "firstWeek": 1,
+      "lastWeek": 4,
+      "sessionCount": 12
+    },
+    {
+      "name": "Build",
+      "firstWeek": 5,
+      "lastWeek": 10,
+      "sessionCount": 18
+    },
+    {
+      "name": "Peak",
+      "firstWeek": 11,
+      "lastWeek": 12,
+      "sessionCount": 6
+    },
+    {
+      "name": "Consolidate",
+      "firstWeek": 13,
+      "lastWeek": 14,
+      "sessionCount": 6
+    }
+  ],
+  "sessions": [
+    {
+      "position": 1,
+      "weekNumber": 1,
+      "sessionNumber": 1,
+      "phase": "Foundation",
+      "workoutKey": "easy-28-6.5-1.0-2",
+      "workoutName": "Easy Z2 · 28 min",
+      "durationMinutes": 28,
+      "targetSpeedKph": 6.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "5eee9418a32030d132011c3ae41f85484c41c05a190a3f0f0fcf8caf168bd973",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 28 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 6.5,
+              "minimumKilometersPerHour": 5,
+              "maximumKilometersPerHour": 6.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 2,
+      "weekNumber": 1,
+      "sessionNumber": 2,
+      "phase": "Foundation",
+      "workoutKey": "quality-32-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "546f72cf6739fb724e4af97113c1ed14a10559c8d851cd7b5196d714ef7390ea",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 32 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 3,
+      "weekNumber": 1,
+      "sessionNumber": 3,
+      "phase": "Foundation",
+      "workoutKey": "long-32-7.0-1.0-2",
+      "workoutName": "Long Z2 · 32 min",
+      "durationMinutes": 32,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "60ce0512b2103d07be21cb39d61bff8c532c0b722d9a595966c87e0c7caa9f87",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 32 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13800000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7,
+              "minimumKilometersPerHour": 5.5,
+              "maximumKilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 4,
+      "weekNumber": 2,
+      "sessionNumber": 1,
+      "phase": "Foundation",
+      "workoutKey": "easy-30-7.0-1.0-2",
+      "workoutName": "Easy Z2 · 30 min",
+      "durationMinutes": 30,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "a6ae1bd44feaf5cf272ed25d98c4650d65979741745690375522b34558f65182",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 30 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 12600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7,
+              "minimumKilometersPerHour": 5.5,
+              "maximumKilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 5,
+      "weekNumber": 2,
+      "sessionNumber": 2,
+      "phase": "Foundation",
+      "workoutKey": "quality-34-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 34 min",
+      "durationMinutes": 34,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "255c959a06a46dbcf155555e587855c521bb6137efd361b0ef7694089f66f2a5",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 34 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 6,
+      "weekNumber": 2,
+      "sessionNumber": 3,
+      "phase": "Foundation",
+      "workoutKey": "long-34-7.5-1.0-2",
+      "workoutName": "Long Z2 · 34 min",
+      "durationMinutes": 34,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "14d792e14759e69b6fb06a126eff17cc211c4e7f9709a3825d2123436be0b7aa",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 34 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 7,
+      "weekNumber": 3,
+      "sessionNumber": 1,
+      "phase": "Foundation",
+      "workoutKey": "easy-31-7.0-1.0-2",
+      "workoutName": "Easy Z2 · 31 min",
+      "durationMinutes": 31,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "dfb88c1ce4cd58dde95ce4a1b4d438a0588158b3112c8cca8a1a4f8dd1b3b321",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 31 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 13200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7,
+              "minimumKilometersPerHour": 5.5,
+              "maximumKilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 8,
+      "weekNumber": 3,
+      "sessionNumber": 2,
+      "phase": "Foundation",
+      "workoutKey": "quality-35-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 35 min",
+      "durationMinutes": 35,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "14f739e8181395bcad592dff75bd5240596f91b562bb605f1762fec51aacbde2",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 35 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 9,
+      "weekNumber": 3,
+      "sessionNumber": 3,
+      "phase": "Foundation",
+      "workoutKey": "long-35-7.5-1.0-2",
+      "workoutName": "Long Z2 · 35 min",
+      "durationMinutes": 35,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "69d3f4a8ff0dc86cb20f9cccf9ad5c0c3f943d139c5ff1ee0fd99d3334c52785",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 35 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 10,
+      "weekNumber": 4,
+      "sessionNumber": 1,
+      "phase": "Foundation",
+      "workoutKey": "easy-33-7.0-1.0-2",
+      "workoutName": "Easy Z2 · 33 min",
+      "durationMinutes": 33,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "c51b39fdc627236d4f05877b82a302e332f8d317cfae1f13aea1512f2b197c02",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 33 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 14400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7,
+              "minimumKilometersPerHour": 5.5,
+              "maximumKilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 11,
+      "weekNumber": 4,
+      "sessionNumber": 2,
+      "phase": "Foundation",
+      "workoutKey": "quality-37-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 37 min",
+      "durationMinutes": 37,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "8fdbab5fbb4089f9ad31b461283b9adc5577c180f96f55d6930ebbdd3038ddbd",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 37 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 16200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 12,
+      "weekNumber": 4,
+      "sessionNumber": 3,
+      "phase": "Foundation",
+      "workoutKey": "long-37-7.5-1.0-2",
+      "workoutName": "Long Z2 · 37 min",
+      "durationMinutes": 37,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "79395d0e10a5a63b6078cbe8145017cdb0cf96389b6779614941cf28b0d37312",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 37 min",
+        "description": "Premade plan workout · Foundation",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 16200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 13,
+      "weekNumber": 5,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-35-7.0-1.0-2",
+      "workoutName": "Easy Z2 · 35 min",
+      "durationMinutes": 35,
+      "targetSpeedKph": 7,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "ba7f982afc9a90aa49865f68cd7a4d3c9481f39517d581090c877cbb45bdf006",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 35 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 15600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7,
+              "minimumKilometersPerHour": 5.5,
+              "maximumKilometersPerHour": 7
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 14,
+      "weekNumber": 5,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-39-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 39 min",
+      "durationMinutes": 39,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "c7c551d9d0a73faca35efd76787e050345233fdc51ba5c3486248c39b90cd5bc",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 39 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 15,
+      "weekNumber": 5,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-39-7.5-1.0-2",
+      "workoutName": "Long Z2 · 39 min",
+      "durationMinutes": 39,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "b07f3d0b2f1fee8d8623d79fd303769c801ae342f380cb5a9f9f6c2a26523ecb",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 39 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 16,
+      "weekNumber": 6,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-37-7.5-1.0-2",
+      "workoutName": "Easy Z2 · 37 min",
+      "durationMinutes": 37,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "ef2b506d32dabeea2c1a9df40f3b48efe4e13fb70006fad03ce645cdeec4910b",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 37 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 16200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 17,
+      "weekNumber": 6,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-41-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 41 min",
+      "durationMinutes": 41,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "8031f99247397f8ef9617d4cef91babc6e1518f6a2f81e54eda79ccf5c369001",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 41 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 18,
+      "weekNumber": 6,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-41-7.5-1.0-2",
+      "workoutName": "Long Z2 · 41 min",
+      "durationMinutes": 41,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "4e4b0b93ae38d23522ef12ad7bf9fa9711ea58d9f80bd6b1e8f24313226ab606",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 41 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 19,
+      "weekNumber": 7,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-39-7.5-1.0-2",
+      "workoutName": "Easy Z2 · 39 min",
+      "durationMinutes": 39,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "6f0f4acfdeb089a4e0a165bfa4dc44e2d6e85bcf4207b6260bf98ee120d0ffbd",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 39 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 2400000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 20,
+      "weekNumber": 7,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-43-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 43 min",
+      "durationMinutes": 43,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "076e4eea20a99d33dd793bc57d66bb4fff14adb90afdd4304f5ed867b0735e57",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 43 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 21,
+      "weekNumber": 7,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-43-8.0-1.0-2",
+      "workoutName": "Long Z2 · 43 min",
+      "durationMinutes": 43,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "7bf0b64190b92ebcf13cf9a00c4065ecb9fac6578c11d9b110bbd768d80fe9d9",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 43 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 22,
+      "weekNumber": 8,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-40-7.5-1.0-2",
+      "workoutName": "Easy Z2 · 40 min",
+      "durationMinutes": 40,
+      "targetSpeedKph": 7.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "eb202790a85760180904c1981cfd61de854d686c285100f0d3ce2a77ade570bc",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 40 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 17400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 7.5,
+              "minimumKilometersPerHour": 6,
+              "maximumKilometersPerHour": 7.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 23,
+      "weekNumber": 8,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-44-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 44 min",
+      "durationMinutes": 44,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "28642460d249edfa5e2248898cc03714d7e196d94a6efcb764c47c7c3fcdd002",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 44 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 19200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 24,
+      "weekNumber": 8,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-44-8.0-1.0-2",
+      "workoutName": "Long Z2 · 44 min",
+      "durationMinutes": 44,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "7cb4181aa09025a893e9ea6e3b3558cfb574c923dfdc0198aaaeb800591c5d8e",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 44 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 19200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 25,
+      "weekNumber": 9,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-42-8.0-1.0-2",
+      "workoutName": "Easy Z2 · 42 min",
+      "durationMinutes": 42,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "84f57bfa472c8d56b25f6d262a44aad3bddb82d2cb8418e53eb0e765c030d9e6",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 42 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 18000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 26,
+      "weekNumber": 9,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-46-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 46 min",
+      "durationMinutes": 46,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "effca5824fb3befcd6678970aac41452fed55bf25b3231cd479ac445c9661adf",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 46 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 20400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 27,
+      "weekNumber": 9,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-46-8.0-1.0-2",
+      "workoutName": "Long Z2 · 46 min",
+      "durationMinutes": 46,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "7f4f5f5ad66daac60c3a416ad496f5ed7151fba8c711635c755c3f2b9de8125e",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 46 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 20400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 28,
+      "weekNumber": 10,
+      "sessionNumber": 1,
+      "phase": "Build",
+      "workoutKey": "easy-44-8.0-1.0-2",
+      "workoutName": "Easy Z2 · 44 min",
+      "durationMinutes": 44,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "d11f5cb7750bbabc1b84989b817df11cfea3a70effe34458505cbc3efa7a0fb1",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 44 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 19200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 29,
+      "weekNumber": 10,
+      "sessionNumber": 2,
+      "phase": "Build",
+      "workoutKey": "quality-48-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 48 min",
+      "durationMinutes": 48,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "57dda65e4181c4970e056953af89cea9be6e470a4513cd395587af8b06dc48fb",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 48 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 20400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 30,
+      "weekNumber": 10,
+      "sessionNumber": 3,
+      "phase": "Build",
+      "workoutKey": "long-48-8.0-1.0-2",
+      "workoutName": "Long Z2 · 48 min",
+      "durationMinutes": 48,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "25e81c953c4b963d21ec08973a1562a43fe439cd96faff50daefc7f047b20218",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 48 min",
+        "description": "Premade plan workout · Build",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 20400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 31,
+      "weekNumber": 11,
+      "sessionNumber": 1,
+      "phase": "Peak",
+      "workoutKey": "easy-46-8.0-1.0-2",
+      "workoutName": "Easy Z2 · 46 min",
+      "durationMinutes": 46,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "2a1e0d863336fdab3545b782001ad1627610a89fff99da0d8c947921861a2eb3",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 46 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 20400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 32,
+      "weekNumber": 11,
+      "sessionNumber": 2,
+      "phase": "Peak",
+      "workoutKey": "quality-50-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 50 min",
+      "durationMinutes": 50,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "ec32ce957093bca849095aa8d6d4136e8f9200674e94ee2c59bca57f2a2281a0",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 50 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 33,
+      "weekNumber": 11,
+      "sessionNumber": 3,
+      "phase": "Peak",
+      "workoutKey": "long-50-8.0-1.0-2",
+      "workoutName": "Long Z2 · 50 min",
+      "durationMinutes": 50,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "ec134d3a1be894a6f7786c3b0ee2f9fc4f4a901dbcc9a0985a89d4c2cc6ba15a",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 50 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 34,
+      "weekNumber": 12,
+      "sessionNumber": 1,
+      "phase": "Peak",
+      "workoutKey": "easy-47-8.0-1.0-2",
+      "workoutName": "Easy Z2 · 47 min",
+      "durationMinutes": 47,
+      "targetSpeedKph": 8,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "b4829c9519e52c9916525b3e38f79b2aed40f7ff71d3b8ecc69969ce1078ab13",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 47 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4200000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8,
+              "minimumKilometersPerHour": 6.5,
+              "maximumKilometersPerHour": 8
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3000000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 35,
+      "weekNumber": 12,
+      "sessionNumber": 2,
+      "phase": "Peak",
+      "workoutKey": "quality-51-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 51 min",
+      "durationMinutes": 51,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "49b1d1e3ecf35f51e5d5999754a551811aff6a1a6e3f724d90d767413027b074",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 51 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 22200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 36,
+      "weekNumber": 12,
+      "sessionNumber": 3,
+      "phase": "Peak",
+      "workoutKey": "long-51-8.5-1.0-2",
+      "workoutName": "Long Z2 · 51 min",
+      "durationMinutes": 51,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "71c440a38607218a3a16f9d637dbd3a47670505307ea2826d36ad54904c069e4",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 51 min",
+        "description": "Premade plan workout · Peak",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 22200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 37,
+      "weekNumber": 13,
+      "sessionNumber": 1,
+      "phase": "Consolidate",
+      "workoutKey": "easy-49-8.5-1.0-2",
+      "workoutName": "Easy Z2 · 49 min",
+      "durationMinutes": 49,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "8185d2792638a25eb63d368adb0dc8af2b45b5cd60dce9396972c3a480d4ffd7",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 49 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 21000000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 38,
+      "weekNumber": 13,
+      "sessionNumber": 2,
+      "phase": "Consolidate",
+      "workoutKey": "quality-53-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 53 min",
+      "durationMinutes": 53,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "362cbdae1efc8b6ee41b7067e0569548eab9e6a76107085ecdec32c86a16217e",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 53 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 23400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 39,
+      "weekNumber": 13,
+      "sessionNumber": 3,
+      "phase": "Consolidate",
+      "workoutKey": "long-53-8.5-1.0-2",
+      "workoutName": "Long Z2 · 53 min",
+      "durationMinutes": 53,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "b517118093dc8773d12a6d687c77960dce0693c6a1d0a4f948db46bb547b3763",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 53 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 23400000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 40,
+      "weekNumber": 14,
+      "sessionNumber": 1,
+      "phase": "Consolidate",
+      "workoutKey": "easy-51-8.5-1.0-2",
+      "workoutName": "Easy Z2 · 51 min",
+      "durationMinutes": 51,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "f7e6a14ac95196960093452a4dbe690aa318b3a3d18ad35449459004f5d9f3b7",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Easy Z2 · 51 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 22200000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 41,
+      "weekNumber": 14,
+      "sessionNumber": 2,
+      "phase": "Consolidate",
+      "workoutKey": "quality-55-8.5-1.0-3",
+      "workoutName": "Quality Z3 · 55 min",
+      "durationMinutes": 55,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 3,
+      "definitionSha256": "2d0f36c5b505db2e471f515687aed56f447e27c43c01c89e00614dad7c19ba2f",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Quality Z3 · 55 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 24600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 3,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z3",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    },
+    {
+      "position": 42,
+      "weekNumber": 14,
+      "sessionNumber": 3,
+      "phase": "Consolidate",
+      "workoutKey": "long-55-8.5-1.0-2",
+      "workoutName": "Long Z2 · 55 min",
+      "durationMinutes": 55,
+      "targetSpeedKph": 8.5,
+      "targetInclinePercent": 1,
+      "heartRateZoneNumber": 2,
+      "definitionSha256": "3951916985bcaae01ed719df75aad35c5ebf4c5f4e329bbf31907cddf5898c7a",
+      "definition": {
+        "schemaVersion": 1,
+        "title": "Long Z2 · 55 min",
+        "description": "Premade plan workout · Consolidate",
+        "blocks": [
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 4800000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Warm up",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 24600000000
+            },
+            "speed": {
+              "kind": "heartRateZone",
+              "zoneNumber": 2,
+              "initialKilometersPerHour": 8.5,
+              "minimumKilometersPerHour": 7,
+              "maximumKilometersPerHour": 8.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 1
+            },
+            "cue": "Stay in Z2",
+            "notes": null
+          },
+          {
+            "kind": "step",
+            "goal": {
+              "kind": "time",
+              "durationTicks": 3600000000
+            },
+            "speed": {
+              "kind": "fixed",
+              "kilometersPerHour": 4.5
+            },
+            "incline": {
+              "kind": "fixed",
+              "percent": 0.5
+            },
+            "cue": "Cool down",
+            "notes": null
+          }
+        ]
+      },
+      "alternatives": []
+    }
+  ]
+}

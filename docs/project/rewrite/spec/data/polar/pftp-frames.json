@@ -1,0 +1,291 @@
+{
+  "description": "RFC-76 air frames on the MTU characteristic. Header byte = (sequence<<4) | (status<<1) | next. status: 0=RESPONSE_OR_ERROR, 1=LAST, 3=MORE, 2=reserved(reject). next: 0 on the first frame of a message, 1 on every following frame. Frame size = bytes per characteristic write including the 1-byte header.",
+  "headers": [
+    {
+      "sequence": 0,
+      "status": 1,
+      "next": 0,
+      "byte": "02"
+    },
+    {
+      "sequence": 0,
+      "status": 3,
+      "next": 0,
+      "byte": "06"
+    },
+    {
+      "sequence": 1,
+      "status": 3,
+      "next": 1,
+      "byte": "17"
+    },
+    {
+      "sequence": 1,
+      "status": 1,
+      "next": 1,
+      "byte": "13"
+    },
+    {
+      "sequence": 0,
+      "status": 0,
+      "next": 0,
+      "byte": "00"
+    },
+    {
+      "sequence": 14,
+      "status": 3,
+      "next": 0,
+      "byte": "E6"
+    },
+    {
+      "sequence": 15,
+      "status": 3,
+      "next": 1,
+      "byte": "F7"
+    },
+    {
+      "sequence": 0,
+      "status": 1,
+      "next": 1,
+      "byte": "03"
+    },
+    {
+      "sequence": 15,
+      "status": 1,
+      "next": 1,
+      "byte": "F3"
+    }
+  ],
+  "encode": [
+    {
+      "name": "seven-zero-bytes-frame4-seq14",
+      "message": "00 00 00 00 00 00 00",
+      "frameSize": 4,
+      "startSequence": 14,
+      "packets": [
+        "E6 00 00 00",
+        "F7 00 00 00",
+        "03 00"
+      ],
+      "nextSequence": 1,
+      "source": "frame codec test: sequence wraps 14,15,0; next sequence 1"
+    },
+    {
+      "name": "abcde-frame4",
+      "message": "61 62 63 64 65",
+      "frameSize": 4,
+      "startSequence": 0,
+      "packets": [
+        "06 61 62 63",
+        "13 64 65"
+      ],
+      "reassembled": "abcde",
+      "source": "frame codec test"
+    },
+    {
+      "name": "status-query-frame20",
+      "message": "10 80",
+      "frameSize": 20,
+      "startSequence": 0,
+      "packets": [
+        "02 10 80"
+      ]
+    },
+    {
+      "name": "get-samples-frame20",
+      "message": "16 00 08 00 12 12 2F 72 75 6E 2D 31 2F 53 41 4D 50 4C 45 53 2E 42 50 42",
+      "frameSize": 20,
+      "startSequence": 0,
+      "packets": [
+        "06 16 00 08 00 12 12 2F 72 75 6E 2D 31 2F 53 41 4D 50 4C 45",
+        "13 53 2E 42 50 42"
+      ]
+    },
+    {
+      "name": "start-automatic-frame20",
+      "message": "0E 80 08 01 12 02 18 01 1A 23 74 72 2D 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66",
+      "frameSize": 20,
+      "startSequence": 0,
+      "packets": [
+        "06 0E 80 08 01 12 02 18 01 1A 23 74 72 2D 30 31 32 33 34 35",
+        "17 36 37 38 39 61 62 63 64 65 66 30 31 32 33 34 35 36 37 38",
+        "23 39 61 62 63 64 65 66"
+      ]
+    },
+    {
+      "name": "empty-message",
+      "message": "",
+      "frameSize": 20,
+      "startSequence": 0,
+      "packets": [
+        "02"
+      ],
+      "note": "An empty message still produces one LAST frame with only the header"
+    }
+  ],
+  "decode": [
+    {
+      "name": "single-last",
+      "packets": [
+        "02 72 65 61 64 79"
+      ],
+      "result": {
+        "payload": "72 65 61 64 79"
+      }
+    },
+    {
+      "name": "multi-frame",
+      "packets": [
+        "06 70 61 72 74 2D",
+        "13 74 77 6F"
+      ],
+      "result": {
+        "payload": "70 61 72 74 2D 74 77 6F"
+      },
+      "source": "transport test: 'part-' + 'two'"
+    },
+    {
+      "name": "directory-multi-frame8",
+      "packets": [
+        "06 0A 0A 0A 06 72 75 6E",
+        "17 2D 61 2F 10 00 0A 0F",
+        "27 0A 0B 69 67 6E 6F 72",
+        "37 65 64 2E 74 78 74 10",
+        "43 03"
+      ],
+      "result": {
+        "payload": "0A 0A 0A 06 72 75 6E 2D 61 2F 10 00 0A 0F 0A 0B 69 67 6E 6F 72 65 64 2E 74 78 74 10 03"
+      }
+    },
+    {
+      "name": "success-response-frame",
+      "packets": [
+        "00 00 00"
+      ],
+      "result": {
+        "payload": ""
+      },
+      "note": "status 0 with code 0 = success with no payload (e.g. start/stop/remove)"
+    },
+    {
+      "name": "remote-error-103",
+      "packets": [
+        "00 67 00"
+      ],
+      "result": {
+        "remoteError": 103,
+        "name": "NO_SUCH_FILE_OR_DIRECTORY"
+      },
+      "source": "client test"
+    },
+    {
+      "name": "remote-error-106",
+      "packets": [
+        "00 6A 00"
+      ],
+      "result": {
+        "remoteError": 106,
+        "name": "OPERATION_NOT_PERMITTED"
+      }
+    },
+    {
+      "name": "remote-error-202",
+      "packets": [
+        "00 CA 00"
+      ],
+      "result": {
+        "remoteError": 202,
+        "name": "SYSTEM_BUSY"
+      }
+    },
+    {
+      "name": "error-code-truncated",
+      "packets": [
+        "00 67"
+      ],
+      "result": {
+        "error": "FormatError: response omitted its 2-byte status code"
+      }
+    },
+    {
+      "name": "reserved-status-single",
+      "packets": [
+        "04"
+      ],
+      "result": {
+        "error": "FormatError: reserved status 2"
+      },
+      "source": "frame codec test"
+    },
+    {
+      "name": "reserved-status-first",
+      "packets": [
+        "05 01",
+        "25 02"
+      ],
+      "result": {
+        "error": "FormatError: reserved status 2"
+      },
+      "source": "frame codec test"
+    },
+    {
+      "name": "continuation-bit-out-of-sync",
+      "packets": [
+        "07 01",
+        "13 02"
+      ],
+      "result": {
+        "error": "FormatError: first frame has next=1"
+      },
+      "source": "client test"
+    },
+    {
+      "name": "sequence-gap",
+      "packets": [
+        "06 61",
+        "23 62"
+      ],
+      "result": {
+        "error": "FormatError: sequence gap expected 1 received 2"
+      }
+    },
+    {
+      "name": "first-sequence-not-zero",
+      "packets": [
+        "12 78"
+      ],
+      "result": {
+        "error": "FormatError: first response frame must have sequence 0"
+      }
+    },
+    {
+      "name": "missing-next-on-second",
+      "packets": [
+        "06 61",
+        "12 62"
+      ],
+      "result": {
+        "error": "FormatError: continuation bit out of sync"
+      }
+    },
+    {
+      "name": "incomplete",
+      "packets": [
+        "06 61"
+      ],
+      "result": {
+        "error": "FormatError: ended before final frame (only if the stream is closed; a live transport waits and times out)"
+      }
+    },
+    {
+      "name": "oversize",
+      "packets": [
+        "02 61 62 63"
+      ],
+      "maximumBytes": 2,
+      "result": {
+        "error": "SizeLimitExceeded"
+      }
+    }
+  ]
+}

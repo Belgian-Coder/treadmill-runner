@@ -98,3 +98,6 @@ screenshots/**/*.webp
 !screenshots/showcase/**/*.webp
 
 external references/
+
+# Rewrite spec pack golden data is committed
+!docs/project/rewrite/spec/data/

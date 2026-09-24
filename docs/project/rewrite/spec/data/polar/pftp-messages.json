@@ -1,0 +1,181 @@
+{
+  "description": "PFTP application messages (RFC-60 envelope + protobuf). Hex is space-separated uppercase bytes. These are complete messages BEFORE RFC-76 framing.",
+  "requests": [
+    {
+      "name": "query-status",
+      "description": "REQUEST_RECORDING_STATUS (16), no parameters",
+      "hex": "10 80"
+    },
+    {
+      "name": "query-stop",
+      "description": "REQUEST_STOP_RECORDING (15), no parameters",
+      "hex": "0F 80"
+    },
+    {
+      "name": "query-start-hr-1s-run-1",
+      "description": "REQUEST_START_RECORDING (14): sample_type=1 (HR), recording_interval={seconds:1}, sample_data_identifier='run-1'",
+      "hex": "0E 80 08 01 12 02 18 01 1A 05 72 75 6E 2D 31",
+      "source": "client test: start parameter layout"
+    },
+    {
+      "name": "query-start-hr-5s-manual",
+      "description": "Start HR at 5 s",
+      "hex": "0E 80 08 01 12 02 18 05 1A 08 6D 61 6E 75 61 6C 2D 61"
+    },
+    {
+      "name": "query-start-rr-rr-run",
+      "description": "Start RR (16). Interval is forced to 1 s by the client (the device ignores it for RR)",
+      "hex": "0E 80 08 10 12 02 18 01 1A 06 72 72 2D 72 75 6E"
+    },
+    {
+      "name": "query-start-automatic",
+      "description": "Automatic workout recording for sessionId 01234567-89ab-cdef-0123-456789abcdef (exercise id = 'tr-' + 32 lowercase hex, no dashes)",
+      "exerciseId": "tr-0123456789abcdef0123456789abcdef",
+      "hex": "0E 80 08 01 12 02 18 01 1A 23 74 72 2D 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66"
+    },
+    {
+      "name": "query-generic-14-with-param-07",
+      "description": "RFC-60 query encoding: id 14, parameter byte 07",
+      "hex": "0E 80 07",
+      "source": "frame codec test"
+    },
+    {
+      "name": "op-get-root",
+      "description": "PbPFtpOperation{command=GET(0), path='/'} in RFC-60 request envelope (2-byte LE length of operation, bit15 clear)",
+      "hex": "05 00 08 00 12 01 2F",
+      "source": "frame codec test: 05 00 08 00 12 01 2F"
+    },
+    {
+      "name": "op-get-dir-run-1",
+      "description": "GET '/run-1/' (directory)",
+      "hex": "0B 00 08 00 12 07 2F 72 75 6E 2D 31 2F"
+    },
+    {
+      "name": "op-get-samples-run-1",
+      "description": "GET '/run-1/SAMPLES.BPB'",
+      "hex": "16 00 08 00 12 12 2F 72 75 6E 2D 31 2F 53 41 4D 50 4C 45 53 2E 42 50 42"
+    },
+    {
+      "name": "op-remove-samples-run-1",
+      "description": "REMOVE(3) '/run-1/SAMPLES.BPB'",
+      "hex": "16 00 08 03 12 12 2F 72 75 6E 2D 31 2F 53 41 4D 50 4C 45 53 2E 42 50 42"
+    },
+    {
+      "name": "op-get-samples-automatic",
+      "description": "GET exact automatic path",
+      "path": "/tr-0123456789abcdef0123456789abcdef/SAMPLES.BPB",
+      "hex": "34 00 08 00 12 30 2F 74 72 2D 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66 30 31 32 33 34 35 36 37 38 39 61 62 63 64 65 66 2F 53 41 4D 50 4C 45 53 2E 42 50 42"
+    }
+  ],
+  "responses": [
+    {
+      "name": "status-recording-run-1",
+      "hex": "08 01 12 05 72 75 6E 2D 31",
+      "expected": {
+        "isRecording": true,
+        "exerciseId": "run-1"
+      },
+      "source": "client test"
+    },
+    {
+      "name": "status-idle",
+      "hex": "08 00",
+      "expected": {
+        "isRecording": false,
+        "exerciseId": null
+      }
+    },
+    {
+      "name": "status-empty-payload",
+      "hex": "",
+      "expected": {
+        "isRecording": false,
+        "exerciseId": null
+      },
+      "note": "Empty status payload means not recording (both this project and the Polar SDK)"
+    },
+    {
+      "name": "status-missing-flag",
+      "hex": "12 01 78",
+      "expected": {
+        "error": "FormatError: recording flag (field 1) missing"
+      },
+      "source": "client test"
+    },
+    {
+      "name": "directory-root",
+      "hex": "0A 0A 0A 06 72 75 6E 2D 61 2F 10 00 0A 0F 0A 0B 69 67 6E 6F 72 65 64 2E 74 78 74 10 03",
+      "expected": {
+        "entries": [
+          {
+            "name": "run-a/",
+            "size": 0
+          },
+          {
+            "name": "ignored.txt",
+            "size": 3
+          }
+        ]
+      },
+      "note": "PbPFtpDirectory{entries(1)=PbPFtpEntry{name(1),size(2)}}. Names ending '/' are directories; only 'SAMPLES.BPB' files are collected"
+    },
+    {
+      "name": "directory-run-a",
+      "hex": "0A 0F 0A 0B 53 41 4D 50 4C 45 53 2E 42 50 42 10 1B",
+      "expected": {
+        "entries": [
+          {
+            "name": "SAMPLES.BPB",
+            "size": 27
+          }
+        ]
+      }
+    },
+    {
+      "name": "recursive-list-result",
+      "expected": {
+        "requests": [
+          "GET /",
+          "GET /run-a/"
+        ],
+        "recordings": [
+          {
+            "path": "/run-a/SAMPLES.BPB",
+            "sizeBytes": 27
+          }
+        ]
+      },
+      "note": "Listing of directory-root then directory-run-a yields exactly one recording; 'ignored.txt' is skipped; 2 requests total",
+      "source": "client test"
+    },
+    {
+      "name": "samples-hr-1s",
+      "hex": "0A 02 18 01 12 03 64 65 66",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 1,
+        "heartRate": [
+          100,
+          101,
+          102
+        ],
+        "rrMs": []
+      },
+      "source": "client test"
+    },
+    {
+      "name": "samples-rr",
+      "hex": "0A 02 18 01 E2 01 06 0A 04 E8 07 D0 07",
+      "expected": {
+        "sampleType": "RrInterval",
+        "intervalSeconds": 1,
+        "heartRate": [],
+        "rrMs": [
+          1000,
+          976
+        ]
+      },
+      "source": "client test"
+    }
+  ]
+}

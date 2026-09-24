@@ -1,0 +1,12 @@
+{
+  "description": "Which peers may send Garmin credentials, MFA codes, test-activity, historical-recovery and latest-two requests over the app's web UI. HTTPS is always allowed. Plain HTTP is allowed only from loopback, private or link-local peers. Anything else gets HTTP 426. In the phone app, this applies to the embedded web server; the native UI on the phone itself is always local.",
+  "allowedOverHttp": ["127.0.0.1", "::1", "10.20.30.40", "172.16.0.1", "172.31.255.254", "192.168.1.20", "169.254.10.20", "::ffff:192.168.1.20", "fd12:3456:789a::20", "fe80::20"],
+  "rejectedOverHttp": ["8.8.8.8", "172.15.255.255", "172.32.0.1", "203.0.113.20", "2001:4860:4860::8888", "<missing peer address>"],
+  "httpsAnyPeer": true,
+  "rules": [
+    "IPv4-mapped IPv6 is unwrapped first.",
+    "IPv4 private: 10/8, 172.16/12, 192.168/16, link-local 169.254/16, loopback 127/8.",
+    "IPv6: loopback ::1, unique-local fc00::/7, link-local fe80::/10.",
+    "Watch pairing token creation is stricter: HTTPS, or loopback only (not the LAN over HTTP)."
+  ]
+}

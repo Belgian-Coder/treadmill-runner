@@ -1,0 +1,179 @@
+{
+  "description": "MergeAndReplace FIT merge: before/after field summaries translated from the merge tests. Build the watch FIT and local session exactly as described, run merge(watchFit, session), decode the result and compare. All times UTC.",
+  "fixtures": {
+    "localSession_Elevation": {
+      "sessionId": "11111111-2222-3333-4444-555555555555",
+      "profileId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      "state": "Completed",
+      "startedAt": "2026-08-04T20:00:00Z",
+      "endedAt": "2026-08-04T20:00:02Z",
+      "durationSeconds": 2,
+      "weightKg": 70,
+      "hrZonesSnapshot": [[1, 100, 119], [2, 120, 129], [3, 130, 139], [4, 140, 149], [5, 150, 200]],
+      "samples": [
+        {"seq": 0, "capturedAt": "+0 s", "elapsed": 0, "speedKph": 0, "inclinePct": 0, "hr": 135, "distanceKm": 0.0, "kcal": 0.0},
+        {"seq": 1, "capturedAt": "+1 s", "elapsed": 1, "speedKph": 8, "inclinePct": 10, "hr": 150, "distanceKm": 0.1, "kcal": 0.5},
+        {"seq": 2, "capturedAt": "+2 s", "elapsed": 2, "speedKph": 4, "inclinePct": -5, "hr": 120, "distanceKm": 0.2, "kcal": 1.0}
+      ]
+    },
+    "localSession_Paused": {
+      "base": "localSession_Elevation identity and profile",
+      "endedAt": "+12 s",
+      "durationSeconds": 8,
+      "samples": [
+        {"seq": 0, "capturedAt": "+0 s", "elapsed": 0, "speedKph": 0, "inclinePct": 0, "hr": 135, "distanceKm": 0.0, "kcal": 0.0},
+        {"seq": 1, "capturedAt": "+3 s", "elapsed": 3, "speedKph": 8, "inclinePct": 1, "hr": 150, "distanceKm": 0.01, "kcal": 0.5},
+        {"seq": 2, "capturedAt": "+7 s", "elapsed": 4, "speedKph": 4, "inclinePct": 0, "hr": 120, "distanceKm": 0.02, "kcal": 0.75},
+        {"seq": 3, "capturedAt": "+12 s", "elapsed": 8, "speedKph": 4, "inclinePct": 0, "hr": 120, "distanceKm": 0.03, "kcal": 1.0}
+      ],
+      "events": [{"type": "Paused", "at": "+3 s"}, {"type": "Resumed", "at": "+7 s"}]
+    },
+    "watchFit_default": {
+      "fileId": {"type": "activity", "manufacturer": "garmin", "product": 4242, "serial": 123456, "productName": "fenix 8", "timeCreated": "watch start"},
+      "fileCreator": {"softwareVersion": 2310, "hardwareVersion": 8},
+      "userProfile": {"friendlyName": "Watch runner", "defaultMaxHeartRate": 190, "restingHeartRate": 60},
+      "zonesTarget": {"maxHeartRate": 190, "hrCalcType": "custom"},
+      "hrZones": [[0, 119], [1, 139], [2, 159], [3, 179], [4, 199]],
+      "sport": {"sport": "running", "subSport": "treadmill", "name": "Watch treadmill"},
+      "deviceInfo": [{"deviceIndex": 0, "manufacturer": "garmin", "product": 4242, "serial": 123456}, {"deviceIndex": 1, "manufacturer": "garmin", "developerField": "watch_metric = 7"}],
+      "developerDataId": "present (index 0)",
+      "fieldDescription": "watch_metric, float32, units 'score'",
+      "events": ["timer start at watch start", "timer stop_all at last record"],
+      "records": "at seconds [0, 1, 2] after watch start: cadence 88, power 220, temperature 21, core_temperature 37.2, left_power_phase [45, 120], heart_rate 90, altitude 100, enhanced_altitude 100, compressed_speed_distance [1, 2, 3], developer field watch_metric = 42",
+      "session": {"totalTrainingEffect": 3.4, "totalAnaerobicTrainingEffect": 2.1, "trainingStressScore": 44, "avgHeartRate": 90, "sportProfileName": "Watch treadmill profile", "avgCadence": 88, "maxCadence": 90, "avgPower": 220, "maxPower": 300, "normalizedPower": 230, "temperatures": "21/24/18", "coreTemperatures": "37.2/36.8/37.8"},
+      "activity": {"timestamp": "watch start + last record second", "localTimestamp": "timestamp + 7200 s (UTC+2)"},
+      "optionalExtras_includeTwoLaps": "two watch laps (0-1 s, 25 m; 1-2 s, 75 m), time_in_zone, split, split_summary, proprietary message 534, session num_laps 2 and time_in_hr_zone"
+    }
+  },
+  "vectors": [
+    {
+      "name": "preserves static watch provenance and emits only local activity data",
+      "given": {"session": "localSession_Elevation", "watch": "watchFit_default at local start"},
+      "expected": {
+        "fileId": {"manufacturer": "garmin", "product": 4242, "productName": "fenix 8", "serialNumber": 1549115670, "timeCreated": "local start"},
+        "userProfile.friendlyName": "Watch runner",
+        "zonesTarget": {"maxHeartRate": 190, "hrCalcType": "custom"},
+        "hrZones.highBpm": [119, 139, 159, 179, 199],
+        "deviceInfo": {"manufacturer": "garmin", "timestamp": "local start"},
+        "session": {"totalTrainingEffect": null, "totalAnaerobicTrainingEffect": null, "trainingStressScore": null, "sportProfileName": "Watch treadmill profile", "avgCadence": null, "avgPower": null, "normalizedPower": null, "avgHeartRate": 135, "maxHeartRate": 150, "totalAscent": 9, "totalFractionalAscent": "0.950..0.951", "totalDescent": 4, "totalFractionalDescent": "0.989..0.991"},
+        "lap": {"avgCadence": null, "avgPower": null, "normalizedPower": null},
+        "activity.localTimestamp": "FIT time of local end + 7200",
+        "records": {
+          "count": 3,
+          "heartRate": [135, 150, 120],
+          "cadence": [88, 88, 88], "power": [220, 220, 220], "temperature": [21, 21, 21], "coreTemperature": [37.2, 37.2, 37.2], "leftPowerPhase[0]": [45, 45, 45],
+          "zone": "absent (the FIT SDK may decode it as the invalid sentinel 255)",
+          "compressedSpeedDistance": "absent",
+          "enhancedAltitude[0]": "99.9..100.1 (watch baseline 100 + relative 0)",
+          "enhancedAltitude[1]": "109.9..110.1 (100 + 10 m climbed at 10 % over 0.1 km)"
+        },
+        "developerFields": "none on any message; DeveloperDataId and FieldDescription messages absent"
+      }
+    },
+    {
+      "name": "removes implausible user-profile heart-rate metadata",
+      "given": {"session": "localSession_Elevation", "watch": "watchFit_default with userProfile.defaultMaxHeartRate 0 and restingHeartRate 255"},
+      "expected": {"userProfile": "present", "userProfile.defaultMaxHeartRate": null, "userProfile.restingHeartRate": null}
+    },
+    {
+      "name": "uses plausible matched watch heart rate only for a local gap",
+      "given": {"session": "localSession_Elevation with sample 1 HR removed", "watch": "watchFit_default (record HR 90)"},
+      "expected": {"records.heartRate": [135, 90, 120], "session": {"avgHeartRate": 105, "maxHeartRate": 135, "minHeartRate": 90}, "lap": "same avg/max/min as session"}
+    },
+    {
+      "name": "preserves an unfilled heart-rate gap",
+      "given": {"session": "localSession_Elevation with sample 1 HR removed", "watch": "watchFit_default without record heart rate"},
+      "expected": {"records.heartRate": [135, 255, 120], "session": {"avgHeartRate": 120, "minHeartRate": 120, "maxHeartRate": 135}, "lap": "same as session", "notes": "255 = FIT invalid (absent). The time-weighted average skips sample 0 (no preceding interval), hence 120 not 127."}
+    },
+    {
+      "name": "accepts a partially filled late heart-rate timeline",
+      "given": {"session": "localSession_Elevation with all HR removed", "watch": "watchFit_default with records only at seconds 0 and 1"},
+      "expected": {"records.heartRate": [90, 90, 255]}
+    },
+    {
+      "name": "discards the stale watch timeline and rebuilds one coherent local activity",
+      "given": {"session": "localSession_Elevation", "watch": "watchFit_default with optionalExtras_includeTwoLaps"},
+      "expected": {
+        "laps": 1, "lap.messageIndex": 0, "session.firstLapIndex": 0, "session.numLaps": 1,
+        "lap.totalDistance": 200.0, "lap.totalDistance == session.totalDistance": true,
+        "lap.totalTimerTime == session.totalTimerTime == activity.totalTimerTime": true,
+        "lap.totalCalories == session.totalCalories": true,
+        "lap.avgCadence": null, "lap.avgPower": null,
+        "lap.numTimeInHrZone": 0, "session.numTimeInHrZone": 0,
+        "absentMessages": ["time_in_zone", "split", "split_summary", "534"],
+        "events": [{"timer": "start", "at": "local start"}, {"timer": "stop_all", "at": "local end"}]
+      }
+    },
+    {
+      "name": "rebuilds the complete local timeline when the watch started late",
+      "given": {"session": "localSession_Elevation", "watch": "watchFit_default starting 2 minutes after local start"},
+      "expected": {"records.count": 3, "fileId.timeCreated": "local start", "session.startTime": "local start", "session.timestamp": "local end", "session.totalElapsedTime": 2, "session.totalTimerTime": 2, "session.avgCadence": null, "session.avgPower": null, "records.cadence": [255, 255, 255], "records.heartRate": [135, 150, 120], "records.timestamps": "exactly the local sample times"}
+    },
+    {
+      "name": "rebuilds persisted pause/resume timer history and separates elapsed from timer time",
+      "given": {"session": "localSession_Paused", "watch": "watchFit_default with records at seconds [0, 3, 7, 12]"},
+      "expected": {"events": [["start", "+0 s"], ["stop", "+3 s"], ["start", "+7 s"], ["stop_all", "+12 s"]], "session.totalElapsedTime": 12, "session.totalTimerTime": 8, "lap.totalElapsedTime": 12, "lap.totalTimerTime": 8, "activity.totalTimerTime": 8, "session.avgHeartRate": 131, "lap": "same HR avg/min/max as session", "notes": "131 = round((150*3 + 120*1 + 120*4) / 8) using sample Elapsed deltas"}
+    },
+    {
+      "name": "skips redundant pause and resume history",
+      "given": {"session": "localSession_Paused with events Paused +3, Paused +4, Resumed +7, Resumed +8", "watch": "records at [0, 3, 7, 12]"},
+      "expected": {"events": [["start", "+0 s"], ["stop", "+3 s"], ["start", "+7 s"], ["stop_all", "+12 s"]]}
+    },
+    {
+      "name": "ignores pause and resume history outside the session window",
+      "given": {"session": "localSession_Paused with events Paused -1 s, Resumed -0.5 s, Paused +3, Resumed +7, Paused end+1 s", "watch": "records at [0, 3, 7, 12]"},
+      "expected": {"events": [["start", "+0 s"], ["stop", "+3 s"], ["start", "+7 s"], ["stop_all", "+12 s"]]}
+    },
+    {
+      "name": "omits watch aggregates when record coverage has a large gap",
+      "given": {"session": "samples at +0, +6, +12 s (end +12 s, duration 12 s)", "watch": "records at [0, 12] with cadence 80 and 92"},
+      "expected": {"session.avgCadence": null, "session.avgPower": null, "lap.avgCadence": null, "lap.avgPower": null, "records.cadence": [80, 255, 92]}
+    },
+    {
+      "name": "reserves an exact record match before assigning a nearby sample",
+      "given": {"session": "samples at +0 and +5 s (end +5 s)", "watch": "records at [4, 5] with cadence 80 and 92"},
+      "expected": {"records.cadence": [80, 92]}
+    },
+    {
+      "name": "preserves watch-only measurements on the local timeline",
+      "given": {"session": "localSession_Elevation", "watch": "watchFit_default starting 1 s after local start (records at local +1, +2, +3)"},
+      "expected": {"records.count": 3, "records.cadence": [255, 88, 88], "developerFields": "none", "records.timestamps": "exactly the local sample times"}
+    },
+    {
+      "name": "omits the entire zone model when zone indexes conflict",
+      "given": {"watch": "watchFit_default plus a second hr_zone with message_index 2 (high 170)"},
+      "expected": {"absentMessages": ["zones_target", "hr_zone"]}
+    },
+    {
+      "name": "omits the entire zone model for out-of-range values",
+      "given": {"watch": "zone 0 high_bpm, or zones_target max_heart_rate, or zones_target threshold_heart_rate set to 29 or 251"},
+      "expected": {"absentMessages": ["zones_target", "hr_zone"]},
+      "cases": 6
+    },
+    {
+      "name": "scales to a four-hour 1 Hz activity",
+      "given": {"session": "14 400 samples at 1 Hz, 8 km/h, 1 %, HR 135", "watch": "14 400 records"},
+      "expected": {"nonEmpty": true, "maxDurationSeconds": 30, "phoneBudgetNote": "re-measure on the reference phone; keep under 30 s"}
+    },
+    {
+      "name": "rejects a non-activity FIT",
+      "given": {"watch": "watchFit_default with fileId.type = workout"},
+      "expected": {"error": "invalid data", "messageContains": "Activity File Id"}
+    },
+    {
+      "name": "rejects a watch FIT without a FileId",
+      "given": {"watch": "watchFit_default without fileId"},
+      "expected": {"error": "invalid data", "message": "The watch FIT must contain exactly one Activity File Id message."}
+    },
+    {
+      "name": "rejects a watch FIT with two FileIds",
+      "given": {"watch": "watchFit_default with fileId written twice"},
+      "expected": {"error": "invalid data", "message": "The watch FIT must contain exactly one Activity File Id message."}
+    },
+    {
+      "name": "legacy elapsed-time regression still produces valid FIT",
+      "given": {"session": "localSession_Elevation where sample 1 is captured +1 h with elapsed 1 h (malformed)", "watch": "watchFit_default"},
+      "expected": {"timelineNormalization": "sample sequences kept = [0, 2]", "appOnlyExport": "valid header + CRC", "merged": "valid header + CRC"}
+    }
+  ]
+}

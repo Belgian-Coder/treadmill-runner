@@ -1,0 +1,55 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "omega-status-decoder",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Input is one reassembled frame. Accept only if: length >= 33, bytes[0..1] = 55 AA, byte[5] = 0x17, last two bytes = 0D 0A, declared length (bytes 6-7 LE) <= 4096 and declared+10 == frame length.",
+    "speedKph = (byte24 | byte25<<8) / 100.0 * 1.60934   (hundredths of mph -> km/h). inclinePercent = byte30 / 10.0 (unsigned).",
+    "Compare speedKph with tolerance 0.002; 621 -> 9.9940014."
+  ],
+  "decode": [
+    {
+      "source": "legacy-test",
+      "hex": "55AA000000171E00000000000000000000000000000000006D020000000035000000000000000D0A",
+      "expected": {
+        "speedKph": 9.9940014,
+        "speedKphRange": [
+          9.993,
+          9.997
+        ],
+        "inclinePercent": 5.3
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "55AA00000017170000000000000000000000000000000000000000000000000D0A",
+      "expected": {
+        "speedKph": 0.0,
+        "inclinePercent": 0.0
+      },
+      "note": "minimum accepted length 33"
+    }
+  ],
+  "rejects": [
+    {
+      "source": "legacy-test",
+      "hex": "000000000000000000000000000000000000000000000000000000000000",
+      "reason": "too short / no header"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "55AA0000001600000000000000000000000000000000000000000000000000",
+      "reason": "command byte 0x16 is not status 0x17 (and too short)"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "55AA000000171E00000000000000000000000000000000006D020000000035000000000000000D00",
+      "reason": "bad terminator"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "55AA000000171D00000000000000000000000000000000006D020000000035000000000000000D0A",
+      "reason": "declared length 29 + 10 != 40"
+    }
+  ]
+}

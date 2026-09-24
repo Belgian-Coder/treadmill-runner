@@ -1,0 +1,128 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "ftms-capabilities",
+  "characteristics": {
+    "0x2ACC": "Fitness Machine Feature (read, exactly 8 bytes)",
+    "0x2AD4": "Supported Speed Range (read, exactly 6 bytes)",
+    "0x2AD5": "Supported Inclination Range (read, exactly 6 bytes)"
+  },
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "2ACC: bytes 0-3 = Fitness Machine Features uint32 LE; bytes 4-7 = Target Setting Features uint32 LE. Target bit 0 = speed target supported, bit 1 = inclination target supported.",
+    "2AD4: min uint16 LE, max uint16 LE, increment uint16 LE, all 0.01 km/h.",
+    "2AD5: min sint16 LE, max sint16 LE, increment uint16 LE, all 0.1 %.",
+    "Range validity: max >= min and increment > 0, else reject. Parsed ranges carry evidence 'ProtocolReported'.",
+    "Parsed features NEVER set any can*Remotely flag; they only set reports* flags (reportsStandardStartResume = control point characteristic present)."
+  ],
+  "features": [
+    {
+      "source": "legacy-test",
+      "hex": "0000000003000000",
+      "expected": {
+        "machineFeatures": 0,
+        "targetSettingFeatures": 3,
+        "supportsSpeedTarget": true,
+        "supportsInclinationTarget": true
+      },
+      "expectedUnverifiedCapabilitiesWithControlPoint": {
+        "reportsSpeedTargetSupport": true,
+        "reportsInclineTargetSupport": true,
+        "reportsStandardStartResume": true,
+        "canSetSpeedRemotely": false,
+        "canSetInclineRemotely": false,
+        "canPauseRemotely": false,
+        "canStopRemotely": false,
+        "canStartRemotely": false
+      }
+    }
+  ],
+  "featureRejects": [
+    {
+      "source": "legacy-test",
+      "hex": "",
+      "reason": "length 0"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "00000000000000",
+      "reason": "length 7"
+    },
+    {
+      "source": "legacy-test",
+      "hex": "000000000000000000",
+      "reason": "length 9"
+    }
+  ],
+  "speedRange": [
+    {
+      "source": "legacy-test",
+      "hex": "320008070A00",
+      "expected": {
+        "minimum": 0.5,
+        "maximum": 18.0,
+        "increment": 0.1,
+        "evidence": "ProtocolReported"
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "5000D0070A00",
+      "expected": {
+        "minimum": 0.8,
+        "maximum": 20.0,
+        "increment": 0.1,
+        "evidence": "ProtocolReported"
+      },
+      "note": "Encoding of the Omega Z reported range (Stage 2 recorded decoded values only, not raw bytes)."
+    }
+  ],
+  "inclinationRange": [
+    {
+      "source": "legacy-test",
+      "hex": "E2FF96000500",
+      "expected": {
+        "minimum": -3.0,
+        "maximum": 15.0,
+        "increment": 0.5,
+        "evidence": "ProtocolReported"
+      }
+    },
+    {
+      "source": "derived",
+      "hex": "000078000100",
+      "expected": {
+        "minimum": 0.0,
+        "maximum": 12.0,
+        "increment": 0.1,
+        "evidence": "ProtocolReported"
+      },
+      "note": "Encoding of the Omega Z reported range (decoded values only in evidence)."
+    }
+  ],
+  "rangeRejects": [
+    {
+      "source": "legacy-test",
+      "which": "both",
+      "hex": "0000000000",
+      "reason": "length 5"
+    },
+    {
+      "source": "legacy-test",
+      "which": "both",
+      "hex": "00000000000000",
+      "reason": "length 7"
+    },
+    {
+      "source": "legacy-test",
+      "which": "speed",
+      "hex": "D007E8030A00",
+      "reason": "inverted: min 20.00 > max 10.00"
+    },
+    {
+      "source": "legacy-test",
+      "which": "inclination",
+      "hex": "000064000000",
+      "reason": "zero increment"
+    }
+  ]
+}

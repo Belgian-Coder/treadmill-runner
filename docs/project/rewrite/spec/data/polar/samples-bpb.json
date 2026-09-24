@@ -1,0 +1,135 @@
+{
+  "description": "SAMPLES.BPB = protobuf PbExerciseSamples. Fields used: 1 recording_interval (PbDuration: 1 hours, 2 minutes, 3 seconds, 4 millis), 2 heart_rate_samples (packed uint32 varints), 28 rr_samples (PbExerciseRRIntervals{1 rr_intervals packed uint32 ms}). All other fields (e.g. 3 heart_rate_offline {1 start_index, 2 stop_index}) are skipped. The file contains NO timestamps: sample i is anchored at startedAtUtc + i*interval where startedAtUtc is the locally recorded start-issued instant.",
+  "examples": [
+    {
+      "name": "hr-1s-4",
+      "hex": "0A 02 18 01 12 04 64 65 66 67",
+      "sha256": "dd8be7de1c06481702cf75a648cf2dca5d2b11215aa7314180589521bc90bf66",
+      "startedAtUtc": "2026-09-10T07:00:00Z",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 1,
+        "samples": [
+          {
+            "capturedAtUtc": "2026-09-10T07:00:00Z",
+            "bpm": 100
+          },
+          {
+            "capturedAtUtc": "2026-09-10T07:00:01Z",
+            "bpm": 101
+          },
+          {
+            "capturedAtUtc": "2026-09-10T07:00:02Z",
+            "bpm": 102
+          },
+          {
+            "capturedAtUtc": "2026-09-10T07:00:03Z",
+            "bpm": 103
+          }
+        ],
+        "endedAtUtc": "2026-09-10T07:00:04Z",
+        "recordingId": "<first path segment>"
+      }
+    },
+    {
+      "name": "simulator-hr-1s-3",
+      "hex": "0A 02 18 01 12 03 65 66 67",
+      "sha256": "636e8fe809a916be0cbb94c17a0c1cca05e3df85e5f0476a674dec80c5344ac4",
+      "startedAtUtc": "2026-09-10T07:00:00Z",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 1,
+        "heartRate": [
+          101,
+          102,
+          103
+        ],
+        "endedAtUtc": "2026-09-10T07:00:03Z"
+      },
+      "source": "simulator lifecycle test"
+    },
+    {
+      "name": "hr-5s-2",
+      "hex": "0A 02 18 05 12 02 78 79",
+      "sha256": "f7af29b4b1ccc89b3e11a2ec9d43a765ddf59a6763e808138eb237f3ff7fda4b",
+      "startedAtUtc": "2026-09-10T07:00:00Z",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 5,
+        "samples": [
+          {
+            "capturedAtUtc": "2026-09-10T07:00:00Z",
+            "bpm": 120
+          },
+          {
+            "capturedAtUtc": "2026-09-10T07:00:05Z",
+            "bpm": 121
+          }
+        ],
+        "endedAtUtc": "2026-09-10T07:00:10Z"
+      }
+    },
+    {
+      "name": "rr-3",
+      "hex": "0A 02 18 01 E2 01 08 0A 06 E8 07 D4 07 FC 07",
+      "sha256": "532c844c56630faade6b6eaa2152e94b5e86eb5ce0dc1ef11dc846f887c4c00b",
+      "startedAtUtc": "2026-09-10T07:00:00Z",
+      "expected": {
+        "sampleType": "RrInterval",
+        "intervalSeconds": 1,
+        "rrMs": [
+          1000,
+          980,
+          1020
+        ],
+        "rrTimestamps": [
+          "2026-09-10T07:00:00.000Z",
+          "2026-09-10T07:00:01.000Z",
+          "2026-09-10T07:00:01.980Z"
+        ],
+        "endedAtUtc": "2026-09-10T07:00:03.000Z"
+      },
+      "source": "simulator RR test"
+    },
+    {
+      "name": "interval-1-minute",
+      "hex": "0A 02 10 01 12 01 50",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 60,
+        "heartRate": [
+          80
+        ]
+      }
+    },
+    {
+      "name": "sub-second-interval",
+      "hex": "0A 03 20 F4 03 12 01 50",
+      "expected": {
+        "error": "FormatError: sub-second recording interval unsupported"
+      }
+    },
+    {
+      "name": "missing-interval",
+      "hex": "12 01 50",
+      "expected": {
+        "error": "FormatError: missing/zero recording interval"
+      }
+    },
+    {
+      "name": "out-of-range-values-kept-raw",
+      "hex": "0A 02 18 01 12 06 C8 01 FA 01 1E 00",
+      "expected": {
+        "sampleType": "HeartRate",
+        "intervalSeconds": 1,
+        "heartRate": [
+          200,
+          250,
+          30,
+          0
+        ],
+        "note": "Decoder keeps raw values; the 30..250 filter is applied at merge time, so 0 is never merged"
+      }
+    }
+  ]
+}

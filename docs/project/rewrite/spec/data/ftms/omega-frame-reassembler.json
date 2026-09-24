@@ -1,0 +1,216 @@
+{
+  "schema": "treadmillrunner.golden.v1",
+  "codec": "omega-frame-reassembler",
+  "characteristic": "0xFFF4 vendor status notifications (service 0xFFF0), READ-ONLY",
+  "notes": [
+    "Hex strings are uppercase, no separators, wire order. 'source' = 'legacy-test' (ported verbatim from the existing automated tests), 'derived' (computed by the specified algorithm; not in the legacy tests), or 'synthetic' (constructed for coverage; not a device capture).",
+    "Frame: 55 AA .. .. .. <cmd@5> <lenLo@6> <lenHi@7> .. .. <payload: len bytes> ... total length = len + 10; the final two bytes must be 0D 0A.",
+    "Byte-by-byte state machine; max declared payload 4096 (else LengthOutOfRange, candidate dropped). Before the length is known, a new 55 AA restarts the candidate (TruncatedFrame with expectedLength null). After the length is known, payload bytes are opaque (55 AA inside payload is data).",
+    "On a bad terminator: InvalidTerminator; if the last two bytes are 55 AA they seed the next candidate; else if the last byte is 55 it seeds the next candidate.",
+    "reset(reportTruncatedFrame=true default) emits TruncatedFrame(expectedLength or null, bufferedCount) if anything is buffered; must be called on disconnect.",
+    "Diagnostics accumulate across steps; expectedDiagnostics is the full list at the end of the case. expectedFrames is the concatenation of frames returned by every append in order."
+  ],
+  "cases": [
+    {
+      "name": "reassembles_74_byte_frame_from_20_20_20_14_fragments",
+      "steps": [
+        {
+          "append": "55AA000000174000000000000000000000000000"
+        },
+        {
+          "append": "0000000000000000000000000000000000000000"
+        },
+        {
+          "append": "0000000000000000000000000000000000000000"
+        },
+        {
+          "append": "0000000000000000000000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA000000174000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000D0A"
+      ],
+      "expectedDiagnostics": [],
+      "source": "legacy-test"
+    },
+    {
+      "name": "reset_reports_truncated_frame_then_accepts_replacement",
+      "steps": [
+        {
+          "append": "55AA000000174000000000000000000000000000"
+        },
+        {
+          "reset": true
+        },
+        {
+          "append": "55AA00000017020000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A"
+      ],
+      "expectedDiagnostics": [
+        {
+          "code": "TruncatedFrame",
+          "expectedLength": 74,
+          "receivedLength": 20
+        }
+      ],
+      "source": "legacy-test"
+    },
+    {
+      "name": "declared_payload_may_contain_header_marker",
+      "steps": [
+        {
+          "append": "55AA000000170800000055AA000000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA000000170800000055AA000000000D0A"
+      ],
+      "expectedDiagnostics": [],
+      "source": "legacy-test"
+    },
+    {
+      "name": "short_first_fragment_and_coalesced_frames",
+      "steps": [
+        {
+          "append": "55AA0000",
+          "expectFramesAfterStep": 0
+        },
+        {
+          "append": "0017020000000D0A55AA0000001703000000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A",
+        "55AA0000001703000000000D0A"
+      ],
+      "expectedDiagnostics": [],
+      "source": "legacy-test"
+    },
+    {
+      "name": "rejects_declared_payload_over_4096",
+      "steps": [
+        {
+          "append": "55AA000000178813",
+          "note": "declared payload length 0x1388 = 5000 > 4096"
+        },
+        {
+          "append": "00000000000000000000000000000000000000000D0A",
+          "note": "stand-in for the rest of the 5010-byte frame; ignored while hunting for 0x55"
+        }
+      ],
+      "expectedFrames": [],
+      "expectedDiagnostics": [
+        {
+          "code": "LengthOutOfRange",
+          "expectedLength": 5010,
+          "receivedLength": 8
+        }
+      ],
+      "source": "legacy-test"
+    },
+    {
+      "name": "rejects_invalid_terminator",
+      "steps": [
+        {
+          "append": "55AA00000017020000000D00"
+        }
+      ],
+      "expectedFrames": [],
+      "expectedDiagnostics": [
+        {
+          "code": "InvalidTerminator",
+          "expectedLength": 12,
+          "receivedLength": 12
+        }
+      ],
+      "source": "legacy-test"
+    },
+    {
+      "name": "recovers_when_next_header_replaces_corrupt_terminator",
+      "steps": [
+        {
+          "append": "55AA000000170200000055AA0000001703000000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA0000001703000000000D0A"
+      ],
+      "expectedDiagnostics": [
+        {
+          "code": "InvalidTerminator",
+          "expectedLength": 12,
+          "receivedLength": 12
+        }
+      ],
+      "source": "legacy-test"
+    },
+    {
+      "source": "derived",
+      "name": "leading_noise_is_discarded_until_0x55",
+      "steps": [
+        {
+          "append": "0013FF55AA00000017020000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "source": "derived",
+      "name": "new_header_before_length_known_restarts_and_reports_truncation",
+      "steps": [
+        {
+          "append": "55AA0055AA00000017020000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A"
+      ],
+      "expectedDiagnostics": [
+        {
+          "code": "TruncatedFrame",
+          "expectedLength": null,
+          "receivedLength": 3
+        }
+      ]
+    },
+    {
+      "source": "derived",
+      "name": "repeated_0x55_before_0xAA_keeps_candidate",
+      "steps": [
+        {
+          "append": "5555AA00000017020000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A"
+      ],
+      "expectedDiagnostics": []
+    },
+    {
+      "source": "derived",
+      "name": "reset_without_report_discards_silently",
+      "steps": [
+        {
+          "append": "55AA00000017"
+        },
+        {
+          "reset": true,
+          "reportTruncatedFrame": false
+        },
+        {
+          "append": "55AA00000017020000000D0A"
+        }
+      ],
+      "expectedFrames": [
+        "55AA00000017020000000D0A"
+      ],
+      "expectedDiagnostics": []
+    }
+  ]
+}

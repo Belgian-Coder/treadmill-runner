@@ -1,0 +1,415 @@
+{
+  "schema": "treadmillrunner.session/v1",
+  "unitSystem": "Metric",
+  "exportedAtUtc": "2026-09-24T17:03:27.3340977+00:00",
+  "session": {
+    "sessionId": "4d5e6f70-8192-4a34-9c5d-6e7f80910213",
+    "userProfileId": "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+    "userProfileName": "Marc",
+    "workoutRevisionId": "a6c2433d-4452-4f06-b1b7-84e3bae1cab4",
+    "workoutTitle": "Spec fixture intervals",
+    "armedAt": "2026-09-01T06:29:50+00:00",
+    "selection": {
+      "source": 2,
+      "programRunId": null,
+      "programItemId": null,
+      "recordPolarH10Memory": false,
+      "replaceExistingPolarH10Recording": false,
+      "replacePolarH10ExerciseId": null
+    },
+    "origin": 1,
+    "controllerConfiguration": {
+      "Mode": "hardware:ftms:Ftms",
+      "HeartRateController": "shadow",
+      "Profile": {
+        "WeightKilograms": 72.5,
+        "MaximumHeartRateBpm": 190,
+        "MaximumSpeedKph": 12,
+        "HeartRateZones": [
+          {
+            "Number": 1,
+            "Name": "Warm up",
+            "MinimumBpm": 95,
+            "MaximumBpm": 113
+          },
+          {
+            "Number": 2,
+            "Name": "Easy",
+            "MinimumBpm": 114,
+            "MaximumBpm": 132
+          },
+          {
+            "Number": 3,
+            "Name": "Aerobic",
+            "MinimumBpm": 133,
+            "MaximumBpm": 151
+          },
+          {
+            "Number": 4,
+            "Name": "Threshold",
+            "MinimumBpm": 152,
+            "MaximumBpm": 170
+          },
+          {
+            "Number": 5,
+            "Name": "Maximum",
+            "MinimumBpm": 171,
+            "MaximumBpm": 190
+          }
+        ],
+        "HeartRateController": {
+          "IncreaseStepKph": 0.2,
+          "IncreaseCooldownSeconds": 30,
+          "DecreaseStepKph": 0.5,
+          "DecreaseCooldownSeconds": 15
+        }
+      },
+      "HeartRateSourceLabel": "Polar H10 ABCD1234",
+      "HeartRateSourceKind": "ChestStrap",
+      "HeartRateSourceFamily": "Polar",
+      "Treadmill": {
+        "IdentityLabel": "OMEGA Z",
+        "ProtocolId": "ftms",
+        "TelemetryMode": "Ftms",
+        "ModelNumber": "OMEGA Z",
+        "FirmwareRevision": "V10.23.17",
+        "Evidence": 3,
+        "Capabilities": {
+          "CanSetSpeedRemotely": true,
+          "CanSetInclineRemotely": true,
+          "CanPauseRemotely": false,
+          "CanStopRemotely": true,
+          "CanStartRemotely": true,
+          "ReportsSpeedTargetSupport": true,
+          "ReportsInclineTargetSupport": true,
+          "ReportsStandardStartResume": true,
+          "SpeedRange": {
+            "Minimum": 0.8,
+            "Maximum": 20,
+            "Increment": 0.1,
+            "Evidence": 1
+          },
+          "InclineRange": {
+            "Minimum": 0,
+            "Maximum": 12,
+            "Increment": 0.5,
+            "Evidence": 1
+          }
+        },
+        "ConnectionGeneration": 3,
+        "EnrollmentId": "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+        "IdentityFingerprint": "7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    },
+    "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2",
+    "state": 4,
+    "startedAt": "2026-09-01T06:30:00+00:00",
+    "endedAt": "2026-09-01T06:30:18+00:00",
+    "durationSeconds": 14,
+    "distanceKilometers": 0.02675,
+    "estimatedKilocalories": 2.052846,
+    "averageHeartRateBpm": 132.6153846153846,
+    "maximumHeartRateBpm": 156,
+    "averageSpeedKph": 6.878571428571429,
+    "averageInclinePercent": 1.6071428571428572,
+    "debrief": {
+      "sessionId": "4d5e6f70-8192-4a34-9c5d-6e7f80910213",
+      "perceivedExertion": 6,
+      "note": "Felt controlled; legs fresh.",
+      "updatedAt": "2026-09-01T06:32:18+00:00"
+    }
+  },
+  "samples": [
+    {
+      "sequence": 0,
+      "capturedAt": "2026-09-01T06:30:00+00:00",
+      "elapsedSeconds": 0,
+      "plannedSpeedKph": 5,
+      "requestedSpeedKph": 5,
+      "measuredSpeedKph": 5,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 110,
+      "distanceKilometers": 0,
+      "estimatedKilocalories": 0,
+      "telemetryAgeMilliseconds": 180,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 1,
+      "capturedAt": "2026-09-01T06:30:01+00:00",
+      "elapsedSeconds": 1,
+      "plannedSpeedKph": 5,
+      "requestedSpeedKph": 5,
+      "measuredSpeedKph": 5,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 112,
+      "distanceKilometers": 0.001388889,
+      "estimatedKilocalories": 0.080556,
+      "telemetryAgeMilliseconds": 190,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 2,
+      "capturedAt": "2026-09-01T06:30:02+00:00",
+      "elapsedSeconds": 2,
+      "plannedSpeedKph": 5,
+      "requestedSpeedKph": 5,
+      "measuredSpeedKph": 5.1,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 114,
+      "distanceKilometers": 0.002805556,
+      "estimatedKilocalories": 0.162299,
+      "telemetryAgeMilliseconds": 200,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 3,
+      "capturedAt": "2026-09-01T06:30:03+00:00",
+      "elapsedSeconds": 3,
+      "plannedSpeedKph": 5,
+      "requestedSpeedKph": 5,
+      "measuredSpeedKph": 5,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 116,
+      "distanceKilometers": 0.004194444,
+      "estimatedKilocalories": 0.242855,
+      "telemetryAgeMilliseconds": 180,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 4,
+      "capturedAt": "2026-09-01T06:30:04+00:00",
+      "elapsedSeconds": 4,
+      "plannedSpeedKph": 5,
+      "requestedSpeedKph": 5,
+      "measuredSpeedKph": 5,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 118,
+      "distanceKilometers": 0.005583333,
+      "estimatedKilocalories": 0.32341,
+      "telemetryAgeMilliseconds": 190,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 5,
+      "capturedAt": "2026-09-01T06:30:05+00:00",
+      "elapsedSeconds": 5,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8,
+      "measuredSpeedKph": 7.2,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 2,
+      "measuredInclinePercent": 1.5,
+      "heartRateBpm": 121,
+      "distanceKilometers": 0.007583333,
+      "estimatedKilocalories": 0.474259,
+      "telemetryAgeMilliseconds": 200,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 6,
+      "capturedAt": "2026-09-01T06:30:06+00:00",
+      "elapsedSeconds": 6,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8,
+      "measuredSpeedKph": 8,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 2,
+      "measuredInclinePercent": 2,
+      "heartRateBpm": 127,
+      "distanceKilometers": 0.009805556,
+      "estimatedKilocalories": 0.671016,
+      "telemetryAgeMilliseconds": 180,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 7,
+      "capturedAt": "2026-09-01T06:30:07+00:00",
+      "elapsedSeconds": 7,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8.5,
+      "measuredSpeedKph": 8.5,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 2,
+      "measuredInclinePercent": 2,
+      "heartRateBpm": null,
+      "distanceKilometers": 0.012166667,
+      "estimatedKilocalories": 0.878748,
+      "telemetryAgeMilliseconds": 190,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 8,
+      "capturedAt": "2026-09-01T06:30:08+00:00",
+      "elapsedSeconds": 8,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8.5,
+      "measuredSpeedKph": 8.5,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 2,
+      "measuredInclinePercent": 2,
+      "heartRateBpm": 138,
+      "distanceKilometers": 0.014527778,
+      "estimatedKilocalories": 1.086481,
+      "telemetryAgeMilliseconds": 200,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 9,
+      "capturedAt": "2026-09-01T06:30:13+00:00",
+      "elapsedSeconds": 9,
+      "plannedSpeedKph": 7,
+      "requestedSpeedKph": 7,
+      "measuredSpeedKph": 7,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 141,
+      "distanceKilometers": 0.016472222,
+      "estimatedKilocalories": 1.222872,
+      "telemetryAgeMilliseconds": 180,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 10,
+      "capturedAt": "2026-09-01T06:30:14+00:00",
+      "elapsedSeconds": 10,
+      "plannedSpeedKph": 6,
+      "requestedSpeedKph": 6,
+      "measuredSpeedKph": 6,
+      "plannedInclinePercent": 0,
+      "requestedInclinePercent": 0,
+      "measuredInclinePercent": 0,
+      "heartRateBpm": 136,
+      "distanceKilometers": 0.018138889,
+      "estimatedKilocalories": 1.304434,
+      "telemetryAgeMilliseconds": 190,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 11,
+      "capturedAt": "2026-09-01T06:30:15+00:00",
+      "elapsedSeconds": 11,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8,
+      "measuredSpeedKph": 8,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 3,
+      "measuredInclinePercent": 3,
+      "heartRateBpm": 144,
+      "distanceKilometers": 0.020361111,
+      "estimatedKilocalories": 1.508441,
+      "telemetryAgeMilliseconds": 200,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 12,
+      "capturedAt": "2026-09-01T06:30:16+00:00",
+      "elapsedSeconds": 12,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8,
+      "measuredSpeedKph": 8,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 3,
+      "measuredInclinePercent": 3,
+      "heartRateBpm": 152,
+      "distanceKilometers": 0.022583333,
+      "estimatedKilocalories": 1.712448,
+      "telemetryAgeMilliseconds": 180,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 13,
+      "capturedAt": "2026-09-01T06:30:17+00:00",
+      "elapsedSeconds": 13,
+      "plannedSpeedKph": 8,
+      "requestedSpeedKph": 8,
+      "measuredSpeedKph": 8,
+      "plannedInclinePercent": 2,
+      "requestedInclinePercent": 3,
+      "measuredInclinePercent": 3,
+      "heartRateBpm": 156,
+      "distanceKilometers": 0.024805556,
+      "estimatedKilocalories": 1.916455,
+      "telemetryAgeMilliseconds": 190,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    },
+    {
+      "sequence": 14,
+      "capturedAt": "2026-09-01T06:30:18+00:00",
+      "elapsedSeconds": 14,
+      "plannedSpeedKph": 7,
+      "requestedSpeedKph": 7,
+      "measuredSpeedKph": 7,
+      "plannedInclinePercent": 1,
+      "requestedInclinePercent": 1,
+      "measuredInclinePercent": 1,
+      "heartRateBpm": 149,
+      "distanceKilometers": 0.02675,
+      "estimatedKilocalories": 2.052846,
+      "telemetryAgeMilliseconds": 200,
+      "metricAlgorithmVersion": "estimated-calories/acsm-speed-grade-v2"
+    }
+  ],
+  "events": [
+    {
+      "eventType": "session-warning",
+      "occurredAt": "2026-09-01T06:30:00+00:00",
+      "code": "physical-movement-detected",
+      "message": "Physical movement detected"
+    },
+    {
+      "eventType": "workout-step-transition",
+      "occurredAt": "2026-09-01T06:30:05+00:00",
+      "completedStepIndex": 0,
+      "currentStepIndex": 1,
+      "cue": "Fast"
+    },
+    {
+      "eventType": "manual-speed-override",
+      "occurredAt": "2026-09-01T06:30:07+00:00",
+      "expectedSpeedKph": 8,
+      "observedSpeedKph": 8.5
+    },
+    {
+      "eventType": "device-disconnected",
+      "occurredAt": "2026-09-01T06:30:08.1999999+00:00",
+      "deviceRole": 1,
+      "reason": "Heart-rate telemetry became stale."
+    },
+    {
+      "eventType": "session-paused",
+      "occurredAt": "2026-09-01T06:30:08.5+00:00",
+      "reason": 2
+    },
+    {
+      "eventType": "device-reconnected",
+      "occurredAt": "2026-09-01T06:30:10+00:00",
+      "deviceRole": 1
+    },
+    {
+      "eventType": "session-resumed",
+      "occurredAt": "2026-09-01T06:30:12.5+00:00"
+    },
+    {
+      "eventType": "manual-incline-override",
+      "occurredAt": "2026-09-01T06:30:15+00:00",
+      "previousInclinePercent": 2,
+      "requestedInclinePercent": 3
+    },
+    {
+      "eventType": "session-completed",
+      "occurredAt": "2026-09-01T06:30:18+00:00"
+    }
+  ]
+}

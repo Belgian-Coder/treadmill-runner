@@ -1,0 +1,148 @@
+{
+  "description": "History merge (alignment + fill-only-null) scenarios. Times are milliseconds relative to session.startedAtUtc = 2026-09-10T07:00:00Z unless noted. Common session: armedAtUtc = start - 2 s, startedAtUtc = start, endedAtUtc = start + 20 min, state Completed. Session samples are (capturedAt ms, elapsed ms, heartRateBpm). Recording samples are (capturedAt ms, bpm) = startAnchor + i*interval. Job: origin Automatic, status Downloaded, startRequestedAtUtc and startConfirmedAtUtc as given, recording endedAtUtc = anchor + count*interval.",
+  "algorithm": {
+    "recordedFilter": "only recording samples with 30 <= bpm <= 250 are used",
+    "candidateOffsetsMs": [-2000, -1500, -1000, -500, 0, 500, 1000, 1500, 2000],
+    "matchRule": "for each recorded sample r: target = session sample nearest to (r.t + offset); counts when |target.t - (r.t + offset)| <= 375 ms and target.bpm == r.bpm (raw equality, null never equals)",
+    "choose": "sort by matches desc, then |offset| asc. ReviewRequired('ambiguous') if best.matches < 1 or second.matches == best.matches",
+    "fillRule": "for each session sample (sequence order) whose bpm is null or <30 or >250: source = nearest UNUSED filtered recorded sample to (s.t - offset) within 600 ms; if found set s.bpm = source.bpm and mark source used",
+    "commit": "single transaction: update filled samples, recompute session averageHeartRateBpm (time-weighted) and maximumHeartRateBpm, set job Merged + mergeCount, append session-warning event {code:'polar-h10-memory-merged', message:'Recovered {n} missing heart-rate samples from the verified Polar H10 recording.'}",
+    "windowChecks": [
+      "job.startRequestedAtUtc present and >= session.armedAtUtc - 5 s",
+      "job.startConfirmedAtUtc present and <= session.startedAtUtc + 30 s",
+      "recording.endedAtUtc present, >= session.startedAtUtc and <= session.endedAtUtc + 5 min",
+      "session.startedAtUtc and session.endedAtUtc present",
+      "job.workoutSessionId present (else ReviewRequired 'The workout was removed before H10 recovery completed.')"
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "fills-only-null-and-recomputes-time-weighted-average",
+      "source": "store test: verified payload fills only null HR",
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 5000, null], [3000, 6000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103], "payloadHex": "01 02 03 04" },
+      "expected": { "outcome": "Merged", "offsetMs": 0, "mergeCount": 1, "bpm": [100, 101, 102, 103], "averageHeartRateBpm": 102.0, "maximumHeartRateBpm": 103, "warningEvents": 1, "payloadSha256Length": 64, "payloadBytes": 4, "garminEligibleAfter": true },
+      "note": "Average = sum_{i>=1} bpm_i * (elapsed_i - elapsed_{i-1}) / sum(dt) over non-null samples = (101*1 + 102*4 + 103*1)/6 = 102"
+    },
+    {
+      "name": "legacy-implausible-zero-is-repaired",
+      "source": "store test: legacy implausible session heart rate",
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, 0], [3000, 3000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "Merged", "offsetMs": 0, "mergeCount": 1, "bpm": [100, 101, 102, 103] }
+    },
+    {
+      "name": "legacy-nonmonotonic-elapsed-does-not-block",
+      "source": "store test",
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, null], [3000, 500, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "Merged", "mergeCount": 1, "averageHeartRateBpm": "not null" },
+      "note": "Aggregates are computed over the normalized timeline (rows that go backwards in capturedAt or elapsed are skipped), so a malformed legacy row cannot throw."
+    },
+    {
+      "name": "disconnect-gap-with-phase-drift",
+      "source": "store test: fills a disconnect gap despite live sampling phase drift",
+      "session": [[1500, 0, 100], [2500, 1000, 101], [3968, 2000, null], [4500, 3000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "Merged", "offsetMs": 1500, "mergeCount": 1, "bpm": [100, 101, 102, 103] }
+    },
+    {
+      "name": "prepare-time-recording-excludes-pre-start-samples",
+      "source": "store test: prepare-time recording ignores pre-run samples",
+      "sessionOverrides": { "armedAtMs": -120000 },
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, null], [3000, 3000, 103]],
+      "job": { "startRequested": -120000, "startConfirmed": -119000 },
+      "recording": { "anchor": -120000, "intervalSeconds": 1, "bpm": "124 samples: index 0..119 = 80, index 120..123 = 100,101,102,103" },
+      "expected": { "outcome": "Merged", "offsetMs": 0, "mergeCount": 1, "bpm": [100, 101, 102, 103], "noValue80InHistory": true },
+      "note": "Pre-start samples stay in the stored payload and recording-sample table but never enter History because no session sample exists before startedAtUtc."
+    },
+    {
+      "name": "legacy-running-time-start-after-early-arm",
+      "source": "store test",
+      "sessionOverrides": { "armedAtMs": -180000 },
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, null], [3000, 3000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "Merged" }
+    },
+    {
+      "name": "existing-plausible-value-never-replaced",
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, 120], [3000, 3000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "Merged", "mergeCount": 0, "bpm": [100, 101, 120, 103] }
+    },
+    {
+      "name": "tie-is-ambiguous",
+      "session": [[0, 0, 100], [1000, 1000, null], [2000, 2000, 100], [3000, 3000, null]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 100, 100, 100] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The H10 recording alignment is ambiguous and requires review.", "topCandidates": [[0, 2], [-1000, 2], [1000, 1]], "bpmUnchanged": true }
+    },
+    {
+      "name": "no-matching-live-values",
+      "session": [[0, 0, null], [1000, 1000, null], [2000, 2000, null], [3000, 3000, null]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100, 101, 102, 103] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The H10 recording alignment is ambiguous and requires review." },
+      "note": "A fully null live timeline cannot be anchored; zero matches is treated as ambiguous."
+    },
+    {
+      "name": "no-plausible-recorded-samples",
+      "session": [[0, 0, 100], [1000, 1000, 101], [2000, 2000, null], [3000, 3000, 103]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [0, 20] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "There are not enough samples to align the H10 recording." }
+    },
+    {
+      "name": "start-requested-before-arm-window",
+      "session": [[0, 0, 100]],
+      "job": { "startRequested": -8000, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The H10 recording window does not safely match this workout." },
+      "note": "armedAt = -2000; -8000 < -2000 - 5000"
+    },
+    {
+      "name": "start-confirmed-too-late",
+      "session": [[0, 0, 100]],
+      "job": { "startRequested": 0, "startConfirmed": 31000 },
+      "recording": { "anchor": 31000, "intervalSeconds": 1, "bpm": [100] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The H10 recording window does not safely match this workout." }
+    },
+    {
+      "name": "recording-ends-long-after-session",
+      "session": [[0, 0, 100]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "count": 1501, "endedAtMs": 1501000 },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The H10 recording window does not safely match this workout." },
+      "note": "session ends at 1200000 ms; limit is +5 min = 1500000 ms"
+    },
+    {
+      "name": "session-without-end",
+      "sessionOverrides": { "endedAtUtc": null },
+      "session": [[0, 0, 100]],
+      "job": { "startRequested": 0, "startConfirmed": 0 },
+      "recording": { "anchor": 0, "intervalSeconds": 1, "bpm": [100] },
+      "expected": { "outcome": "ReviewRequired", "lastError": "The workout or H10 recording window is incomplete." }
+    },
+    {
+      "name": "manual-origin-is-retained-not-merged",
+      "job": { "origin": "Manual" },
+      "expected": { "outcome": "Retained (merge returns Retained without touching History)" }
+    },
+    {
+      "name": "merge-is-idempotent",
+      "job": { "status": "Merged" },
+      "expected": { "outcome": "Merged (no-op)" }
+    },
+    {
+      "name": "merge-requires-downloaded",
+      "job": { "status": "Recording" },
+      "expected": { "outcome": "error: only a verified downloaded payload can enter the history merge" }
+    }
+  ]
+}
