@@ -1,6 +1,6 @@
 # Plan — <ID> <title>
 
-Status: draft | reviewed (reviewer: <model/role>, date)
+Status: draft | final (orchestrator: Opus 5.5 medium, date)
 
 ## 1. Current state
 <What exists today in the repository for this story. Verified by reading code: modules, files, tests. What is missing.>
@@ -27,7 +27,7 @@ Migration notes: <Room version N → N+1, columns added, backfill, forward-only>
 ## 4. Packets
 | ID | Goal | Allow-list | Done-check | Budget | Tier | Depends |
 |---|---|---|---|---|---|---|
-| P1 | … | `path/…` | `./gradlew :module:test` (`build/ai/…json` green) | ≤ 300 lines | packet-executor | — |
+| P1 | … | `path/…` | `./gradlew :module:test` (`build/ai/…json` green) | ≤ 300 lines | implementer (Sonnet high) | — |
 
 <Per packet, if more detail is needed: packets/P<n>.md from packet.template.md>
 
@@ -35,6 +35,14 @@ Migration notes: <Room version N → N+1, columns added, backfill, forward-only>
 | ID | Decision | Source | Rationale | Date |
 |---|---|---|---|---|
 | D1 | … | owner answer / model reasoning | … | YYYY-MM-DD |
+
+Architectural decisions (mark with ADR): each gets `./gradlew newAdr`. Every row is copied to `docs/decisions.md` at close.
+
+## 7. Documentation impact
+- ADRs: <new / updated / none>
+- User guide pages: <pages / none>
+- Dev guide: <sections / none>
+- Spec corrections: <sections / none>
 
 ## 6. Open questions (answer before implementing)
 | ID | Question | Blocking | Answer | Answered by / date |

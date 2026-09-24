@@ -20,7 +20,7 @@ Web: `web/<page>-412.png`, `web/<page>-768.png`, `web/<page>-1280.png`
 ## Acceptance criteria
 - [ ] AC1 — evidence: <screenshot / test / JSON>
 
-## UX review (ux-reviewer)
+## UX validation (ux-validator, Opus 5.5 high)
 Reviewed against: ticket mockups, design guide (plan 9) and checklist 9.10.
 | # | Screen | Issue | Severity | Action |
 |---|---|---|---|---|

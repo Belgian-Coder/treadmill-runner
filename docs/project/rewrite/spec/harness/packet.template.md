@@ -1,6 +1,6 @@
 # Packet <ID>-P<n> — <goal in one sentence>
 
-- Tier: packet-executor | mechanical
+- Role: implementer (Sonnet 5, effort high)
 - Depends on: <packets>
 - Budget: ≤ <n> changed lines
 
@@ -21,5 +21,5 @@
 - `./gradlew <task>` → `build/ai/<task>.json` status `passed`
 - <any extra assertion>
 
-## Escalate to planner if
+## Escalate to orchestrator if
 - a done-check fails twice, a file outside the allow-list must change, or a spec rule is unclear.

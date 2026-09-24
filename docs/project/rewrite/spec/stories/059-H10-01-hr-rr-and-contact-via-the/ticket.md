@@ -29,5 +29,6 @@ n/a
 ## Out of scope
 - Anything not needed for the acceptance criteria above (private use, keep it simple).
 
-## Notes for the planner
-- Read the linked spec sections only; create `plan.md` from the template, with packets sized for a cheaper executor.
+## Notes for the orchestrator
+- Run the automatic story pipeline (plan 12.7): parallel read-only searches, `plan.md` from the template, Sonnet packets, validation, docs (ADRs, `docs/decisions.md`, user guide, dev guide), `aiMaps`, final review.
+- Read only the linked spec sections and the maps.
