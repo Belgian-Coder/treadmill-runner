@@ -15,8 +15,8 @@ tags: []
 - Epic: REC — Recording, history, analytics
 - Priority note: P0
 - Spec:
-- `docs/spec/05-sessions-and-recording.md`
-- `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/05-sessions-and-recording.md`
+  - `docs/spec/07-exports-and-backup.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: at most 1 s of samples lost after a random kill.

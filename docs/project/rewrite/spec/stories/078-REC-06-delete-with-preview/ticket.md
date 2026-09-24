@@ -15,8 +15,8 @@ Delete with preview.
 - Epic: REC — Recording, history, analytics
 - Priority note: P1
 - Spec:
-- `docs/spec/05-sessions-and-recording.md`
-- `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/05-sessions-and-recording.md`
+  - `docs/spec/07-exports-and-backup.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: refused while a Garmin job is pending, in flight or unknown; plan recompute.

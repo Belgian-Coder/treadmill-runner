@@ -15,7 +15,7 @@ As a developer, I prove Garmin login, MFA, token refresh and one upload from the
 - Epic: GAR — Garmin
 - Priority note: P1, spike
 - Spec:
-- `docs/spec/11-garmin.md`
+  - `docs/spec/11-garmin.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[hw]*: works against a test account; a failed login is never retried automatically.

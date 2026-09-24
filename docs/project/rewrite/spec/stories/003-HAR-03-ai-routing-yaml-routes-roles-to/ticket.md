@@ -15,7 +15,7 @@ As the owner, `ai/routing.yaml` routes roles to Anthropic and OpenAI models (Opu
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1: the routing validates against a small schema (`./gradlew aiContext` checks it); planner and reviewer differ in provider for `safety` stories.

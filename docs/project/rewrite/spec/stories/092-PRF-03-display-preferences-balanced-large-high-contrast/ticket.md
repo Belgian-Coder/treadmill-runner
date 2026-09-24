@@ -15,7 +15,7 @@ Display preferences (balanced, large, high-contrast; 2–3 primary metrics mappe
 - Epic: PRF — Profiles and settings
 - Priority note: P1
 - Spec:
-- `docs/spec/06-profiles-and-heart-rate.md`
+  - `docs/spec/06-profiles-and-heart-rate.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

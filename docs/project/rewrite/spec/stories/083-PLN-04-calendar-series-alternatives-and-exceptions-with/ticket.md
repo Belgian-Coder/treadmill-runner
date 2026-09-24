@@ -15,7 +15,7 @@ Calendar series, alternatives and exceptions with the four scopes.
 - Epic: PLN — Plans and calendar
 - Priority note: P1
 - Spec:
-- `docs/spec/04-calendar-and-plans.md`
+  - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

@@ -15,7 +15,7 @@ As the owner, `./gradlew release` builds and signs locally, and uploads the APK 
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the manifest verifies with the public key; tampering with any byte fails verification.

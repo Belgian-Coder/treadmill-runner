@@ -15,7 +15,7 @@ Manual recording archive with CSV export.
 - Epic: H10 — Polar H10
 - Priority note: P1
 - Spec:
-- `docs/spec/10-polar-h10.md`
+  - `docs/spec/10-polar-h10.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

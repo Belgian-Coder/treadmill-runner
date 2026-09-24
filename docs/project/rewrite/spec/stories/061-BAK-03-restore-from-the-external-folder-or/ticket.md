@@ -15,9 +15,9 @@ Restore from the external folder or a web upload, with a preview and a safety ba
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: a newer schema is refused; an older schema migrates; row counts match after restore.

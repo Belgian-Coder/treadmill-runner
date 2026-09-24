@@ -15,7 +15,7 @@ FIT share (phone) and download (web) for every session.
 - Epic: GAR — Garmin
 - Priority note: P0
 - Spec:
-- `docs/spec/11-garmin.md`
+  - `docs/spec/11-garmin.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: a valid FIT (FIT SDK validator).

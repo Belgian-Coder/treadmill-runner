@@ -15,9 +15,9 @@ Backup health (last success, destination reachable, free space) is a persistent 
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the state is raised per destination when it is missing or unreachable, or the last success is older than 48 h.

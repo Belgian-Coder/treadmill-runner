@@ -15,7 +15,7 @@ As the owner, I push an update from my laptop with `./gradlew deployToPhone` or 
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: refused on a bad signature, SHA-256 mismatch, different certificate, lower `versionCode`, reused `sequence`, yanked or rejected version, or a schema outside the window.

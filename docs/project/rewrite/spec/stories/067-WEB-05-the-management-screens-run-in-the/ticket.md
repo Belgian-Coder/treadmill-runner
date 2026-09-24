@@ -15,8 +15,8 @@ As a phone user, the management screens run in the in-app WebView against localh
 - Epic: WEB — Web interface
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#72-web-interface`
-- `docs/spec/00-plan.md#97-web-layout-guide`
+  - `docs/spec/00-plan.md#72-web-interface`
+  - `docs/spec/00-plan.md#97-web-layout-guide`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: Compose E2E opens History and Workouts in the WebView and navigates back.

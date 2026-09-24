@@ -15,9 +15,9 @@ As the owner, I import my old runs (session JSON exports or the `.trb` backup's 
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the golden session exports in `data/exports/` import without loss (samples, events, debrief, IDs); re-exporting gives an equivalent document per [07](07-exports-and-backup.md).

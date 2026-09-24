@@ -15,7 +15,7 @@ Move, skip, restore, repeat and change days, each with a preview.
 - Epic: PLN — Plans and calendar
 - Priority note: P1
 - Spec:
-- `docs/spec/04-calendar-and-plans.md`
+  - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: occupied dates block moves; repeat collision warnings; atomic apply.

@@ -15,9 +15,9 @@ As a runner, the setup wizard grants Bluetooth, notifications, battery exemption
 - Epic: DEV — Devices
 - Priority note: P0
 - Spec:
-- `docs/spec/08-ftms-and-treadmill.md`
-- `docs/spec/10-polar-h10.md`
-- `docs/spec/00-plan.md#6-device-integration`
+  - `docs/spec/08-ftms-and-treadmill.md`
+  - `docs/spec/10-polar-h10.md`
+  - `docs/spec/00-plan.md#6-device-integration`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: Finish is blocked until BLE permissions and a backup folder are set.

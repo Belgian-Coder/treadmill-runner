@@ -15,7 +15,7 @@ Live HR continues during prepare and fetch.
 - Epic: H10 — Polar H10
 - Priority note: P1
 - Spec:
-- `docs/spec/10-polar-h10.md`
+  - `docs/spec/10-polar-h10.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[hw]*: HW-11.

@@ -15,7 +15,7 @@ As the owner, updates install only when idle, after a verified backup, and are f
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: no install while a session is non-terminal or an unfetched H10 recording exists.

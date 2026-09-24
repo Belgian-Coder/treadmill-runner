@@ -15,9 +15,9 @@ H10 multi-connection setting via the SDK, or Polar Flow guidance.
 - Epic: DEV — Devices
 - Priority note: P1
 - Spec:
-- `docs/spec/08-ftms-and-treadmill.md`
-- `docs/spec/10-polar-h10.md`
-- `docs/spec/00-plan.md#6-device-integration`
+  - `docs/spec/08-ftms-and-treadmill.md`
+  - `docs/spec/10-polar-h10.md`
+  - `docs/spec/00-plan.md#6-device-integration`
 
 ## Acceptance criteria
 - [ ] AC1 *[hw]*: the H10 stops advertising while connected.

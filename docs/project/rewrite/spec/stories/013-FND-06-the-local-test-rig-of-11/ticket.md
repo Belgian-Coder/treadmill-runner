@@ -15,9 +15,9 @@ As a developer, the local test rig of 11.0 exists: `ciFast` on the Windows VM, a
 - Epic: FND — Project foundation (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
-- `docs/spec/00-plan.md#4-architecture`
-- `docs/spec/00-plan.md#11-validation-strategy`
+  - `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
+  - `docs/spec/00-plan.md#4-architecture`
+  - `docs/spec/00-plan.md#11-validation-strategy`
 
 ## Acceptance criteria
 - [ ] AC1: both commands run green with an example of each test level.

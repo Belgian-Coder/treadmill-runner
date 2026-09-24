@@ -15,7 +15,7 @@ Watch status via the Connect IQ Mobile SDK (needs the watch paired to the treadm
 - Epic: GAR — Garmin
 - Priority note: P2
 - Spec:
-- `docs/spec/11-garmin.md`
+  - `docs/spec/11-garmin.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

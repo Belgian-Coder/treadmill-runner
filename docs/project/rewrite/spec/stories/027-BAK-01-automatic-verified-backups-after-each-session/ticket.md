@@ -15,9 +15,9 @@ Automatic verified backups (after each session, daily, before updates and restor
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: `VACUUM INTO` plus integrity check plus receipt; the external copy exists; retention enforced.

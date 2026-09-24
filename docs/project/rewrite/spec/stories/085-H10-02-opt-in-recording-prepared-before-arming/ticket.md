@@ -15,7 +15,7 @@ Opt-in recording prepared before arming (6.2 rules).
 - Epic: H10 — Polar H10
 - Priority note: P1
 - Spec:
-- `docs/spec/10-polar-h10.md`
+  - `docs/spec/10-polar-h10.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: an existing active recording is returned unchanged; replacement needs the same confirmed ID.

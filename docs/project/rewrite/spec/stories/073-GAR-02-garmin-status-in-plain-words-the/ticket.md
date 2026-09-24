@@ -15,7 +15,7 @@ Garmin status in plain words; the review queue ("Keep one" / "Restore two").
 - Epic: GAR — Garmin
 - Priority note: P1
 - Spec:
-- `docs/spec/11-garmin.md`
+  - `docs/spec/11-garmin.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

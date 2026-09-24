@@ -15,8 +15,8 @@ As any user, the web UI meets the 9.7 layout guide and budgets.
 - Epic: WEB — Web interface
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#72-web-interface`
-- `docs/spec/00-plan.md#97-web-layout-guide`
+  - `docs/spec/00-plan.md#72-web-interface`
+  - `docs/spec/00-plan.md#97-web-layout-guide`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: Playwright at 375, 768 and 1280 px; axe clean; first paint < 1 s; JS ≤ 100 KB.

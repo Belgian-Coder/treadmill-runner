@@ -15,7 +15,7 @@ Install premade plans; phase and week grouping.
 - Epic: PLN — Plans and calendar
 - Priority note: P0
 - Spec:
-- `docs/spec/04-calendar-and-plans.md`
+  - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: idempotent; 16 templates, including WalkingPad (174 slots, 260 variants).

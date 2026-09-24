@@ -15,9 +15,9 @@ As a developer, the Gradle project has the modules of 4.1, convention plugins, a
 - Epic: FND — Project foundation (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
-- `docs/spec/00-plan.md#4-architecture`
-- `docs/spec/00-plan.md#11-validation-strategy`
+  - `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
+  - `docs/spec/00-plan.md#4-architecture`
+  - `docs/spec/00-plan.md#11-validation-strategy`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: `./gradlew check` runs lint, unit, property, scenario, Robolectric and Ktor tests.

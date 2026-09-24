@@ -15,7 +15,7 @@ Fetch, align, fill only nulls, remove.
 - Epic: H10 — Polar H10
 - Priority note: P1
 - Spec:
-- `docs/spec/10-polar-h10.md`
+  - `docs/spec/10-polar-h10.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: alignment, pre-start exclusion, review-required, 8 MiB bound.

@@ -15,9 +15,9 @@ As a runner, I see live device state, signal and battery (phone and web).
 - Epic: DEV — Devices
 - Priority note: P0
 - Spec:
-- `docs/spec/08-ftms-and-treadmill.md`
-- `docs/spec/10-polar-h10.md`
-- `docs/spec/00-plan.md#6-device-integration`
+  - `docs/spec/08-ftms-and-treadmill.md`
+  - `docs/spec/10-polar-h10.md`
+  - `docs/spec/00-plan.md#6-device-integration`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: chips update within 1 s.

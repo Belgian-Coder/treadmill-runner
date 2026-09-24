@@ -15,7 +15,7 @@ Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow, 
 - Epic: OPS — Operations
 - Priority note: P2
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

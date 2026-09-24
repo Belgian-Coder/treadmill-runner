@@ -15,7 +15,7 @@ As an agent, every build, test, debug, deploy and validation action is a determi
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: each task in 12.2 exists, is repeatable, and writes a JSON result with status and failures as file:line.

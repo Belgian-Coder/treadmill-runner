@@ -15,7 +15,7 @@ Multiple profiles; the runner is chosen on Today; per-profile sensor assignments
 - Epic: PRF — Profiles and settings
 - Priority note: P0
 - Spec:
-- `docs/spec/06-profiles-and-heart-rate.md`
+  - `docs/spec/06-profiles-and-heart-rate.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

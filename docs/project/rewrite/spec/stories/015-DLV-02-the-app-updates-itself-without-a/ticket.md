@@ -15,7 +15,7 @@ As the owner, the app updates itself without a tap on the phone after the one-ti
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto, phone .e2e]*: build N installed, N+1 pushed, installed silently when idle, restarted via `MY_PACKAGE_REPLACED`.

@@ -15,9 +15,9 @@ Download a backup from the web UI (admin), encrypted by default.
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the downloaded `.trb2` verifies (manifest hashes); an encrypted bundle fails with the wrong passphrase.

@@ -15,7 +15,7 @@ Storage management: journal and backup retention, a free-space warning, and the 
 - Epic: OPS — Operations
 - Priority note: P1
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

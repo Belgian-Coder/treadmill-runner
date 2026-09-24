@@ -15,7 +15,7 @@ As the owner, each story has a folder created by `./gradlew newStory` from the t
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: storyCheck refuses "implementing" with blocking open questions; refuses "done" without validation evidence.

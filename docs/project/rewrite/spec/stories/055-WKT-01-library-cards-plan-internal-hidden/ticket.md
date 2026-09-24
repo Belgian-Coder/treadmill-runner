@@ -15,8 +15,8 @@ Library cards; plan-internal hidden.
 - Epic: WKT — Workouts
 - Priority note: P0
 - Spec:
-- `docs/spec/02-workouts.md`
-- `docs/spec/03-import-export-formats.md`
+  - `docs/spec/02-workouts.md`
+  - `docs/spec/03-import-export-formats.md`
 
 ## Acceptance criteria
 - [ ] AC1: <to be defined by the planner from the goal and the linked spec>

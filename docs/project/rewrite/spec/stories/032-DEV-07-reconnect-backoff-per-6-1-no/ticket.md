@@ -15,9 +15,9 @@ Reconnect backoff per 6.1; no treadmill scans during a run; HR scans within budg
 - Epic: DEV — Devices
 - Priority note: P0
 - Spec:
-- `docs/spec/08-ftms-and-treadmill.md`
-- `docs/spec/10-polar-h10.md`
-- `docs/spec/00-plan.md#6-device-integration`
+  - `docs/spec/08-ftms-and-treadmill.md`
+  - `docs/spec/10-polar-h10.md`
+  - `docs/spec/00-plan.md#6-device-integration`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the backoff sequence and scan-budget tests.

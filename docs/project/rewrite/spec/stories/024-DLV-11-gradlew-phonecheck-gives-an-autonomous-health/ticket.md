@@ -15,7 +15,7 @@ As the owner or an automated agent, `./gradlew phoneCheck` gives an autonomous h
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1: the report contains the app screenshot (web API) and, when ADB is available, a full-screen screenshot.

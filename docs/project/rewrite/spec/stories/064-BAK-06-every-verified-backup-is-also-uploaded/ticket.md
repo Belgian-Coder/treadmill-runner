@@ -15,9 +15,9 @@ As the owner, every verified backup is also uploaded to my NAS share over SMB, a
 - Epic: BAK — Backup, restore, importing old runs
 - Priority note: P0
 - Spec:
-- `docs/spec/07-exports-and-backup.md`
-- `docs/spec/01-data-model.md`
-- `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
+  - `docs/spec/07-exports-and-backup.md`
+  - `docs/spec/01-data-model.md`
+  - `docs/spec/00-plan.md#73-backup-strategy-file-based-external-device`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto, phone .e2e]*: an upload to the NAS `test/` folder (SMB3, signing and encryption required): atomic upload (tmp, read-back hash, rename without replace), retention of own files only, restore listing; wrong credentials give a clear error. It also catches the Android security-provider/MD4 issue.

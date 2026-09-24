@@ -15,7 +15,7 @@ As the owner, a crash loop after an update puts the app in safe mode (web server
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto, phone .e2e]*: E2E with a deliberately crashing build: safe mode after 2 starts without healthy; Diagnostics reachable; the next pushed build restores normal mode with no tap.

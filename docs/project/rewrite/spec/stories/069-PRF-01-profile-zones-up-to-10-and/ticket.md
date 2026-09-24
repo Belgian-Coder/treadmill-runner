@@ -15,7 +15,7 @@ Profile, zones (up to 10) and HR controller settings within bounds (1.2).
 - Epic: PRF — Profiles and settings
 - Priority note: P0
 - Spec:
-- `docs/spec/06-profiles-and-heart-rate.md`
+  - `docs/spec/06-profiles-and-heart-rate.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: bounds.

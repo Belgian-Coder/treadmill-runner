@@ -15,8 +15,8 @@ Editor (web); each save creates a revision.
 - Epic: WKT — Workouts
 - Priority note: P1
 - Spec:
-- `docs/spec/02-workouts.md`
-- `docs/spec/03-import-export-formats.md`
+  - `docs/spec/02-workouts.md`
+  - `docs/spec/03-import-export-formats.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: a revision hash is stable (sorted-key JSON, SHA-256); an unchanged save doesn't create a revision.

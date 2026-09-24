@@ -15,7 +15,7 @@ Only a Completed linked Hardware session advances the plan.
 - Epic: PLN — Plans and calendar
 - Priority note: P0
 - Spec:
-- `docs/spec/04-calendar-and-plans.md`
+  - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: unique completed-item constraint.

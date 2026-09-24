@@ -15,7 +15,7 @@ Start a plan with a start date and weekdays; clear upcoming items.
 - Epic: PLN — Plans and calendar
 - Priority note: P0
 - Spec:
-- `docs/spec/04-calendar-and-plans.md`
+  - `docs/spec/04-calendar-and-plans.md`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the ported `TrainingDaySelectionResolver` projection.

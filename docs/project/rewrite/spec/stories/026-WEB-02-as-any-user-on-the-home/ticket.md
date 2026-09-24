@@ -15,8 +15,8 @@ As any user on the home Wi-Fi, I open the address and use the web UI without log
 - Epic: WEB — Web interface
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#72-web-interface`
-- `docs/spec/00-plan.md#97-web-layout-guide`
+  - `docs/spec/00-plan.md#72-web-interface`
+  - `docs/spec/00-plan.md#97-web-layout-guide`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: admin routes return 401 without a valid admin session; a wrong passphrase is rate-limited; the session expires after 30 minutes.

@@ -15,8 +15,8 @@ As the owner, the app serves the web UI over plain HTTP on the Wi-Fi address and
 - Epic: WEB — Web interface
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#72-web-interface`
-- `docs/spec/00-plan.md#97-web-layout-guide`
+  - `docs/spec/00-plan.md#72-web-interface`
+  - `docs/spec/00-plan.md#97-web-layout-guide`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: the service restarts after process death; requests from outside loopback, Wi-Fi or an allow-listed VPN are rejected.

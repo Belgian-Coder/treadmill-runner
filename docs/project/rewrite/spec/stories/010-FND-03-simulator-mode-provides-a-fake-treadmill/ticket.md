@@ -15,9 +15,9 @@ As a developer, Simulator mode provides a fake treadmill and HR (deterministic, 
 - Epic: FND — Project foundation (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
-- `docs/spec/00-plan.md#4-architecture`
-- `docs/spec/00-plan.md#11-validation-strategy`
+  - `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
+  - `docs/spec/00-plan.md#4-architecture`
+  - `docs/spec/00-plan.md#11-validation-strategy`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: simulated sessions are excluded from totals, progression, maintenance, plans and Garmin.

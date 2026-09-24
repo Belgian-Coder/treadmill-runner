@@ -15,10 +15,10 @@ Pause stops the belt temporarily and keeps progress; Resume (single press) conti
 - Epic: RUN — Live run and control
 - Priority note: P0, after DEV-08
 - Spec:
-- `docs/spec/05-sessions-and-recording.md`
-- `docs/spec/09-safety-and-command-contract.md`
-- `docs/spec/02-workouts.md`
-- `docs/spec/00-plan.md#96-run-screen-phone-native-reference-411--914-dp-portrait`
+  - `docs/spec/05-sessions-and-recording.md`
+  - `docs/spec/09-safety-and-command-contract.md`
+  - `docs/spec/02-workouts.md`
+  - `docs/spec/00-plan.md#96-run-screen-phone-native-reference-411--914-dp-portrait`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: state `PausedWaitingForPhysicalResume`; cursor and plan position unchanged; the paused interval is not moving time.

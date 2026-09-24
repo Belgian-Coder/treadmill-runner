@@ -15,8 +15,8 @@ As a user on another device, I see a read-only live view of the run (metrics, ch
 - Epic: WEB — Web interface
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#72-web-interface`
-- `docs/spec/00-plan.md#97-web-layout-guide`
+  - `docs/spec/00-plan.md#72-web-interface`
+  - `docs/spec/00-plan.md#97-web-layout-guide`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: SSE delivers each engine state change; at most 8 clients; the run engine tick is unaffected (scenario with 8 clients).

@@ -15,9 +15,9 @@ As the owner, I commission treadmill control on this phone in approved stages, w
 - Epic: DEV — Devices
 - Priority note: P0, gate for control
 - Spec:
-- `docs/spec/08-ftms-and-treadmill.md`
-- `docs/spec/10-polar-h10.md`
-- `docs/spec/00-plan.md#6-device-integration`
+  - `docs/spec/08-ftms-and-treadmill.md`
+  - `docs/spec/10-polar-h10.md`
+  - `docs/spec/00-plan.md#6-device-integration`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: controls stay disabled until all stages are approved; approval is stored per model, firmware and host stack.

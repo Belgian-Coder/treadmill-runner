@@ -15,9 +15,9 @@ As a developer, the test harness exists at every level with one example test eac
 - Epic: FND — Project foundation (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
-- `docs/spec/00-plan.md#4-architecture`
-- `docs/spec/00-plan.md#11-validation-strategy`
+  - `docs/spec/00-plan.md#3-technology-choices-all-kotlin`
+  - `docs/spec/00-plan.md#4-architecture`
+  - `docs/spec/00-plan.md#11-validation-strategy`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: `./gradlew ciFast` (pre-push hook) and `./gradlew ciNightly` (before release) run the right sets locally and publish HTML reports; `release` refuses without a passing `ciNightly` for the commit.

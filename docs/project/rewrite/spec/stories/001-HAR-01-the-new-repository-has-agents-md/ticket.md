@@ -15,7 +15,7 @@ As the owner, the new repository has `AGENTS.md`, `CLAUDE.md`, `ai/project-conte
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1: an agent given only `AGENTS.md` can find the project context, the spec index and the story index in ≤ 3 reads.

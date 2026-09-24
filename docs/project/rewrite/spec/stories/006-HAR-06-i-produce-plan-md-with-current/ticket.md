@@ -15,7 +15,7 @@ As a planner, I produce `plan.md` with current-state analysis, Mermaid change an
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1: a pilot story (FND-01) goes through all stages with a planner, a cheaper executor and a cross-provider reviewer, and its folder passes `storyCheck`.

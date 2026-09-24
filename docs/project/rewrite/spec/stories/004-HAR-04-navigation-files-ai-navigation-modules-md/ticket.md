@@ -15,7 +15,7 @@ As an agent, navigation files (`ai/navigation/modules.md`, `specs.md`, `stories.
 - Epic: HAR — AI harness and project setup (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
+  - `docs/spec/00-plan.md#12-ai-harness-and-story-workflow`
 
 ## Acceptance criteria
 - [ ] AC1 *[auto]*: adding a module or story without regenerating fails `check`.

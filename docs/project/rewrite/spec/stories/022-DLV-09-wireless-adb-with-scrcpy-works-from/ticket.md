@@ -15,7 +15,7 @@ As a developer, wireless ADB with scrcpy works from the start, and the debuggabl
 - Epic: DLV — Delivery: updates and remote debugging (first)
 - Priority note: P0
 - Spec:
-- `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
+  - `docs/spec/00-plan.md#8-delivery-build-remote-updates-remote-debugging`
 
 ## Acceptance criteria
 - [ ] AC1: from the laptop, scrcpy shows and controls the full phone screen.
