@@ -459,7 +459,7 @@ The SDK decodes the error code as `(b1 & 0xFF) | ((b2 << 8) & 0xFF)`, which keep
 | Origin | Id | Notes |
 |---|---|---|
 | **Automatic** (workout) | `tr-{sessionId:N}` | `tr-` plus the 32 lowercase hex digits of the session UUID, no dashes: 35 characters. Example: `tr-0123456789abcdef0123456789abcdef` |
-| **Manual** | `manual-{yyyyMMdd-HHmmss}-{uuidN}`, truncated to its **first 47 characters** | Local-free UTC timestamp. Example: `manual-20260910-070000-0123456789abcdef012345678` |
+| **Manual** | `manual-{yyyyMMdd-HHmmss}-{uuidN}`, truncated to its **first 47 characters** | The timestamp is UTC. Example: `manual-20260910-070000-0123456789abcdef01234567` (47 characters) |
 | Seen on the device | anything valid | "Unowned" if no local job has that id for this enrollment |
 
 Validation everywhere: not blank or whitespace, **1–64 characters**, no `/`, `\` or NUL. The current code counts UTF-16 code units; the rewrite should accept ASCII only for ids it creates.
