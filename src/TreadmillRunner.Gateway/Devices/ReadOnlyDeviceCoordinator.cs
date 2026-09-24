@@ -61,6 +61,7 @@ public sealed class ReadOnlyDeviceCoordinator(
   private static readonly TimeSpan ReliabilityLogThrottle = TimeSpan.FromMinutes(1);
   private static readonly TimeSpan HeartRateFreshnessLimit = TimeSpan.FromSeconds(5);
   private static readonly TimeSpan PreparationDemandDuration = TimeSpan.FromMinutes(2);
+  private static readonly TimeSpan LinkDiagnosticsInterval = TimeSpan.FromMinutes(1);
   private const int MaximumHeartRateWorkers = 8;
   private readonly object _sync = new();
   private readonly SemaphoreSlim _reconcileGate = new(1, 1);
@@ -638,7 +639,11 @@ public sealed class ReadOnlyDeviceCoordinator(
             enrollmentVersion,
             services,
             generation,
-            observedAt => OnPrimaryTelemetry(enrollment, generation, observedAt, attempt),
+            observedAt =>
+            {
+              ObserveLinkDiagnostics(connection, enrollment, generation, observedAt, attempt);
+              OnPrimaryTelemetry(enrollment, generation, observedAt, attempt);
+            },
             updatedEnrollment =>
             {
               enrollment = updatedEnrollment.Enrollment;
@@ -658,6 +663,7 @@ public sealed class ReadOnlyDeviceCoordinator(
             observedAt =>
             {
               hasRetriedRequiredHeartRateLocator = false;
+              ObserveLinkDiagnostics(connection, enrollment, generation, observedAt, attempt);
               OnPrimaryTelemetry(enrollment, generation, observedAt, attempt);
             },
             attempt,
@@ -707,7 +713,8 @@ public sealed class ReadOnlyDeviceCoordinator(
             ? attempt.MaximumNotificationIntervalForDiagnostics
             : null,
           OperationStage: OperationStageForFailure(exception, attempt.OperationStage),
-          FailureDetails: BleDiagnosticFailureDetails.From(exception)));
+          FailureDetails: BleDiagnosticFailureDetails.From(exception),
+          Link: attempt.LinkDiagnostics));
         logger.LogWarning(
           exception,
           "Read-only {DeviceRole} connection failed; reconnecting without issuing a treadmill command.",
@@ -2244,6 +2251,29 @@ public sealed class ReadOnlyDeviceCoordinator(
     }
   }
 
+  // Samples the native link at the first valid reading and then at most once
+  // per interval, journaling only changes. Failure events carry the last
+  // snapshot because the connection is already disposed by then.
+  private void ObserveLinkDiagnostics(
+    IBleConnection connection,
+    DeviceEnrollment enrollment,
+    long generation,
+    DateTimeOffset observedAt,
+    ConnectionAttemptRuntime attempt)
+  {
+    if (connection is not IBleLinkDiagnosticsSource source) return;
+    if (attempt.LastLinkDiagnosticsAtUtc is { } previous &&
+        observedAt - previous < LinkDiagnosticsInterval) return;
+
+    attempt.LastLinkDiagnosticsAtUtc = observedAt;
+    BleLinkDiagnostics? link = source.CaptureLinkDiagnostics();
+    if (link is null || link == attempt.LinkDiagnostics) return;
+
+    attempt.LinkDiagnostics = link;
+    diagnosticJournal?.Record(new(observedAt, enrollment.Id, enrollment.Role.ToString(), generation,
+      "link-diagnostics", Link: link));
+  }
+
   private void OnPrimaryTelemetry(
     DeviceEnrollment enrollment,
     long generation,
@@ -2859,6 +2889,8 @@ public sealed class ReadOnlyDeviceCoordinator(
     public double? MaximumNotificationIntervalForDiagnostics =>
       Notifications >= 2 ? MaximumNotificationIntervalSeconds : null;
     public string OperationStage { get; set; } = "connection-attempt";
+    public BleLinkDiagnostics? LinkDiagnostics { get; set; }
+    public DateTimeOffset? LastLinkDiagnosticsAtUtc { get; set; }
     public bool HasEverBeenDurablyStable { get; private set; }
     public bool IsCurrentWindowDurablyStable { get; private set; }
     private DateTimeOffset? LastNotificationAtUtc { get; set; }

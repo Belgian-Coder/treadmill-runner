@@ -128,6 +128,16 @@ internal sealed class AsyncNativeResourceOwner<T> : IDisposable
     }
   }
 
+  // Diagnostics-only view of the published resource. Never creates a resource
+  // and returns null instead of throwing after disposal.
+  public T? PeekOrDefault()
+  {
+    lock (_sync)
+    {
+      return _disposed ? null : _resource;
+    }
+  }
+
   public void Dispose()
   {
     T? resource;

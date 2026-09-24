@@ -21,6 +21,33 @@ public sealed record BleNotification(
     ReadOnlyMemory<byte> Value,
     DateTimeOffset ObservedAt);
 
+/// <summary>
+/// Identifier-free snapshot of the native link state behind a connection.
+/// Connection timing uses Bluetooth Core units converted to milliseconds.
+/// </summary>
+public sealed record BleLinkDiagnostics(
+    string GattSession,
+    string? GattSessionStatus = null,
+    bool? CanMaintainConnection = null,
+    bool? MaintainConnection = null,
+    int? MaxPduSize = null,
+    double? ConnectionIntervalMilliseconds = null,
+    int? PeripheralLatency = null,
+    double? SupervisionTimeoutMilliseconds = null,
+    string? TransmitPhy = null,
+    string? ReceivePhy = null,
+    bool? IsPaired = null,
+    string? PairingProtectionLevel = null);
+
+/// <summary>
+/// Optional capability for connections that can report their native link
+/// state. Implementations must never throw and must not create native objects.
+/// </summary>
+public interface IBleLinkDiagnosticsSource
+{
+  BleLinkDiagnostics? CaptureLinkDiagnostics();
+}
+
 public interface IBleCentralTransport
 {
   IAsyncEnumerable<BleAdvertisement> ScanAsync(CancellationToken cancellationToken = default);

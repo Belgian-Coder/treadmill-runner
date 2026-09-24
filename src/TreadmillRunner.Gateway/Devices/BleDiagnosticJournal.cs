@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
+using TreadmillRunner.Core.Bluetooth;
 using TreadmillRunner.Infrastructure.Bluetooth;
 
 namespace TreadmillRunner.Gateway.Devices;
@@ -19,7 +20,8 @@ public sealed record BleDiagnosticEvent(
   string? OperationStage = null, Guid? PreviousEnrollmentId = null,
   string? PreviousState = null, string? PreviousQuality = null,
   double? PreviousAgeSeconds = null, DateTimeOffset? CapturedAtUtc = null,
-  BleDiagnosticFailureDetails? FailureDetails = null);
+  BleDiagnosticFailureDetails? FailureDetails = null,
+  BleLinkDiagnostics? Link = null);
 
 // Deliberately allow-lists only native status and lifecycle fields that can
 // distinguish failure paths without retaining device identifiers, messages,

@@ -807,6 +807,72 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
   }
 
   [Fact]
+  public async Task Journals_link_diagnostics_at_first_reading_and_carries_last_snapshot_into_attempt_failure()
+  {
+    DateTimeOffset began = DateTimeOffset.UtcNow;
+    var clock = new AdjustableTimeProvider(began);
+    var store = new DeviceEnrollmentStore(_factory);
+    DeviceEnrollment treadmill = Treadmill();
+    await store.EnrollAsync(treadmill, began, Op("device.enroll", began));
+    var services = new ServiceCollection().AddSingleton(_factory).AddScoped<IDeviceEnrollmentStore, DeviceEnrollmentStore>();
+    await using ServiceProvider provider = services.BuildServiceProvider();
+    var transport = new LinkDiagnosticsBleTransport(clock);
+    string journalDirectory = Path.Combine(_directory, "link-journal");
+    using var journal = new BleDiagnosticJournal(journalDirectory, NullLogger<BleDiagnosticJournal>.Instance);
+    var coordinator = new ReadOnlyDeviceCoordinator(
+      provider.GetRequiredService<IServiceScopeFactory>(), transport,
+      new BleAdvertisementBroker(transport, NullLogger<BleAdvertisementBroker>.Instance),
+      clock, new ApplicationMaintenanceState(), NullLogger<ReadOnlyDeviceCoordinator>.Instance, journal);
+
+    await journal.StartAsync(CancellationToken.None);
+    await coordinator.StartAsync(CancellationToken.None);
+    try
+    {
+      await coordinator.PrepareForRunAsync(Guid.NewGuid(), requiresHeartRate: false);
+      using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+      while (transport.ConnectionAttemptCount < 2)
+        await Task.Delay(25, timeout.Token);
+    }
+    finally
+    {
+      await coordinator.StopAsync(CancellationToken.None);
+      await journal.StopAsync(CancellationToken.None);
+      coordinator.Dispose();
+    }
+
+    var linkEvents = new List<System.Text.Json.JsonElement>();
+    var linkGenerations = new List<long>();
+    System.Text.Json.JsonElement? failedLink = null;
+    foreach (string line in await File.ReadAllLinesAsync(Path.Combine(journalDirectory, "bluetooth.jsonl")))
+    {
+      using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(line);
+      System.Text.Json.JsonElement entry = document.RootElement.GetProperty("Event");
+      string? phase = entry.GetProperty("Phase").GetString();
+      if (phase == "link-diagnostics")
+      {
+        linkGenerations.Add(entry.GetProperty("Generation").GetInt64());
+        linkEvents.Add(entry.GetProperty("Link").Clone());
+      }
+      if (phase == "attempt-failed" && failedLink is null) failedLink = entry.GetProperty("Link").Clone();
+    }
+
+    // One snapshot per connection attempt: the second reading of an attempt is
+    // inside the sampling interval, and the reconnect starts a new attempt.
+    Assert.NotEmpty(linkEvents);
+    Assert.Equal(linkGenerations.Count, linkGenerations.Distinct().Count());
+    System.Text.Json.JsonElement link = linkEvents[0];
+    Assert.Equal("Created", link.GetProperty("GattSession").GetString());
+    Assert.True(link.GetProperty("MaintainConnection").GetBoolean());
+    Assert.Equal(30.0, link.GetProperty("ConnectionIntervalMilliseconds").GetDouble(), 3);
+    Assert.Equal(4, link.GetProperty("PeripheralLatency").GetInt32());
+    Assert.Equal(4000.0, link.GetProperty("SupervisionTimeoutMilliseconds").GetDouble(), 3);
+    Assert.Equal("1M", link.GetProperty("TransmitPhy").GetString());
+    Assert.False(link.GetProperty("IsPaired").GetBoolean());
+    Assert.NotNull(failedLink);
+    Assert.Equal(30.0, failedLink.Value.GetProperty("ConnectionIntervalMilliseconds").GetDouble(), 3);
+  }
+
+  [Fact]
   public async Task Publishes_heart_rate_before_optional_device_information_reads_finish()
   {
     DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -3546,6 +3612,81 @@ public sealed class ReadOnlyDeviceCoordinatorTests : IAsyncLifetime
             yield return new BleNotification(serviceUuid, characteristicUuid, sample, lastAt);
           }
           clock.Set(lastAt.AddSeconds(6));
+          throw new WindowsBleDisconnectedException();
+        }
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      }
+    }
+
+    private static Guid Expand(ushort value) =>
+      Guid.Parse($"0000{value:x4}-0000-1000-8000-00805f9b34fb");
+  }
+
+  private sealed class LinkDiagnosticsBleTransport(AdjustableTimeProvider clock) : IBleCentralTransport
+  {
+    private static readonly Guid FtmsService = Expand(0x1826);
+    private static readonly Guid TreadmillData = Expand(0x2ACD);
+    private static readonly BleLinkDiagnostics Snapshot = new(
+      "Created",
+      "Active",
+      CanMaintainConnection: true,
+      MaintainConnection: true,
+      MaxPduSize: 247,
+      ConnectionIntervalMilliseconds: 30,
+      PeripheralLatency: 4,
+      SupervisionTimeoutMilliseconds: 4000,
+      TransmitPhy: "1M",
+      ReceivePhy: "1M",
+      IsPaired: false,
+      PairingProtectionLevel: "None");
+    private int _connectionAttemptCount;
+    public int ConnectionAttemptCount => Volatile.Read(ref _connectionAttemptCount);
+
+    public async IAsyncEnumerable<BleAdvertisement> ScanAsync(
+      [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+      await Task.Yield();
+      yield break;
+    }
+
+    public ValueTask<IBleConnection> ConnectAsync(
+      string deviceId,
+      CancellationToken cancellationToken = default) =>
+      ValueTask.FromResult<IBleConnection>(new Connection(
+        deviceId,
+        Interlocked.Increment(ref _connectionAttemptCount),
+        clock));
+
+    private sealed class Connection(
+      string deviceId,
+      int attempt,
+      AdjustableTimeProvider clock) : IBleConnection, IBleLinkDiagnosticsSource
+    {
+      public string DeviceId { get; } = deviceId;
+      public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+      public BleLinkDiagnostics? CaptureLinkDiagnostics() => Snapshot;
+      public ValueTask<IReadOnlyList<BleService>> DiscoverServicesAsync(
+        CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<BleService>>([
+          new BleService(FtmsService, [new BleCharacteristic(FtmsService, TreadmillData, false, false, true)]),
+        ]);
+      public ValueTask<ReadOnlyMemory<byte>> ReadAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+      public async IAsyncEnumerable<BleNotification> SubscribeAsync(
+        Guid serviceUuid,
+        Guid characteristicUuid,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+      {
+        byte[] sample = [0x08, 0x00, 0x58, 0x02, 0x0A, 0x00, 0x00, 0x00];
+        DateTimeOffset firstAt = clock.GetUtcNow();
+        yield return new BleNotification(serviceUuid, characteristicUuid, sample, firstAt);
+        // A second reading inside the sampling interval must not journal a duplicate snapshot.
+        yield return new BleNotification(serviceUuid, characteristicUuid, sample, firstAt.AddSeconds(1));
+        if (attempt == 1)
+        {
+          clock.Set(firstAt.AddSeconds(2));
           throw new WindowsBleDisconnectedException();
         }
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);

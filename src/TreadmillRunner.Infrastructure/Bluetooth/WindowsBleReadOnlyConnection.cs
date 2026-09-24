@@ -12,14 +12,20 @@ namespace TreadmillRunner.Infrastructure.Bluetooth;
 
 internal sealed class WindowsBleReadOnlyConnection :
   IBleConnection,
-  IBleTargetedServiceDiscoveryConnection
+  IBleTargetedServiceDiscoveryConnection,
+  IBleLinkDiagnosticsSource
 {
+  private const int GattSessionNotRequested = 0;
+  private const int GattSessionUnavailable = 1;
+  private const int GattSessionCreated = 2;
+
   private readonly ulong _bluetoothAddress;
   private readonly BluetoothAddressType? _bluetoothAddressType;
   private readonly CancellationTokenSource _disposeCancellation = new();
   private readonly AsyncNativeResourceOwner<BluetoothLEDevice> _device = new();
   private readonly AsyncNativeResourceOwner<GattSession> _session = new();
   private int _targetedHeartRateCachePrimed;
+  private int _gattSessionState;
   private int _disposed;
 
   public WindowsBleReadOnlyConnection(string deviceId)
@@ -402,15 +408,98 @@ internal sealed class WindowsBleReadOnlyConnection :
   {
     try
     {
-      return await _session.GetOrCreateAsync(
+      GattSession session = await _session.GetOrCreateAsync(
         operationCancellation => TryOpenGattSessionAsync(device, operationCancellation),
         static () => new WindowsBleDeviceUnavailableException(),
         cancellationToken).ConfigureAwait(false);
+      Volatile.Write(ref _gattSessionState, GattSessionCreated);
+      return session;
     }
     catch (WindowsBleDeviceUnavailableException) when (!cancellationToken.IsCancellationRequested)
     {
+      Volatile.Write(ref _gattSessionState, GattSessionUnavailable);
       return null;
     }
+  }
+
+  public BleLinkDiagnostics? CaptureLinkDiagnostics()
+  {
+    if (Volatile.Read(ref _disposed) != 0) return null;
+
+    try
+    {
+      BluetoothLEDevice? device = _device.PeekOrDefault();
+      GattSession? session = _session.PeekOrDefault();
+      int sessionState = Volatile.Read(ref _gattSessionState);
+      var diagnostics = new BleLinkDiagnostics(sessionState switch
+      {
+        GattSessionCreated => "Created",
+        GattSessionUnavailable => "Unavailable",
+        _ => "NotRequested",
+      });
+      if (session is not null)
+      {
+        diagnostics = diagnostics with
+        {
+          GattSessionStatus = ReadSessionStatus(session)?.ToString(),
+          CanMaintainConnection = TryRead(() => session.CanMaintainConnection),
+          MaintainConnection = TryRead(() => session.MaintainConnection),
+          MaxPduSize = TryRead(() => (int?)session.MaxPduSize),
+        };
+      }
+      if (device is null) return diagnostics;
+
+      diagnostics = diagnostics with
+      {
+        IsPaired = TryRead(() => device.DeviceInformation?.Pairing?.IsPaired),
+        PairingProtectionLevel = TryRead(() => device.DeviceInformation?.Pairing?.ProtectionLevel)?.ToString(),
+      };
+      if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return diagnostics;
+
+      BluetoothLEConnectionParameters? parameters = TryRead(device.GetConnectionParameters);
+      BluetoothLEConnectionPhy? phy = TryRead(device.GetConnectionPhy);
+      return diagnostics with
+      {
+        ConnectionIntervalMilliseconds = parameters is null ? null : parameters.ConnectionInterval * 1.25,
+        PeripheralLatency = parameters?.ConnectionLatency,
+        SupervisionTimeoutMilliseconds = parameters is null ? null : parameters.LinkTimeout * 10.0,
+        TransmitPhy = DescribePhy(phy, static value => value.TransmitInfo),
+        ReceivePhy = DescribePhy(phy, static value => value.ReceiveInfo),
+      };
+    }
+    catch
+    {
+      // Link diagnostics must never become a connection failure. A native
+      // object can close concurrently with the diagnostic read.
+      return null;
+    }
+  }
+
+  private static T? TryRead<T>(Func<T?> read)
+  {
+    try
+    {
+      return read();
+    }
+    catch
+    {
+      return default;
+    }
+  }
+
+  private static string? DescribePhy(
+    BluetoothLEConnectionPhy? phy,
+    Func<BluetoothLEConnectionPhy, BluetoothLEConnectionPhyInfo> select)
+  {
+    if (phy is null) return null;
+
+    BluetoothLEConnectionPhyInfo? info = TryRead(() => select(phy));
+    if (info is null) return null;
+
+    return TryRead(() => info.IsUncoded2MPhy ? "2M"
+      : info.IsUncoded1MPhy ? "1M"
+      : info.IsCodedPhy ? "Coded"
+      : "Unknown");
   }
 
   private static async Task<GattSession?> TryOpenGattSessionAsync(
