@@ -1115,7 +1115,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ### Epic PLN — Plans and calendar
 - **PLN-01 (P0)** — Install premade plans; phase and week grouping.
-  - AC1 *[auto]*: idempotent; 16 templates plus WalkingPad (174 slots, 260 variants).
+  - AC1 *[auto]*: idempotent; 16 templates, including WalkingPad (174 slots, 260 variants).
 - **PLN-02 (P0)** — Only a Completed linked Hardware session advances the plan.
   - AC1 *[auto]*: unique completed-item constraint.
 - **PLN-06 (P0)** — Start a plan with a start date and weekdays; clear upcoming items.
