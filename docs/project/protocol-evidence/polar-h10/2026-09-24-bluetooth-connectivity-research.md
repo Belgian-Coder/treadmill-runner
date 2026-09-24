@@ -93,6 +93,16 @@ The site has no Ethernet at the treadmill. A bridge therefore uses 5 GHz Wi-Fi o
 - stop locally if the app channel drops mid-run;
 - use idempotent request IDs, and never replay or auto-retry a motion command.
 
+### Raspberry Pi 5 as a treadmill console (owner option, 24 September)
+
+A Raspberry Pi 5 with Touch Display 2 fits the use case, and its onboard radio is a reasonable first attempt. It still needs a physical acceptance test:
+
+- **Radio.** The onboard Infineon CYW43455 combines Wi-Fi and Bluetooth, but 5 GHz Wi-Fi has its own RF path, and only 2.4 GHz time-shares the antenna with Bluetooth ([Infineon](https://community.infineon.com/t5/AIROC-Wi-Fi-MCUs/CYW43455-Wi-Fi-and-Bluetooth-coexistence-in-2-4-GHz-with-a-shared-antenna/td-p/391400)). Pi BLE failures are reported mainly with 2.4 GHz Wi-Fi active, and 5 GHz or Wi-Fi off drastically reduces them ([bluez-firmware#12](https://github.com/RPi-Distro/bluez-firmware/issues/12), [#13](https://github.com/RPi-Distro/bluez-firmware/issues/13)). Requirement: 5 GHz-only Wi-Fi. Serialize BLE connects and discovery, since overlapping operations are a known BlueZ failure mode ([bleak#1858](https://github.com/hbldh/bleak/issues/1858)).
+- **Pre-purchase-free validation.** Firmware 4.x allows two H10 centrals, so a bleak HR logger on the Pi can run through a normal workout next to the installed Windows app, which gives a same-strap comparison of drops. Keep treadmill tests read-only.
+- **Architecture.** Preferred: run the gateway and web UI on the Pi, with the touch screen in kiosk mode. Core, Protocols and the Web projects already target `net10.0`. Only `TreadmillRunner.Infrastructure` (the WinRT Bluetooth layer and Windows helpers) and the Gateway host (`UseWindowsService`) are Windows-specific. FTMS commands then stay local, with no network hop.
+- **Power loss.** Use NVMe (M.2 HAT+) or a high-endurance card, SQLite WAL, and a read-only root overlay with a separate data partition. Expect roughly 15–30 s to BLE-ready, more with a desktop kiosk.
+- **Memory.** 4 GB is sufficient; 8 GB is headroom only.
+
 ## Library survey (September 2026)
 
 | Package | Windows backend | Note |
