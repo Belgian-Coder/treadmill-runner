@@ -1,7 +1,7 @@
 ---
 title: TreadmillRunner rewrite plan — self-contained Kotlin phone app
 type: plan
-status: draft-v6
+status: draft-v7
 owner: project
 audience: agent-and-developer
 updated: 2026-09-24
@@ -37,6 +37,10 @@ TreadmillRunner is rebuilt as **one self-contained Kotlin app on a phone mounted
   - Every safety rule the current app proved (section 5) carries over.
   - Treadmill **control is re-commissioned on the Android stack** before it is enabled (DEV-08).
 
+**Guiding rules for the whole rewrite:**
+- **Private use, single household:** choose the simplest design that is safe and reliable. Don't add enterprise-style features (multi-tenant access, audit trails, complex roles, sync).
+- **Backwards compatibility only for runs:** the run (session) data structure stays compatible, so old runs can be imported and runs can be exported and re-imported in the same format ([07](07-exports-and-backup.md)). Everything else (workouts, plans, calendar, profiles, settings, internal database schema) may be redesigned freely and is recreated, not migrated.
+
 This plan is the contract for the rewrite. Section 12 turns it into user stories with testable acceptance criteria; section 13 orders them into phases.
 
 **Revision history:**
@@ -66,6 +70,10 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
   - **One app only**: no separate Keeper; the app updates itself and has a built-in safe mode.
   - **No certificates and no per-device setup**: the web interface is plain HTTP on the home network, protected by one admin passphrase set on the phone.
   - **No emulator**: device tests run on the treadmill phone itself, in a separate test app variant.
+- v7 (this version) applies the owner's decisions:
+  - **Both remote-debugging paths are set up in the first phase** for easy autonomous checks: the in-app screen, logs and state, plus wireless ADB with scrcpy.
+  - **No backwards compatibility except the run data structure.**
+  - **Private use: keep everything as simple as possible.**
 
 ---
 
@@ -83,7 +91,7 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 |---|---|
 | Omega Z FTMS control facts and evidence (Stage 1–3) | Ported into `protocol-ftms` with the same golden vectors; **re-commissioned on Android** (DEV-08) |
 | Command confirmation, intent and recovery policies | Ported into `domain-run` as pure Kotlin, with the C# tests translated one-to-one |
-| Workout schema v1, canonical JSON, SHA-256 revisions | Same JSON; a hand-written canonical writer reproduces System.Text.Json output byte-for-byte (WKT-02) |
+| Workout schema v1 and revisions | Same concepts and rules; our own simple canonical JSON and hash (no byte-compatibility with the old app needed) |
 | Programs, calendar, premade catalog (16 templates, 174-slot/260-variant WalkingPad plan) | Ported as data plus the same rules |
 | HR source selector and HR speed controller | Same **defaults and bounds**:<br>• increase step 0.2 km/h (0.1–0.5)<br>• increase cooldown 30 s (15–180 s)<br>• decrease step 0.5 km/h (0.1–1.0)<br>• decrease cooldown 15 s (5–120 s)<br>• dwell 20 s below target / 10 s above |
 | FIT/TCX/CSV/JSON export semantics, Garmin FIT merge rules | Ported to the phone (Garmin FIT Java SDK) |
@@ -160,7 +168,7 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 | Concurrency | kotlinx.coroutines, `StateFlow`/`SharedFlow` | Structured cancellation of device work |
 | DI | Koin | Simple, no annotation processing |
 | Local DB | **Room** (SQLite, WAL) | Migration tooling, schema export, tests |
-| Serialization | kotlinx.serialization, plus a hand-written canonical JSON writer for workout revisions | Revision hashes must match the current .NET output |
+| Serialization | kotlinx.serialization (sorted keys for workout revision hashing) | Simple; no compatibility with the old app's hashes needed. |
 | BLE (treadmill, generic HR) | Behind our own `BleCentral` port. Candidates are the **Nordic Android BLE library** and **Kable**, chosen in Phase 0 on measured reconnect behaviour and GATT 133 handling | Both are Kotlin; the port keeps the choice reversible |
 | BLE (Polar H10) | **Polar BLE SDK**: pin the current 8.x; 6.12 is only the firmware-4.1.10 floor. Behind a `PolarPort` | Official HR/RR, firmware 4.x security, recording |
 | FIT | Garmin FIT Java SDK | Official encoder/decoder |
@@ -204,7 +212,7 @@ modules/
   protocol-fit/          FIT/TCX/CSV/JSON exporters, FIT workout, Garmin merge semantics     (JVM, FIT SDK)
   protocol-import/       importers                                                          (pure Kotlin)
   domain-devices/        enrollment, capability profiles, HR selection, reconnect, scan budget (pure Kotlin)
-  domain-workout/        schema v1, canonical writer, preflight, summaries                  (pure Kotlin)
+  domain-workout/        schema v1, revisions, preflight, summaries                         (pure Kotlin)
   domain-plan/           programs, calendar, premade catalog, goals, progression             (pure Kotlin)
   domain-run/            session state machine, command coordinator, HR controller, recovery (pure Kotlin)
   domain-history/        analytics, comparisons, deletion rules                            (pure Kotlin)
@@ -485,9 +493,9 @@ Standard HRS `180D/2A37`. Battery is best-effort. No bonding.
 ## 7. Data, web interface, backup and restore
 
 ### 7.1 Local data model
-The entities and every field are specified in [01-data-model](01-data-model.md), including how to read the current app's `.trb` backup.
+The entities are specified in [01-data-model](01-data-model.md). The internal schema is free to change; only the run export structure is a compatibility contract.
 
-- **IDs:** migrated rows keep their GUIDs verbatim; new rows use UUIDv7. This preserves `tr-{sessionId:N}` on the strap, Garmin idempotency keys and evidence references.
+- **IDs:** imported runs keep their session IDs verbatim; new rows use UUIDv7. This preserves `tr-{sessionId:N}` on the strap and Garmin idempotency keys for old runs.
 - **Sessions:** samples and events are immutable except for the single H10 null-HR fill (which bumps `session.contentVersion`). The debrief (RPE, note ≤ 1,000 characters) stays editable.
 - **Workout revisions** are immutable and content-addressed.
 - **Derived data** (plan progress, totals, maintenance due, analytics) is recomputed, never stored as truth.
@@ -556,21 +564,17 @@ The entities and every field are specified in [01-data-model](01-data-model.md),
   - A restore from an older schema runs the migrations. A restore from a newer schema is refused, with a clear message.
 - **Health:** the backup status per destination (microSD/USB, NAS: last success, reachable, free space) is a persistent state (5.12) and appears in the diagnostics console.
 
-### 7.4 Migration from the current app
-- Import **directly from the current `.trb` SQLite backup**, on the phone (file picker) or uploaded through the web UI, with a preview. The import is idempotent and keeps GUIDs verbatim.
-- **Migrated:**
-  - profiles and zones;
-  - devices (identity) and assignments;
-  - workouts, revisions and import audits;
-  - programs, revisions, items and alternatives, runs, overrides, extra occurrences, premade installations;
-  - calendar series, options, exceptions and exception options, training-day selections;
-  - sessions, samples and events;
-  - H10 recordings and their samples;
-  - Garmin upload jobs;
-  - goals, progression recommendations, maintenance policies and events, experience preferences;
-  - receipts under 90 days old.
-- **Not migrated:** Garmin tokens (re-login in the web UI), watch bindings, device locators, backup policy, BLE incidents.
-- **Golden check:** every workout revision in the owner's real backup hashes identically with the new canonical writer.
+### 7.4 Bringing over data from the current app (runs only)
+- **Only runs are imported:** sessions with samples, events and debrief, plus linked H10 recording samples where present.
+- **Sources:** the current app's versioned full-resolution **session JSON export** (the compatibility contract, [07](07-exports-and-backup.md)), or the runs extracted from its `.trb` backup ([01](01-data-model.md)).
+- **Import behaviour:** a preview (count and date range), then idempotent import by session ID.
+- **Everything else is recreated in the new app, not migrated:**
+  - profile and zones (entered once);
+  - devices (enrolled again);
+  - premade plans (installed from the built-in catalog);
+  - custom workouts (re-entered, or imported from native workout JSON if wanted);
+  - calendar, settings, and the Garmin login.
+- **The same JSON structure is used for the new app's own run export and import**, so runs round-trip between old, new and future versions.
 
 ---
 
@@ -598,7 +602,7 @@ The entities and every field are specified in [01-data-model](01-data-model.md),
    - backup folder and backup passphrase, NAS share;
    - admin passphrase (7.2);
    - a Motorola battery-management check.
-4. Optional: enable wireless debugging for the long-term validation path (DLV-09).
+4. **Enable wireless debugging** and pair the laptop (Developer options → Wireless debugging), for scrcpy and `phoneCheck` (DLV-09).
 
 After this, updates, diagnostics and recovery work remotely.
 
@@ -640,10 +644,9 @@ After this, updates, diagnostics and recovery work remotely.
     - `ciNightly` includes an update E2E that installs every release over the previous one and checks start and safe mode;
     - risky features ship behind flags.
 - **Kill switches:** `featureFlags` in a new manifest, or toggled by the admin, disable risky features (rules in 7.2). This is the first rollback tool.
-- **Revert builds:**
-  - Android forbids downgrades, and Room will not open a database whose schema identity differs.
-  - So the schema is **monotonic** and migrations are expand/contract.
-  - A "revert" is a new build with the previous behaviour, which carries the latest schema.
+- **Rolling back:** Android forbids downgrades. A rollback is simply **the next build with the problem fixed or reverted**, pushed like any update.
+  - Database migrations only go forward.
+  - If a migration ever damages data, restore the pre-update backup that the updater takes automatically.
 - **Android developer verification:**
   - Enforcement starts on 2026-09-30 in four countries and goes global on certified devices in 2027. It may block or add taps to installs of unregistered apps, including self-updates. ADB and an advanced flow stay available.
   - Mitigation: register the package name and signing key under a free limited-distribution developer account (≤ 20 devices), with ADB as the fallback.
@@ -661,7 +664,15 @@ After this, updates, diagnostics and recovery work remotely.
 - The release checklist includes an **airplane-mode run** (HW-04).
 
 ### 8.6 Remote debugging
-The main tool is **the app's own diagnostics console in the web UI (admin passphrase)**, because it works without cables or ADB.
+**Both remote-debugging paths are set up in the first phase (0b)**, so every later change can be checked remotely and autonomously:
+1. the **in-app diagnostics console** (web, admin passphrase): logs, crashes, state, **app screen view** and actions. It always works, with no ADB.
+2. **wireless ADB with scrcpy**: the **full phone screen** and control, logcat and `adb shell`. It is available whenever wireless debugging is on; after a reboot it is re-enabled on the phone or via USB.
+
+**Autonomous checks:** one command, `./gradlew phoneCheck`, runs from the laptop, or by an automated agent, without anyone at the phone. It collects:
+- the app's web API: version, health, state inspectors, recent logs and crashes, and an app screenshot;
+- over ADB, when available: a full-screen screenshot (`adb exec-out screencap`), `dumpsys` (battery, thermal, Bluetooth, foreground services), and the logcat tail.
+
+It writes one report folder (Markdown summary, screenshots, JSON) and exits non-zero on problems: crash since the last check, safe mode, a failing backup, missing permission, service not running, or thermal warning. `phoneCheck --after-deploy` runs automatically after `deployToPhone`.
 
 | Capability | How |
 |---|---|
@@ -669,10 +680,10 @@ The main tool is **the app's own diagnostics console in the web UI (admin passph
 | Persistent logs | Rotating files (32 × ~2 MiB) plus the BLE diagnostics journal (privacy allow-list: no addresses, names or payloads) |
 | Crashes and ANRs | Uncaught-exception handler writes a report; on next start `ApplicationExitInfo` adds the exit reason and ANR/native traces; all listed with app version |
 | State inspectors | Live JSON views: run engine state, command log (intents, outcomes, latencies), device links (state, GATT status codes, connection parameters, RSSI, battery), scan budget, services, permissions, CDM, battery and thermal, storage, backup health, feature flags |
-| Screen view | Screenshot of the app's own window when the app is in the foreground (PixelCopy; no screen-capture permission), plus an optional low-rate live view. For anything else, use scrcpy over wireless ADB |
+| Screen view (in-app) | Screenshot and live view (about 1–2 fps) of the app's own window when the app is in the foreground (PixelCopy; no screen-capture permission), in the web Diagnostics page. Works after reboots and in safe mode, with no ADB |
 | Actions | Reconnect a device, run a Simulator session, run self-tests (DB integrity, BLE adapter, storage), export a diagnostics ZIP, toggle feature flags, restart services, "Restart in normal mode" |
 | Safe mode | After a crash loop, the app serves only the web server, Diagnostics and the Updates page (8.3), so logs, crash reports and a fixed build push remain possible remotely |
-| Wireless debugging (long-term validation path) | **Wireless ADB** (Android 11+) with **scrcpy** (screen view and control), logcat, Android Studio (debugger on the internal variant), and `adb shell` checks such as `dumpsys`, `am crash`, `deviceidle`. Validation scripts (`./gradlew phoneCheck`) run the hardware runbook helpers over ADB. Android turns wireless debugging off after reboots and Wi-Fi changes; re-enabling it needs a tap on the phone, so it complements self-updating and the in-app console rather than replacing them |
+| Wireless debugging (set up from the start) | **Wireless ADB** (Android 11+) with **scrcpy**: the full phone screen, including system dialogs and other apps, with remote control, logcat, Android Studio (debugger on the internal variant), and `adb shell` checks such as `dumpsys`, `am crash`, `deviceidle`. Validation scripts (`./gradlew phoneCheck`) run the hardware runbook helpers over ADB. Android turns wireless debugging off after reboots and Wi-Fi changes; re-enabling it needs a tap on the phone, so it complements self-updating and the in-app console rather than replacing them |
 | Access from outside the home | Optional: a VPN app on the phone (for example Tailscale). Nothing else to run |
 | Privacy | Live logs and ZIPs use the same allow-list as the journal. Release builds disable verbose BLE and Polar SDK logging. Tested (OPS-03) |
 
@@ -822,7 +833,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 | S12 | Workouts library | Web | Cards, search, filter |
 | S13 | Workout detail | Web | Structure, preflight, "Run on treadmill" (arms via the phone), FIT workout export |
 | S14 | Workout editor | Web | Blocks, repeats, reorder, validation (a big-screen editor is a web advantage) |
-| S15 | Import | Web | Files, preview, confirm; `.trb` migration |
+| S15 | Import | Web | Runs (session JSON / old backup), optional workout files; preview, confirm |
 | S16 | Plans | Web | Catalog, install, start date and weekdays, progress |
 | S17 | Plan detail and adjust | Web | Week view, move/skip/restore/repeat with preview, change days, clear upcoming |
 | S18 | Calendar | Web | Month/week, series actions with scopes |
@@ -865,10 +876,10 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 | Level | What | Tooling | Runs (local) |
 |---|---|---|---|
-| **Unit** | Codecs (golden vectors from `spec/data/`), domain rules (ported Core suites), canonical writer, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
+| **Unit** | Codecs (golden vectors from `spec/data/`), domain rules (ported Core suites), revision hashing, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
 | **Property** | Command coordinator: random interleavings never produce a retry after Unknown, two writes in flight, a replayed Start, or a command after a generation change. Workout expansion limits, calendar projection | Kotest property | ciFast |
 | **Scenario** | Full runs with virtual time and fake links: drops, reconcile, restart, console start, read-only, HR automation, 4 h simulation (14,400 samples) | Scenario DSL | ciFast |
-| **Integration (JVM/Robolectric)** | Room DAOs and migrations (every released schema; revert-build open), backup/restore round-trip, RunService with fake BLE, WebService routes | Robolectric, Room testing | ciFast |
+| **Integration (JVM/Robolectric)** | Room DAOs and forward migrations, backup/restore round-trip, RunService with fake BLE, WebService routes | Robolectric, Room testing | ciFast |
 | **Integration (web API)** | Every route: home vs admin access, admin session, the no-command architecture rule, CSRF, htmx fragments, SSE streams, upload limits, backup download/restore, update upload verification | Ktor `testApplication` | ciFast |
 | **E2E, native** | Compose UI flows on the phone in Simulator mode (`.e2e` variant): setup, arm, run, stop sheet, debrief; plus ATF checks | Instrumented tests on the phone (USB or wireless ADB) (ne, portrait and landscape), Roborazzi | ciNightly (phone) |
 | **E2E, web** | Browser flows against the `.e2e` app on the phone (or the JVM web module with fakes in `ciFast`): open without setup, plan a workout, live view during a simulated run, restore preview, update upload | **Playwright for Java**, driven from Kotlin tests; screenshots and axe | ciNightly (phone) |
@@ -929,7 +940,7 @@ runScenario {
 ### 11.4 Release checklist (beta → stable)
 - [ ] `ciFast` and `ciNightly` green on the release commit.
 - [ ] HW-01 (if control code changed), HW-02, HW-04, HW-06, HW-07 and HW-09 passed on this build.
-- [ ] Migration from the previous stable snapshot tested, including a revert-build open.
+- [ ] Upgrade from the previous release tested on the phone (`.e2e`), and `phoneCheck` clean after deploy.
 - [ ] Web and native screenshot baselines approved, including the on-device pass.
 - [ ] Feature flags for new risky behaviour default to off, or have a documented reason.
 - [ ] Keys backed up; manifest `sequence` incremented.
@@ -973,15 +984,21 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
   - AC2 *[hw]*: HW-08.
 - **DLV-06 (P0)** — As the owner, feature flags can be switched off from Admin or through a manifest, without a new build.
   - AC1 *[auto]*: a disabling flag takes effect within 5 s and suspends safely; other flag changes wait for the next Arm.
-- **DLV-07 (P0)** — As the owner, the web Diagnostics console shows live logs (filterable, level changes at runtime), crash and ANR reports with `ApplicationExitInfo`, state inspectors, app-window screenshots, and actions (reconnect, self-test, simulator run, diagnostics ZIP).
+- **DLV-07 (P0)** — As the owner, the web Diagnostics console shows live logs (filterable, level changes at runtime), crash and ANR reports with `ApplicationExitInfo`, state inspectors, app-window screenshot and live view, and actions (reconnect, self-test, simulator run, diagnostics ZIP).
   - AC1 *[auto]*: a Ktor test per inspector.
   - AC2 *[auto]*: SSE log stream delivers a new log line within 1 s.
   - AC3 *[auto]*: a crash in a test build appears in the list after restart.
 - **DLV-08 (P0)** — As the owner, logs and diagnostic exports never contain addresses, names or payloads.
   - AC1 *[auto]*: allow-list test over the logs, journal and ZIP, including library log output.
-- **DLV-09 (P1, long-term)** — As a developer, I validate the phone over wireless ADB: a debuggable internal variant with its own applicationId, a documented scrcpy/logcat setup, and `./gradlew phoneCheck` running runbook helpers over ADB.
-  - AC1: after one on-phone enable of wireless debugging, `phoneCheck` connects and produces a report (permissions, services, CDM, battery, thermal, BLE state).
-  - AC2: works alongside self-updating; neither depends on the other.
+- **DLV-09 (P0)** — As a developer, wireless ADB with scrcpy works from the start, and the debuggable internal variant has its own applicationId.
+  - AC1: from the laptop, scrcpy shows and controls the full phone screen.
+  - AC2: after a reboot, the documented re-enable steps (on the phone or via USB) restore it.
+  - AC3: works alongside self-updating; neither depends on the other.
+- **DLV-11 (P0)** — As the owner or an automated agent, `./gradlew phoneCheck` gives an autonomous health report with screenshots.
+  - AC1: the report contains the app screenshot (web API) and, when ADB is available, a full-screen screenshot.
+  - AC2: it includes the version, health, state inspectors, crashes since the last check, backup status, permissions, services and thermal state.
+  - AC3: it exits non-zero on any problem, and runs automatically after `deployToPhone`.
+  - AC4: without ADB it still completes using only the web API, and says so.
 - **DLV-10 (P0)** — As the owner, the signing and manifest keys are backed up and a rotation procedure exists.
   - AC1: a restore on a spare machine is tested once.
 
@@ -1091,11 +1108,9 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 ### Epic WKT — Workouts
 - **WKT-01 (P0)** — Library cards; plan-internal hidden.
 - **WKT-02 (P1)** — Editor (web); each save creates a revision.
-  - AC1 *[auto]*: the canonical writer reproduces System.Text.Json output (escaping `\uXXXX` for non-ASCII and `+ < > & '`, .NET shortest round-trip numbers, `durationTicks` in 100 ns units).
-  - AC2 *[auto]*: all revisions in the owner's backup hash identically.
-  - AC3 *[auto]*: limits (10,000 steps, depth 32, 12 h).
-- **WKT-03 (P1)** — Imports (native JSON, QDomyos XML, FIT workout, v4 bundle) with preview.
-  - AC1 *[auto]*: ported importer tests.
+  - AC1 *[auto]*: a revision hash is stable (sorted-key JSON, SHA-256); an unchanged save doesn't create a revision.
+  - AC2 *[auto]*: limits enforced (10,000 steps, depth 32, 12 h).
+- **WKT-03 (P2)** — Optional workout imports (native JSON first; QDomyos XML, FIT workout and v4 bundle only if wanted), with preview.
 - **WKT-04 (P2)** — FIT workout export.
 
 ### Epic PLN — Plans and calendar
@@ -1125,7 +1140,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **H10-06 (P1)** — Error 106 shown plainly and never retried.
 - **H10-07 (P2)** — Fallback PFTP codec behind `PolarPort`.
 
-### Epic BAK — Backup, restore, migration
+### Epic BAK — Backup, restore, importing old runs
 - **BAK-01 (P0)** — Automatic verified backups (after each session, daily, before updates and restores), retention 2–60 (default 14), copied to the external folder (microSD or USB).
   - AC1 *[auto]*: `VACUUM INTO` plus integrity check plus receipt; the external copy exists; retention enforced.
 - **BAK-06 (P0)** — As the owner, every verified backup is also uploaded to my NAS share over SMB, and I can restore from it.
@@ -1139,8 +1154,9 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
   - AC2 *[hw]*: HW-13.
 - **BAK-04 (P0)** — Backup health (last success, destination reachable, free space) is a persistent state.
   - AC1 *[auto]*: the state is raised per destination when it is missing or unreachable, or the last success is older than 48 h.
-- **BAK-05 (P0)** — Migrate from the current app's `.trb`.
-  - AC1 *[auto]*: using the owner's real backup, counts per table match, GUIDs are unchanged, revision hashes match, samples match.
+- **BAK-05 (P0)** — As the owner, I import my old runs (session JSON exports or the `.trb` backup's runs) and can export and re-import runs in the same structure.
+  - AC1 *[auto]*: the golden session exports in `data/exports/` import without loss (samples, events, debrief, IDs); re-exporting gives an equivalent document per [07](07-exports-and-backup.md).
+  - AC2 *[hw]*: the owner's real history imports with matching session count and totals.
 
 ### Epic GAR — Garmin
 - **GAR-06 (P0)** — FIT share (phone) and download (web) for every session.
@@ -1171,15 +1187,15 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 | Phase | Stories | Exit criteria |
 |---|---|---|
 | **0a. Hardware go/no-go (week 1, throwaway code)** | HW-00 spike | H10 continuity clearly better than the Windows baseline on the moto g15; unloaded Start/Stop Confirmed; the BLE library chosen. **Decides the phone before the heavy foundation work** |
-| **0b. Foundation and delivery** | FND-01..06, DLV-01..08, DLV-10, WEB-01..02, BAK-01, plus `phoneCheck` basics (DLV-09) | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs and a crash report in Diagnostics; a crash-loop build enters safe mode and is recovered remotely (HW-08); a backup lands on microSD |
+| **0b. Foundation and delivery** | FND-01..06, DLV-01..11, WEB-01..02, BAK-01 | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs, a crash report and the app screen in Diagnostics; see the full screen via scrcpy; `phoneCheck` produces a clean report; a crash-loop build enters safe mode and is recovered remotely (HW-08); a backup lands on microSD |
 | **1. Run MVP (offline)** | DEV-01..04, DEV-07, **DEV-08**, RUN-01..11, RUN-13..14, RUN-16..17, REC-01..03, REC-07, REC-09, WKT-01, PLN-01..02, PLN-06, H10-01, BAK-02..06, GAR-06, WEB-03, WEB-05..06, PRF-01..02 | HW-01, HW-02, HW-04, HW-05, HW-06, HW-09, HW-13, HW-14, HW-15 pass. Daily use replaces the Windows app (Garmin through FIT download or share until GAR-01) |
 | **2. Depth** | GAR-00, GAR-01..02, RUN-12, RUN-15, REC-04..06, REC-08, WKT-02..03, PLN-03..04, PLN-07, H10-02..06, DEV-05..06, PRF-03, OPS-04 | HW-03, HW-11, HW-12 pass; Garmin upload runs from the phone |
 | **3. Reach** | WKT-04, PLN-05, GAR-03..05, H10-07, OPS-05 | Per story |
-| **Continuous (long-term)** | DLV-09 wireless-ADB validation tooling, grown with each runbook | `phoneCheck` covers every HW runbook helper |
+| **Continuous** | `phoneCheck` grows with each runbook | `phoneCheck` covers every HW runbook helper |
 
 **Transition rules:**
 - The Windows app stays installed **with Bluetooth disabled** during Phases 0–1.
-- Its `.trb` backup is the migration source.
+- Its run exports and backup are the source for importing old runs (BAK-05).
 - It is retired after Phase 1 exits.
 
 ## 14. Risks and mitigations
@@ -1198,7 +1214,6 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 | Controls behave differently on the Android stack | Safety | DEV-08 staged commissioning; read-only and console runs until then |
 | Scan throttling, H10 address rotation | Reconnect failures | Scan budget; filtered low-duty HR scan |
 | System bond lost on reinstall | Unreadable recordings | Updater refuses with unfetched recordings; no uninstall-based rollback |
-| Room schema identity blocks revert builds | Failed rollback | Monotonic schema; behaviour-only revert builds; flags |
 | Signing-key loss | No updates | DLV-10 |
 | Android "bad process" state or stopped state after a crash loop | Services don't come back | Boot start of the web service, post-install restart; safe mode; HW-08 with a reboot |
 | OS update changes behaviour | Regressions | Automatic system updates off; targetSdk policy; re-run `phoneCheck` and HW-02/HW-07 after any OS update |
@@ -1209,7 +1224,6 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 | Phone loss or failure | Data loss | microSD/USB and NAS SMB copies; web download; HW-13 |
 | NAS share unreachable or full | Missing off-phone backups | Per-destination health state; backoff; microSD copy still made; HW-14 |
 | Thermal or battery ageing from always charging | Stability | HW-10; charge limit; thermal banner |
-| Canonical JSON mismatch | Duplicate revisions | Hand-written writer; real-DB golden check |
 
 ---
 
@@ -1221,7 +1235,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 3. **No GitHub Actions.** Builds, tests, signing and releases run locally; releases are uploaded to GitHub Releases and/or pushed to the phone.
 4. **FIT and Garmin run on the phone** (GAR-06, GAR-01).
 5. **No sync.** Backups go to microSD/USB and to the NAS over SMB.
-6. **Wireless debugging** is a long-term validation path (DLV-09) next to self-updating (DLV-02..05).
+6. **Wireless debugging** plus the in-app screen view are set up from the start (DLV-07, DLV-09, DLV-11), next to self-updating (DLV-02..05).
 
 **Decided by the owner (v6):**
 7. **Treadmill control only on the phone app or the treadmill console.** The web interface is read-only for the treadmill.
@@ -1229,11 +1243,16 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 9. **One app only:** self-update plus built-in safe mode. There is no Keeper app and no Device Owner mode.
 10. **No certificates and no per-device setup:** plain HTTP on the home network, with one admin passphrase set on the phone.
 
+**Decided by the owner (v7):**
+11. **Both remote-debugging paths from the start**, with `phoneCheck` for autonomous checks.
+12. **Backwards compatibility only for the run data structure.**
+13. **Private use: keep it as simple as possible.**
+
 **Still open:** none blocking. Future options: kiosk mode (OPS-05); a publicly trusted certificate if a domain is ever used.
 
 ## 16. References
 - **Specification pack (this folder):**
-  - [01 Data model and legacy backup](01-data-model.md)
+  - [01 Data model (and extracting runs from the old backup)](01-data-model.md)
   - [02 Workouts](02-workouts.md)
   - [03 Workout import/export formats](03-import-export-formats.md)
   - [04 Calendar and plans](04-calendar-and-plans.md)
