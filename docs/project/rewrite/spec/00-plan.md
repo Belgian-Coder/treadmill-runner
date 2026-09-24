@@ -67,7 +67,7 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 ## 1. Why rewrite, and what we keep
 
 ### 1.1 What the current system taught us
-- The Windows VM gateway with a passed-through MediaTek RZ616 radio is the main source of Bluetooth instability. See the [connectivity research](../protocol-evidence/polar-h10/2026-09-24-bluetooth-connectivity-research.md).
+- The Windows VM gateway with a passed-through MediaTek RZ616 radio is the main source of Bluetooth instability (HCI command timeouts, H10 supervision-timeout drops, a controller that only recovers after a power cycle).
 - A browser UI that depends on a separate gateway breaks when the gateway is unreachable.
 - A heavy WASM client was slow on phones (Lighthouse mobile about 60). The new web UI is server-rendered HTML with no WASM.
 - Android is where Polar's official SDK runs. It supports H10 heart rate, the firmware 4.x security request and onboard recording.
@@ -300,7 +300,7 @@ These rules are ported from the current code and evidence. Each has at least one
   - Speed and incline were physically exercised only at 1.0–1.5 km/h and 0.5–1.0%.
   - The 0.8–20 km/h and 0–12% ranges (0.1 steps) are reported limits used as bounds.
 - **Capabilities are per model/firmware *and host stack*.** The Android app starts with every control disabled (read-only).
-- Control is enabled only after an **Android commissioning run on this phone** (DEV-08). Each stage needs owner approval and sanitized evidence (`safety-guidelines.md` §Hardware progression):
+- Control is enabled only after an **Android commissioning run on this phone** (DEV-08). Each stage needs owner approval and sanitized evidence (hardware progression rules in [09](09-safety-and-command-contract.md)):
   1. Unloaded Start and Stop.
   2. SetSpeed and SetIncline at minimum speed.
   3. Planned transitions.
@@ -347,12 +347,12 @@ These rules are ported from the current code and evidence. Each has at least one
   - Running after **3 fresh moving samples** (> 0.3 km/h); then the effective target is applied.
 - **Start from the console:** while Armed, starting the belt on the console reaches Running by the same rule, with no app command. This is the only start path until DEV-08 passes.
 - **Pause temporarily stops the belt but not the progress** (owner decision):
-  - Pause sends FTMS **Stop `08 01`**. The raw FTMS Pause `08 02` stays unused and unverified. This matches the current code: `TreadmillCommandCoordinator` pauses after a confirmed Stop, and raw Pause is disabled.
+  - Pause sends FTMS **Stop `08 01`**. The raw FTMS Pause `08 02` stays unused and unverified. This matches the current (Windows) app: it pauses after a confirmed Stop, and raw Pause is disabled.
   - While the stop is in progress, the state is `Pausing` (STOP stays visible). The session enters `PausedWaitingForPhysicalResume` only after **stopped telemetry**.
   - If the pause Stop is Unknown, the session stays running-suspended with "Couldn't confirm", and no Resume is shown.
   - Kept: the workout cursor, the plan position (frozen) and the recorded data. The paused interval is marked and doesn't count as moving time.
   - The UI labels it **"Pause (stops belt)"**.
-  - This supersedes `decision-record.md:44` and `live-session.md:30,50`; the new decision record is written in FND-01.
+  - This supersedes an older design note in the Windows app ("Pause never substitutes Stop"). The new decision record is written in FND-01.
   - Optional: after N minutes paused (profile setting), prompt "End and save?". Never auto-start.
 - **Resume:**
   - A single press sends a fresh Start (`07`). While it is in progress the state is `Resuming`, with STOP visible.
@@ -448,7 +448,7 @@ Each has one clear action.
 - **Live HR:** HR, RR and contact streaming.
 - **Reconnect:** address rotation while unbonded can defeat reconnect-by-address. Use **one filtered low-duty scan** within the per-app **scan budget**. Android allows about 5 scan starts per 30 s, shared with the SDK.
 - **Settings:** show the firmware. SDK support for the multi-connection setting is verified in Phase 0; otherwise the app explains the Polar Flow route.
-- **Onboard recording (opt-in per run)**, rules from `polar-h10-memory.md`:
+- **Onboard recording (opt-in per run)**, full rules in [10-polar-h10](10-polar-h10.md):
   - **Prepare:**
     - Start exercise `tr-{sessionId:N}` and confirm it before the armed session is published.
     - If a recording is already active, return its ID unchanged. Replacing it needs a second request with the same user-confirmed ID. Owned recordings are fetched and hashed before removal.
@@ -493,7 +493,7 @@ Standard HRS `180D/2A37`. Battery is best-effort. No bonding.
 ## 7. Data, web interface, backup and restore
 
 ### 7.1 Local data model
-The entities are ported from `Infrastructure/Persistence/Entities.cs`.
+The entities and every field are specified in [01-data-model](01-data-model.md), including how to read the current app's `.trb` backup.
 
 - **IDs:** migrated rows keep their GUIDs verbatim; new rows use UUIDv7. This preserves `tr-{sessionId:N}` on the strap, Garmin idempotency keys and evidence references.
 - **Sessions:** samples and events are immutable except for the single H10 null-HR fill (which bumps `session.contentVersion`). The debrief (RPE, note ≤ 1,000 characters) stays editable.
@@ -877,6 +877,11 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
   - the Samba container for BAK-06;
   - the Keeper update E2E.
   - It is triggered with `./gradlew ciNightly -Premote=linuxbox` (over SSH).
+- **Docker plus WSL2 on the Windows 11 VM:**
+  - The Android emulator in Docker (for example `budtmo/docker-android`) needs `/dev/kvm` inside WSL2. That requires `nestedVirtualization=true` in `.wslconfig` and a host that exposes virtualization.
+  - The dev Windows 11 is itself a Proxmox VM, so this becomes **three-level nesting**: Proxmox KVM → Hyper-V/WSL2 → KVM → emulator. It requires CPU type `host` plus nested KVM on Proxmox, and users report it as hit-or-miss and slow.
+  - **Not recommended here.** Run the same Docker image in the Linux box (b), which has one level of virtualization and native `/dev/kvm`.
+  - Docker plus WSL2 is fine on a *physical* Windows 11 machine.
 - **(c) Screenshot baselines** (Roborazzi and Playwright) are recorded and verified **only on the Linux box**, because fonts render differently per OS.
 - **(d) Fallback E2E device:** a spare Android 15 phone over wireless ADB.
 - **(e) Last resort:** the treadmill phone itself, only with the `.e2e` applicationId and separate ports, never during a run, and without touching CDM associations.
@@ -885,7 +890,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 | Level | What | Tooling | Runs (local) |
 |---|---|---|---|
-| **Unit** | Codecs (golden vectors ported from `TreadmillRunner.Protocols.Tests`), domain rules (ported Core suites), canonical writer, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
+| **Unit** | Codecs (golden vectors from `spec/data/`), domain rules (ported Core suites), canonical writer, manifest verification, backup manifest | kotlin.test, Kotest, Turbine: pure JVM, seconds | ciFast |
 | **Property** | Command coordinator: random interleavings never produce a retry after Unknown, two writes in flight, a replayed Start, or a command after a generation change. Workout expansion limits, calendar projection | Kotest property | ciFast |
 | **Scenario** | Full runs with virtual time and fake links: drops, reconcile, restart, console start, read-only, HR automation, 4 h simulation (14,400 samples) | Scenario DSL | ciFast |
 | **Integration (JVM/Robolectric)** | Room DAOs and migrations (every released schema; revert-build open), backup/restore round-trip, RunService with fake BLE, WebService routes | Robolectric, Room testing | ciFast |
@@ -1166,7 +1171,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **GAR-00 (P1, spike)** — As a developer, I prove Garmin login, MFA, token refresh and one upload from the phone (Ktor on OkHttp), porting a pinned `garminconnect` version.
   - AC1 *[hw]*: works against a test account; a failed login is never retried automatically.
 - **GAR-01 (P1)** — The Kotlin Garmin client **in the phone app** uploads or matches completed Hardware sessions from the phone (feature-flagged).
-  - AC1 *[auto]*: ported matcher and worker tests, plus the contract tests from `tools/garmin/test_adapter_contract.py`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
+  - AC1 *[auto]*: ported matcher and worker tests, plus the contract examples in `spec/data/garmin/`. `PreferWatch` default, `MergeAndReplace`, the enable watermark, the 5-minute wait, no automatic retry of Unknown or ReviewRequired.
   - AC2 *[auto]*: tokens encrypted with a Keystore key.
 - **GAR-02 (P1)** — Garmin status in plain words; the review queue ("Keep one" / "Restore two").
 - **GAR-03 (P2)** — Watch status via the Connect IQ Mobile SDK (needs the watch paired to the treadmill phone).
@@ -1234,7 +1239,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 ## 15. Decisions
 
 **Decided by the owner (v4):**
-1. **Pause** temporarily stops the belt (verified Stop) and **keeps progress**; Resume continues the workout. This supersedes `decision-record.md:44` and `live-session.md:30,50`, recorded in FND-01.
+1. **Pause** temporarily stops the belt (verified Stop) and **keeps progress**; Resume continues the workout. This supersedes the Windows app's older "Pause never substitutes Stop" note; recorded in FND-01.
 2. **Start and Resume** are a **single press**, protected by an 800 ms lockout and fixed button positions.
 3. **No GitHub Actions.** Builds, tests, signing and releases run locally; releases are uploaded to GitHub Releases and/or pushed to the phone.
 4. **FIT and Garmin run on the phone** (GAR-06, GAR-01).
@@ -1250,8 +1255,19 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 6. **Web TLS via a local CA:** install the phone's CA once per browser device (proposed).
 
 ## 16. References
-- Current rules: [architecture](../architecture.md), [safety guidelines](../safety-guidelines.md), [decision record](../decision-record.md), [live session](../live-session.md), [planning data](../planning-data.md), [release operations](../release-operations.md).
-- Evidence: [Omega Z protocol evidence](../protocol-evidence/omega-z/), [H10 memory](../polar-h10-memory.md), [connectivity research](../protocol-evidence/polar-h10/2026-09-24-bluetooth-connectivity-research.md).
+- **Specification pack (this folder):**
+  - [01 Data model and legacy backup](01-data-model.md)
+  - [02 Workouts](02-workouts.md)
+  - [03 Workout import/export formats](03-import-export-formats.md)
+  - [04 Calendar and plans](04-calendar-and-plans.md)
+  - [05 Sessions and recording](05-sessions-and-recording.md)
+  - [06 Profiles and heart rate](06-profiles-and-heart-rate.md)
+  - [07 Exports and backup](07-exports-and-backup.md)
+  - [08 FTMS and treadmill](08-ftms-and-treadmill.md)
+  - [09 Safety and command contract](09-safety-and-command-contract.md)
+  - [10 Polar H10](10-polar-h10.md)
+  - [11 Garmin](11-garmin.md)
+  - Golden data: `data/`
 - Polar: [Polar BLE SDK](https://github.com/polarofficial/polar-ble-sdk), [H10 SDK features](https://github.com/polarofficial/polar-ble-sdk/blob/master/documentation/products/PolarH10.md).
 - Android:
   - [Foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types)
