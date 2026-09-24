@@ -1,7 +1,7 @@
 ---
 title: TreadmillRunner rewrite plan — self-contained Kotlin phone app
 type: plan
-status: draft-v5
+status: draft-v6
 owner: project
 audience: agent-and-developer
 updated: 2026-09-24
@@ -51,16 +51,21 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
   - No sync: backups go to the NAS over SMB.
   - Wireless debugging is a supported long-term validation path, alongside self-updating.
 - v5 applies a second independent Opus review of v4. The main changes:
-  - Ktor **Netty** instead of CIO, because CIO has no server TLS.
-  - A local CA for web HTTPS.
-  - A Keeper watchdog driven by a heartbeat, plus a safe mode.
+  - (Netty and TLS, a local CA and a Keeper app were proposed here; v6 removed them.)
+  - A safe mode for crash recovery.
   - A dock layout where Resume never lands on Pause's spot.
   - The pause edge cases.
   - Boot behaviour needs no screen lock.
   - The smbj security provider.
   - The 2026 Garmin login change.
-  - A local test rig (a Linux box with KVM for emulators).
+  - A local test rig. (v6 replaced the Linux emulator box with the phone itself.)
   - Android developer verification.
+- v6 (this version) applies the owner's decisions:
+  - **Only the phone app or the treadmill console control the belt**; the web interface never controls the treadmill.
+  - **No fixed Bluetooth threshold**: continuity is measured and made as good as possible.
+  - **One app only**: no separate Keeper; the app updates itself and has a built-in safe mode.
+  - **No certificates and no per-device setup**: the web interface is plain HTTP on the home network, protected by one admin passphrase set on the phone.
+  - **No emulator**: device tests run on the treadmill phone itself, in a separate test app variant.
 
 ---
 
@@ -77,16 +82,16 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 | Asset | How it is reused |
 |---|---|
 | Omega Z FTMS control facts and evidence (Stage 1–3) | Ported into `protocol-ftms` with the same golden vectors; **re-commissioned on Android** (DEV-08) |
-| Command confirmation, intent, lease and recovery policies | Ported into `domain-run` as pure Kotlin, with the C# tests translated one-to-one |
+| Command confirmation, intent and recovery policies | Ported into `domain-run` as pure Kotlin, with the C# tests translated one-to-one |
 | Workout schema v1, canonical JSON, SHA-256 revisions | Same JSON; a hand-written canonical writer reproduces System.Text.Json output byte-for-byte (WKT-02) |
 | Programs, calendar, premade catalog (16 templates, 174-slot/260-variant WalkingPad plan) | Ported as data plus the same rules |
 | HR source selector and HR speed controller | Same **defaults and bounds**:<br>• increase step 0.2 km/h (0.1–0.5)<br>• increase cooldown 30 s (15–180 s)<br>• decrease step 0.5 km/h (0.1–1.0)<br>• decrease cooldown 15 s (5–120 s)<br>• dwell 20 s below target / 10 s above |
 | FIT/TCX/CSV/JSON export semantics, Garmin FIT merge rules | Ported to the phone (Garmin FIT Java SDK) |
 | Garmin activity upload (currently Python `garminconnect` 0.3.8) | Re-implemented in Kotlin on the phone in an isolated, feature-flagged module (GAR-01), with FIT share as the fallback |
 | Importers (native JSON, QDomyos XML, FIT Workout, v4 bundle) | Ported; preview, then re-parse the original bytes on confirm |
-| Controller lease for multiple UIs (5 s heartbeat, 15 s expiry) | Ported for the web interface (section 5.4) |
-| Operator access (passphrase, short-lived tokens) | Becomes web-interface pairing and roles (section 7.2) |
-| Update discipline (signed manifests, idle-only activation, rejected versions) | Ported into the on-phone updater and the Keeper app (section 8) |
+| Controller lease for multiple UIs | **Not needed**: only the phone's Run console controls the belt (5.4) |
+| Operator access (passphrase, short-lived tokens) | Becomes one admin passphrase for admin actions in the web interface (7.2) |
+| Update discipline (signed manifests, idle-only activation, rejected versions) | Ported into the app's built-in updater (section 8) |
 | Test suites (Protocols, Core, key Integration scenarios) | Become golden vectors and scenario tests |
 | Connect IQ watch app | Kept as a standalone recorder; phone-linked status is optional (GAR-03) |
 
@@ -117,17 +122,17 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 | Other HR sensors | Fallback HR | Optional |
 | **External storage** (microSD card in the phone, or a USB-C drive) | Automatic backup target | Recommended |
 | **NAS SMB share** | Automatic backup target (files only; no service runs on the NAS) | Recommended |
-| Any browser device on the home Wi-Fi | Web interface: history, plans, workouts, settings, live view, diagnostics, updates | Optional |
+| Any browser device on the home Wi-Fi | Web interface: history, plans, workouts, settings, read-only live view, diagnostics, updates. **Never controls the treadmill** | Optional |
 | Developer laptop | Builds and signs releases **locally**, uploads them (GitHub Releases and/or straight to the phone), reads diagnostics through the web interface, validates over wireless ADB | For development |
 | Garmin watch | Connect IQ companion (standalone recording) | Optional |
 
 ### 2.1 Phone and environment setup (validated in DEV-01 and Phase 0)
-- **Screen lock: None or Swipe** on the treadmill phone. With a PIN or pattern, Android delivers `BOOT_COMPLETED` only after the first unlock, so after an unattended reboot nothing (web access, Keeper) would start.
+- **Screen lock: None or Swipe** on the treadmill phone. With a PIN or pattern, Android delivers `BOOT_COMPLETED` only after the first unlock, so after an unattended reboot the web interface would not start.
 - **Automatic system updates off.** An OS upgrade is a planned regression event: re-run `phoneCheck` and HW-02/HW-07 afterwards.
-- **DHCP reservation** for the phone on the router, so its address (used by the QR code, the TLS certificate and `deployToPhone`) stays stable.
+- **DHCP reservation** for the phone on the router, so its address (used by the QR code and `deployToPhone`) stays stable.
 - **Initial provisioning is the only physical step.** It is done once, over USB (see 8.2):
-  - install the Keeper and main apps;
-  - grant permissions;
+  - install the app;
+  - grant permissions (including "Install unknown apps" for self-updates);
   - set the battery-optimisation exemption and the CDM associations;
   - choose the backup folder.
 - **Power:** a charging limit if the phone offers one, or a smart plug. Thermal status is monitored (HW-10).
@@ -150,7 +155,7 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 | Language | **Kotlin 2.x** (JVM 17 bytecode) | One language for app, web, build and tests |
 | Project shape | **Android app + pure-Kotlin/JVM library modules** (no Kotlin Multiplatform for now) | Simpler build; domain and protocol modules run as fast JVM tests. They avoid Android APIs, so a later move to KMP stays possible |
 | Native UI | **Jetpack Compose**, Material 3 foundation, custom design system | Best Android UI toolkit; used for the Run console, setup and safety-critical screens |
-| Web UI | **Ktor server with the Netty engine** inside the app (TLS via `sslConnector`; the CIO engine has no server TLS). HTML with **kotlinx.html**, interactivity with **htmx** and Server-Sent Events, charts with **uPlot** (vendored JS, ~50 KB). The engine and TLS setup are confirmed by the WEB-00 spike | All server code in Kotlin; fast on any browser; no WASM; works offline on the LAN |
+| Web UI | **Ktor server (CIO engine)** inside the app, **plain HTTP on the home network** (no certificates). HTML with **kotlinx.html**, interactivity with **htmx** and Server-Sent Events, charts with **uPlot** (vendored JS, ~50 KB) | All server code in Kotlin; fast on any browser; no WASM; works offline on the LAN |
 | Management screens on the phone | **The same web UI**, shown in an in-app WebView against `http://127.0.0.1` (a loopback secure context) with a per-install loopback token | One implementation for plans, history, workouts, settings, backups and diagnostics, on the phone and remotely |
 | Concurrency | kotlinx.coroutines, `StateFlow`/`SharedFlow` | Structured cancellation of device work |
 | DI | Koin | Simple, no annotation processing |
@@ -162,30 +167,22 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 | Garmin upload | Kotlin client using Ktor client with the **OkHttp engine** (a real Android TLS fingerprint), feature-flagged; proven by the GAR-00 spike first | No Python and no second system |
 | QR codes | ZXing (generate on the phone, scan if needed) | Works offline |
 | NAS backup | **smbj** (pure-JVM SMB2/3 client), with a bundled BouncyCastle `bcprov` registered as `BCSecurityProvider` (Android's stripped provider lacks MD4 for NTLM) | Writes backup files to a NAS share; no NAS-side service |
-| TLS certificates | **BouncyCastle `bcpkix`**: a local CA on the phone issues the web server certificates (7.2) | AndroidKeyStore certificates lack SAN and cannot be backed up |
 | Logging | Structured logger with an in-memory ring buffer plus rotating files, streamed to the diagnostics console | Remote debugging (section 8.6) |
 | Background work | Foreground service `connectedDevice` for runs; foreground service **`specialUse`** ("LAN web server") for the web server; WorkManager for backups, exports and update checks, gated by the session gate | Allowed for sideloaded apps; the web server stays reachable |
 | Build | Gradle Kotlin DSL, version catalog, convention plugins, detekt + ktlint + Android Lint. **All builds, tests and releases run locally** (no GitHub Actions) | Reproducible, checked builds; a Git pre-push hook runs `ciFast` |
-| Tests (local rig in 11.0) | kotlin.test, Kotest (property), Turbine, **Robolectric** (fast Android integration), **Ktor `testApplication`**, Room migration tests, **Compose UI tests on emulators via Gradle Managed Devices**, **Roborazzi** screenshots with ATF accessibility checks, **Playwright for Java** (driven from Kotlin tests) for web end-to-end, Macrobenchmark and JankStats | Unit, integration and E2E all in Kotlin (section 11) |
+| Tests (local rig in 11.0) | kotlin.test, Kotest (property), Turbine, **Robolectric** (fast Android integration), **Ktor `testApplication`**, Room migration tests, **Compose UI and instrumented tests on the phone itself** (a separate `.e2e` app variant, over USB or wireless ADB), **Roborazzi** screenshots with ATF accessibility checks, **Playwright for Java** (driven from Kotlin tests) for web end-to-end, Macrobenchmark and JankStats | Unit, integration and E2E all in Kotlin (section 11) |
 
 ### 3.1 Android permissions and manifest (explained in the setup wizard)
 
-**Main app:**
+**The app (single APK):**
 - **Bluetooth:** `BLUETOOTH_SCAN` (`neverForLocation`), `BLUETOOTH_CONNECT`.
 - **Foreground services:** `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CONNECTED_DEVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` (with the `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` property "LAN web server"), `POST_NOTIFICATIONS`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `REQUEST_COMPANION_*`, `RECEIVE_BOOT_COMPLETED`.
+- **Self-update:** `REQUEST_INSTALL_PACKAGES`, `UPDATE_PACKAGES_WITHOUT_USER_ACTION`.
 - **Network:** `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE`; `CHANGE_WIFI_MULTICAST_STATE` (only if mDNS via JmDNS is used); `ACCESS_LOCAL_NETWORK` (a runtime permission, required from targetSdk 37).
 - **Other:** `VIBRATE`, `CAMERA` (optional QR scan).
-- `<queries>` entry for the Keeper package.
 
-**Keeper app:**
-- **Updates:** `REQUEST_INSTALL_PACKAGES`, `UPDATE_PACKAGES_WITHOUT_USER_ACTION`.
-- **Admin page service:** `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` ("recovery admin page"), `RECEIVE_BOOT_COMPLETED`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, `POST_NOTIFICATIONS`.
-- **Network:** `INTERNET` (and `ACCESS_LOCAL_NETWORK` from targetSdk 37).
-- `<queries>` entry for the main app package.
-
-**Both apps:**
-- Same signing key. The inter-app IPC is protected by a custom `protectionLevel="signature"` permission.
-- **targetSdk policy:** both apps keep targetSdk at or above the platform minimum for silent updates on the phone's OS (Android 15: 33, Android 16: 34, Android 17: 35). Raise it *before* any OS upgrade.
+**targetSdk policy:**
+- The app keeps targetSdk at or above the platform minimum for silent updates on the phone's OS (Android 15: 33, Android 16: 34, Android 17: 35). Raise it *before* any OS upgrade.
 
 ---
 
@@ -193,14 +190,11 @@ This plan is the contract for the rewrite. Section 12 turns it into user stories
 
 ### 4.1 Apps and modules
 
-There are **two small Android apps** on the phone:
-- **TreadmillRunner** (the main app).
-- **TreadmillRunner Keeper:** a tiny, rarely-changing app that installs and updates the main app, and keeps a minimal admin page alive even if the main app is broken (section 8.2).
+There is **one Android app** on the phone: TreadmillRunner. It updates itself and contains a **safe mode** for recovering from a bad update (8.3).
 
 ```
 app/                     Main Android app: Activity, RunService (FGS connectedDevice), WebService (FGS specialUse),
                          CDM, Compose screens (Run, setup, safety states), WebView host
-keeper/                  Keeper app: installer, update verifier, crash-loop watchdog, minimal admin web page
 modules/
   core-model/            IDs, units, Clock, Result types                                   (pure Kotlin)
   protocol-ftms/         FTMS codecs: 2AD9, 2ACD, 2ACC, 2AD4/2AD5                            (pure Kotlin)
@@ -220,7 +214,7 @@ modules/
   garmin-client/         Kotlin Garmin Connect client (unofficial), job state machine       (JVM + Ktor client)
   web/                   Ktor routes, kotlinx.html views, htmx fragments, SSE, auth, static assets (JVM)
   diagnostics/           logger, ring buffer, journal, crash/ANR capture, state inspectors  (Android + JVM)
-  update-core/           manifest model, signature verification, policy (shared by app and keeper) (pure Kotlin)
+  update-core/           manifest model, signature verification, policy (pure Kotlin)
   ui-design/             Compose design system + generated CSS tokens for the web UI
   testing/               fakes, simulators, golden vectors, scenario DSL, web E2E helpers
 ```
@@ -228,7 +222,7 @@ modules/
 **Architecture tests (enforced by `./gradlew check`):**
 - Pure-Kotlin modules import no Android APIs, BLE libraries, the Polar SDK or Ktor.
 - `domain-run` and `device-*` have no network dependency.
-- **Treadmill commands can only be created through the command coordinator's public API**, and only by the phone's Run feature or by web routes that pass the controller-lease check (5.4).
+- **Treadmill commands can only be created through the command coordinator's public API**, and only by the phone's native Run feature. **No web route can create a treadmill command** (an architecture test checks the web module has no dependency on the command API).
 
 ### 4.2 Runtime structure on the phone
 
@@ -244,7 +238,7 @@ flowchart LR
       REC[Recorder 1 Hz + 1 s checkpoint]
     end
     subgraph WS[WebService - FGS specialUse]
-      KT[Ktor Netty server\nHTTPS LAN + loopback\nHTML + htmx + SSE]
+      KT[Ktor CIO server\nHTTP LAN + loopback\nHTML + htmx + SSE]
     end
     DB[(Room DB, WAL)]
     DIAG[Diagnostics\nlogs, journal, crashes]
@@ -252,7 +246,7 @@ flowchart LR
   end
   NUI --> ENG
   WV --> KT
-  KT --> ENG
+  KT -. read-only state .-> ENG
   KT --> DB
   KT --> DIAG
   ENG --> CMD --> TL[TreadmillLink]
@@ -260,8 +254,8 @@ flowchart LR
   REC --> DB
   DB -. scheduled .-> BK[(microSD / USB\nbackups)]
   DB -. scheduled, SMB .-> NASB[(NAS share\nbackup files)]
-  Browser[Laptop / tablet browser] -- LAN HTTPS --> KT
-  Keeper[Keeper app\ninstaller + watchdog\n+ minimal admin page] -. installs/updates .-> Phone
+  Browser[Laptop / tablet browser\nview + manage, no treadmill control] -- LAN HTTP --> KT
+  UPD -. self-update + safe mode .-> Phone
 ```
 
 - **RunService** starts when a session is armed and stops after the session is terminal, the writes are flushed and any H10 job is persisted. It holds the only device-link references during a run.
@@ -280,9 +274,9 @@ flowchart LR
   - Planned controls need an explicit resume.
 - **Reboot:**
   - `BOOT_COMPLETED` arrives after boot. It needs no screen lock (2.1), otherwise it only arrives after the first unlock.
-  - The WebService (`specialUse`) and Keeper's admin service start. Starting these FGS types from boot is allowed on Android 15.
+  - The WebService (`specialUse`) starts. Starting this FGS type from boot is allowed on Android 15.
   - RunService does **not** auto-start. An unfinished Running session is marked `Interrupted`, with its data kept.
-- **Crash loops:** handled by the Keeper heartbeat protocol and **safe mode** (8.3). Keeper's own admin page stays available.
+- **Crash loops:** handled by the app's own start counter and **safe mode** (8.3).
 - **Start is never replayed.** Only receipts are persisted, never "to do" intents.
 
 ### 4.4 Offline-first rule
@@ -328,15 +322,13 @@ These rules are ported from the current code and evidence. Each has at least one
 - At most **one intent in flight plus one latest pending target** per axis. A newer target replaces the pending one, and long-press repeat coalesces. Increases are rate-limited to one per confirmation cycle.
 
 ### 5.4 Intents, limits and who may command
-- Each intent carries: operation ID (consumed before the write), session ID, version and state, controller lease, expiry (4 s) and connection generation. Reconnect expires all intents. Receipts are kept for 90 days.
+- Each intent carries: operation ID (consumed before the write), session ID, session state version, expiry (4 s) and connection generation. Reconnect expires all intents. Receipts are kept for 90 days.
 - **Normalization:** targets are normalized against the machine range, the **profile maximum speed**, the workout, and personal limits. Never more aggressive than requested.
-- **Controller lease** (ported: 5 s heartbeat, 15 s expiry):
-  - Exactly one UI holds control: the phone's Run console by default, or a web client that takes the lease.
-  - Other UIs observe. Losing the lease never stops the session.
-- **Remote (web) motion control** is **off by default**. When the owner enables it, the web client must hold the lease and be paired with the *Operator* role.
-- **Stop from any paired Operator** is always allowed, with or without the lease. Stop is the safe direction and is confirmed like any command.
-- **Start and Resume from the web** need a separate **"Allow start from web"** toggle (default off), plus the lease and the Operator role. The phone plays the start cue.
-- **Every motion intent carries the session state version.** A stale press (SSE lag) or simultaneous presses from the phone and the web are rejected; only the first matching the current version is accepted.
+- **Who may control the belt (owner decision):** only
+  1. the **phone app's native Run console**, and
+  2. the **treadmill console** itself (which the app observes and follows, 5.5).
+- **The web interface never sends treadmill commands**, not even Stop. It shows a read-only live view. Anyone at the treadmill uses the phone or the console; the treadmill's physical Stop and safety key remain authoritative.
+- There is therefore no controller lease between UIs. The intent's session state version still protects against stale or double presses on the phone.
 
 ### 5.5 Start, pause, stop, end
 - **Arm** binds the profile, the exact workout revision and optionally the program item. It never moves the belt.
@@ -375,7 +367,7 @@ These rules are ported from the current code and evidence. Each has at least one
 - **Natural completion:** one engine-owned Stop. The session is `Completed` only after stopped telemetry. If the Stop is rejected or unknown, the session stays live, with no retry.
 - **Bluetooth loss never stops anything.** The safety key, console and physical Stop are authoritative.
 - **Input lockout:**
-  - The **800 ms lockout applies to Start, Resume, Pause and the steppers**. It is enforced **in the engine, per session, across all UIs** (not per screen).
+  - The **800 ms lockout applies to Start, Resume, Pause and the steppers**. It is enforced **in the engine, per session** (not per screen).
   - **STOP and the Stop-sheet actions are never locked out.**
 
 ### 5.6 Session states and origins
@@ -503,39 +495,37 @@ The entities and every field are specified in [01-data-model](01-data-model.md),
 - **Single source of truth:** the phone's database. Other devices only use it through the web interface, so there is **no sync, no replication and no merge conflicts**.
 
 ### 7.2 Web interface
-- **Server:** Ktor (Netty) inside the app.
-  - LAN: HTTPS on port 8443, with the binding filter from 4.2.
-  - In-app WebView: `http://127.0.0.1:8080` (loopback is a secure context). Cleartext is allowed for 127.0.0.1 only, via a network security config. Requests need a per-install **loopback token**, set with `CookieManager`, because any app on the phone can reach loopback.
+- **Server:** Ktor (CIO engine) inside the app.
+  - **LAN: plain HTTP on port 8080**, with the binding filter from 4.2 (loopback, the current Wi-Fi network, allow-listed VPN only).
+  - In-app WebView: `http://127.0.0.1:8080`. Cleartext is allowed via a network security config. Requests need a per-install **loopback token**, set with `CookieManager`, because any app on the phone can reach loopback.
+- **No certificates and no per-device setup (owner decision):** open `http://<phone-ip>:8080` in any browser on the home Wi-Fi and it works.
+  - The trade-off: traffic on the home network is unencrypted.
+  - Browser features that need a secure context (installable PWA, Wake Lock) are unavailable on remote devices. They aren't needed: the phone is the console.
+  - Optional future: if a domain name is ever used, a publicly trusted certificate (for example Let's Encrypt via a DNS challenge, renewed by the app) would give HTTPS with still no per-device setup. Not planned.
 - **Discovery:**
-  - Primary: a DHCP reservation plus the QR code on the phone (Settings → Web access).
-  - Optional: mDNS (`treadmill.local`) via JmDNS and a `MulticastLock`. Android's `NsdManager` can't set a custom hostname, and many Android browsers don't resolve `.local`.
+  - Primary: a DHCP reservation plus the address and QR code shown on the phone (Settings → Web access).
+  - Optional: mDNS (`treadmill.local`) via JmDNS and a `MulticastLock`. Many Android browsers don't resolve `.local`.
   - `deployToPhone` defaults to the IP address.
-- **TLS, via a local CA:**
-  - The phone creates a **local CA** (BouncyCastle; stored as PKCS12, wrapped by an AndroidKeyStore AES key). The CA certificate is installed once on each browser device.
-  - The CA issues short-lived leaf certificates (≤ 397 days, EKU serverAuth) with **SAN = `treadmill.local` plus the current Wi-Fi IP**. They are re-issued automatically when the IP changes.
-  - The CA key goes only into **encrypted** backups.
-  - There is no plain-HTTP LAN mode: secure cookies wouldn't be sent, so authentication couldn't work.
-- **Pairing and roles:**
-  - **Pairing:** the phone shows a one-time code or QR (10-minute expiry). The browser then gets a device token in an HttpOnly, SameSite=Strict cookie. Devices can be revoked in Settings.
-  - **Roles** (ported from operator access):
+- **Access levels:**
 
-    | Role | Can |
-    |---|---|
-    | *Viewer* | Read everything; live view |
-    | *Operator* | Plans, workouts, sessions, settings; Stop; remote motion control if enabled (5.4) |
-    | *Admin* | Updates, backups/restore, diagnostics, feature flags, pairing management |
+  | Level | Who | Can |
+  |---|---|---|
+  | **Home** (no login) | Any browser on the home Wi-Fi | View everything, including the read-only live view; manage workouts, plans, calendar, sessions (debrief, delete with preview), profiles, settings; download exports |
+  | **Admin** (one passphrase) | Anyone who knows the admin passphrase | Updates, backup download and restore, diagnostics actions, feature flags, NAS and Garmin credentials |
 
-  - Admin actions need a passphrase (PBKDF2) on top of the device token.
-- **Pages:** the same screens as the phone's management UI (section 10), plus a **live view** (metrics and chart via SSE, 1–4 Hz) and the **diagnostics console** (8.6).
+  - The **admin passphrase** is set once on the phone in the setup wizard. It is stored as a PBKDF2 hash. Browsers ask for it when an admin action is used, and keep a short-lived session (HttpOnly cookie, 30 minutes).
+  - Admin login is rate-limited. `deployToPhone` uses the same passphrase, stored in the laptop's credential store.
+  - Updates are safe even on plain HTTP: only APKs **signed with our key**, with a valid signed manifest, are ever installed (8.3).
+- **Pages:** the management screens (section 10), a **read-only live view** (metrics and chart via SSE, 1–4 Hz, no control buttons), the **diagnostics console** (8.6), and the updates page.
 - **Versioning:** HTML and assets ship inside the APK with a hash in their URLs, so the web UI can never be stale against its own server.
 - **Resource limits:**
-  - One SSE stream per page (multiplexed events), closed when the tab is hidden, with a heartbeat every 15 s. HTTP/1.1 browsers allow about 6 connections per origin.
+  - One SSE stream per page (multiplexed events), closed when the tab is hidden, with a heartbeat every 15 s.
   - At most 8 concurrent SSE clients, with 1 slot reserved for the in-app WebView.
   - Request body limits (backup upload ≤ 2 GiB, streamed to disk).
-  - The server runs at lower priority than the run engine, with its own thread pool.
+  - Low-priority thread pool (4.2).
 - **Safety:**
-  - The web server never blocks the run engine (thread isolation in 4.2).
-  - During a non-terminal session, the web accepts only Stop, lease-holder controls and the debrief. Admin actions (restore, install, migrations, pairing changes) are **blocked**.
+  - The web server never blocks the run engine.
+  - During a non-terminal session, the web accepts only the debrief; everything else is read-only. Admin actions (restore, install, migrations) are **blocked**.
   - Feature-flag changes take effect at the next Arm. The exception is a flag that only *disables* a feature, which suspends it safely at once.
 
 ### 7.3 Backup strategy (file-based, external device)
@@ -557,7 +547,7 @@ The entities and every field are specified in [01-data-model](01-data-model.md),
   - `db.sqlite`: the database snapshot.
   - `blobs/`: FIT files, H10 payloads.
   - **Encrypted by default** with a backup passphrase set during setup and recorded offline (AES-GCM, key derived with PBKDF2). microSD and NAS copies contain health data.
-  - **Secrets:** Keystore-wrapped secrets (Garmin tokens, NAS password) cannot be restored on another phone, and the user re-enters them after such a restore. The CA key is included only because the bundle is encrypted.
+  - **Secrets:** Keystore-wrapped secrets (Garmin tokens, NAS password) cannot be restored on another phone, and the user re-enters them after such a restore.
 - **Download:** "Download backup" in the web UI (Admin) streams a fresh verified backup to the laptop.
 - **Restore:**
   - From a file on the external folder, **from the NAS share**, or uploaded through the web UI (Admin).
@@ -590,101 +580,88 @@ The entities and every field are specified in [01-data-model](01-data-model.md),
 - **Everything is built and released locally** on the developer laptop. There is no GitHub Actions.
 - **One command builds a release:** `./gradlew release -Pchannel=beta`. It:
   - runs all JVM, Robolectric and screenshot tests;
-  - builds signed APKs for the main app (and Keeper, if it changed);
+  - builds the signed APK;
   - writes an **update manifest** signed with Ed25519: `versionCode, versionName, sha256, apkCertSha256, minSchema, channel, issuedAt, sequence, notes, featureFlags, yanked[]`;
   - signs with the local keys (8.4);
-  - **uploads** the APKs and manifest to a GitHub Release (as today's local release script does) **and/or** straight to the phone (`deployToPhone`, 8.3).
+  - **uploads** the APK and manifest to a GitHub Release (as today's local release script does) **and/or** straight to the phone (`deployToPhone`, 8.3).
 - **Local quality gates** replace CI:
   - `./gradlew ciFast` runs on a Git pre-push hook: unit, property, scenario, Robolectric, Ktor and screenshot tests.
-  - `./gradlew ciNightly` is run before every release, on the Linux test box (11.0): it adds emulator E2E (native and web), update E2E, the Samba test and benchmarks.
+  - `./gradlew ciNightly` is run before every release, from the Windows development VM with the phone connected (11.0). It adds on-phone E2E (native and web), the update and safe-mode E2E, the NAS backup test and benchmarks.
   - `release` refuses to run unless `ciNightly` passed on the same commit (a result file keyed by commit hash).
 
-### 8.2 Keeper app and initial provisioning
-- **Why a Keeper:** if a bad update makes the main app crash at start, an updater inside the main app is dead too. The Keeper is a tiny separate app that changes rarely (install, verify, watchdog, recovery admin page), so remote recovery works without touching the phone.
-- **Silent-update rules** (from `PackageInstaller.SessionParams.setRequireUserAction`), for `USER_ACTION_NOT_REQUIRED`:
-  - the installer holds `REQUEST_INSTALL_PACKAGES` and `UPDATE_PACKAGES_WITHOUT_USER_ACTION`;
-  - the installer **is the installer of record** of the app, or is **updating itself** (so Keeper can also self-update);
-  - the app being installed meets the targetSdk minimum (3.1).
-  - `setRequestUpdateOwnership` is left off.
-- **Provisioning, the one physical session:**
-  1. Settings: developer options and USB debugging on; screen lock None/Swipe; automatic system updates off.
-  2. `adb install keeper.apk`, then **`adb install -i <keeper.package> app.apk`**. This makes Keeper the main app's installer of record with no on-phone tap. The alternative is to let Keeper install it, with one tap.
-  3. Open Keeper: battery exemption, notifications, "Install unknown apps". Keeper shows its **admin token as a QR code, once**; `deployToPhone` stores it in the laptop's credential store.
-  4. Run the main app's setup wizard: permissions, battery exemption, CDM, backup folder and passphrase, NAS share, web pairing, and a Motorola battery-management check.
-- **Keep the installer of record intact:**
-  - **Never `adb install -r` the release package.** It makes the shell the installer, and silent updates stop.
-  - Dev installs use `adb install -i <keeper.package>` or `deployToPhone`.
-  - The internal debuggable variant has its own `applicationId` suffix and its own ports.
-- **Optional mutual recovery:** `adb install -r -i <main.package> keeper.apk` makes the main app Keeper's installer of record, so the main app could repair a broken Keeper (it then also needs `REQUEST_INSTALL_PACKAGES`). This is fragile; it is an open decision (15).
-- **Always handle `STATUS_PENDING_USER_ACTION`.** If Android ever asks, Keeper's page shows "needs one tap on the phone".
-- **Package checks before commit:** Keeper verifies the APK signer against the pinned `apkCertSha256` (`getPackageArchiveInfo` with `GET_SIGNING_CERTIFICATES`). Both apps share one key, and the v3 rotation lineage covers both.
+### 8.2 Initial provisioning (the one physical session)
+1. **Phone settings:** developer options and USB debugging on; screen lock None/Swipe; automatic system updates off.
+2. **Install:** `adb install treadmillrunner.apk` over USB (or open the APK file on the phone).
+3. **Setup wizard:**
+   - permissions (including "Install unknown apps" for this app, so it can update itself);
+   - battery exemption, CDM;
+   - backup folder and backup passphrase, NAS share;
+   - admin passphrase (7.2);
+   - a Motorola battery-management check.
+4. Optional: enable wireless debugging for the long-term validation path (DLV-09).
 
-### 8.2a Keeper recovery admin page
-- An FGS `specialUse` ("recovery admin page") on **port 8444**, HTTPS with a certificate from the same phone CA. It starts at `BOOT_COMPLETED` and has its own battery exemption.
-- **Auth:** the Keeper admin token from provisioning. It is independent of the main app's database and pairing.
-- **Pages:**
-  - version and install history;
-  - rejected versions;
-  - the main app's last heartbeat and crash reports;
-  - **upload update** (signed manifest plus APK only);
-  - "Install now (belt may be running; check the console)";
-  - "Start main app in safe mode".
+After this, updates, diagnostics and recovery work remotely.
 
-### 8.3 Remote update flows (no physical access)
-- **A. Push from the laptop (LAN, no internet needed):**
-  - `./gradlew deployToPhone -Phost=<phone IP>` uploads the APK and signed manifest to **Keeper's page (8444)**.
-  - The main app's Updates page also accepts uploads; it hands them to Keeper through the signature-protected IPC (a FileProvider URI).
-  - Keeper verifies the manifest signature, APK SHA-256, signer certificate, a higher `versionCode`, a new `sequence`, not rejected or yanked, and the schema window. It then installs when idle.
-- **B. Pull from GitHub Releases (internet):** "Check now" or a schedule. A private repository needs a read-only token stored on the phone (Keystore-wrapped). The same verification applies.
-- **Heartbeat protocol (main app → Keeper, signature-protected bound service):**
-  - `starting(version)` at process start.
-  - `healthy(version)` after the post-install health check (DB integrity, migrations, permissions, services, CDM, web reachable).
-  - `idle(state, unfetchedH10)` every 5 s.
-  - `crash(report)` from the uncaught-exception handler before the process dies.
-  - Keeper also calls `linkToDeath` on the binding.
-  - Keeper cannot read another app's `ApplicationExitInfo` or logs, so this protocol is its only source of truth.
+### 8.3 Self-update, safe mode and remote recovery (no physical access)
+- **How the app updates itself:**
+  - It downloads or receives the new APK, verifies it, and installs it with `PackageInstaller`, using `setRequireUserAction(USER_ACTION_NOT_REQUIRED)`.
+  - Android allows this **without a tap** when the app **updates itself**, holds `REQUEST_INSTALL_PACKAGES` and `UPDATE_PACKAGES_WITHOUT_USER_ACTION`, and meets the targetSdk minimum (3.1).
+  - The app then restarts via `MY_PACKAGE_REPLACED`.
+  - If Android ever still asks (`STATUS_PENDING_USER_ACTION`), the web Updates page shows "needs one tap on the phone".
+- **Update sources:**
+  - **A. Push from the laptop (LAN, no internet needed):** `./gradlew deployToPhone -Phost=<phone IP>` uploads the APK and signed manifest to the app's Updates endpoint (admin passphrase). Doing it by hand on the web Updates page is the same.
+  - **B. Pull from GitHub Releases (internet):** "Check now" or a schedule. A private repository needs a read-only token stored on the phone (Keystore-wrapped).
+- **Verification before install:**
+  - Ed25519 manifest signature;
+  - APK SHA-256;
+  - APK signer equal to the installed app's certificate (`getPackageArchiveInfo` with `GET_SIGNING_CERTIFICATES`);
+  - higher `versionCode`;
+  - new `sequence`;
+  - not rejected or yanked;
+  - schema window.
 - **Idle rules:**
-  - The main app reports idle: no non-terminal session, and no unfetched H10 recording started by this phone.
-  - Battery above 30% or charging.
-  - An idle window, or "Install now".
-  - **If the main app is not running**, Keeper cannot know whether a session exists. It installs only after an explicit Admin "Install now", with the warning "belt may be running; check the console".
+  - no non-terminal session;
+  - no unfetched H10 recording started by this phone;
+  - battery above 30% or charging;
+  - an idle window, or "Install now" (admin).
 - **Before and after install:**
-  - A verified backup is taken before install (and copied to microSD and the NAS).
-  - After install, Keeper revives the main app by binding with `BIND_AUTO_CREATE` (which clears the stopped state). `MY_PACKAGE_REPLACED` is the second path.
-- **Crash-loop rule and safe mode:**
-  - **No `healthy` within 5 minutes of install, or 2 or more start attempts without `healthy`**, means the version is **rejected**.
-  - At every start, the main app asks Keeper "start safe?". After 2 failed starts, it runs in **safe mode**: WebService and Diagnostics only, with no BLE, workers or non-essential migrations. That makes logs and crash reports reachable remotely.
-  - The fix is to push the next build (A) or flip a feature flag.
-  - Android marks a process that crashes twice within about 60 s as "bad" and stops background restarts. HW-08 verifies that pushing a fixed build and binding from Keeper bring the services back **without a tap**, including after a reboot.
-- **Kill switches:** `featureFlags` in a new manifest, or toggled in Admin, disable risky features (rules in 7.2). This is the first rollback tool.
+  - A verified backup is taken (and copied to microSD and the NAS).
+  - After install, the first start runs a **health check**: DB integrity, migrations, permissions, services, CDM, web reachable. The result is shown on the web Updates page.
+- **Safe mode (crash-loop protection inside the one app):**
+  - The very first thing the app does at process start is increment a **start counter** in a tiny file, before any database, Bluetooth or UI code. After the health check passes, it writes **healthy** and resets the counter.
+  - If the counter reaches **2 without healthy**, the app starts in **safe mode**. Only the web server, Diagnostics and the Updates page run: no Bluetooth, no background workers, and no migrations beyond the minimum. Logs and crash reports stay reachable remotely, and a fixed build can be pushed.
+  - That version is marked **rejected**, so it is never offered again.
+  - The web Diagnostics page offers "Restart in normal mode" (admin).
+  - Android marks a process that crashes twice within about 60 s as "bad" and stops background restarts. The web service's `BOOT_COMPLETED` start and the post-install restart bring it back. HW-08 verifies recovery **without a tap**, including after a reboot.
+- **Limits of a single app, stated honestly:**
+  - If a build crashes *before* the start counter runs (for example a broken manifest, or a crash in class loading), safe mode cannot help. Recovery then needs **wireless ADB** (DLV-09) or physical access.
+  - Mitigations:
+    - the start counter lives in a minimal `Application` path with no dependencies;
+    - `ciNightly` includes an update E2E that installs every release over the previous one and checks start and safe mode;
+    - risky features ship behind flags.
+- **Kill switches:** `featureFlags` in a new manifest, or toggled by the admin, disable risky features (rules in 7.2). This is the first rollback tool.
 - **Revert builds:**
   - Android forbids downgrades, and Room will not open a database whose schema identity differs.
   - So the schema is **monotonic** and migrations are expand/contract.
   - A "revert" is a new build with the previous behaviour, which carries the latest schema.
-- **Keeper self-protection:** Keeper updates are rare, go through the same verification, and are never installed together with a main-app update.
 - **Android developer verification:**
-  - Enforcement starts on 2026-09-30 in four countries and goes global on certified devices in 2027.
-  - It may block or add taps to installs of unregistered apps done through Keeper. ADB and an advanced flow stay available.
-  - Mitigation: register both package names and the signing key under a free limited-distribution developer account (≤ 20 devices), with ADB as the fallback.
-- **Optional Keeper as Device Owner** (open decision): provisioned with `dpm set-device-owner` while no accounts exist on the phone. It enables:
-  - silent installs regardless of the targetSdk rule;
-  - auto-granted runtime permissions (including local network);
-  - a `SystemUpdatePolicy` to freeze OS updates;
-  - lock-task mode (OPS-05).
+  - Enforcement starts on 2026-09-30 in four countries and goes global on certified devices in 2027. It may block or add taps to installs of unregistered apps, including self-updates. ADB and an advanced flow stay available.
+  - Mitigation: register the package name and signing key under a free limited-distribution developer account (≤ 20 devices), with ADB as the fallback.
+- **Dev installs:** the internal debuggable variant has its own `applicationId` suffix and its own ports, so it never replaces the real app.
 
 ### 8.4 Key management
 - **APK signing key:** if it is lost, there are no more updates (only uninstall and reinstall).
   - Keep two offline backups.
   - APK Signature Scheme v3 rotation (`apksigner --lineage`) is documented.
 - **Ed25519 manifest key:** backed up the same way. Rotation only through a manifest signed by the old key that introduces the new key.
-- **Phone CA key (web TLS):** lives on the phone (PKCS12, Keystore-wrapped) and is included only in **encrypted** backups. **Keeper admin token:** kept in the laptop credential store and the offline key backup.
+- **Admin passphrase:** kept in the laptop credential store and the offline key backup. It can be reset on the phone itself (Settings → Web access).
 
 ### 8.5 Offline guarantee
 - There is no network dependency in `domain-run` or `device-*` (architecture test).
 - The release checklist includes an **airplane-mode run** (HW-04).
 
 ### 8.6 Remote debugging
-The main tool is **the app's own diagnostics console in the web UI (Admin)**, because it works without cables or ADB.
+The main tool is **the app's own diagnostics console in the web UI (admin passphrase)**, because it works without cables or ADB.
 
 | Capability | How |
 |---|---|
@@ -693,8 +670,8 @@ The main tool is **the app's own diagnostics console in the web UI (Admin)**, be
 | Crashes and ANRs | Uncaught-exception handler writes a report; on next start `ApplicationExitInfo` adds the exit reason and ANR/native traces; all listed with app version |
 | State inspectors | Live JSON views: run engine state, command log (intents, outcomes, latencies), device links (state, GATT status codes, connection parameters, RSSI, battery), scan budget, services, permissions, CDM, battery and thermal, storage, backup health, feature flags |
 | Screen view | Screenshot of the app's own window when the app is in the foreground (PixelCopy; no screen-capture permission), plus an optional low-rate live view. For anything else, use scrcpy over wireless ADB |
-| Actions | Reconnect a device, run a Simulator session, run self-tests (DB integrity, BLE adapter, storage), export a diagnostics ZIP, toggle feature flags, restart services |
-| Keeper fallback | Keeper's page (8.2a) shows install history, rejected versions, the last heartbeat and crash reports, the push-update form, and "start in safe mode" |
+| Actions | Reconnect a device, run a Simulator session, run self-tests (DB integrity, BLE adapter, storage), export a diagnostics ZIP, toggle feature flags, restart services, "Restart in normal mode" |
+| Safe mode | After a crash loop, the app serves only the web server, Diagnostics and the Updates page (8.3), so logs, crash reports and a fixed build push remain possible remotely |
 | Wireless debugging (long-term validation path) | **Wireless ADB** (Android 11+) with **scrcpy** (screen view and control), logcat, Android Studio (debugger on the internal variant), and `adb shell` checks such as `dumpsys`, `am crash`, `deviceidle`. Validation scripts (`./gradlew phoneCheck`) run the hardware runbook helpers over ADB. Android turns wireless debugging off after reboots and Wi-Fi changes; re-enabling it needs a tap on the phone, so it complements self-updating and the in-app console rather than replacing them |
 | Access from outside the home | Optional: a VPN app on the phone (for example Tailscale). Nothing else to run |
 | Privacy | Live logs and ZIPs use the same allow-list as the journal. Release builds disable verbose BLE and Polar SDK logging. Tested (OPS-03) |
@@ -785,7 +762,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 - **Special states:** Armed-waiting, restart recovery ("Resume planned controls"), and read-only run (guidance to set speed and incline on the console).
 - **Keep screen on** for any non-terminal session. Predictive back with a confirmation when leaving Run.
-- **Web live view:** read-only metrics and chart for Viewers. Holders of the lease get the same dock and steppers, and STOP is always shown to Operators.
+- **Web live view:** read-only metrics, chart and device state. It has **no control buttons**, and it shows the line "Control the treadmill on the phone or the console".
 
 ### 9.7 Web layout guide
 - **Layout:**
@@ -810,7 +787,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
   | Internal | UI |
   |---|---|
   | Unknown | "Couldn't confirm" |
-  | lease / generation | not shown |
+  | generation | not shown |
   | MergeAndReplace | "Keep one" |
   | Undo merge | "Restore two" |
   | ReviewRequired | "Needs your check" |
@@ -831,13 +808,13 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 | ID | Screen | Native / Web | Key elements |
 |---|---|---|---|
-| S01 | Setup wizard | Native | Permissions, profile, devices, CDM, backup folder, web access and pairing |
+| S01 | Setup wizard | Native | Permissions, profile, devices, CDM, backup folder and passphrase, NAS share, admin passphrase |
 | S02 | Today | Native (+ web) | Runner switcher, recommended card, explicit choice for alternatives, readiness chips, last run |
 | S03 | Pre-run check | Native | Summary, device readiness, preflight, H10 recording toggle, **Arm** |
 | S04 | Run console | Native | 9.6 |
-| S05 | Stop sheet | Native (+ web for Operators) | Keep paused, Reset progress, End and save, Discard, End without telemetry |
+| S05 | Stop sheet | Native | Keep paused, Reset progress, End and save, Discard, End without telemetry |
 | S06 | Debrief | Native + web | RPE, note, summary |
-| S07 | Live view | Web | Metrics and chart via SSE, device chips, lease status, dock (for the lease holder) |
+| S07 | Live view | Web | Read-only metrics and chart via SSE, device chips; no controls |
 | S08 | History list | Web | Weekly groups and totals, filters |
 | S09 | Session detail | Web | Chart (240-point projection), splits, zones, adherence, events, exports, Garmin, H10, delete (preview) |
 | S10 | Compare | Web | Same-revision overlay |
@@ -859,7 +836,7 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 | S26 | Backup and restore | Web (+ native picker) | Destinations (microSD/USB folder, NAS SMB share with Test connection), status per destination, backups list, download, upload, restore with preview |
 | S27 | Updates | Web | Channel, available and installed versions, push upload, install when idle, history, rejected versions |
 | S28 | Diagnostics | Web | 8.6 |
-| S29 | Web access | Native + web | Address and QR, TLS fingerprint, paired devices and roles, remote-control toggle, admin passphrase |
+| S29 | Web access | Native + web | Address and QR, on/off, admin passphrase (set or reset on the phone) |
 | S30 | Settings | Web | Theme, sounds, haptics, feature flags (Admin), kiosk |
 | — | System states | Both | Bluetooth off, permission revoked, too hot, battery low, storage low |
 
@@ -867,24 +844,22 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 
 ## 11. Validation strategy
 
-### 11.0 Local test rig (no CI service)
-- **(a) Windows development VM:**
-  - Runs the IDE and `ciFast`: JVM tests, Robolectric, Ktor `testApplication`, and web E2E with Playwright for Java against the JVM-hosted `web` module with fakes.
-  - The Android emulator needs nested virtualization inside the Proxmox VM, which is slow or fails. So the Windows VM runs no emulator, and it skips screenshot verification.
-- **(b) Linux test box:** an LXC container or VM on the same Proxmox host, with `/dev/kvm`. It runs `ciNightly`:
-  - Gradle Managed Device emulators (headless, API 35; ATD images where available);
-  - Playwright against the emulator via `adb forward`;
-  - the Samba container for BAK-06;
-  - the Keeper update E2E.
-  - It is triggered with `./gradlew ciNightly -Premote=linuxbox` (over SSH).
-- **Docker plus WSL2 on the Windows 11 VM:**
-  - The Android emulator in Docker (for example `budtmo/docker-android`) needs `/dev/kvm` inside WSL2. That requires `nestedVirtualization=true` in `.wslconfig` and a host that exposes virtualization.
-  - The dev Windows 11 is itself a Proxmox VM, so this becomes **three-level nesting**: Proxmox KVM → Hyper-V/WSL2 → KVM → emulator. It requires CPU type `host` plus nested KVM on Proxmox, and users report it as hit-or-miss and slow.
-  - **Not recommended here.** Run the same Docker image in the Linux box (b), which has one level of virtualization and native `/dev/kvm`.
-  - Docker plus WSL2 is fine on a *physical* Windows 11 machine.
-- **(c) Screenshot baselines** (Roborazzi and Playwright) are recorded and verified **only on the Linux box**, because fonts render differently per OS.
-- **(d) Fallback E2E device:** a spare Android 15 phone over wireless ADB.
-- **(e) Last resort:** the treadmill phone itself, only with the `.e2e` applicationId and separate ports, never during a run, and without touching CDM associations.
+### 11.0 Local test rig (no CI service, no emulator)
+- **Windows development VM** (runs the IDE):
+  - `ciFast`: JVM unit and property tests, scenario tests, Robolectric, Ktor `testApplication`, Roborazzi screenshots, and web E2E with Playwright for Java against the JVM-hosted `web` module with fakes.
+  - **Roborazzi baselines are recorded and verified on this machine only**, so font rendering stays consistent.
+- **The treadmill phone is the test device** (owner decision; no emulator and no extra machine):
+  - `ciNightly` runs instrumented, Compose E2E, update/safe-mode E2E and benchmarks **on the phone**, connected over USB or wireless ADB.
+  - The tests use a separate **`.e2e` build variant**, with its own `applicationId`, ports, database and storage. So they never touch the real app, its data, its CDM associations or the real devices: they run in Simulator mode with fake Bluetooth.
+  - **Hard guard:** `ciNightly` first asks the real app's web API whether a session is non-terminal, and refuses to run if so. It also never runs while the real app is in a run.
+  - **Web E2E against the phone:** Playwright on the laptop drives the `.e2e` variant's web server over Wi-Fi.
+  - **NAS backup test:** the `.e2e` variant uploads to a dedicated `test/` folder on the real NAS share and cleans it up afterwards. This also catches the Android SMB security-provider issue.
+  - **On-device screenshots** are captured on the phone at the beta gate and reviewed by eye. This is the real rendering.
+- **Trade-offs accepted:**
+  - Tests only cover this one phone model and Android version (the only target).
+  - Device tests can't run while someone is running.
+  - Wireless ADB must be re-enabled on the phone after a reboot; plugging in USB also works.
+  - If the phone is ever unavailable, a spare Android 15 phone can take its place with no changes.
 
 ### 11.1 Test pyramid
 
@@ -894,10 +869,10 @@ The design system lives in `ui-design`. Tokens are defined once in Kotlin and **
 | **Property** | Command coordinator: random interleavings never produce a retry after Unknown, two writes in flight, a replayed Start, or a command after a generation change. Workout expansion limits, calendar projection | Kotest property | ciFast |
 | **Scenario** | Full runs with virtual time and fake links: drops, reconcile, restart, console start, read-only, HR automation, 4 h simulation (14,400 samples) | Scenario DSL | ciFast |
 | **Integration (JVM/Robolectric)** | Room DAOs and migrations (every released schema; revert-build open), backup/restore round-trip, RunService with fake BLE, WebService routes | Robolectric, Room testing | ciFast |
-| **Integration (web API)** | Every route: auth and roles, pairing, lease, CSRF, htmx fragments, SSE streams, upload limits, backup download/restore, update upload verification | Ktor `testApplication` | ciFast |
-| **E2E, native** | Compose UI flows on emulators in Simulator mode: setup, arm, run, stop sheet, debrief; plus Roborazzi and ATF | Gradle Managed Devices (API 35 phone, portrait and landscape), Roborazzi | ciNightly (Linux box) |
-| **E2E, web** | Browser flows against the app running in an emulator (or the JVM web module with fakes): pair, plan a workout, live view during a simulated run, restore preview, update upload | **Playwright for Java**, driven from Kotlin tests; screenshots and axe | ciNightly (Linux box) |
-| **E2E, update** | Keeper installs build N, pushes N+1, health check, crash-loop detection with a deliberately crashing build, feature-flag kill switch | Emulator plus Keeper | ciNightly, before each release |
+| **Integration (web API)** | Every route: home vs admin access, admin session, the no-command architecture rule, CSRF, htmx fragments, SSE streams, upload limits, backup download/restore, update upload verification | Ktor `testApplication` | ciFast |
+| **E2E, native** | Compose UI flows on the phone in Simulator mode (`.e2e` variant): setup, arm, run, stop sheet, debrief; plus ATF checks | Instrumented tests on the phone (USB or wireless ADB) (ne, portrait and landscape), Roborazzi | ciNightly (phone) |
+| **E2E, web** | Browser flows against the `.e2e` app on the phone (or the JVM web module with fakes in `ciFast`): open without setup, plan a workout, live view during a simulated run, restore preview, update upload | **Playwright for Java**, driven from Kotlin tests; screenshots and axe | ciNightly (phone) |
+| **E2E, update** | Install build N, push N+1, self-install when idle, health check; a deliberately crashing build enters safe mode and is rejected; feature-flag kill switch | Phone (`.e2e` variant) | ciNightly, before each release |
 | **Performance** | Cold start TTFD < 2 s (median of 10, moto g15); Run p95 frame < 16 ms; web first paint < 1 s; 3-year history fixture | Macrobenchmark, JankStats, Playwright timings | Beta gate |
 | **Hardware** | Runbooks 11.3 | Owner-supervised | Stable gate |
 
@@ -920,27 +895,33 @@ runScenario {
 
 ### 11.3 Hardware acceptance (owner-supervised)
 
-**H10 continuity threshold (HCT):**
-- ≥ 3 runs of 60 min with the phone mounted and radio settings recorded;
-- ≤ 1 native disconnect per run-hour;
-- no HR gap > 10 s;
-- zero fabricated samples.
+**H10 continuity measurement (HCM), with no fixed threshold (owner decision): make it as good as it can be.**
+- **Record per run:**
+  - native disconnects;
+  - longest and total HR gap;
+  - recovery time per drop;
+  - the drop reason (GATT status);
+  - radio settings (Wi-Fi band, A2DP off, H10 multi-connection setting);
+  - phone position.
+- **Always required:** zero fabricated samples.
+- **Go/no-go for the phone (HW-00):** the phone must do **clearly better than the current Windows setup** on comparable runs. The baseline is 2 drops in a 36-minute run, and 18 in an earlier workout.
+- **After that:** every remaining drop is investigated from its recorded reason, and radio settings and placement are tuned. The target is zero drops.
 
 | ID | Procedure | Pass |
 |---|---|---|
-| HW-00 | Phase 0 spike: Polar SDK HR plus FTMS read on the moto g15; unloaded Start/Stop | HCT; Start/Stop Confirmed; Request Control silence as on Windows |
+| HW-00 | Phase 0 spike: Polar SDK HR plus FTMS read on the moto g15; unloaded Start/Stop | HCM clearly better than the Windows baseline; Start/Stop Confirmed; Request Control silence as on Windows |
 | HW-01 | Commissioning stages 1–3 (DEV-08) | Owner approval per stage; Start ≤ 6.5 s, set ≤ 2 s, Stop ≤ 4 s |
-| HW-02 | H10 continuity | HCT |
+| HW-02 | H10 continuity (3 × 60 min runs) | HCM recorded; zero fabricated samples; every drop has a recorded reason |
 | HW-03 | H10 recording and merge | Fetched, hashed, only null samples filled, remote removed |
 | HW-04 | Airplane-mode structured run | Completes; saved; exports and backup to microSD work |
 | HW-05 | Cut treadmill power mid-run | Banner; no commands; "End: I confirm…" after 30 s |
 | HW-06 | `adb shell am crash` mid-run; then `am force-stop` | Recovery rule; no Start replay; Interrupted after force-stop |
 | HW-07 | Remote update: push from laptop during a run, then idle | Deferred during the run; installs when idle; health check OK; web UI shows the new version |
-| HW-08 | Remote recovery: push a deliberately crashing build (test channel), then a fixed build; repeat with a reboot in between | Keeper rejects the crashing build; safe mode reachable; the fixed build brings services back **without a tap**, also after the reboot |
+| HW-08 | Remote recovery: push a deliberately crashing build (test channel), then a fixed build; repeat with a reboot in between | The app enters safe mode and rejects the crashing build; Diagnostics reachable; the fixed build brings normal mode back **without a tap**, also after the reboot |
 | HW-09 | Phone Bluetooth off mid-run | Belt continues; banner; reconcile |
 | HW-10 | 60 min run while charging, screen on | Thermal below "severe"; logged |
 | HW-11 | Command latency while the H10 streams, including recording prepare | Within HW-01 bounds; no HR gap > 5 s |
-| HW-12 | Web control: lease handover to a laptop, Stop from a tablet | Lease rules hold; Stop Confirmed; the phone always shows the state |
+| HW-12 | Web during a run: live view on a laptop and a tablet | Live view updates about every 1 s; no control is possible from the web; the run engine timing is unaffected |
 | HW-13 | Backup and restore: restore the microSD backup, and separately the NAS backup, onto a factory-reset phone | Data identical (row counts and hashes), except secrets, which are re-entered |
 | HW-14 | NAS unavailable: NAS off during two backups, then back on | Backups queued with backoff; "NAS backup failing" state shown; uploads catch up; nothing attempted during a run |
 | HW-15 | Pause mid-segment (including in a ramp, an HR segment and after a manual override), wait 2 min, resume; plus a console stop and start | Belt stops; cursor unchanged; paused interval not counted as moving time; the effective target is re-applied; distance and time continue without a jump or reset |
@@ -963,30 +944,32 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **FND-01 (P0)** — As a developer, the Gradle project has the modules of 4.1, convention plugins, a version catalog, detekt, ktlint and Lint.
   - AC1 *[auto]*: `./gradlew check` runs lint, unit, property, scenario, Robolectric and Ktor tests.
   - AC2 *[auto]*: architecture tests fail on forbidden dependencies or on a command path outside the coordinator API.
-- **FND-06 (P0)** — As a developer, the local test rig of 11.0 exists: `ciFast` on the Windows VM and `ciNightly -Premote=linuxbox` on the Linux KVM box, with screenshot baselines owned by the Linux box.
-  - AC1: both commands run green on an example of each test level; a deliberately broken screenshot fails only on the Linux box verification.
-- **FND-02 (P0)** — As a developer, the test harness exists at every level with one example test each: unit, property, scenario, Robolectric, Ktor route, Compose E2E on a managed emulator, Playwright web E2E, Roborazzi screenshot.
+- **FND-06 (P0)** — As a developer, the local test rig of 11.0 exists: `ciFast` on the Windows VM, and `ciNightly` running device tests on the phone in the `.e2e` variant.
+  - AC1: both commands run green with an example of each test level.
+  - AC2: `ciNightly` refuses to start while the real app has a non-terminal session.
+  - AC3: the `.e2e` variant's data and settings are isolated from the real app.
+- **FND-02 (P0)** — As a developer, the test harness exists at every level with one example test each: unit, property, scenario, Robolectric, Ktor route, Compose E2E on the phone (`.e2e` variant), Playwright web E2E, Roborazzi screenshot.
   - AC1 *[auto]*: `./gradlew ciFast` (pre-push hook) and `./gradlew ciNightly` (before release) run the right sets locally and publish HTML reports; `release` refuses without a passing `ciNightly` for the commit.
 - **FND-03 (P0)** — As a developer, Simulator mode provides a fake treadmill and HR (deterministic, scriptable), used by E2E tests and available in Diagnostics.
   - AC1 *[auto]*: simulated sessions are excluded from totals, progression, maintenance, plans and Garmin.
 - **FND-04 (P0)** — As a developer, `ui-design` has the tokens and components (Compose) and the generated CSS.
   - AC1 *[auto]*: the token → CSS generation is checked in the build; component screenshots in all themes.
-- **FND-05 (P0)** — As the owner, the app and Keeper install on the moto g15 and start.
+- **FND-05 (P0)** — As the owner, the app installs on the moto g15 and starts.
   - AC1 *[auto]*: Macrobenchmark cold start TTFD median < 2 s.
 
 ### Epic DLV — Delivery: updates and remote debugging (first)
-- **DLV-01 (P0)** — As the owner, `./gradlew release` builds and signs locally, and uploads the APKs and manifest to a GitHub Release and/or the phone.
+- **DLV-01 (P0)** — As the owner, `./gradlew release` builds and signs locally, and uploads the APK and manifest to a GitHub Release and/or the phone.
   - AC1 *[auto]*: the manifest verifies with the public key; tampering with any byte fails verification.
-- **DLV-02 (P0)** — As the owner, Keeper installs the main app during provisioning and later updates it without user action.
-  - AC1 *[auto, emulator]*: build N installed, N+1 pushed, installed silently when idle.
-  - AC2: `STATUS_PENDING_USER_ACTION` shows "needs one tap" on the Keeper page.
+- **DLV-02 (P0)** — As the owner, the app updates itself without a tap on the phone after the one-time provisioning.
+  - AC1 *[auto, phone .e2e]*: build N installed, N+1 pushed, installed silently when idle, restarted via `MY_PACKAGE_REPLACED`.
+  - AC2: `STATUS_PENDING_USER_ACTION` shows "needs one tap" on the web Updates page.
 - **DLV-03 (P0)** — As the owner, I push an update from my laptop with `./gradlew deployToPhone` or the web Updates page.
   - AC1 *[auto]*: refused on a bad signature, SHA-256 mismatch, different certificate, lower `versionCode`, reused `sequence`, yanked or rejected version, or a schema outside the window.
   - AC2 *[hw]*: HW-07.
 - **DLV-04 (P0)** — As the owner, updates install only when idle, after a verified backup, and are followed by a health check reported in the web UI.
   - AC1 *[auto]*: no install while a session is non-terminal or an unfetched H10 recording exists.
-- **DLV-05 (P0)** — As the owner, a crash loop after an update is detected by Keeper through the heartbeat protocol. Keeper rejects the version, the main app falls back to safe mode, and Keeper's admin page stays up.
-  - AC1 *[auto, emulator]*: E2E with a deliberately crashing build: rejected after 2 starts without `healthy`; safe mode serves Diagnostics; the next build restores normal mode with no tap.
+- **DLV-05 (P0)** — As the owner, a crash loop after an update puts the app in safe mode (web server, Diagnostics, Updates only), rejects that version, and lets me push a fix remotely.
+  - AC1 *[auto, phone .e2e]*: E2E with a deliberately crashing build: safe mode after 2 starts without healthy; Diagnostics reachable; the next pushed build restores normal mode with no tap.
   - AC2 *[hw]*: HW-08.
 - **DLV-06 (P0)** — As the owner, feature flags can be switched off from Admin or through a manifest, without a new build.
   - AC1 *[auto]*: a disabling flag takes effect within 5 s and suspends safely; other flag changes wait for the next Arm.
@@ -996,26 +979,21 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
   - AC3 *[auto]*: a crash in a test build appears in the list after restart.
 - **DLV-08 (P0)** — As the owner, logs and diagnostic exports never contain addresses, names or payloads.
   - AC1 *[auto]*: allow-list test over the logs, journal and ZIP, including library log output.
-- **DLV-09 (P1, long-term)** — As a developer, I validate the phone over wireless ADB (never `adb install -r` the release package): a debuggable internal variant with its own applicationId, a documented scrcpy/logcat setup, and `./gradlew phoneCheck` running runbook helpers over ADB.
+- **DLV-09 (P1, long-term)** — As a developer, I validate the phone over wireless ADB: a debuggable internal variant with its own applicationId, a documented scrcpy/logcat setup, and `./gradlew phoneCheck` running runbook helpers over ADB.
   - AC1: after one on-phone enable of wireless debugging, `phoneCheck` connects and produces a report (permissions, services, CDM, battery, thermal, BLE state).
   - AC2: works alongside self-updating; neither depends on the other.
 - **DLV-10 (P0)** — As the owner, the signing and manifest keys are backed up and a rotation procedure exists.
   - AC1: a restore on a spare machine is tested once.
 
 ### Epic WEB — Web interface
-- **WEB-00 (P0, spike)** — As a developer, I confirm the Ktor engine and TLS setup on the phone: Netty with `sslConnector`, a local-CA leaf certificate, and HTTP on loopback for the WebView.
-  - AC1 *[hw]*: Chrome on a laptop and Safari on an iPad connect over HTTPS after installing the CA; the WebView loads via loopback with the token.
-- **WEB-01 (P0)** — As the owner, the app serves the web UI on the Wi-Fi address (HTTPS) and on localhost, from a `specialUse` foreground service that also starts at boot.
-  - AC1 *[auto]*: the service restarts after process death.
+- **WEB-01 (P0)** — As the owner, the app serves the web UI over plain HTTP on the Wi-Fi address and on localhost, from a `specialUse` foreground service that also starts at boot. There are no certificates and no per-device setup.
+  - AC1 *[auto]*: the service restarts after process death; requests from outside loopback, Wi-Fi or an allow-listed VPN are rejected.
   - AC2 *[hw]*: reachable within 60 s after an unattended reboot (screen lock None/Swipe).
-  - AC3 *[auto]*: a TLS handshake succeeds on 8443 and plain HTTP on 8443 fails; the leaf certificate SAN contains the current IP.
-- **WEB-02 (P0)** — As a user of another device, I pair by code or QR and get a role (Viewer, Operator, Admin), and the owner can revoke devices.
-  - AC1 *[auto]*: an expired or reused code fails; an unpaired request gets 401; a revoked device is refused immediately.
-- **WEB-03 (P0)** — As a Viewer, I see a live view of the run (metrics, chart, device state) updating in about 1 s.
+- **WEB-02 (P0)** — As any user on the home Wi-Fi, I open the address and use the web UI without logging in. Admin actions ask for the admin passphrase set on the phone.
+  - AC1 *[auto]*: admin routes return 401 without a valid admin session; a wrong passphrase is rate-limited; the session expires after 30 minutes.
+  - AC2 *[auto]*: architecture test: the web module cannot reach the treadmill command API.
+- **WEB-03 (P0)** — As a user on another device, I see a read-only live view of the run (metrics, chart, device state) updating in about 1 s.
   - AC1 *[auto]*: SSE delivers each engine state change; at most 8 clients; the run engine tick is unaffected (scenario with 8 clients).
-- **WEB-04 (P1)** — As an Operator, I can take the controller lease and control the run from the browser, if remote control is enabled. Stop is always available.
-  - AC1 *[auto]*: ported lease tests; commands without the lease are refused; Stop is accepted from any Operator; Start/Resume need "Allow start from web".
-  - AC2 *[hw]*: HW-12.
 - **WEB-05 (P0)** — As a phone user, the management screens run in the in-app WebView against localhost, with native top and bottom bars.
   - AC1 *[auto]*: Compose E2E opens History and Workouts in the WebView and navigates back.
 - **WEB-06 (P0)** — As any user, the web UI meets the 9.7 layout guide and budgets.
@@ -1135,7 +1113,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ### Epic H10 — Polar H10
 - **H10-01 (P0)** — HR, RR and contact via the Polar SDK.
-  - AC1 *[hw]*: HCT.
+  - AC1 *[hw]*: HW-02 (continuity measured; every drop has a recorded reason).
 - **H10-02 (P1)** — Opt-in recording prepared before arming (6.2 rules).
   - AC1 *[auto]*: an existing active recording is returned unchanged; replacement needs the same confirmed ID.
 - **H10-03 (P1)** — Fetch, align, fill only nulls, remove.
@@ -1151,11 +1129,10 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 - **BAK-01 (P0)** — Automatic verified backups (after each session, daily, before updates and restores), retention 2–60 (default 14), copied to the external folder (microSD or USB).
   - AC1 *[auto]*: `VACUUM INTO` plus integrity check plus receipt; the external copy exists; retention enforced.
 - **BAK-06 (P0)** — As the owner, every verified backup is also uploaded to my NAS share over SMB, and I can restore from it.
-  - AC1 *[auto]*: an integration test against a Samba container (SMB3, signing and encryption required): atomic upload (tmp, read-back hash, rename without replace), retention of own files only, restore listing; wrong credentials give a clear error.
-  - AC1b *[auto, emulator]*: the same upload from the Android emulator (catches the security-provider/MD4 issue).
+  - AC1 *[auto, phone .e2e]*: an upload to the NAS `test/` folder (SMB3, signing and encryption required): atomic upload (tmp, read-back hash, rename without replace), retention of own files only, restore listing; wrong credentials give a clear error. It also catches the Android security-provider/MD4 issue.
   - AC2 *[auto]*: no upload starts while a session is non-terminal; an upload in progress is cancelled on Arm.
   - AC3 *[hw]*: HW-14.
-- **BAK-02 (P0)** — Download a backup from the web UI (Admin), optionally encrypted.
+- **BAK-02 (P0)** — Download a backup from the web UI (admin), encrypted by default.
   - AC1 *[auto]*: the downloaded `.trb2` verifies (manifest hashes); an encrypted bundle fails with the wrong passphrase.
 - **BAK-03 (P0)** — Restore from the external folder or a web upload, with a preview and a safety backup first.
   - AC1 *[auto]*: a newer schema is refused; an older schema migrates; row counts match after restore.
@@ -1185,7 +1162,7 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 ### Epic OPS — Operations
 - **OPS-04 (P1)** — Storage management: journal and backup retention, a free-space warning, and the "Storage low" state.
-- **OPS-05 (P2)** — Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Keeper, Polar Flow, Garmin Connect Mobile; exit PIN).
+- **OPS-05 (P2)** — Kiosk mode via Device Owner (lock-task allow-list: TreadmillRunner, Polar Flow, Garmin Connect Mobile; exit PIN). Optional; needs a phone without accounts during provisioning.
 
 ---
 
@@ -1193,10 +1170,10 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 
 | Phase | Stories | Exit criteria |
 |---|---|---|
-| **0a. Hardware go/no-go (week 1, throwaway code)** | HW-00 spike | HCT met on the moto g15; unloaded Start/Stop Confirmed; the BLE library chosen. **Decides the phone before the heavy foundation work** |
-| **0b. Foundation and delivery** | FND-01..06, DLV-01..08, DLV-10, WEB-00..02, BAK-01, plus `phoneCheck` basics (DLV-09) | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs and a crash report in Diagnostics; a crash-loop build is rejected and recovered (HW-08); a backup lands on microSD |
+| **0a. Hardware go/no-go (week 1, throwaway code)** | HW-00 spike | H10 continuity clearly better than the Windows baseline on the moto g15; unloaded Start/Stop Confirmed; the BLE library chosen. **Decides the phone before the heavy foundation work** |
+| **0b. Foundation and delivery** | FND-01..06, DLV-01..08, DLV-10, WEB-01..02, BAK-01, plus `phoneCheck` basics (DLV-09) | `./gradlew check`, `ciFast` and `ciNightly` green locally. From the laptop: push an update and see it install (HW-07); see live logs and a crash report in Diagnostics; a crash-loop build enters safe mode and is recovered remotely (HW-08); a backup lands on microSD |
 | **1. Run MVP (offline)** | DEV-01..04, DEV-07, **DEV-08**, RUN-01..11, RUN-13..14, RUN-16..17, REC-01..03, REC-07, REC-09, WKT-01, PLN-01..02, PLN-06, H10-01, BAK-02..06, GAR-06, WEB-03, WEB-05..06, PRF-01..02 | HW-01, HW-02, HW-04, HW-05, HW-06, HW-09, HW-13, HW-14, HW-15 pass. Daily use replaces the Windows app (Garmin through FIT download or share until GAR-01) |
-| **2. Depth** | GAR-00, GAR-01..02, RUN-12, RUN-15, REC-04..06, REC-08, WKT-02..03, PLN-03..04, PLN-07, H10-02..06, DEV-05..06, PRF-03, WEB-04, OPS-04 | HW-03, HW-11, HW-12 pass; Garmin upload runs from the phone |
+| **2. Depth** | GAR-00, GAR-01..02, RUN-12, RUN-15, REC-04..06, REC-08, WKT-02..03, PLN-03..04, PLN-07, H10-02..06, DEV-05..06, PRF-03, OPS-04 | HW-03, HW-11, HW-12 pass; Garmin upload runs from the phone |
 | **3. Reach** | WKT-04, PLN-05, GAR-03..05, H10-07, OPS-05 | Per story |
 | **Continuous (long-term)** | DLV-09 wireless-ADB validation tooling, grown with each runbook | `phoneCheck` covers every HW runbook helper |
 
@@ -1211,24 +1188,24 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 |---|---|---|
 | Phone BLE also drops the H10 | Core value | HW-00 gate; 5 GHz SSID; no A2DP; mount position; fallback to another phone or tablet with a different chipset |
 | Android kills the run or web service | Lost runs, unreachable UI | Battery exemption plus CDM; separate `specialUse` web service with boot start; tested |
-| A bad update bricks the main app remotely | No remote access | Keeper app with watchdog and its own admin page; kill switches; health checks; HW-08 |
-| `STATUS_PENDING_USER_ACTION` appears after an Android update | Update needs a tap | Shown on the Keeper page; target the latest SDK; optional Device Owner mode |
+| A bad update crashes the app | No remote access | Built-in safe mode after 2 failed starts; kill switches; health checks; HW-08 |
+| A build crashes before the start counter runs | Safe mode can't help | Minimal `Application` start path; update E2E on every release; recovery via wireless ADB or physical access |
+| `STATUS_PENDING_USER_ACTION` appears after an Android update | Update needs a tap | Shown on the web Updates page; target the latest SDK |
 | Wireless ADB unavailable after reboot | Harder deep debugging | The in-app diagnostics console is the primary tool; ADB is a complement |
 | Web server load affects the run engine | Safety | Separate thread pool; client limits; the scenario test with 8 SSE clients checks tick timing |
-| Security of the web interface on the LAN | Unauthorized control | Pairing, roles, HTTPS, admin passphrase; remote motion control off by default; LAN-only binding |
+| Security of the plain-HTTP web interface on the home LAN | Unauthorized changes | No treadmill control from the web at all; admin passphrase for updates, restore and credentials; only signed APKs install; LAN-only binding; accepted home-network trade-off (owner decision) |
 | Unofficial Garmin API breaks | Upload | Isolated module; feature flag; FIT download or share always works |
 | Controls behave differently on the Android stack | Safety | DEV-08 staged commissioning; read-only and console runs until then |
 | Scan throttling, H10 address rotation | Reconnect failures | Scan budget; filtered low-duty HR scan |
 | System bond lost on reinstall | Unreadable recordings | Updater refuses with unfetched recordings; no uninstall-based rollback |
 | Room schema identity blocks revert builds | Failed rollback | Monotonic schema; behaviour-only revert builds; flags |
 | Signing-key loss | No updates | DLV-10 |
-| Ktor CIO has no server TLS | Web HTTPS silently plain | Netty engine; WEB-00 spike; WEB-01 AC3 |
-| Android "bad process" state or stopped state after a crash loop | Services don't come back | Keeper binds with `BIND_AUTO_CREATE`; safe mode; HW-08 with a reboot |
+| Android "bad process" state or stopped state after a crash loop | Services don't come back | Boot start of the web service, post-install restart; safe mode; HW-08 with a reboot |
 | OS update changes behaviour | Regressions | Automatic system updates off; targetSdk policy; re-run `phoneCheck` and HW-02/HW-07 after any OS update |
-| Android developer verification (2026–2027) | Keeper installs blocked or need taps | Register packages and key (free limited distribution); ADB fallback; optional Device Owner |
-| Local-network permission (targetSdk 37) | LAN server or SMB blocked | Grant it in provisioning, or auto-grant via Device Owner; tested on each targetSdk bump |
+| Android developer verification (2026–2027) | Self-updates blocked or need taps | Register packages and key (free limited distribution); ADB fallback |
+| Local-network permission (targetSdk 37) | LAN server or SMB blocked | Grant it in provisioning; tested on each targetSdk bump |
 | Garmin auth changes (2026 flow, Cloudflare) | Upload breaks | GAR-00 spike; pinned upstream port; monthly re-check; FIT fallback |
-| No emulator in the Windows VM | E2E can't run locally | Linux KVM box (11.0); spare phone fallback |
+| Device tests share the treadmill phone | Tests clash with real use | Separate `.e2e` variant, session guard, never during runs; a spare phone is a drop-in alternative |
 | Phone loss or failure | Data loss | microSD/USB and NAS SMB copies; web download; HW-13 |
 | NAS share unreachable or full | Missing off-phone backups | Per-destination health state; backoff; microSD copy still made; HW-14 |
 | Thermal or battery ageing from always charging | Stability | HW-10; charge limit; thermal banner |
@@ -1246,13 +1223,13 @@ Format: **ID — story.** Acceptance criteria (AC): *[auto]* means an automated 
 5. **No sync.** Backups go to microSD/USB and to the NAS over SMB.
 6. **Wireless debugging** is a long-term validation path (DLV-09) next to self-updating (DLV-02..05).
 
-**Still open:**
-1. **Remote motion control from the web:** off by default and enabled per paired Operator device (proposed), or phone-only.
-2. **HCT values:** ≤ 1 disconnect per run-hour, no gap over 10 s, 3 × 60 min (proposed).
-3. **Keeper app:** accept the two-app design for remote recovery (proposed), or a single app with no remote recovery from a crash loop.
-4. **Keeper as Device Owner** (silent installs regardless of targetSdk, auto-granted permissions, OS-update freeze, kiosk). It needs the phone to have no accounts during provisioning.
-5. **Mutual recovery** (the main app as Keeper's installer of record), or Keeper repaired only via ADB.
-6. **Web TLS via a local CA:** install the phone's CA once per browser device (proposed).
+**Decided by the owner (v6):**
+7. **Treadmill control only on the phone app or the treadmill console.** The web interface is read-only for the treadmill.
+8. **No fixed Bluetooth threshold:** continuity is measured, drops are investigated, and it is made as good as possible (HCM).
+9. **One app only:** self-update plus built-in safe mode. There is no Keeper app and no Device Owner mode.
+10. **No certificates and no per-device setup:** plain HTTP on the home network, with one admin passphrase set on the phone.
+
+**Still open:** none blocking. Future options: kiosk mode (OPS-05); a publicly trusted certificate if a domain is ever used.
 
 ## 16. References
 - **Specification pack (this folder):**
