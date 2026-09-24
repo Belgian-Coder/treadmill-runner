@@ -12,6 +12,41 @@ This spec defines everything about **what a runner trains and when**:
 
 It describes the behaviour of the current app exactly. Where the Kotlin app must deliberately differ, the text says **Decision** and gives the reason.
 
+> **Scope for the rewrite (owner decision).**
+> - The new app is for private use in one household. Keep it as simple as possible.
+> - **Calendar, plans, programs, runs, goals and receipts need no data migration and no ID, hash or format compatibility with the current app.** Only session (run) data must stay compatible (05).
+>   - The Kotlin app may choose its own IDs, table layout, hash formats and API shape.
+>   - The rules below are a **behaviour** spec.
+>   - Legacy-only details are kept as notes so behaviour is understood, not so they are reproduced.
+> - The **premade catalog is content the app ships with**: `data/premade/` is authoritative.
+> - Every feature is tagged by tier:
+>   - **[E] Essential**: needed for single-household daily use; build it in the first plan milestone.
+>   - **[O] Optional**: useful but not needed at first. Build it later or skip it. If it is built, it must follow this spec.
+>   - Where a section is not tagged, it inherits the tag of its parent section.
+
+### Feature tiers at a glance
+
+| Feature | Tier | Why |
+|---|---|---|
+| Premade catalog shipped as data; list, preview and install per runner (idempotent) | **E** | The main way plans enter the app |
+| Plan-internal workouts hidden from the library | **E** | Keeps the library usable (174 generated workouts) |
+| Program run: one active per runner; start with first date, weekdays and time zone; projection onto the calendar | **E** | Core daily flow |
+| Progress, next item, advancement by a Completed linked Hardware session; next-item validation; per-item alternatives | **E** | Core correctness |
+| Today recommendation (section 8) | **E** | The Today screen depends on it |
+| Plan schedule actions **Move only**, **Move this and following**, **Skip**, **Restore**, with preview and collision blocking | **E** | Real life shifts training days |
+| **Clear upcoming** (end the plan) | **E** | Simple and needed |
+| Optimistic `version` on the run; operation-ID de-duplication of writes | **E** | Two UIs (phone and web) can act at once; a double tap must not apply twice |
+| **Repeat · keep dates / shift the rest** | O | Nice for redoing a hard session; manual runs cover it |
+| **Change training days** (bulk re-rhythm with a preview revision) | O | Complex; Move this and following covers most needs |
+| Recurring calendar series: create, delete one, delete group; alternatives; Skip, Add and Replace exceptions; day selection | O | Only needed for standalone workouts outside plans |
+| Series **Move only** | O | – |
+| Series **Move this and later** with segment splitting, rotation and overlap guards | O (most complex) | Skip unless series are used heavily |
+| Custom programs, revisions, household (shared) programs | O | Premade plans cover the household. If built, keep it personal-only. |
+| Goals and trends | O | – |
+| Progression adviser and recommendation decisions | O | – |
+| Full receipt model: replay of the stored response, request fingerprints, 90-day retention | O | A simpler "seen operation IDs" table is enough (section 10) |
+| Rebuilding the catalog from the generator (7.2/7.3) | O | Only needed to change or verify catalog content; the app just loads the JSON |
+
 Related specs: workout definitions, canonical JSON and hashing are in [02-workouts.md](02-workouts.md). Session states and origins are in [05-sessions-and-recording.md](05-sessions-and-recording.md). Profiles, HR zones and the HR speed controller are in [06-profiles-and-heart-rate.md](06-profiles-and-heart-rate.md). The catalog data is in [data/premade/](data/premade/README.md).
 
 **Contents**
@@ -92,7 +127,9 @@ Related specs: workout definitions, canonical JSON and hashing are in [02-workou
 
 ---
 
-## 3. Calendar series
+## 3. Calendar series [O]
+
+Recurring series exist only to schedule standalone workouts outside a plan. Plan occurrences (section 5) do **not** use series. If series are skipped, the merged calendar (3.7) shows only plan occurrences, and the external-collision checks in 5.4 and 5.5 have nothing to check.
 
 ### 3.1 Data
 
@@ -112,9 +149,8 @@ Related specs: workout definitions, canonical JSON and hashing are in [02-workou
 | `version` | int | Starts at 1. +1 on every change to this row or its children. Optimistic concurrency token. |
 | `createdAtUtc` | instant | – |
 
-- Exception `kind` is parsed case-insensitively from `Skip | Replace | Add`. Numeric strings are rejected.
-- A stored kind that fails to parse makes reading the series fail. That is a data error, not a silent skip.
-- Exceptions also have an optional `note` (≤ 500) in storage. It is unused by the logic and must be preserved.
+- Exception `kind` is `Skip | Replace | Add`; the Kotlin app can use an enum.
+- The legacy storage also had an unused exception `note`; it is not needed.
 
 ### 3.2 Recurrence: `occursOn(date)`
 
@@ -176,7 +212,7 @@ sort by displayOrder, then seriesId, then workoutRevisionId
 
 ### 3.6 Occurrence scopes
 
-The UI always asks for the scope before writing. There are four:
+The UI always asks for the scope before writing. There are four. *Delete only this session* and *Delete complete workout group* are the simple core of series management. *Move only this session* is small. *Move this and later* is the most complex feature in this spec and can be left out: the runner can delete the rest of the group and create a new series instead.
 
 | Scope | Operation | Effect |
 |---|---|---|
@@ -276,6 +312,8 @@ The calendar UI labels program entries with the plan name, "workout N of TOTAL",
 
 ## 4. Programs (training plans)
 
+The program data model is **[E]**, because installed premade plans are programs. Creating and editing **custom** programs, appending revisions and household (shared) programs are **[O]**.
+
 ### 4.1 Data and limits
 
 | Entity | Field | Rules |
@@ -317,10 +355,12 @@ The calendar UI labels program entries with the plan name, "workout N of TOTAL",
   - Show the revision the runner's active run is pinned to if there is one, otherwise the latest.
   - Custom programs are all listed.
   - Template programs are grouped by `(ownerProfileId, templateId)`, and only one **canonical** entry per group is shown. The canonical entry is the one with an active run first, then the highest template version (parsed as a dotted version; unparseable = 0.0), then the newest `createdAtUtc`.
-- **Display name** of a template program is the catalog template's `name` for `(templateId, templateVersion)` when the catalog still knows it; otherwise the stored name. This hides legacy suffixes such as "· Copy 2".
+- **Display name** of a template program is the catalog template's `name` for `(templateId, templateVersion)`. (The legacy app used this to hide old "· Copy 2" suffixes; the new app has no such rows, so storing the template name is enough.)
 - **Required training days**, shown on summaries: the maximum number of items that share one `weekNumber`. If no item has a week number, it defaults to **3**.
 
-### 4.3 Program revision content hash
+### 4.3 Program revision content hash [O]
+
+The new app does not need this hash. The legacy app used it only to refuse appending a revision identical to an existing one. It is documented for reference:
 
 ```
 value = join("\n",
