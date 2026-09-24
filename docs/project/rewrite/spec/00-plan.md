@@ -972,7 +972,7 @@ ai/
     modules.md             Every module: purpose, main entry points, test location
     stories.md             Every story: ID, status, 1–2 line summary, link to its folder
   routing.yaml             Model routing per role (12.3)
-  prompts/                 Short role cards: orchestrator.md, implementer.md, reviewer.md, ux-validator.md, searcher.md
+  prompts/                 Short role cards: orchestrator.md, implementer.md, ux-validator.md, final-reviewer.md, searcher.md
 docs/                      Central documentation (12.6)
   spec/                    This specification pack (copied verbatim)
   adr/                     Architecture Decision Records: NNNN-title.md
